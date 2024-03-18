@@ -81,84 +81,8 @@ def project_embeddings(rescaled_embeddings, cells_per_dimension):
     return pixelated_space
 
 
-# def pixelate_embedding(rescaled_embedding, cells_number=None, overlap_percentage=None):
-#     if overlap_percentage is not None and cells_number is None:
-#         cells_number = 1
-#         prev_cells_number = cells_number
-#         print(f'\rNumber of cells: {prev_cells_number}', end='')
-#         while True:
-#             print(f'\rNumber of cells: {prev_cells_number}', end='')
-#             pixelated_space, points, overlap, cells_per_dimension, rescaled_maximum_coords = pixelate_embedding(
-#                 rescaled_embedding, cells_number=cells_number)
-#             prev_pixelated_space = pixelated_space
-#             prev_points = points
-#             prev_overlap = overlap
-#             prev_cells_per_dimension = cells_per_dimension
-#             prev_rescaled_maximum_coords = rescaled_maximum_coords
-#             if overlap <= overlap_percentage:
-#                 cells_number_temp = cells_number
-#                 while overlap <= overlap_percentage:
-#                     print(f'\rNumber of cells: {cells_number_temp}', end='')
-#                     cells_number_temp -= (cells_number_temp - prev_cells_number) / 2
-#                     prev_pixelated_space = pixelated_space
-#                     prev_points = points
-#                     prev_overlap = overlap
-#                     prev_cells_per_dimension = cells_per_dimension
-#                     prev_rescaled_maximum_coords = rescaled_maximum_coords
-#                     pixelated_space, points, overlap, cells_per_dimension, rescaled_maximum_coords = (
-#                         pixelate_embedding(rescaled_embedding, cells_number=cells_number_temp))
-#                 print()
-#                 print(f'Final number of cells: {prev_cells_number}')
-#                 return prev_pixelated_space, prev_points, prev_overlap, prev_cells_per_dimension, prev_rescaled_maximum_coords
-#             prev_cells_number = cells_number
-#             cells_number *= 2
-#     else:
-#         rescaled_maximum_coords = np.max(rescaled_embedding, axis=0)
-#         dimensions = len(rescaled_maximum_coords)
-#
-#         # Calculate the aspect ratio
-#         aspect_ratio = rescaled_maximum_coords / np.max(rescaled_maximum_coords)
-#
-#         # Compute the number of cells in each dimension while maintaining the aspect ratio
-#         cells_per_dimension = np.round((cells_number ** (1 / dimensions)) * aspect_ratio).astype(int)
-#
-#         # Create a grid of points in the N-dimensional space
-#         grid_points = [np.linspace(0, max_coord, num_cells) for max_coord, num_cells in
-#                        zip(rescaled_maximum_coords, cells_per_dimension)]
-#
-#         # Create a grid of points in the N-dimensional space
-#         grid = np.meshgrid(*grid_points, indexing='ij')
-#
-#         # Convert the grid to an array of points
-#         points = np.vstack(list(map(np.ravel, grid))).T
-#
-#         # Create an array of zeros with the shape of the grid
-#         pixelated_space = np.zeros(cells_per_dimension, dtype=int)
-#
-#         # Convert the rescaled embedding coordinates to indices in the pixelated space
-#         indices = np.round(rescaled_embedding * (cells_per_dimension - 1)).astype(int)
-#
-#         # compute the percentage of overlap (number of pixels that contain multiple points compared
-#         # with the total number of points). Just check the number of unique indices
-#         overlap = 1 - np.unique(indices, axis=0).shape[0] / rescaled_embedding.shape[0]
-#         overlap *= 100
-#
-#         # Set the corresponding indices in the pixelated space to 1
-#         pixelated_space[tuple(indices.T)] = 1
-#
-#         return pixelated_space, points, overlap, cells_per_dimension, rescaled_maximum_coords
-
-
-def compute_pixelated_space(rescaled_embedding, cells_number):
-    # TODO When used without the optimisation function, it doesn't give the best results
+def compute_pixelated_space(rescaled_embedding, cells_per_dimension):
     rescaled_maximum_coords = np.max(rescaled_embedding, axis=0)
-    dimensions = len(rescaled_maximum_coords)
-
-    # Calculate the aspect ratio
-    aspect_ratio = rescaled_maximum_coords / np.max(rescaled_maximum_coords)
-
-    # Compute the number of cells in each dimension while maintaining the aspect ratio
-    cells_per_dimension = np.round((cells_number ** (1 / dimensions)) * aspect_ratio).astype(int)
 
     # Create a grid of points in the N-dimensional space
     grid_points = [np.linspace(0, max_coord, num_cells) for max_coord, num_cells in
@@ -174,7 +98,7 @@ def compute_pixelated_space(rescaled_embedding, cells_number):
     pixelated_space = np.zeros(cells_per_dimension, dtype=int)
 
     # Convert the rescaled embedding coordinates to indices in the pixelated space
-    indices = np.round(rescaled_embedding * (cells_per_dimension - 1)).astype(int)
+    indices = np.round(rescaled_embedding * (np.array(cells_per_dimension) - 1)).astype(int)
 
     # compute the percentage of overlap (number of pixels that contain multiple points compared
     # with the total number of points). Just check the number of unique indices
@@ -184,81 +108,49 @@ def compute_pixelated_space(rescaled_embedding, cells_number):
     # Set the corresponding indices in the pixelated space to 1
     pixelated_space[tuple(indices.T)] = 1
 
-    return pixelated_space, points, overlap, cells_per_dimension, rescaled_maximum_coords
-
-
-# def optimize_pixel_space(rescaled_embedding, overlap_percentage):
-#     cells_number = len(rescaled_embedding[0])
-#     prev_cells_number = cells_number
-#     print(f'\rNumber of cells: {prev_cells_number}', end='')
-#     while True:
-#         print(f'\rNumber of cells: {prev_cells_number}', end='')
-#         pixelated_space, points, overlap, cells_per_dimension, rescaled_maximum_coords = compute_pixelated_space(
-#             rescaled_embedding, cells_number=cells_number)
-#         prev_pixelated_space = pixelated_space
-#         prev_points = points
-#         prev_overlap = overlap
-#         prev_cells_per_dimension = cells_per_dimension
-#         prev_rescaled_maximum_coords = rescaled_maximum_coords
-#         if overlap <= overlap_percentage:
-#             cells_number_temp = cells_number
-#             while overlap <= overlap_percentage:
-#                 print(f'\rNumber of cells: {cells_number_temp}', end='')
-#                 cells_number_temp -= (cells_number_temp - prev_cells_number) / 2
-#                 prev_pixelated_space = pixelated_space
-#                 prev_points = points
-#                 prev_overlap = overlap
-#                 prev_cells_per_dimension = cells_per_dimension
-#                 prev_rescaled_maximum_coords = rescaled_maximum_coords
-#                 pixelated_space, points, overlap, cells_per_dimension, rescaled_maximum_coords = (
-#                     compute_pixelated_space(rescaled_embedding, cells_number=cells_number_temp))
-#             print()
-#             print(f'Final number of cells: {cells_number_temp}')
-#             return prev_pixelated_space, prev_points, prev_overlap, prev_cells_per_dimension, prev_rescaled_maximum_coords
-#         prev_cells_number = cells_number
-#         cells_number *= 2
+    return pixelated_space, points, overlap
 
 
 def optimize_pixel_space(rescaled_embedding, overlap_percentage):
     if overlap_percentage < 0 or overlap_percentage > 100:
         raise ValueError("Overlap percentage must be between 0 and 100[exclusive]")
-    cells_number = len(rescaled_embedding[0])
+    rescaled_maximum_coords = np.max(rescaled_embedding, axis=0)
+    aspect_ratio = rescaled_maximum_coords / np.max(rescaled_maximum_coords)
+    cells_per_dimension = np.array(aspect_ratio).astype(int)
     overlap = 100
-    cells_number_temp = 0
-    pixelated_space, points, cells_per_dimension, rescaled_maximum_coords = None, None, None, None
-    while overlap > overlap_percentage:
-        cells_number_temp = cells_number
-        cells_number *= 2
-        pixelated_space, points, overlap, cells_per_dimension, rescaled_maximum_coords = compute_pixelated_space(
-            rescaled_embedding, cells_number=cells_number)
-    # here overlap <= overlap_percentage, now we need to find the optimal number of cells
-    # using a binary search until the step is smaller than 1 so we return the last pixelated space
-    # that has an overlap smaller than the desired overlap_percentage
-    interval = cells_number - cells_number_temp
+    pixelated_space = None
+    points = None
     prev_pixelated_space = None
     prev_points = None
     prev_overlap = None
     prev_cells_per_dimension = None
-    prev_rescaled_maximum_coords = None
-    while interval > 1:
+    factor_ratio = 2
+    while overlap >= overlap_percentage:
         prev_pixelated_space = pixelated_space
         prev_points = points
         prev_overlap = overlap
         prev_cells_per_dimension = cells_per_dimension
-        prev_rescaled_maximum_coords = rescaled_maximum_coords
-        interval //= 2
-        print(f'\rOverlap > percentage before: {overlap > overlap_percentage} | ', end='')
+        factor_ratio *= 2
+        cells_per_dimension = np.array([dim * factor_ratio for dim in aspect_ratio]).astype(int)
+        # print(f'\rTrying {cells_per_dimension} cells per dimension', end='')
+        # print(f'Trying {cells_per_dimension} cells per dimension')
+        pixelated_space, points, overlap = compute_pixelated_space(
+            rescaled_embedding, cells_per_dimension=cells_per_dimension)
+    lower_bound = prev_cells_per_dimension
+    upper_bound = cells_per_dimension
+    while np.any(upper_bound - lower_bound > 1):
+        mid_point = (upper_bound + lower_bound) // 2
+        pixelated_space, points, overlap = compute_pixelated_space(
+            rescaled_embedding, cells_per_dimension=mid_point)
         if overlap > overlap_percentage:
-            cells_number += interval
+            lower_bound = mid_point
         else:
-            cells_number -= interval
-        pixelated_space, points, overlap, cells_per_dimension, rescaled_maximum_coords = compute_pixelated_space(
-            rescaled_embedding, cells_number=cells_number)
-        # print(f'\rOverlap > percentage after: {overlap > overlap_percentage}', end='')
-    if overlap > overlap_percentage:
-        return prev_pixelated_space, prev_points, prev_overlap, prev_cells_per_dimension, prev_rescaled_maximum_coords
-    else:
-        return pixelated_space, points, overlap, cells_per_dimension, rescaled_maximum_coords
+            upper_bound = mid_point
+            prev_pixelated_space = pixelated_space
+            prev_points = points
+            prev_overlap = overlap
+            prev_cells_per_dimension = mid_point
+    return prev_pixelated_space, prev_points, prev_overlap, prev_cells_per_dimension
 
 
 def plot_embeddings(embeddings, title, rescaled_mode=False):
@@ -299,6 +191,7 @@ class DiscreteLatentSpace:
         self.max_coordinates = self.get_maximums()
         self.min_coordinates = self.get_minimums()
         self.rescaled_embeddings = self.rescale_embedding(raw_embeddings)
+        self.cells_per_dimension = None
 
     def get_maximums(self):
         return self.raw_embeddings.max()
@@ -313,14 +206,15 @@ class DiscreteLatentSpace:
         return inverse_rescale_embedding(rescaled_embedding, self.margin, self.max_coordinates,
                                          self.min_coordinates)
 
-    def pixelate_embedding(self, rescaled_embedding, cells_number=None, overlap_percentage=None):
-        if overlap_percentage is None:
-            self.pixelated_embedding, self.pixelated_coords, self.overlap, _, _ = (
-                compute_pixelated_space(rescaled_embedding, cells_number))
+    def pixelate_embedding(self, rescaled_embedding, overlap_percentage=None, cells_per_dimension=None):
+        if cells_per_dimension is not None:
+            self.pixelated_embedding, self.pixelated_coords, self.overlap = compute_pixelated_space(
+                rescaled_embedding, cells_per_dimension)
+            self.cells_per_dimension = cells_per_dimension
         else:
-            self.pixelated_embedding, self.pixelated_coords, self.overlap, _, _ = (
+            self.pixelated_embedding, self.pixelated_coords, self.overlap, self.cells_per_dimension = (
                 optimize_pixel_space(rescaled_embedding, overlap_percentage))
-        print(f"The is an overlap of {self.overlap:.2f}% points in the pixelated space")
+        print(f"There is an overlap of {self.overlap:.2f}% points in the pixelated space")
         print(f"The number of cells in the pixelated space is {np.prod(self.pixelated_embedding.shape)}")
         print(f'The shape of the pixelated space is {self.pixelated_embedding.shape}')
         print(f'Maximum in each dimension: {self.max_coordinates}')
