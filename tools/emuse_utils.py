@@ -188,17 +188,15 @@ class DiscreteLatentSpace:
         self.margin = margin
         self.trained_umap = trained_umap
         self.raw_embeddings = raw_embeddings
-        self.max_coordinates = self.get_maximums()
-        self.min_coordinates = self.get_minimums()
+        self.max_coordinates = self.raw_embeddings.max()
+        self.min_coordinates = self.raw_embeddings.min()
         self.rescaled_embeddings = self.rescale_embedding(raw_embeddings)
         self.cells_per_dimension = None
+        self.heatmaps = {}
 
-    def get_maximums(self):
-        return self.raw_embeddings.max()
-
-    def get_minimums(self):
-        return self.raw_embeddings.min()
-
+    """
+    Embedding spaces transformatins
+    """
     def rescale_embedding(self, embedding):
         return rescale_embedding(embedding, self.margin, self.max_coordinates, self.min_coordinates)
 
@@ -206,7 +204,7 @@ class DiscreteLatentSpace:
         return inverse_rescale_embedding(rescaled_embedding, self.margin, self.max_coordinates,
                                          self.min_coordinates)
 
-    def pixelate_embedding(self, rescaled_embedding, overlap_percentage=None, cells_per_dimension=None):
+    def create_pixelated_space(self, rescaled_embedding, overlap_percentage=None, cells_per_dimension=None):
         if cells_per_dimension is not None:
             self.pixelated_embedding, self.pixelated_coords, self.overlap = compute_pixelated_space(
                 rescaled_embedding, cells_per_dimension)
@@ -219,6 +217,39 @@ class DiscreteLatentSpace:
         print(f'The shape of the pixelated space is {self.pixelated_embedding.shape}')
         print(f'Maximum in each dimension: {self.max_coordinates}')
 
+    def pixelate_new_embedding(self, new_rescaled_embedding):
+        pixelated_new_embedding, _, _ = compute_pixelated_space(
+            new_rescaled_embedding, self.cells_per_dimension)
+        return pixelated_new_embedding
+
+
+    """
+    Heatmap methods
+    """
+    def create_heatmap_spaces(self, embeddings, scores, name):
+        embeddings = np.array(embeddings)
+        scores = np.array(scores)
+
+        if name in self.heatmaps:
+            raise ValueError(f"A heatmap with the name {name} already exists")
+        if embeddings.shape[0] == len(scores):
+            self.heatmaps[name] = Heatmap(embeddings, scores)
+        else:
+            # make sure scores contains the indices of the embeddings and then filter the embeddings
+            if all(isinstance(score, int) and 0 <= score < embeddings.shape[0] for score in scores):
+                filtered_embeddings = embeddings[scores]
+                self.heatmaps[name] = Heatmap(filtered_embeddings, scores)
+            else:
+                raise ValueError("The embeddings and the scores do not have the same length and the scores."
+                                 " To create a heatmap with these embeddings, the scores must contain the "
+                                 "indices of the embedding coordinates associated with the scores")
+        # now we need to rescale the embeddings and create the pixelated space
+        self.heatmaps[name].rescaled_embeddings = self.rescale_embedding(self.heatmaps[name].raw_embeddings)
+        self.heatmaps[name].pixelated_coord = self.pixelate_new_embedding(self.heatmaps[name].rescaled_embeddings)
+
+    """
+    Plotting methods (might not be necessary later)
+    """
     def plot_raw_embedding(self):
         plot_embeddings(self.raw_embeddings, 'Raw Embeddings')
 
@@ -230,7 +261,7 @@ class DiscreteLatentSpace:
         plot_embeddings(inverse_rescaled_embedding, 'Inverse Rescaled Embeddings')
 
     def plot_pixelated_embedding(self, cells_number=None, overlap_percentage=None):
-        self.pixelate_embedding(self.rescaled_embeddings, cells_number, overlap_percentage)
+        self.create_pixelated_space(self.rescaled_embeddings, cells_number, overlap_percentage)
         pixelated_embedding = self.pixelated_embedding
         if pixelated_embedding.ndim == 2:
             plt.figure(figsize=(10, 10))
@@ -245,3 +276,47 @@ class DiscreteLatentSpace:
                              f' the embedding is not supported')
         plt.show()
         plt.close()
+
+
+class Heatmap:
+    def __init__(self, matched_embeddings, scores):
+        """
+        The Heatmap class is used to store the data necessary to create the heatmap in the
+        pixelated space and the heatmap itself.
+        Parameters
+        ----------
+        matched_embeddings: np.ndarray
+            Coordinates in the raw embedding space of the matched points (same order as the scores)
+        scores: np.ndarray
+        """
+        self._raw_embeddings = matched_embeddings
+        self._scores = scores
+        self._rescaled_embeddings = None
+        self._pixelated_coord = None
+        self._heatmap = None
+
+        @property
+        def raw_embeddings(self):
+            return self._raw_embeddings
+
+        @property
+        def scores(self):
+            return self._scores
+
+        @property
+        def rescaled_embeddings(self):
+            return self._rescaled_embeddings
+
+        @rescaled_embeddings.setter
+        def rescaled_embeddings(self, rescaled_embeddings):
+            if rescaled_embeddings.shape != self._raw_embeddings.shape:
+                raise ValueError("The rescaled embeddings must have the same shape as the raw embeddings")
+            self._rescaled_embeddings = rescaled_embeddings
+
+        @property
+        def pixelated_coord(self):
+            return self._pixelated_coord
+
+        @pixelated_coord.setter
+        def pixelated_coord(self, pixelated_coord):
+            self._pixelated_coord = pixelated_coord
