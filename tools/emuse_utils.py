@@ -1,6 +1,12 @@
+import os
+
 import numpy as np
+import umap
+from joblib import dump, load
 from matplotlib import pyplot as plt
-import matplotlib.colors as colors
+from scipy.stats import pearsonr, spearmanr, mannwhitneyu
+from scipy.ndimage import gaussian_filter
+from statsmodels.stats.multitest import multipletests
 
 
 # def rescale_embedding(embedding, margin=0, max_coordinates=None, min_coordinates=None):
@@ -69,19 +75,19 @@ def inverse_rescale_embedding(rescaled_embedding, margin=0, max_value=None, min_
 
 
 def project_embeddings(rescaled_embeddings, cells_per_dimension):
-    # Convert the rescaled embedding coordinates to indices in the pixelated space
+    # Convert the rescaled embedding coordinates to indices in the discrete space
     indices = np.round(rescaled_embeddings * (cells_per_dimension - 1)).astype(int)
 
     # Create an array of zeros with the shape of the grid
-    pixelated_space = np.zeros(cells_per_dimension, dtype=int)
+    discrete_space = np.zeros(cells_per_dimension, dtype=int)
 
-    # Set the corresponding indices in the pixelated space to 1
-    pixelated_space[tuple(indices.T)] = 1
+    # Set the corresponding indices in the discrete space to 1
+    discrete_space[tuple(indices.T)] = 1
 
-    return pixelated_space
+    return discrete_space
 
 
-def compute_pixelated_space(rescaled_embedding, cells_per_dimension):
+def compute_discrete_space(rescaled_embedding, cells_per_dimension, cells_values=1):
     rescaled_maximum_coords = np.max(rescaled_embedding, axis=0)
 
     # Create a grid of points in the N-dimensional space
@@ -91,13 +97,10 @@ def compute_pixelated_space(rescaled_embedding, cells_per_dimension):
     # Create a grid of points in the N-dimensional space
     grid = np.meshgrid(*grid_points, indexing='ij')
 
-    # Convert the grid to an array of points
-    points = np.vstack(list(map(np.ravel, grid))).T
-
     # Create an array of zeros with the shape of the grid
-    pixelated_space = np.zeros(cells_per_dimension, dtype=int)
+    discrete_space = np.zeros(cells_per_dimension, dtype=int)
 
-    # Convert the rescaled embedding coordinates to indices in the pixelated space
+    # Convert the rescaled embedding coordinates to indices in the discrete space
     indices = np.round(rescaled_embedding * (np.array(cells_per_dimension) - 1)).astype(int)
 
     # compute the percentage of overlap (number of pixels that contain multiple points compared
@@ -105,28 +108,28 @@ def compute_pixelated_space(rescaled_embedding, cells_per_dimension):
     overlap = 1 - np.unique(indices, axis=0).shape[0] / rescaled_embedding.shape[0]
     overlap *= 100
 
-    # Set the corresponding indices in the pixelated space to 1
-    pixelated_space[tuple(indices.T)] = 1
+    # Set the corresponding indices in the discrete space to 1
+    discrete_space[tuple(indices.T)] = cells_values
 
-    return pixelated_space, points, overlap
+    return discrete_space, indices, overlap
 
 
-def optimize_pixel_space(rescaled_embedding, overlap_percentage):
+def optimize_discrete_space(rescaled_embedding, overlap_percentage):
     if overlap_percentage < 0 or overlap_percentage > 100:
         raise ValueError("Overlap percentage must be between 0 and 100[exclusive]")
     rescaled_maximum_coords = np.max(rescaled_embedding, axis=0)
     aspect_ratio = rescaled_maximum_coords / np.max(rescaled_maximum_coords)
     cells_per_dimension = np.array(aspect_ratio).astype(int)
     overlap = 100
-    pixelated_space = None
+    discrete_space = None
     points = None
-    prev_pixelated_space = None
+    prev_discrete_space = None
     prev_points = None
     prev_overlap = None
     prev_cells_per_dimension = None
     factor_ratio = 2
     while overlap >= overlap_percentage:
-        prev_pixelated_space = pixelated_space
+        prev_discrete_space = discrete_space
         prev_points = points
         prev_overlap = overlap
         prev_cells_per_dimension = cells_per_dimension
@@ -134,23 +137,23 @@ def optimize_pixel_space(rescaled_embedding, overlap_percentage):
         cells_per_dimension = np.array([dim * factor_ratio for dim in aspect_ratio]).astype(int)
         # print(f'\rTrying {cells_per_dimension} cells per dimension', end='')
         # print(f'Trying {cells_per_dimension} cells per dimension')
-        pixelated_space, points, overlap = compute_pixelated_space(
+        discrete_space, points, overlap = compute_discrete_space(
             rescaled_embedding, cells_per_dimension=cells_per_dimension)
     lower_bound = prev_cells_per_dimension
     upper_bound = cells_per_dimension
     while np.any(upper_bound - lower_bound > 1):
         mid_point = (upper_bound + lower_bound) // 2
-        pixelated_space, points, overlap = compute_pixelated_space(
+        discrete_space, points, overlap = compute_discrete_space(
             rescaled_embedding, cells_per_dimension=mid_point)
         if overlap > overlap_percentage:
             lower_bound = mid_point
         else:
             upper_bound = mid_point
-            prev_pixelated_space = pixelated_space
+            prev_discrete_space = discrete_space
             prev_points = points
             prev_overlap = overlap
             prev_cells_per_dimension = mid_point
-    return prev_pixelated_space, prev_points, prev_overlap, prev_cells_per_dimension
+    return prev_discrete_space, prev_points, prev_overlap, prev_cells_per_dimension
 
 
 def plot_embeddings(embeddings, title, rescaled_mode=False):
@@ -180,22 +183,168 @@ def plot_embeddings(embeddings, title, rescaled_mode=False):
     plt.close()
 
 
+def compute_stats_on_smoothed_nplusone_dim_discrete_space(
+        heatmap,
+        scores,
+        function='pearson',
+        correction_method=None):
+    """
+    Compute the statistics on the smoothed n+1 dimensional discrete space
+    Parameters
+    ----------
+    heatmap : Heatmap
+    scores : np.ndarray
+    function : str
+    correction_method : str
+
+    Returns
+    -------
+    statistics : np.ndarray
+        The computed statistics
+    pvalues : np.ndarray
+        The computed p-values
+    corrected_pvalues : np.ndarray
+        The corrected p-values
+    reject : np.ndarray, bool
+        The rejection of the null hypothesis
+
+    """
+    if heatmap.smoothed_nplusone_dim_discrete_space is None:
+        raise ValueError("The smoothed n+1 dim discrete space must be computed before the statistics")
+
+    # Replace all-zero vectors with nan
+    smoothed_space = heatmap.smoothed_nplusone_dim_discrete_space.copy()
+    # replace all the zero vectors (along dim 0) with nans
+    smoothed_space[:, np.all(smoothed_space == 0, axis=0)] = np.nan
+
+    function_mapping = {
+        'pearson': pearsonr,
+        'spearman': spearmanr,
+        'mannwhitney': mannwhitneyu
+    }
+
+    if function not in function_mapping:
+        raise ValueError(f"Invalid function. Expected one of: {list(function_mapping.keys())}")
+
+    stats = np.apply_along_axis(
+        lambda x: function_mapping[function](x, scores) if np.isfinite(x).all() else (np.nan, np.nan), 0,
+        smoothed_space)
+
+    statistics = stats[0]  # assuming the first value in the stats array is the statistic
+
+    pvalues = stats[1]  # assuming the second value in the stats array is the p-value
+
+    if correction_method and np.unique(pvalues).size > 1:  # Check if all p-values are the same
+        reject, corrected_pvalues, _, _ = multipletests(pvalues.flatten(), method=correction_method)
+        # corrected_pvalues needs to be reshaped to the same shape as the pvalues
+        corrected_pvalues = corrected_pvalues.reshape(pvalues.shape)
+    else:
+        reject, corrected_pvalues = None, None
+        print("No correction method was provided or all p-values are the same")
+
+    return statistics, pvalues, corrected_pvalues, reject
+
+
+def compute_stats_on_corrected_clusters(
+        heatmap,
+        scores,
+        function='pearson',
+        correction_method=None):
+    """
+    Compute the statistics on clusters formed by identical vectors in the smoothed n+1 dimensional discrete space,
+    correctly focusing on dimension 0 for identifying unique vectors.
+    """
+    if heatmap.smoothed_nplusone_dim_discrete_space is None:
+        raise ValueError("The smoothed n+1 dim discrete space must be computed before the statistics")
+
+    # Convert to float and replace zeros with NaN for calculation purposes
+    smoothed_space = np.nan_to_num(heatmap.smoothed_nplusone_dim_discrete_space, nan=np.nan).astype(float)
+
+    # Reshape for a generic n-D case, keeping the first dimension separate
+    original_shape = smoothed_space.shape  # Save original shape
+    vectors = smoothed_space.reshape(smoothed_space.shape[0], -1).T  # Transpose to make vectors along rows
+
+    # Find unique rows (vectors) and their inverse indices to reconstruct the original array later
+    unique_vectors, inverse_indices = np.unique(vectors, axis=0, return_inverse=True)
+
+    print(f"unique_vectors shape: {unique_vectors.shape}")
+    print(f"vectors shape: {vectors.shape}")
+
+    function_mapping = {
+        'pearson': pearsonr,
+        'spearman': spearmanr,
+        'mannwhitney': mannwhitneyu
+    }
+
+    if function not in function_mapping:
+        raise ValueError(f"Invalid function. Expected one of: {list(function_mapping.keys())}")
+
+    # Initialize arrays to hold the results for each unique vector
+    statistics = np.empty(unique_vectors.shape[0])
+    pvalues = np.empty(unique_vectors.shape[0])
+
+    # Compute statistics for each unique vector
+    for i, vector in enumerate(unique_vectors):
+        if np.isnan(vector).all():
+            statistics[i], pvalues[i] = np.nan, np.nan
+        else:
+            statistic, pvalue = function_mapping[function](vector, scores)
+            statistics[i], pvalues[i] = statistic, pvalue
+
+    # Applying correction if necessary
+    if correction_method and not np.all(np.isnan(pvalues)):
+        reject, corrected_pvalues, _, _ = multipletests(pvalues, method=correction_method)
+    else:
+        corrected_pvalues = np.full(pvalues.shape, np.nan)  # Initialize with NaN
+        reject = np.full(pvalues.shape, False, dtype=bool)  # Assume no rejection if correction not applicable
+
+    # Mapping results back to the original space
+    final_statistics = statistics[inverse_indices].reshape(original_shape[1:])
+    final_pvalues = pvalues[inverse_indices].reshape(original_shape[1:])
+    final_corrected_pvalues = corrected_pvalues[inverse_indices].reshape(original_shape[1:])
+    final_reject = reject[inverse_indices].reshape(original_shape[1:])
+
+    return final_statistics, final_pvalues, final_corrected_pvalues, final_reject
+
+
 class DiscreteLatentSpace:
-    def __init__(self, trained_umap, raw_embeddings, margin=0):
+    def __init__(self, trained_umap, raw_embeddings=None, margin=0):
         self.overlap = None
-        self.pixelated_coords = None
-        self.pixelated_embedding = None
         self.margin = margin
-        self.trained_umap = trained_umap
-        self.raw_embeddings = raw_embeddings
+        self._trained_umap = trained_umap
+        # if raw_embeddings is None, either we can load the trained UMAP model and get the embeddings, the UMAP is
+        # already loaded, or we throw an error
+        if raw_embeddings is None:
+            if isinstance(trained_umap, str) or isinstance(trained_umap, os.PathLike):
+                print("Loading the trained UMAP model to get the embeddings")
+                self.trained_umap = load(trained_umap)
+            else:
+                if not isinstance(trained_umap, umap.UMAP):
+                    raise ValueError("The raw embeddings must be provided if the trained UMAP model is not")
+            self.raw_embeddings = trained_umap.embedding_
+        else:
+            self.raw_embeddings = raw_embeddings
         self.max_coordinates = self.raw_embeddings.max()
         self.min_coordinates = self.raw_embeddings.min()
         self.rescaled_embeddings = self.rescale_embedding(raw_embeddings)
+        self.discrete_space = None
+        self.discrete_embeddings = None
         self.cells_per_dimension = None
         self.heatmaps = {}
 
     """
-    Embedding spaces transformatins
+    Getters setters
+    """
+    @property
+    def trained_umap(self):
+        return self._trained_umap
+
+    @trained_umap.setter
+    def trained_umap(self, trained_umap):
+        self._trained_umap = trained_umap
+
+    """
+    Embedding spaces transformations
     """
     def rescale_embedding(self, embedding):
         return rescale_embedding(embedding, self.margin, self.max_coordinates, self.min_coordinates)
@@ -204,24 +353,23 @@ class DiscreteLatentSpace:
         return inverse_rescale_embedding(rescaled_embedding, self.margin, self.max_coordinates,
                                          self.min_coordinates)
 
-    def create_pixelated_space(self, rescaled_embedding, overlap_percentage=None, cells_per_dimension=None):
+    def create_discrete_space(self, rescaled_embedding, overlap_percentage=None, cells_per_dimension=None):
         if cells_per_dimension is not None:
-            self.pixelated_embedding, self.pixelated_coords, self.overlap = compute_pixelated_space(
+            self.discrete_space, self.discrete_embeddings, self.overlap = compute_discrete_space(
                 rescaled_embedding, cells_per_dimension)
             self.cells_per_dimension = cells_per_dimension
         else:
-            self.pixelated_embedding, self.pixelated_coords, self.overlap, self.cells_per_dimension = (
-                optimize_pixel_space(rescaled_embedding, overlap_percentage))
-        print(f"There is an overlap of {self.overlap:.2f}% points in the pixelated space")
-        print(f"The number of cells in the pixelated space is {np.prod(self.pixelated_embedding.shape)}")
-        print(f'The shape of the pixelated space is {self.pixelated_embedding.shape}')
+            self.discrete_space, self.discrete_embeddings, self.overlap, self.cells_per_dimension = (
+                optimize_discrete_space(rescaled_embedding, overlap_percentage))
+        print(f"There is an overlap of {self.overlap:.2f}% points in the discrete space")
+        print(f"The number of cells in the discrete space is {np.prod(self.discrete_space.shape)}")
+        print(f'The shape of the discrete space is {self.discrete_space.shape}')
         print(f'Maximum in each dimension: {self.max_coordinates}')
 
     def pixelate_new_embedding(self, new_rescaled_embedding):
-        pixelated_new_embedding, _, _ = compute_pixelated_space(
+        discrete_new_embedding, _, _ = compute_discrete_space(
             new_rescaled_embedding, self.cells_per_dimension)
-        return pixelated_new_embedding
-
+        return discrete_new_embedding
 
     """
     Heatmap methods
@@ -235,17 +383,43 @@ class DiscreteLatentSpace:
         if embeddings.shape[0] == len(scores):
             self.heatmaps[name] = Heatmap(embeddings, scores)
         else:
-            # make sure scores contains the indices of the embeddings and then filter the embeddings
-            if all(isinstance(score, int) and 0 <= score < embeddings.shape[0] for score in scores):
-                filtered_embeddings = embeddings[scores]
-                self.heatmaps[name] = Heatmap(filtered_embeddings, scores)
-            else:
-                raise ValueError("The embeddings and the scores do not have the same length and the scores."
-                                 " To create a heatmap with these embeddings, the scores must contain the "
-                                 "indices of the embedding coordinates associated with the scores")
-        # now we need to rescale the embeddings and create the pixelated space
+            raise ValueError("The embeddings and the scores do not have the same length and the scores."
+                             " To create a heatmap with these embeddings, the scores must contain the "
+                             "indices of the embedding coordinates associated with the scores")
+        # now we need to rescale the embeddings and create the discrete space
         self.heatmaps[name].rescaled_embeddings = self.rescale_embedding(self.heatmaps[name].raw_embeddings)
-        self.heatmaps[name].pixelated_coord = self.pixelate_new_embedding(self.heatmaps[name].rescaled_embeddings)
+        self.heatmaps[name].discrete_space, self.heatmaps[name].discrete_coord, _ = compute_discrete_space(
+            self.heatmaps[name].rescaled_embeddings, self.cells_per_dimension)
+
+    def delete_heatmap(self, name):
+        if name in self.heatmaps:
+            del self.heatmaps[name]
+        else:
+            print(f"delete_heatmap: No heatmap with the name {name} exists")
+
+    def __getstate__(self):
+        state = self.__dict__.copy()
+        if not isinstance(state['trained_umap'], (str, os.PathLike)):
+            state['trained_umap'] = None  # Exclude the UMAP model from being saved if it's not a path
+        return state
+
+    def __setstate__(self, state):
+        self.__dict__.update(state)
+        if 'trained_umap' not in state or state['trained_umap'] is None:
+            self.trained_umap = None  # Allow for manual setting later
+
+    def save(self, filename):
+        """
+        Save the entire DiscreteLatentSpace object to a file using joblib.
+        """
+        dump(self, filename)
+
+    @staticmethod
+    def load(filename):
+        """
+        Load a DiscreteLatentSpace object from a file.
+        """
+        return load(filename)
 
     """
     Plotting methods (might not be necessary later)
@@ -260,20 +434,56 @@ class DiscreteLatentSpace:
         inverse_rescaled_embedding = self.inverse_rescale_embedding(self.rescaled_embeddings)
         plot_embeddings(inverse_rescaled_embedding, 'Inverse Rescaled Embeddings')
 
-    def plot_pixelated_embedding(self, cells_number=None, overlap_percentage=None):
-        self.create_pixelated_space(self.rescaled_embeddings, cells_number, overlap_percentage)
-        pixelated_embedding = self.pixelated_embedding
-        if pixelated_embedding.ndim == 2:
+    def plot_discrete_embedding(self, overlap_percentage=None, cells_per_dimension=None, heatmap_name=None):
+        # Check if the heatmap_name exists in the heatmaps dictionary
+        if heatmap_name is not None and heatmap_name not in self.heatmaps:
+            raise ValueError(f"No heatmap with the name {heatmap_name} exists")
+        if self.discrete_space is None:
+            if overlap_percentage is None:
+                self.create_discrete_space(self.rescaled_embeddings, cells_per_dimension)
+            else:
+                self.create_discrete_space(self.rescaled_embeddings, overlap_percentage)
+        discrete_embedding = self.discrete_space
+
+        if discrete_embedding.ndim == 2:
             plt.figure(figsize=(10, 10))
-            plt.imshow(pixelated_embedding.T, origin='lower', cmap='gray_r', aspect='auto')
-        elif pixelated_embedding.ndim == 3:
+            plt.imshow(discrete_embedding.T, origin='lower', cmap='gray_r', aspect='auto')
+            plt.axis('scaled')
+            if heatmap_name is not None:
+                heatmap_discrete_coords = self.heatmaps[heatmap_name].discrete_coord
+                plt.scatter(heatmap_discrete_coords[:, 0], heatmap_discrete_coords[:, 1], color='r', s=50)
+
+        elif discrete_embedding.ndim == 3:
             fig = plt.figure(figsize=(10, 10))
             ax = fig.add_subplot(111, projection='3d')
-            ax.scatter(pixelated_embedding[:, 0], pixelated_embedding[:, 1], pixelated_embedding[:, 2])
+            ax.scatter(discrete_embedding[:, 0], discrete_embedding[:, 1], discrete_embedding[:, 2])
+            if heatmap_name is not None:
+                heatmap_discrete_coords = self.heatmaps[heatmap_name].discrete_coord
+                ax.scatter(heatmap_discrete_coords[:, 0], heatmap_discrete_coords[:, 1],
+                           heatmap_discrete_coords[:, 2],
+                           color='r', s=2)
             ax.set_box_aspect([1, 1, 1])  # Set the aspect ratio of the 3D plot to be equal
         else:
-            raise ValueError(f'Plotting this number of dimensions {pixelated_embedding.ndim} of'
-                             f' the embedding is not supported')
+            raise ValueError(
+                f'Plotting this number of dimensions {discrete_embedding.ndim} of the embedding is not supported')
+        plt.show()
+        plt.close()
+
+    def plot_heatmap(self, heatmap_name, smoothing_fwhm=10):
+        if heatmap_name not in self.heatmaps:
+            raise ValueError(f"No heatmap with the name {heatmap_name} exists")
+        heatmap = self.heatmaps[heatmap_name]
+        if heatmap.heatmap is None:
+            if heatmap.smoothed_nplusone_dim_discrete_space is None:
+                heatmap.compute_smoothed_nplusone_dim_discrete_space(smoothing_fwhm=smoothing_fwhm)
+            print(f'Max value in the smoothed_nplusone_dim_discrete_space: '
+                  f'{np.max(heatmap.smoothed_nplusone_dim_discrete_space)}')
+            heatmap.generate_heatmap('mean')
+
+        plt.figure(figsize=(10, 10))
+        plt.imshow(heatmap.heatmap.T, origin='lower', cmap='viridis', aspect='auto')
+        plt.colorbar()
+        plt.axis('scaled')
         plt.show()
         plt.close()
 
@@ -282,41 +492,118 @@ class Heatmap:
     def __init__(self, matched_embeddings, scores):
         """
         The Heatmap class is used to store the data necessary to create the heatmap in the
-        pixelated space and the heatmap itself.
+        discrete space and the heatmap itself.
         Parameters
         ----------
         matched_embeddings: np.ndarray
             Coordinates in the raw embedding space of the matched points (same order as the scores)
         scores: np.ndarray
+            Scores of the matched points (same order as the matched_embeddings)
         """
         self._raw_embeddings = matched_embeddings
         self._scores = scores
         self._rescaled_embeddings = None
-        self._pixelated_coord = None
+        self._discrete_coord = None
+        self._discrete_embedding = None
+        self._sigma = None
+        self._smoothed_nplusone_dim_discrete_space = None
         self._heatmap = None
 
-        @property
-        def raw_embeddings(self):
-            return self._raw_embeddings
+    @property
+    def raw_embeddings(self):
+        return self._raw_embeddings
 
-        @property
-        def scores(self):
-            return self._scores
+    @property
+    def scores(self):
+        return self._scores
 
-        @property
-        def rescaled_embeddings(self):
-            return self._rescaled_embeddings
+    @property
+    def rescaled_embeddings(self):
+        return self._rescaled_embeddings
 
-        @rescaled_embeddings.setter
-        def rescaled_embeddings(self, rescaled_embeddings):
-            if rescaled_embeddings.shape != self._raw_embeddings.shape:
-                raise ValueError("The rescaled embeddings must have the same shape as the raw embeddings")
-            self._rescaled_embeddings = rescaled_embeddings
+    @rescaled_embeddings.setter
+    def rescaled_embeddings(self, rescaled_embeddings):
+        if rescaled_embeddings.shape != self._raw_embeddings.shape:
+            raise ValueError("The rescaled embeddings must have the same shape as the raw embeddings")
+        self._rescaled_embeddings = rescaled_embeddings
 
-        @property
-        def pixelated_coord(self):
-            return self._pixelated_coord
+    @property
+    def discrete_coord(self):
+        return self._discrete_coord
 
-        @pixelated_coord.setter
-        def pixelated_coord(self, pixelated_coord):
-            self._pixelated_coord = pixelated_coord
+    @discrete_coord.setter
+    def discrete_coord(self, discrete_coord):
+        self._discrete_coord = discrete_coord
+
+    @property
+    def discrete_embedding(self):
+        return self._discrete_embedding
+
+    @discrete_embedding.setter
+    def discrete_embedding(self, discrete_embedding):
+        self._discrete_embedding = discrete_embedding
+
+    @property
+    def sigma(self):
+        return self._sigma
+
+    @sigma.setter
+    def sigma(self, sigma):
+        self._sigma = sigma
+
+    @property
+    def smoothed_nplusone_dim_discrete_space(self):
+        return self._smoothed_nplusone_dim_discrete_space
+
+    def compute_smoothed_nplusone_dim_discrete_space(self, smoothing_sigma=None, smoothing_fwhm=None, mode='reflect',
+                                                     rescale_values=True):
+        if self.discrete_embedding is None:
+            raise ValueError("The discrete embedding must be computed before the smoothed n+1 dim discrete space")
+        if smoothing_sigma is not None and smoothing_fwhm is not None:
+            raise ValueError("Only one of the smoothing parameters can be provided")
+        if smoothing_sigma is None and smoothing_fwhm is None:
+            raise ValueError("A smoothing parameter must be provided")
+        self.sigma = smoothing_sigma if smoothing_sigma is not None else smoothing_fwhm / (2 * np.sqrt(2 * np.log(2)))
+        print(f"Smoothing the discrete space with a sigma of {self.sigma}")
+
+        # Create an array of zeros with an extra dimension for the number of coordinates
+        smoothed_space = np.zeros((len(self.discrete_coord),) + self.discrete_embedding.shape)
+        print(f"Shape of the smoothed space: {smoothed_space.shape}")
+
+        # Set the corresponding indices in the smoothed_space to 1
+        for i, coord in enumerate(self.discrete_coord):
+            smoothed_space[(i,) + tuple(coord)] = 1
+
+        sigma_tuple = (0,) + (self.sigma,) * (smoothed_space.ndim - 1)
+
+        print(f"Sigma tuple: {sigma_tuple}")
+
+        # Smooth the smoothed_space along all axes except the first one
+        smoothed_space_nplusone = gaussian_filter(smoothed_space, sigma=sigma_tuple, mode=mode)
+
+        if rescale_values:
+            # rescale between 0 and 1
+            self._smoothed_nplusone_dim_discrete_space = (smoothed_space_nplusone - np.min(smoothed_space_nplusone)) / (
+                    np.max(smoothed_space_nplusone) - np.min(smoothed_space_nplusone))
+        else:
+            self._smoothed_nplusone_dim_discrete_space = smoothed_space_nplusone
+        # self._smoothed_nplusone_dim_discrete_space = smoothed_space
+        print(f"Shape of the smoothed n+1 dim discrete space: {self._smoothed_nplusone_dim_discrete_space.shape}")
+
+    @property
+    def heatmap(self):
+        return self._heatmap
+
+    def generate_heatmap(self, function):
+        if self._smoothed_nplusone_dim_discrete_space is None:
+            raise ValueError("The smoothed n+1 dim discrete space must be computed before the heatmap")
+        function_mapping = {
+            'mean': np.mean,
+            'median': np.median,
+            'max': np.max,
+            'std': np.std,
+            'sum': np.sum
+        }
+        if function not in function_mapping:
+            raise ValueError(f"Invalid function. Expected one of: {list(function_mapping.keys())}")
+        self._heatmap = function_mapping[function](self._smoothed_nplusone_dim_discrete_space, axis=0)
