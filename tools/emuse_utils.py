@@ -115,7 +115,7 @@ def compute_discrete_space(rescaled_embedding, cells_per_dimension, cells_values
 
 
 def optimize_discrete_space(rescaled_embedding, overlap_percentage):
-    if overlap_percentage < 0 or overlap_percentage > 100:
+    if overlap_percentage < 0 or overlap_percentage >= 100:
         raise ValueError("Overlap percentage must be between 0 and 100[exclusive]")
     rescaled_maximum_coords = np.max(rescaled_embedding, axis=0)
     aspect_ratio = rescaled_maximum_coords / np.max(rescaled_maximum_coords)
@@ -311,7 +311,7 @@ class DiscreteLatentSpace:
     def __init__(self, trained_umap, raw_embeddings=None, margin=0):
         self.overlap = None
         self.margin = margin
-        self._trained_umap = trained_umap
+        self.trained_umap = trained_umap
         # if raw_embeddings is None, either we can load the trained UMAP model and get the embeddings, the UMAP is
         # already loaded, or we throw an error
         if raw_embeddings is None:
@@ -321,12 +321,12 @@ class DiscreteLatentSpace:
             else:
                 if not isinstance(trained_umap, umap.UMAP):
                     raise ValueError("The raw embeddings must be provided if the trained UMAP model is not")
-            self.raw_embeddings = trained_umap.embedding_
+            self.raw_embeddings = self.trained_umap.embedding_
         else:
             self.raw_embeddings = raw_embeddings
         self.max_coordinates = self.raw_embeddings.max()
         self.min_coordinates = self.raw_embeddings.min()
-        self.rescaled_embeddings = self.rescale_embedding(raw_embeddings)
+        self.rescaled_embeddings = self.rescale_embedding(self.raw_embeddings)
         self.discrete_space = None
         self.discrete_embeddings = None
         self.cells_per_dimension = None
@@ -374,22 +374,50 @@ class DiscreteLatentSpace:
     """
     Heatmap methods
     """
-    def create_heatmap_spaces(self, embeddings, scores, name):
-        embeddings = np.array(embeddings)
-        scores = np.array(scores)
+    def create_heatmap_spaces(self, embeddings_scores_df, name, smoothing_fwhm=None, smoothing_sigma=None):
+        """
+        Create a heatmap from a DataFrame with embeddings and scores.
 
+        Parameters
+        ----------
+        embeddings_scores_df : pandas.DataFrame
+            DataFrame with two columns: one with embeddings (tuples or arrays), and the other with scores.
+        name : str
+            The name to assign to the heatmap.
+        smoothing_sigma : float, optional
+            The standard deviation of the Gaussian kernel used for smoothing the heatmap, by default None
+        smoothing_fwhm : float, optional
+            The full width at half maximum of the Gaussian kernel used for smoothing the heatmap, by default 10
+
+        """
         if name in self.heatmaps:
             raise ValueError(f"A heatmap with the name {name} already exists")
-        if embeddings.shape[0] == len(scores):
-            self.heatmaps[name] = Heatmap(embeddings, scores)
-        else:
-            raise ValueError("The embeddings and the scores do not have the same length and the scores."
-                             " To create a heatmap with these embeddings, the scores must contain the "
-                             "indices of the embedding coordinates associated with the scores")
-        # now we need to rescale the embeddings and create the discrete space
-        self.heatmaps[name].rescaled_embeddings = self.rescale_embedding(self.heatmaps[name].raw_embeddings)
-        self.heatmaps[name].discrete_space, self.heatmaps[name].discrete_coord, _ = compute_discrete_space(
-            self.heatmaps[name].rescaled_embeddings, self.cells_per_dimension)
+
+        if embeddings_scores_df.shape[1] != 2:
+            raise ValueError("The DataFrame must contain exactly two columns: one for embeddings and one for scores.")
+
+        # Extract embeddings and scores from the DataFrame
+        embeddings_col_name, scores_col_name = embeddings_scores_df.columns
+        embeddings = np.array([tuple(row) for row in embeddings_scores_df[embeddings_col_name]])
+        scores = np.array(embeddings_scores_df[scores_col_name])
+
+        if embeddings.shape[0] != len(scores):
+            raise ValueError("The number of embeddings and scores must be the same.")
+
+        # Create a Heatmap instance and store it
+        self.heatmaps[name] = Heatmap(embeddings, scores)
+        print(f'Created heatmap {name}')
+
+        # Rescale embeddings and compute discrete space
+        rescaled_embeddings = self.rescale_embedding(self.heatmaps[name].raw_embeddings)
+        self.heatmaps[name].rescaled_embeddings = rescaled_embeddings
+        self.heatmaps[name].discrete_embedding, self.heatmaps[name].discrete_coord, _ = compute_discrete_space(
+            rescaled_embeddings, self.cells_per_dimension)
+        print(f"Created heatmap rescaled and discrete space {name}")
+        print(f'Type of self.heatmaps[name]: {type(self.heatmaps[name])}')
+        print(f'Discrete space type: {type(self.heatmaps[name].discrete_embedding)}')
+        self.heatmaps[name].compute_smoothed_nplusone_dim_discrete_space(smoothing_fwhm=smoothing_fwhm,
+                                                                         smoothing_sigma=smoothing_sigma)
 
     def delete_heatmap(self, name):
         if name in self.heatmaps:
@@ -493,6 +521,7 @@ class Heatmap:
         """
         The Heatmap class is used to store the data necessary to create the heatmap in the
         discrete space and the heatmap itself.
+        IMPORTANT NOTE: The matched_embeddings must be in the same order and size as the scores.
         Parameters
         ----------
         matched_embeddings: np.ndarray
@@ -500,12 +529,24 @@ class Heatmap:
         scores: np.ndarray
             Scores of the matched points (same order as the matched_embeddings)
         """
+        print(f"Shape of matched embeddings: {matched_embeddings.shape}")
+        # Check for NaNs or Infs in the scores
+        if np.isnan(scores).any() or np.isinf(scores).any():
+            print("Warning: NaNs or Infs found in scores. Removing corresponding scores and matched_embeddings.")
+
+            # Get indices where scores are not NaN or Inf
+            valid_indices = np.where(~np.isnan(scores) & ~np.isinf(scores))
+
+            # Only keep valid scores and matched_embeddings
+            scores = scores[valid_indices]
+            matched_embeddings = matched_embeddings[valid_indices]
+        print(f"Shape of matched embeddings after removing NaNs and Infs: {matched_embeddings.shape}")
         self._raw_embeddings = matched_embeddings
         self._scores = scores
-        self._rescaled_embeddings = None
-        self._discrete_coord = None
-        self._discrete_embedding = None
-        self._sigma = None
+        self.rescaled_embeddings = None
+        self.discrete_coord = None
+        self.discrete_embedding = None
+        self.sigma = None
         self._smoothed_nplusone_dim_discrete_space = None
         self._heatmap = None
 
@@ -523,8 +564,9 @@ class Heatmap:
 
     @rescaled_embeddings.setter
     def rescaled_embeddings(self, rescaled_embeddings):
-        if rescaled_embeddings.shape != self._raw_embeddings.shape:
-            raise ValueError("The rescaled embeddings must have the same shape as the raw embeddings")
+        if rescaled_embeddings is not None and rescaled_embeddings.shape != self._raw_embeddings.shape:
+            raise ValueError("The rescaled embeddings must have the same shape as the raw embeddings: "
+                             f" {self._raw_embeddings.shape} vs {rescaled_embeddings.shape}")
         self._rescaled_embeddings = rescaled_embeddings
 
     @property
@@ -541,6 +583,8 @@ class Heatmap:
 
     @discrete_embedding.setter
     def discrete_embedding(self, discrete_embedding):
+        print(f'Setting discrete embedding with shape '
+              f'{discrete_embedding.shape if discrete_embedding is not None else None}')
         self._discrete_embedding = discrete_embedding
 
     @property
@@ -607,3 +651,23 @@ class Heatmap:
         if function not in function_mapping:
             raise ValueError(f"Invalid function. Expected one of: {list(function_mapping.keys())}")
         self._heatmap = function_mapping[function](self._smoothed_nplusone_dim_discrete_space, axis=0)
+
+    def get_embeddings_scores(self):
+        """
+        Returns a structured numpy array with the rescaled embeddings
+        and their associated scores.
+        """
+        if self._rescaled_embeddings is None or self._scores is None:
+            raise ValueError("The rescaled embeddings and scores must be computed before they can be retrieved.")
+
+        # Create a structured numpy array
+        structured_array = np.zeros(
+            len(self._rescaled_embeddings),
+            dtype=[('rescaled_embeddings', float, self._rescaled_embeddings.shape[1]),
+                   ('scores', float)])
+
+        # Fill the structured array with the rescaled embeddings and scores
+        structured_array['rescaled_embeddings'] = self._rescaled_embeddings
+        structured_array['scores'] = self._scores
+
+        return structured_array

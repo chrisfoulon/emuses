@@ -19,6 +19,7 @@ def train_and_save_umap_and_embeddings(input_matrix, output_folder, pref=None, *
         Additional keyword arguments to pass to the UMAP constructor.
     """
     output_folder = Path(output_folder)
+    Path.mkdir(output_folder, exist_ok=True)
     # Train the UMAP model
     umap_model = umap.UMAP(**kwargs)
     embeddings = umap_model.fit_transform(input_matrix)
