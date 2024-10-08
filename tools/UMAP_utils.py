@@ -38,4 +38,3 @@ def train_and_save_umap_and_embeddings(input_matrix, output_folder, pref=None, *
 
 def is_umap_file(umap_path):
     return str(umap_path).endswith('.joblib')
-

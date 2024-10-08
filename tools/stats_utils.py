@@ -1,0 +1,788 @@
+from multiprocessing import Pool, cpu_count
+import os
+import pickle
+
+import matplotlib
+from bcblib.tools.arrays_utils import separate_clusters_and_extract_coords, find_centroid_and_check
+from scipy.stats import mannwhitneyu, ttest_ind
+from sklearn.linear_model import LinearRegression
+from tqdm import tqdm
+import numpy as np
+import pandas as pd
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score, confusion_matrix
+from sklearn.model_selection import KFold, GridSearchCV
+import matplotlib.pyplot as plt
+import seaborn as sns
+from pykrige.rk import Krige
+import xgboost as xgb
+
+
+def process_column(args):
+    filtered_data, other_data, test_name, i = args
+
+    # Check if one of the vectors is only zeros or if the length of one of them is smaller than 3
+    if len(filtered_data) < 3 or len(other_data) < 3 or np.all(filtered_data == 0) or np.all(other_data == 0):
+        return i, np.nan, np.nan, np.nan
+
+    if test_name == 'mann-whitney':
+        stat, pval = mannwhitneyu(filtered_data, other_data)
+        # Convert U statistic to z-score
+        n1 = len(filtered_data)
+        n2 = len(other_data)
+        mu_u = n1 * n2 / 2
+        sigma_u = np.sqrt(n1 * n2 * (n1 + n2 + 1) / 12)
+        z = (stat - mu_u) / sigma_u
+        # Compute effect size
+        r = z / np.sqrt(n1 + n2)
+        return i, z, pval, r
+
+    elif test_name == 't-test':
+        n1 = len(filtered_data)
+        n2 = len(other_data)
+        stat, pval = ttest_ind(filtered_data, other_data, equal_var=False)
+        # Compute effect size (Cohen's d) for unequal variances
+        mean1, mean2 = np.mean(filtered_data), np.mean(other_data)
+        std1, std2 = np.std(filtered_data, ddof=1), np.std(other_data, ddof=1)
+        pooled_std = np.sqrt(((n1 - 1) * std1 ** 2 + (n2 - 1) * std2 ** 2) / (n1 + n2 - 2))
+        cohen_d = (mean1 - mean2) / pooled_std
+        return i, stat, pval, cohen_d
+
+    else:
+        raise ValueError(f"Invalid test name: {test_name}. Options are 'mann-whitney' and 't-test'.")
+
+
+def input_matrix_stat_map(input_matrix, indices, test_name='mann-whitney', n_cores=-1):
+    """
+    Compute the statistical test for each element of the vectors in the input matrix filtered with indices
+    with the corresponding element in the other vectors of the input matrix.
+    Return the stat map, the p-val map, and the effect size map.
+    The test is performed using the test_name parameter.
+
+    Parameters
+    ----------
+    input_matrix : np.ndarray
+        The input matrix where each row is a flattened input.
+    indices : list or np.ndarray
+        The indices of the columns to be tested against all other columns.
+    test_name : str, optional
+        The name of the statistical test to be performed. Options are 'mann-whitney' and 't-test'.
+        Default is 'mann-whitney'.
+    n_cores : int, optional
+        The number of CPU cores to use for parallel processing. Default is -1 (use all available cores minus one).
+
+    Returns
+    -------
+    stat_map : np.ndarray
+        The map of the statistic values for each row.
+    pval_map : np.ndarray
+        The map of the p-value for each row.
+    effect_size_map : np.ndarray
+        The map of the effect size values for each row.
+    """
+    if n_cores == -1:
+        n_cores = max(1, cpu_count() - 1)
+
+    # Initialize the stat, p-value, and effect size maps
+    stat_map = np.zeros(input_matrix.shape[1])
+    pval_map = np.zeros(input_matrix.shape[1])
+    effect_size_map = np.zeros(input_matrix.shape[1])
+
+    filtered_matrix = input_matrix[indices, :]
+    mask = np.ones(input_matrix.shape[0], dtype=bool)
+    mask[indices] = False
+
+    # Other matrix with remaining rows
+    other_matrix = input_matrix[mask, :]
+
+    # Create a pool of workers
+    with Pool(processes=n_cores) as pool:
+        tasks = [(filtered_matrix[:, i], other_matrix[:, i], test_name, i) for i in range(input_matrix.shape[1])]
+        results = list(tqdm(pool.imap(process_column, tasks), total=len(tasks)))
+
+    for i, stat, pval, effect_size in results:
+        stat_map[i] = stat
+        pval_map[i] = pval
+        effect_size_map[i] = effect_size
+
+    return stat_map, pval_map, effect_size_map
+
+
+def create_cluster_representative_maps(array, discrete_embeddings, input_matrix, original_shape,
+                                       test_name='mann-whitney'):
+    """
+    Create representative maps for each cluster in the array.
+    Parameters
+    ----------
+    array : np.ndarray
+        The array containing the clusters.
+    discrete_embeddings : np.ndarray
+        The discrete embeddings coordinates.
+    input_matrix : np.ndarray
+        The input matrix where each row is a flattened input.
+    original_shape : tuple
+        The original shape of the inputs.
+    test_name : str, optional
+        The name of the statistical test to be performed. Options are 'mann-whitney' and 't-test'.
+        Default is 'mann-whitney'.
+
+    Returns
+    -------
+
+    """
+    # Separate the clusters and extract the coordinates
+    # plot array
+    clusters, indices_list = separate_clusters_and_extract_coords(array, discrete_embeddings)
+    print(f"Found {len(clusters)} clusters")
+
+    # Initialize lists to store the representative maps
+    stat_maps = []
+    pval_maps = []
+    effect_size_maps = []
+    # the centroids will just be returned for later use, they are not used for the stats or maps
+    centroids = []
+
+    # For each cluster, find the representative map
+    for cluster, indices in zip(clusters, indices_list):
+        # compute the maps
+        stat_map, pval_map, effect_size_map = input_matrix_stat_map(input_matrix, indices, test_name)
+        print(f'Shape of the maps: {stat_map.shape}')
+        # reshape the maps (no need to use the function)
+        stat_map = np.reshape(stat_map, original_shape)
+        pval_map = np.reshape(pval_map, original_shape)
+        effect_size_map = np.reshape(effect_size_map, original_shape)
+
+        # add the maps to the list
+        stat_maps.append(stat_map)
+        pval_maps.append(pval_map)
+        effect_size_maps.append(effect_size_map)
+
+        # find the centroid of the cluster
+        centroid = find_centroid_and_check(cluster)
+        centroids.append(centroid)
+
+    return stat_maps, pval_maps, effect_size_maps, centroids
+
+
+def train_model(training_df, test_df, score_name, output_folder, categorical=False):
+    os.makedirs(output_folder, exist_ok=True)
+
+    # Drop rows with NaN values in the scores column
+    training_df = training_df.dropna(subset=['scores'])
+    test_df = test_df.dropna(subset=['scores'])
+
+    # Extract coordinates and scores from training data
+    train_coords = np.array([list(coord) for coord in training_df['embeddings']])
+    train_scores = training_df['scores'].values
+
+    # Extract coordinates and scores from test data
+    test_coords = np.array([list(coord) for coord in test_df['embeddings']])
+    test_scores = test_df['scores'].values
+
+    # Determine the range of possible values
+    min_score = min(np.min(train_scores), np.min(test_scores))
+    max_score = max(np.max(train_scores), np.max(test_scores))
+    range_of_values = max_score - min_score
+
+    # Number of folds for cross-validation
+    k = 5
+    num_permutations = 100
+
+    # Lists to store validation metrics
+    permutation_metrics = []
+
+    for perm in range(num_permutations):
+        kf = KFold(n_splits=k, shuffle=True, random_state=perm)
+
+        # Lists to store metrics for each fold
+        r2_scores_train = []
+        r2_scores_val = []
+        normalized_mse_val_list = []
+        mae_max_scores = []
+        normalized_mae_train_list = []
+        normalized_mse_train_list = []
+        mae_max_train_list = []
+        models = []
+
+        for train_index, val_index in kf.split(train_coords):
+            X_train, X_val = train_coords[train_index], train_coords[val_index]
+            y_train, y_val = train_scores[train_index], train_scores[val_index]
+
+            # Initialize and train the model
+            model = RandomForestRegressor(n_estimators=100, random_state=42)
+            model.fit(X_train, y_train)
+
+            # Store the trained model
+            models.append(model)
+
+            # Evaluate on the validation set
+            y_val_pred = model.predict(X_val)
+            y_train_pred = model.predict(X_train)
+            mse_val = mean_squared_error(y_val, y_val_pred)
+            mae_val = mean_absolute_error(y_val, y_val_pred)
+            mae_max_val = (mae_val / max_score) * 100
+            normalized_mse_val = (mse_val / (range_of_values ** 2)) * 100
+            r2_val = r2_score(y_val, y_val_pred)
+            r2_train = r2_score(y_train, y_train_pred)
+
+            mae_max_scores.append(mae_max_val)
+            normalized_mse_val_list.append(normalized_mse_val)
+            r2_scores_val.append(r2_val)
+            r2_scores_train.append(r2_train)
+
+            # Normalize errors
+            normalized_mae_train = (mean_absolute_error(y_train, y_train_pred) / range_of_values) * 100
+            normalized_mse_train = (mean_squared_error(y_train, y_train_pred) / (range_of_values ** 2)) * 100
+            mae_max_train = (mean_absolute_error(y_train, y_train_pred) / max_score) * 100
+            normalized_mae_train_list.append(normalized_mae_train)
+            normalized_mse_train_list.append(normalized_mse_train)
+            mae_max_train_list.append(mae_max_train)
+
+        # Record metrics for the permutation
+        permutation_metrics.append({
+            'models': models,
+            'r2_scores_train': r2_scores_train,
+            'r2_scores_val': r2_scores_val,
+            'normalized_mse_val_list': normalized_mse_val_list,
+            'mae_max_scores': mae_max_scores,
+            'normalized_mae_train_list': normalized_mae_train_list,
+            'normalized_mse_train_list': normalized_mse_train_list,
+            'mae_max_train_list': mae_max_train_list,
+        })
+
+    # Select the best permutation based on average validation R^2 score
+    best_permutation = max(permutation_metrics, key=lambda x: np.mean(x['r2_scores_val']))
+    best_models = best_permutation['models']
+
+    # Make predictions on the test data using the ensemble of models from the best permutation
+    test_predictions = np.zeros(test_coords.shape[0])
+    for model in best_models:
+        test_predictions += model.predict(test_coords)
+    test_predictions /= len(best_models)
+
+    # Calculate the Mean Squared Error, Mean Absolute Error, and R^2 on the test data
+    mse_test = mean_squared_error(test_scores, test_predictions)
+    mae_test = mean_absolute_error(test_scores, test_predictions)
+    mae_max_test = (mae_test / max_score) * 100
+    normalized_mse_test = (mse_test / (range_of_values ** 2)) * 100
+    r2_test = r2_score(test_scores, test_predictions)
+
+    # Normalize errors
+    normalized_mae_test = (mae_test / range_of_values) * 100
+    print(f'{score_name} - Avg Training R^2: {np.mean(best_permutation["r2_scores_train"])}')
+    print(
+        f'{score_name} - Avg Normalized Training MSE: {np.mean(best_permutation["normalized_mse_train_list"]):.2f}%, Avg Normalized Training MAE: {np.mean(best_permutation["normalized_mae_train_list"]):.2f}%, Avg MAE_max% Training: {np.mean(best_permutation["mae_max_train_list"]):.2f}%')
+    print(f'{score_name} - Test R^2: {r2_test}')
+    print(
+        f'{score_name} - Normalized Test MSE: {normalized_mse_test:.2f}%, Normalized Test MAE: {normalized_mae_test:.2f}%, Test MAE_max%: {mae_max_test:.2f}%')
+
+    # Save the models from the best permutation
+    for i, model in enumerate(best_models):
+        model_path = os.path.join(output_folder, f'{score_name}_model_fold_{i}.pkl')
+        with open(model_path, 'wb') as f:
+            pickle.dump(model, f)
+        print(f'Model {i} saved to {model_path}')
+
+    # Save the validation metrics, including the ensembled test metrics, to a spreadsheet
+    metrics_df = pd.DataFrame({
+        'Fold': range(1, k + 1),
+        'Training R^2': best_permutation['r2_scores_train'],
+        'Validation R^2': best_permutation['r2_scores_val'],
+        'Normalized Validation MSE (%)': best_permutation['normalized_mse_val_list'],
+        'MAE_max%': best_permutation['mae_max_scores'],
+    })
+    metrics_df['Normalized MAE (%)'] = best_permutation['normalized_mae_train_list']
+
+    # Calculate and append the average training metrics
+    avg_training_r2 = np.mean(best_permutation['r2_scores_train'])
+    avg_normalized_mae_train = np.mean(best_permutation['normalized_mae_train_list'])
+    avg_normalized_mse_train = np.mean(best_permutation['normalized_mse_train_list'])
+    avg_mae_max_train = np.mean(best_permutation['mae_max_train_list'])
+    metrics_df.loc[k, 'Fold'] = 'Avg Training'
+    metrics_df.loc[k, 'Training R^2'] = avg_training_r2
+    metrics_df.loc[k, 'Normalized Validation MSE (%)'] = avg_normalized_mse_train
+    metrics_df.loc[k, 'MAE_max%'] = avg_mae_max_train
+    metrics_df.loc[k, 'Normalized MAE (%)'] = avg_normalized_mae_train
+
+    # Append the ensembled test metrics to the DataFrame
+    metrics_df.loc[k + 1, 'Fold'] = 'Test Ensemble'
+    metrics_df.loc[k + 1, 'Test R^2'] = r2_test
+    metrics_df.loc[k + 1, 'Normalized Validation MSE (%)'] = normalized_mse_test
+    metrics_df.loc[k + 1, 'MAE_max%'] = mae_max_test
+    metrics_df.loc[k + 1, 'Normalized MAE (%)'] = normalized_mae_test
+
+    # Save to Excel
+    metrics_df.to_excel(os.path.join(output_folder, f'{score_name}_validation_metrics.xlsx'), index=False)
+
+    # Assuming test_scores and test_predictions are already defined
+    # Calculate R² value
+    r2 = r2_score(test_scores, test_predictions)
+
+    # Fit a linear regression model
+    reg_model = LinearRegression()
+    reg_model.fit(np.array(test_scores).reshape(-1, 1), test_predictions)
+    reg_line = reg_model.predict(np.array(test_scores).reshape(-1, 1))
+
+    # Plotting the data
+    plt.figure(figsize=(10, 6))
+    plt.scatter(test_scores, test_predictions, alpha=0.6)
+    plt.plot(test_scores, reg_line, color='red', linewidth=2, label='Fit line')
+    plt.xlabel('Actual Scores')
+    plt.ylabel('Predicted Scores')
+    plt.title(f'Actual vs Predicted Scores - {score_name}\nR² = {r2:.2f}')
+    plt.savefig(os.path.join(output_folder, f'{score_name}_prediction_plot.png'))
+    plt.show()
+
+
+    # Plotting the correlation between actual and predicted scores
+    plt.figure(figsize=(10, 6))
+    plt.scatter(test_scores, test_predictions, alpha=0.6)
+    plt.xlabel('Actual Scores')
+    plt.ylabel('Predicted Scores')
+    plt.title(
+        f'Actual vs Predicted Scores\nCorrelation: '
+        f'{np.corrcoef(test_scores, test_predictions)[0, 1]:.2f}')
+    plt.savefig(os.path.join(output_folder, f'{score_name}_correlation_plot.png'))
+    plt.show()
+
+    if categorical:
+        # Convert predictions to classes
+        test_predictions_classes = np.round(test_predictions)
+        # Plot confusion matrix
+        cm = confusion_matrix(test_scores, test_predictions_classes)
+        cm_percent = cm.astype('float') / cm.sum(axis=1)[:, np.newaxis] * 100
+        accuracy = np.trace(cm) / np.sum(cm) * 100  # Calculate classification accuracy
+
+        plt.figure(figsize=(10, 6))
+        sns.heatmap(cm_percent, annot=True, fmt=".2f", cmap="Blues", cbar=False)
+        plt.xlabel('Predicted Classes')
+        plt.ylabel('Actual Classes')
+        plt.title(f'Confusion Matrix - {score_name}\nAccuracy: {accuracy:.2f}%')
+        plt.savefig(os.path.join(output_folder, f'{score_name}_confusion_matrix.png'))
+        plt.show()
+    plt.close()
+
+
+def estimate_memory_size(n_points, dtype_size=8):
+    """
+    Estimate the memory size of the covariance matrix.
+
+    Parameters:
+    - n_points: Number of data points
+    - dtype_size: Size of the data type (default is 8 bytes for float64)
+
+    Returns:
+    - Estimated memory size in bytes
+    """
+    return n_points ** 2 * dtype_size
+
+
+def partition_dataset(coordinates, scores, max_batch_size):
+    """
+    Partition the dataset into smaller batches.
+
+    Parameters:
+    - coordinates: Array of coordinates
+    - scores: Array of scores
+    - max_batch_size: Maximum number of points per batch
+
+    Returns:
+    - List of (coordinates, scores) batches
+    """
+    batches = []
+    for i in range(0, len(coordinates), max_batch_size):
+        coord_batch = coordinates[i:i + max_batch_size]
+        score_batch = scores[i:i + max_batch_size]
+        batches.append((coord_batch, score_batch))
+    return batches
+
+
+def train_model_kriging(training_df, test_df, score_name, output_folder):
+    os.makedirs(output_folder, exist_ok=True)
+
+    # Drop rows with NaN values in the scores column
+    training_df = training_df.dropna(subset=['scores'])
+    test_df = test_df.dropna(subset=['scores'])
+
+    # Extract coordinates and scores from training data
+    train_coords = np.array([list(coord) for coord in training_df['embeddings']])
+    train_scores = training_df['scores'].values
+
+    # Extract coordinates and scores from test data
+    test_coords = np.array([list(coord) for coord in test_df['embeddings']])
+    test_scores = test_df['scores'].values
+
+    # Determine the range of possible values
+    min_score = min(np.min(train_scores), np.min(test_scores))
+    max_score = max(np.max(train_scores), np.max(test_scores))
+    range_of_values = max_score - min_score
+
+    # Estimate memory requirements
+    estimated_memory = estimate_memory_size(len(train_coords))
+    estimated_memory_gb = estimated_memory / (1024 ** 3)
+    print(f"Estimated memory size: {estimated_memory_gb:.2f} GB")
+
+    # Set memory limit in GB
+    memory_limit_gb = 10
+    dtype_size = 8  # Size of float64
+
+    if estimated_memory_gb > memory_limit_gb:
+        # Use batching
+        max_batch_points = int((memory_limit_gb * (1024 ** 3)) ** 0.5 / dtype_size)
+        batches = partition_dataset(train_coords, train_scores, max_batch_points)
+    else:
+        # No batching needed
+        batches = [(train_coords, train_scores)]
+
+    # Number of folds for cross-validation
+    k = 5
+
+    # Lists to store validation metrics
+    r2_scores_train = []
+    r2_scores_val = []
+    normalized_mse_val_list = []
+    mae_max_scores = []
+    normalized_mae_train_list = []
+    normalized_mse_train_list = []
+    mae_max_train_list = []
+    models = []
+
+    kf = KFold(n_splits=k, shuffle=True, random_state=42)
+
+    for train_index, val_index in kf.split(train_coords):
+        X_train, X_val = train_coords[train_index], train_coords[val_index]
+        y_train, y_val = train_scores[train_index], train_scores[val_index]
+
+        # Train model on each batch separately
+        batch_models = []
+        for coord_batch, score_batch in batches:
+            model = Krige(method='universal', variogram_model='gaussian')
+            model.fit(coord_batch, score_batch)
+            batch_models.append(model)
+
+        # Store the trained models
+        models.append(batch_models)
+
+        # Predict on training set
+        y_train_pred = np.zeros(len(y_train))
+        for model in batch_models:
+            y_train_pred += model.predict(X_train)
+        y_train_pred /= len(batch_models)
+
+        # Predict on validation set
+        y_val_pred = np.zeros(len(y_val))
+        for model in batch_models:
+            y_val_pred += model.predict(X_val)
+        y_val_pred /= len(batch_models)
+
+        # Evaluate on the validation set
+        mse_val = mean_squared_error(y_val, y_val_pred)
+        mae_val = mean_absolute_error(y_val, y_val_pred)
+        mae_max_val = (mae_val / max_score) * 100
+        normalized_mse_val = (mse_val / (range_of_values ** 2)) * 100
+        r2_val = r2_score(y_val, y_val_pred)
+        r2_train = r2_score(y_train, y_train_pred)
+
+        mae_max_scores.append(mae_max_val)
+        normalized_mse_val_list.append(normalized_mse_val)
+        r2_scores_val.append(r2_val)
+        r2_scores_train.append(r2_train)
+
+        # Normalize errors
+        normalized_mae_train = (mean_absolute_error(y_train, y_train_pred) / range_of_values) * 100
+        normalized_mse_train = (mean_squared_error(y_train, y_train_pred) / (range_of_values ** 2)) * 100
+        mae_max_train = (mean_absolute_error(y_train, y_train_pred) / max_score) * 100
+        normalized_mae_train_list.append(normalized_mae_train)
+        normalized_mse_train_list.append(normalized_mse_train)
+        mae_max_train_list.append(mae_max_train)
+
+    # Make predictions on the test data using the ensemble of models
+    test_predictions = np.zeros(test_coords.shape[0])
+    for batch_models in models:
+        for model in batch_models:
+            test_predictions += model.predict(test_coords)
+    test_predictions /= len(models) * len(batch_models)
+
+    # Calculate the Mean Squared Error, Mean Absolute Error, and R^2 on the test data
+    mse_test = mean_squared_error(test_scores, test_predictions)
+    mae_test = mean_absolute_error(test_scores, test_predictions)
+    mae_max_test = (mae_test / max_score) * 100
+    normalized_mse_test = (mse_test / (range_of_values ** 2)) * 100
+    r2_test = r2_score(test_scores, test_predictions)
+
+    # Normalize errors
+    normalized_mae_test = (mae_test / range_of_values) * 100
+    print(f'{score_name} - Avg Training R^2: {np.mean(r2_scores_train)}')
+    print(
+        f'{score_name} - Avg Normalized Training MSE: {np.mean(normalized_mse_train_list):.2f}%, Avg Normalized Training MAE: {np.mean(normalized_mae_train_list):.2f}%, Avg MAE_max% Training: {np.mean(mae_max_train_list):.2f}%')
+    print(f'{score_name} - Test R^2: {r2_test}')
+    print(
+        f'{score_name} - Normalized Test MSE: {normalized_mse_test:.2f}%, Normalized Test MAE: {normalized_mae_test:.2f}%, Test MAE_max%: {mae_max_test:.2f}%')
+
+    # Save the models
+    for i, batch_models in enumerate(models):
+        for j, model in enumerate(batch_models):
+            model_path = os.path.join(output_folder, f'{score_name}_model_fold_{i}_batch_{j}.pkl')
+            with open(model_path, 'wb') as f:
+                pickle.dump(model, f)
+            print(f'Model {i} batch {j} saved to {model_path}')
+
+    # Save the validation metrics, including the ensembled test metrics, to a spreadsheet
+    metrics_df = pd.DataFrame({
+        'Fold': range(1, k + 1),
+        'Training R^2': r2_scores_train,
+        'Validation R^2': r2_scores_val,
+        'Normalized Validation MSE (%)': normalized_mse_val_list,
+        'MAE_max%': mae_max_scores,
+    })
+    metrics_df['Normalized MAE (%)'] = normalized_mae_train_list
+
+    # Calculate and append the average training metrics
+    avg_training_r2 = np.mean(r2_scores_train)
+    avg_normalized_mae_train = np.mean(normalized_mae_train_list)
+    avg_normalized_mse_train = np.mean(normalized_mse_train_list)
+    avg_mae_max_train = np.mean(mae_max_train_list)
+    metrics_df.loc[k, 'Fold'] = 'Avg Training'
+    metrics_df.loc[k, 'Training R^2'] = avg_training_r2
+    metrics_df.loc[k, 'Normalized Validation MSE (%)'] = avg_normalized_mse_train
+    metrics_df.loc[k, 'MAE_max%'] = avg_mae_max_train
+    metrics_df.loc[k, 'Normalized MAE (%)'] = avg_normalized_mae_train
+
+    # Append the ensembled test metrics to the DataFrame
+    metrics_df.loc[k + 1, 'Fold'] = 'Test Ensemble'
+    metrics_df.loc[k + 1, 'Test R^2'] = r2_test
+    metrics_df.loc[k + 1, 'Normalized Validation MSE (%)'] = normalized_mse_test
+    metrics_df.loc[k + 1, 'MAE_max%'] = mae_max_test
+    metrics_df.loc[k + 1, 'Normalized MAE (%)'] = normalized_mae_test
+
+    # Save to Excel
+    metrics_df.to_excel(os.path.join(output_folder, f'{score_name}_validation_metrics.xlsx'), index=False)
+
+    # Plotting the correlation between actual and predicted scores
+    plt.figure(figsize=(10, 6))
+    plt.scatter(test_scores, test_predictions, alpha=0.6)
+    plt.xlabel('Actual Scores')
+    plt.ylabel('Predicted Scores')
+    plt.title(
+        f'Actual vs Predicted Scores - {score_name}\nCorrelation: {np.corrcoef(test_scores, test_predictions)[0, 1]:.2f}')
+    plt.savefig(os.path.join(output_folder, f'{score_name}_correlation_plot.png'))
+    plt.show()
+
+
+def augment_data(embeddings, augmentation_factor=3):
+    min = np.min(embeddings, axis=0)
+    max = np.max(embeddings, axis=0)
+    range = max - min
+    noise_level = 0.01 * range
+    augmented_embeddings = []
+    for embedding in embeddings:
+        for _ in range(augmentation_factor):
+            noise = np.random.normal(0, noise_level, size=embedding.shape)
+            augmented_embedding = embedding + noise
+            augmented_embeddings.append(augmented_embedding)
+    return np.array(augmented_embeddings)
+
+def train_model_xgboost_with_fold_grid_search(training_df, test_df, score_name, output_folder, augmentation_factor=1):
+    os.makedirs(output_folder, exist_ok=True)
+
+    # Drop rows with NaN values in the scores column
+    training_df = training_df.dropna(subset=['scores'])
+    test_df = test_df.dropna(subset=['scores'])
+
+    # Extract coordinates and scores from training data
+    train_coords = np.array([list(coord) for coord in training_df['embeddings']])
+    train_scores = training_df['scores'].values
+
+    # Extract coordinates and scores from test data
+    test_coords = np.array([list(coord) for coord in test_df['embeddings']])
+    test_scores = test_df['scores'].values
+
+    # Determine the range of possible values
+    min_score = min(np.min(train_scores), np.min(test_scores))
+    max_score = max(np.max(train_scores), np.max(test_scores))
+    range_of_values = max_score - min_score
+
+    # Define parameter grid for GridSearchCV
+    param_grid = {
+        'n_estimators': [100, 200, 300],
+        'learning_rate': [0.01, 0.1, 0.2],
+        'max_depth': [3, 5, 7],
+        'min_child_weight': [1, 3, 5],
+        'subsample': [0.8, 1.0],
+        'colsample_bytree': [0.8, 1.0],
+        'gamma': [0, 0.1, 0.2]
+    }
+
+    # Number of folds for cross-validation
+    k = 5
+
+    # Lists to store validation metrics
+    r2_scores_train = []
+    r2_scores_val = []
+    normalized_mse_val_list = []
+    mae_max_scores = []
+    normalized_mae_train_list = []
+    normalized_mse_train_list = []
+    mae_max_train_list = []
+    best_models = []
+
+    kf = KFold(n_splits=k, shuffle=True, random_state=42)
+
+    for train_index, val_index in kf.split(train_coords):
+        X_train, X_val = train_coords[train_index], train_coords[val_index]
+        y_train, y_val = train_scores[train_index], train_scores[val_index]
+
+        # Augment the training data
+        X_train_augmented = augment_data(X_train, augmentation_factor)
+        y_train_augmented = np.repeat(y_train, augmentation_factor)
+
+        print(f"Training data shape: {X_train_augmented.shape}")
+        print(f"Training labels shape: {y_train_augmented.shape}")
+
+        model = xgb.XGBRegressor(random_state=42)
+
+        # Perform GridSearchCV within each fold
+        grid_search = GridSearchCV(estimator=model, param_grid=param_grid, cv=3, scoring='r2', verbose=2, n_jobs=-1)
+        grid_search.fit(X_train_augmented, y_train_augmented)
+
+        print(f"Best parameters for fold: {grid_search.best_params_}")
+
+        # Use the best model from grid search
+        best_model = grid_search.best_estimator_
+        best_model.fit(X_train_augmented, y_train_augmented)
+
+        # Store the best model from each fold
+        best_models.append(best_model)
+
+        y_val_pred = best_model.predict(X_val)
+        y_train_pred = best_model.predict(X_train)
+        mse_val = mean_squared_error(y_val, y_val_pred)
+        mae_val = mean_absolute_error(y_val, y_val_pred)
+        mae_max_val = (mae_val / max_score) * 100
+        normalized_mse_val = (mse_val / (range_of_values ** 2)) * 100
+        r2_val = r2_score(y_val, y_val_pred)
+        r2_train = r2_score(y_train, y_train_pred)
+
+        mae_max_scores.append(mae_max_val)
+        normalized_mse_val_list.append(normalized_mse_val)
+        r2_scores_val.append(r2_val)
+        r2_scores_train.append(r2_train)
+        normalized_mae_train_list.append((mean_absolute_error(y_train, y_train_pred) / range_of_values) * 100)
+        normalized_mse_train_list.append((mean_squared_error(y_train, y_train_pred) / (range_of_values ** 2)) * 100)
+        mae_max_train_list.append((mean_absolute_error(y_train, y_train_pred) / max_score) * 100)
+
+    # Make predictions on the test data using the ensemble of best models from each fold
+    test_predictions = np.zeros(test_coords.shape[0])
+    for model in best_models:
+        test_predictions += model.predict(test_coords)
+    test_predictions /= len(best_models)
+
+    # Calculate the Mean Squared Error, Mean Absolute Error, and R^2 on the test data
+    mse_test = mean_squared_error(test_scores, test_predictions)
+    mae_test = mean_absolute_error(test_scores, test_predictions)
+    mae_max_test = (mae_test / max_score) * 100
+    normalized_mse_test = (mse_test / (range_of_values ** 2)) * 100
+    r2_test = r2_score(test_scores, test_predictions)
+
+    # Normalize errors
+    normalized_mae_test = (mae_test / range_of_values) * 100
+    print(f'{score_name} - Avg Training R^2: {np.mean(r2_scores_train)}')
+    print(
+        f'{score_name} - Avg Normalized Training MSE: {np.mean(normalized_mse_train_list):.2f}%, Avg Normalized Training MAE: {np.mean(normalized_mae_train_list):.2f}%, Avg MAE_max% Training: {np.mean(mae_max_train_list):.2f}%')
+    print(f'{score_name} - Test R^2: {r2_test}')
+    print(
+        f'{score_name} - Normalized Test MSE: {normalized_mse_test:.2f}%, Normalized Test MAE: {normalized_mae_test:.2f}%, Test MAE_max%: {mae_max_test:.2f}%')
+
+    # Save the best models
+    for i, model in enumerate(best_models):
+        model_path = os.path.join(output_folder, f'{score_name}_model_fold_{i}.pkl')
+        with open(model_path, 'wb') as f:
+            pickle.dump(model, f)
+        print(f'Model {i} saved to {model_path}')
+
+    # Save the validation metrics, including the ensembled test metrics, to a spreadsheet
+    metrics_df = pd.DataFrame({
+        'Fold': range(1, k + 1),
+        'Training R^2': r2_scores_train,
+        'Validation R^2': r2_scores_val,
+        'Normalized Validation MSE (%)': normalized_mse_val_list,
+        'MAE_max%': mae_max_scores,
+    })
+    metrics_df['Normalized MAE (%)'] = normalized_mae_train_list
+
+    # Calculate and append the average training metrics
+    avg_training_r2 = np.mean(r2_scores_train)
+    avg_normalized_mae_train = np.mean(normalized_mae_train_list)
+    avg_normalized_mse_train = np.mean(normalized_mse_train_list)
+    avg_mae_max_train = np.mean(mae_max_train_list)
+    metrics_df.loc[k, 'Fold'] = 'Avg Training'
+    metrics_df.loc[k, 'Training R^2'] = avg_training_r2
+    metrics_df.loc[k, 'Normalized Validation MSE (%)'] = avg_normalized_mse_train
+    metrics_df.loc[k, 'MAE_max%'] = avg_mae_max_train
+    metrics_df.loc[k, 'Normalized MAE (%)'] = avg_normalized_mae_train
+
+    # Append the ensembled test metrics to the DataFrame
+    metrics_df.loc[k + 1, 'Fold'] = 'Test Ensemble'
+    metrics_df.loc[k + 1, 'Test R^2'] = r2_test
+    metrics_df.loc[k + 1, 'Normalized Validation MSE (%)'] = normalized_mse_test
+    metrics_df.loc[k + 1, 'MAE_max%'] = mae_max_test
+    metrics_df.loc[k + 1, 'Normalized MAE (%)'] = normalized_mae_test
+
+    # Save to Excel
+    metrics_df.to_excel(os.path.join(output_folder, f'{score_name}_validation_metrics.xlsx'), index=False)
+
+    # Plotting the data
+    plt.figure(figsize=(10, 6))
+    plt.scatter(test_scores, test_predictions, alpha=0.6)
+    plt.xlabel('Actual Scores')
+    plt.ylabel('Predicted Scores')
+    plt.title(f'Actual vs Predicted Scores - {score_name}\nR² = {r2_test:.2f}')
+    plt.savefig(os.path.join(output_folder, f'{score_name}_prediction_plot.png'))
+    plt.show()
+
+    # Plotting the correlation between actual and predicted scores
+    plt.figure(figsize=(10, 6))
+    plt.scatter(test_scores, test_predictions, alpha=0.6)
+    plt.xlabel('Actual Scores')
+    plt.ylabel('Predicted Scores')
+    plt.title(
+        f'Actual vs Predicted Scores - {score_name}\nCorrelation: {np.corrcoef(test_scores, test_predictions)[0, 1]:.2f}')
+    plt.savefig(os.path.join(output_folder, f'{score_name}_correlation_plot.png'))
+    plt.show()
+
+
+def compute_distance_vector(embeddings, coord):
+    """
+    Compute the distance vector between the given coordinates and the input embeddings.
+
+    Parameters:
+    - embeddings: np.ndarray, shape (n, d)
+        Array of embeddings
+    - coord: np.ndarray, shape (d,)
+        Coordinates of interest
+
+    Returns:
+    - Array of distances
+    """
+    return np.linalg.norm(embeddings - coord, axis=1)
+
+
+def compute_gaussian_filter(embeddings, coord, sigma=1.0):
+    """
+    Compute the Gaussian filter values for the distances between the given coordinates and the input embeddings.
+
+    Parameters:
+    - embeddings: np.ndarray, shape (n, d)
+        Array of embeddings
+    - coord: np.ndarray, shape (d,)
+        Coordinates of interest
+    - sigma: float, optional, default=1.0
+        Standard deviation for the Gaussian filter
+
+    Returns:
+    - Array of Gaussian filter values
+    """
+    distances = np.linalg.norm(embeddings - coord, axis=1)
+    gaussian_values = np.exp(-0.5 * (distances / sigma) ** 2)
+    return gaussian_values
+

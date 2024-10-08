@@ -1,7 +1,8 @@
-
+import os
 
 import numpy as np
 import matplotlib.pyplot as plt
+import torch
 
 
 def plot_embeddings_with_values(embeddings_dict, colour_dict, size_dict=None, name_dict=None, scale_colours=False,
@@ -88,3 +89,27 @@ def plot_embeddings_with_values(embeddings_dict, colour_dict, size_dict=None, na
         plt.savefig(output_path)
 
     plt.show()
+
+
+def plot_latent_space(vae, test_loader, device, output_folder, filename):
+    vae.eval()
+    z_means = []
+    labels = []
+    with torch.no_grad():
+        for data, label in test_loader:
+            data = data.to(device)
+            z_mean, z_logvar = vae.encoder(data)
+            z_means.append(z_mean)
+            labels.append(label)
+
+    z_means = torch.cat(z_means).cpu().numpy()
+    labels = torch.cat(labels).numpy()
+
+    plt.figure(figsize=(10, 8))
+    plt.scatter(z_means[:, 0], z_means[:, 1], c=labels, cmap='tab10')
+    plt.colorbar(label='Digit Label')
+    plt.xlabel('Latent Dimension 1')
+    plt.ylabel('Latent Dimension 2')
+    plt.title('Latent Space Visualization')
+    plt.savefig(os.path.join(output_folder, filename))
+    plt.close()

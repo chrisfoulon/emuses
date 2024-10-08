@@ -1,37 +1,55 @@
 import os
-from concurrent.futures import ThreadPoolExecutor, as_completed, ProcessPoolExecutor
 from pathlib import Path
 from typing import List, Optional, Tuple
 
 import numpy as np
 import nibabel as nib
 import pandas as pd
-from bcblib.tools.nifti_utils import reorient_to_canonical, file_to_list
+from bcblib.tools.nifti_utils import reorient_to_canonical
+from bcblib.tools.general_utils import file_to_list
 from bcblib.tools.spreadsheet_io_utils import str_to_column_id
 from tqdm import tqdm
 from PIL import Image
 from scipy.sparse import lil_matrix
-from sklearn.datasets import fetch_openml
 
 from tools.data_preproc import normalise_colours_in_array, rescale_image_array, find_min_resolution
 
 
-from sklearn.datasets import fetch_openml
+from sklearn.datasets import fetch_openml, load_digits
 
 
-def load_and_preprocess_mnist_dataset():
+def load_and_preprocess_digits_dataset(dataset='digits'):
     """
-    Downloads the MNIST dataset if it's not already on the machine and preprocesses it to make an input matrix for
+    Downloads the specified dataset if it's not already on the machine and preprocesses it to make an input matrix for
     UMAP training.
+
+    Parameters:
+    - dataset (str): The name of the dataset to load. Options are 'mnist' or 'digits'.
+
+    Returns:
+    - features (ndarray): The preprocessed feature matrix.
+    - labels (ndarray): The labels for the dataset.
     """
-    # Download the MNIST dataset
-    mnist_features, mnist_labels = fetch_openml('mnist_784', version=1, return_X_y=True)
+    if dataset == 'mnist':
+        # Download the MNIST dataset
+        features, labels = fetch_openml('mnist_784', version=1, return_X_y=True)
 
-    # Preprocess the MNIST dataset
-    # Normalize the pixel values to be between 0 and 1
-    mnist_features_normalized = mnist_features / 255.0
+        # Normalize the pixel values to be between 0 and 1
+        features_normalized = features / 255.0
 
-    return mnist_features_normalized, mnist_labels
+    elif dataset == 'digits':
+        # Load the Digits dataset
+        digits = load_digits()
+        features = digits.data
+        labels = digits.target
+
+        # Normalize the pixel values to be between 0 and 1
+        features_normalized = features / 16.0  # Digits data is already scaled between 0 and 16
+
+    else:
+        raise ValueError("Unsupported dataset. Choose 'mnist' or 'digits'.")
+
+    return features_normalized, labels
 
 
 def mnist_features_to_input_matrix(mnist_features: pd.DataFrame):
@@ -203,6 +221,61 @@ def process_images(image_list, target_size=(128, 128)):
     return np.array(images)
 
 
+def spreadsheet_to_input_df(file_path, headers=None, index_col=None, filter_columns_list=None,
+                            filter_rows_list=None, columns_are_features=False):
+    """
+    Import a spreadsheet and make an input matrix (observations, features).
+
+    Parameters
+    ----------
+    file_path : str
+        Path to the spreadsheet file.
+    headers : int or list of int, optional
+        Row(s) to use as the column names. Default is None.
+    index_col : int or list of int, optional
+        Column(s) to set as index (MultiIndex). Default is None.
+    filter_columns_list : list of str, optional
+        Columns to keep in the DataFrame. Default is None.
+    filter_rows_list : list of indices, optional
+        Rows to keep in the DataFrame. Default is None.
+    columns_are_features : bool, optional
+        If True, transpose the DataFrame so that columns become features. Default is False.
+
+    Returns
+    -------
+    pd.DataFrame
+        The resulting input matrix.
+
+    Examples
+    --------
+    >>> file_path = 'path_to_your_spreadsheet.xlsx'
+    >>> input_matrix = spreadsheet_to_input_df(file_path, headers=0, index_col=0,
+    ...                                            filter_columns_list=['column1', 'column2'],
+    ...                                            filter_rows_list=[0, 1, 2], columns_are_features=True)
+    >>> print(input_matrix)
+    """
+
+    # Read the spreadsheet into a DataFrame
+    if file_path.endswith('.csv'):
+        df = pd.read_csv(file_path, header=headers, index_col=index_col)
+    else:
+        df = pd.read_excel(file_path, header=headers, index_col=index_col)
+
+    # Filter columns if a list is provided
+    if filter_columns_list is not None:
+        df = df[filter_columns_list]
+
+    # Filter rows if a list is provided
+    if filter_rows_list is not None:
+        df = df.loc[filter_rows_list]
+
+    # Transpose the DataFrame if columns_are_features is True
+    if not columns_are_features:
+        df = df.transpose()
+
+    return df
+
+
 def load_inputs_scores_spreadsheet(file_path, inputs_columns=None, scores_column=None, header=None, index_col=None):
     """
     Load the inputs and scores from a spreadsheet.
@@ -291,3 +364,18 @@ def create_heatmap_data(dls, new_dataset, scores_file=None):
 
     return embeddings, scores
 
+
+def reshape_input_matrix_data(input_matrix, original_shape, indices=None):
+    # If indices are provided, filter the input matrix
+    if indices is not None:
+        input_matrix = input_matrix[:, indices]
+
+    # Initialize a list to store the reshaped inputs
+    reshaped_inputs = []
+
+    # Reshape each column and add it to the list
+    for i in range(input_matrix.shape[1]):
+        reshaped_input = np.reshape(input_matrix[:, i], original_shape)
+        reshaped_inputs.append(reshaped_input)
+
+    return reshaped_inputs

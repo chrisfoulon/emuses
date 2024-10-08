@@ -11,8 +11,8 @@ from joblib import __version__ as joblib_version
 
 from tools.UMAP_utils import train_and_save_umap_and_embeddings
 from tools.emuse_utils import DiscreteLatentSpace
-from tools.inputs_utils import create_heatmap_data, detect_dataset_type, load_and_preprocess_mnist_dataset, \
-    process_images, nifti_dataset_to_matrix, mnist_features_to_input_matrix
+from tools.inputs_utils import create_heatmap_data, detect_dataset_type, \
+    process_images, nifti_dataset_to_matrix, mnist_features_to_input_matrix, load_and_preprocess_digits_dataset
 from tools.data_preproc import find_min_resolution
 
 
@@ -103,7 +103,7 @@ def main():
             else:
                 raise ValueError(f"Unsupported dataset type: {dataset_type}")
         else:
-            mnist_features_normalized, mnist_labels = load_and_preprocess_mnist_dataset()
+            mnist_features_normalized, mnist_labels = load_and_preprocess_digits_dataset()
             # save the labels in the output_folder as a csv
             pd.DataFrame(mnist_labels).to_csv(Path(args.output_folder) / 'mnist_labels.csv', index=False)
             input_matrix = mnist_features_to_input_matrix(mnist_features_normalized)

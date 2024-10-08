@@ -1,5 +1,8 @@
 import os
+from pathlib import Path
+from multiprocessing import Pool
 
+from joblib import Parallel, delayed
 import numpy as np
 import umap
 from joblib import dump, load
@@ -7,6 +10,10 @@ from matplotlib import pyplot as plt
 from scipy.stats import pearsonr, spearmanr, mannwhitneyu
 from scipy.ndimage import gaussian_filter
 from statsmodels.stats.multitest import multipletests
+from scipy.stats import pointbiserialr
+from tqdm import tqdm
+
+from tools.stats_utils import process_column
 
 
 # def rescale_embedding(embedding, margin=0, max_coordinates=None, min_coordinates=None):
@@ -220,6 +227,7 @@ def compute_stats_on_smoothed_nplusone_dim_discrete_space(
     function_mapping = {
         'pearson': pearsonr,
         'spearman': spearmanr,
+        'pointbiserialr': pointbiserialr,
         'mannwhitney': mannwhitneyu
     }
 
@@ -243,6 +251,69 @@ def compute_stats_on_smoothed_nplusone_dim_discrete_space(
         print("No correction method was provided or all p-values are the same")
 
     return statistics, pvalues, corrected_pvalues, reject
+
+
+def compute_categorical_stats_on_smoothed_nplusone_dim_discrete_space(
+        heatmap,
+        scores,
+        test_name='t-test',
+        correction_method=None,
+        ncores=-1):
+    """
+    Compute the statistics on the smoothed n+1 dimensional discrete space
+    Parameters
+    ----------
+    heatmap : Heatmap
+    scores : np.ndarray
+    test_name : str
+    correction_method : str
+    ncores : int
+
+    Returns
+    -------
+    statistics : np.ndarray
+        The computed statistics
+    pvalues : np.ndarray
+        The computed p-values
+    corrected_pvalues : np.ndarray
+        The corrected p-values
+    reject : np.ndarray, bool
+        The rejection of the null hypothesis
+
+    """
+    if heatmap.smoothed_nplusone_dim_discrete_space is None:
+        raise ValueError("The smoothed n+1 dim discrete space must be computed before the statistics")
+
+    # Replace all-zero vectors with nan
+    smoothed_space = heatmap.smoothed_nplusone_dim_discrete_space.copy()
+    # replace all the zero vectors (along dim 0) with nans
+    smoothed_space[:, np.all(smoothed_space == 0, axis=0)] = np.nan
+
+    if test_name not in {'t-test', 'mann-whitney'}:
+        raise ValueError(f"Invalid function. Expected one of: {list({'t-test', 'mann-whitney'})}")
+
+    if ncores == -1:
+        ncores = os.cpu_count()
+
+    with Pool(processes=ncores) as pool:
+        tasks = [(smoothed_space[:, i, j], scores, test_name, (i, j))
+                 for i in range(smoothed_space.shape[1])
+                 for j in range(smoothed_space.shape[2])]
+        results = list(tqdm(pool.imap(process_column, tasks), total=len(tasks)))
+    ind, statistics, pvalues, effect_size = zip(*results)
+    statistics = np.array(statistics).reshape(smoothed_space.shape[1], smoothed_space.shape[2])
+    pvalues = np.array(pvalues).reshape(smoothed_space.shape[1], smoothed_space.shape[2])
+    effect_size = np.array(effect_size).reshape(smoothed_space.shape[1], smoothed_space.shape[2])
+
+    if correction_method and np.unique(pvalues).size > 1:  # Check if all p-values are the same
+        reject, corrected_pvalues, _, _ = multipletests(pvalues.flatten(), method=correction_method)
+        # corrected_pvalues needs to be reshaped to the same shape as the pvalues
+        corrected_pvalues = corrected_pvalues.reshape(pvalues.shape)
+    else:
+        reject, corrected_pvalues = None, None
+        print("No correction method was provided or all p-values are the same")
+
+    return statistics, pvalues, corrected_pvalues, reject, effect_size
 
 
 def compute_stats_on_corrected_clusters(
@@ -427,7 +498,7 @@ class DiscreteLatentSpace:
 
     def __getstate__(self):
         state = self.__dict__.copy()
-        if not isinstance(state['trained_umap'], (str, os.PathLike)):
+        if 'trained_umap' in state and not isinstance(state['trained_umap'], (str, os.PathLike)):
             state['trained_umap'] = None  # Exclude the UMAP model from being saved if it's not a path
         return state
 
@@ -497,7 +568,7 @@ class DiscreteLatentSpace:
         plt.show()
         plt.close()
 
-    def plot_heatmap(self, heatmap_name, smoothing_fwhm=10):
+    def plot_heatmap(self, heatmap_name, smoothing_fwhm=10, output_folder=None):
         if heatmap_name not in self.heatmaps:
             raise ValueError(f"No heatmap with the name {heatmap_name} exists")
         heatmap = self.heatmaps[heatmap_name]
@@ -512,6 +583,8 @@ class DiscreteLatentSpace:
         plt.imshow(heatmap.heatmap.T, origin='lower', cmap='viridis', aspect='auto')
         plt.colorbar()
         plt.axis('scaled')
+        if output_folder is not None:
+            plt.savefig(Path(output_folder, f'{heatmap_name}_heatmap.png'))
         plt.show()
         plt.close()
 

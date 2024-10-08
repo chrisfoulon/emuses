@@ -21,5 +21,10 @@ setup(
         'joblib',
         'statsmodels',
         'mne',
+        'umap-learn',
+        'matplotlib',
+        'seaborn',
+        'bcblib',
+        'hdbscan'
     ],
 )
