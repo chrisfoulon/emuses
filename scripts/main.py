@@ -10,7 +10,7 @@ from bcblib.tools.general_utils import open_json, parse_file_list_argument
 from joblib import __version__ as joblib_version
 
 from tools.UMAP_utils import train_and_save_umap_and_embeddings
-from tools.emuse_utils import DiscreteLatentSpace
+from tools.emuses_utils import DiscreteLatentSpace
 from tools.inputs_utils import create_heatmap_data, detect_dataset_type, \
     process_images, nifti_dataset_to_matrix, mnist_features_to_input_matrix, load_and_preprocess_digits_dataset
 from tools.data_preproc import find_min_resolution
