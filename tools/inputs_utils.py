@@ -379,3 +379,25 @@ def reshape_input_matrix_data(input_matrix, original_shape, indices=None):
         reshaped_inputs.append(reshaped_input)
 
     return reshaped_inputs
+
+
+def prepare_input_matrix(paths_list, dataset_type):
+    """Prepare the input matrix based on the dataset type."""
+    if dataset_type == 'image':
+        min_res = find_min_resolution(paths_list)
+        return process_images(paths_list, min_res)
+    elif dataset_type == 'nifti':
+        return nifti_dataset_to_matrix(paths_list)
+    elif dataset_type == 'mnist':
+        mnist_features_normalized, _ = load_and_preprocess_digits_dataset()
+        return mnist_features_to_input_matrix(mnist_features_normalized)
+    else:
+        raise ValueError(f"Unsupported dataset type: {dataset_type}")
+
+
+def prepare_scores(scores, embeddings_shape):
+    """Prepare and validate the scores."""
+    scores = np.array([float(score) for score in scores])
+    if len(scores) != embeddings_shape[0]:
+        raise ValueError("Scores length must match the number of embeddings")
+    return scores

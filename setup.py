@@ -25,6 +25,7 @@ setup(
         'matplotlib',
         'seaborn',
         'bcblib',
-        'hdbscan'
+        'hdbscan',
+        'pytest'
     ],
 )

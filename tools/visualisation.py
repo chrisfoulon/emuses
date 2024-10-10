@@ -6,9 +6,9 @@ import torch
 
 
 def plot_embeddings_with_values(embeddings_dict, colour_dict, size_dict=None, name_dict=None, scale_colours=False,
-                                scale_sizes=False, output_path=None, colourbar_label=None):
+                                scale_sizes=False, output_path=None, colourbar_label=None, subplot_title_center=True):
     """
-    Plot the embeddings of the labels and each model with colours representing the distances and sizes representing distance
+    Plot the embeddings of the labels and each model with colours representing the distances and sizes representing distance.
 
     Parameters
     ----------
@@ -28,6 +28,8 @@ def plot_embeddings_with_values(embeddings_dict, colour_dict, size_dict=None, na
         The path to save the plot, by default None
     colourbar_label : str, optional
         The label for the colourbar, by default None
+    subplot_title_center : bool, optional
+        Place the labels embedding plot at the center subplot, by default True
     """
     # Determine the grid size based on the number of models
     grid_size = int(np.ceil(np.sqrt(len(embeddings_dict))))
@@ -37,22 +39,16 @@ def plot_embeddings_with_values(embeddings_dict, colour_dict, size_dict=None, na
     fig, axes = plt.subplots(grid_size, grid_size, figsize=(8 * grid_size, 6 * grid_size))
 
     # Flatten the axes for easier indexing
-    if grid_size > 1:
-        # Flatten the axes for easier indexing
-        axes = axes.flatten()
-    else:
-        # If there's only one subplot, put axes in a list to enable iteration
-        axes = [axes]
+    axes = axes.flatten() if grid_size > 1 else [axes]
 
-    # Calculate the index of the center subplot
-    center_index = len(axes) // 2
+    # Determine which subplot should contain the labels (center subplot by default)
+    label_index = len(axes) // 2 if subplot_title_center else 0
 
-    # Plot the label embeddings in the center subplot
-    scatter = axes[center_index].scatter(embeddings_dict['labels'][:, 0], embeddings_dict['labels'][:, 1], s=5)
-    axes[center_index].set_title('UMAP Embedding of ground truth labels')
-    cbar = fig.colorbar(scatter, ax=axes[center_index])
+    # Plot the label embeddings in the selected subplot
+    scatter = axes[label_index].scatter(embeddings_dict['labels'][:, 0], embeddings_dict['labels'][:, 1], s=5)
+    axes[label_index].set_title('UMAP Embedding of ground truth labels')
+    cbar = fig.colorbar(scatter, ax=axes[label_index])
     cbar.set_ticks([])  # Remove the numbers from the colorbar
-    # cbar.outline.set_visible(False)  # Make the colorbar outline invisible
     cbar.solids.set(alpha=0)  # Make the colorbar itself invisible
     cbar.ax.set_facecolor('white')
 
@@ -63,7 +59,7 @@ def plot_embeddings_with_values(embeddings_dict, colour_dict, size_dict=None, na
     for model_name, model_embedding in embeddings_dict.items():
         if model_name != 'labels':
             # Calculate the index of the subplot for the current model
-            model_index = (center_index + model_counter + 1) % len(axes)
+            model_index = (label_index + model_counter + 1) % len(axes)
 
             # Scale colours if required
             colours = colour_dict[model_name]
@@ -74,7 +70,9 @@ def plot_embeddings_with_values(embeddings_dict, colour_dict, size_dict=None, na
             sizes = size_dict[model_name] if size_dict else None
             if sizes is not None and scale_sizes:
                 sizes = sizes * 100
-            scatter = axes[model_index].scatter(model_embedding[:, 0], model_embedding[:, 1], c=colours, s=sizes)
+
+            scatter = axes[model_index].scatter(model_embedding[:, 0], model_embedding[:, 1], c=colours, s=sizes,
+                                                alpha=0.7)
             axes[model_index].set_title(f'{name_dict[model_name] if name_dict else model_name}')
             fig.colorbar(scatter, ax=axes[model_index], label=colourbar_label)
 
@@ -82,7 +80,7 @@ def plot_embeddings_with_values(embeddings_dict, colour_dict, size_dict=None, na
             model_counter += 1
 
     # Adjust the spacing between subplots and the margins
-    plt.subplots_adjust(left=0.05, right=0.95, bottom=0.05, top=0.95, wspace=0.05, hspace=0.1)
+    plt.subplots_adjust(left=0.05, right=0.95, bottom=0.05, top=0.95, wspace=0.2, hspace=0.3)
 
     # Save the plot if output_path is provided
     if output_path is not None:

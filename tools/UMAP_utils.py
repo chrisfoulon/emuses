@@ -7,12 +7,12 @@ from joblib import __version__ as joblib_version
 
 def train_and_save_umap_and_embeddings(input_matrix, output_folder, pref=None, **kwargs):
     """
-    Train a UMAP model on the input matrix and save the model and the embeddings to disk using joblib for serialization.
+    Train a UMAP model on the input matrix and save the model, embeddings, and input matrix to disk using joblib for serialization.
     Parameters:
     - input_matrix : np.ndarray or scipy.sparse.csr_matrix
         The input matrix to be used for training.
     - output_folder : str
-        The directory where the model and embeddings will be saved.
+        The directory where the model, embeddings, and input matrix will be saved.
     - pref : str, optional
         A prefix to add to the output filenames. If not provided, no prefix is added.
     - kwargs : dict
@@ -28,12 +28,15 @@ def train_and_save_umap_and_embeddings(input_matrix, output_folder, pref=None, *
     prefix = f"{pref}_" if pref else ""
     model_filename = f"{prefix}umap_model_joblib{joblib_version}.joblib"
     embeddings_filename = f"{prefix}embeddings.npy"
+    input_matrix_filename = f"{prefix}input_matrix.npy"
 
-    # Save the UMAP model and embeddings
+    # Save the UMAP model, embeddings, and input matrix
     dump(umap_model, output_folder / model_filename)
     np.save(output_folder / embeddings_filename, embeddings)
+    np.save(output_folder / input_matrix_filename, input_matrix)
 
-    return umap_model, embeddings, output_folder / model_filename, output_folder / embeddings_filename
+    return (umap_model, embeddings, output_folder / model_filename,
+            output_folder / embeddings_filename, output_folder / input_matrix_filename)
 
 
 def is_umap_file(umap_path):
