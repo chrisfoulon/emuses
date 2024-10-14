@@ -4,7 +4,7 @@
     <content url="file://$MODULE_DIR$">
       <excludeFolder url="file://$MODULE_DIR$/emuse.egg-info" />
     </content>
-    <orderEntry type="jdk" jdkName="$USER_HOME$/miniconda3" jdkType="Python SDK" />
+    <orderEntry type="jdk" jdkName="Remote Python 3.11.5 (sftp://chrisfoulon@10.85.0.25:22/home/chrisfoulon/miniconda3/bin/python3)" jdkType="Python SDK" />
     <orderEntry type="sourceFolder" forTests="false" />
   </component>
 </module>

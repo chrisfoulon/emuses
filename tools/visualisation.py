@@ -3,6 +3,7 @@ import os
 import numpy as np
 import matplotlib.pyplot as plt
 import torch
+from matplotlib.lines import Line2D
 
 
 def plot_embeddings_with_values(embeddings_dict, colour_dict, size_dict=None, name_dict=None, scale_colours=False,
@@ -111,3 +112,56 @@ def plot_latent_space(vae, test_loader, device, output_folder, filename):
     plt.title('Latent Space Visualization')
     plt.savefig(os.path.join(output_folder, filename))
     plt.close()
+
+
+# Function to plot the clustering of the whole space
+def plot_clustering(embeddings, clusterer):
+    """
+    Plot the clustering of the entire embedding space.
+
+    Parameters:
+    embeddings (np.array): Array of shape (n_samples, n_features) containing the embedding coordinates.
+    clusterer (HDBSCAN object): Trained HDBSCAN model used for clustering.
+
+    Note:
+    Ensure the `clusterer` object is properly trained before passing it to avoid runtime errors.
+    """
+    if clusterer is None:
+        print("No clustering to plot.")
+        return
+
+    fig, ax = plt.subplots(figsize=(10, 8))
+    unique_labels = np.unique(clusterer.labels_)
+
+    # Use the new colormap method in Matplotlib
+    cmap = plt.colormaps.get_cmap('tab20')
+
+    # Plot the data points
+    for idx, k in enumerate(unique_labels):
+        if k == -1:
+            # Noise points: grey color with reduced opacity
+            color = [0.5, 0.5, 0.5, 0.4]  # Grey with reduced opacity
+        else:
+            # Get a color from the colormap
+            color = cmap(idx / len(unique_labels))  # Get a distinct color based on the index
+
+        class_member_mask = (clusterer.labels_ == k)
+        xy = embeddings[class_member_mask]
+        ax.plot(xy[:, 0], xy[:, 1], 'o', markerfacecolor=color,
+                markeredgecolor='k', markersize=4, alpha=0.75)
+
+    # Customize the legend
+    # Commenting out the existing static legend code
+    # ax.legend(handles=legend_elements, title='Clusters', loc='center left', bbox_to_anchor=(1, 0.5))
+
+    # Dynamic legend placement based on the number of clusters
+    if len(unique_labels) > 10:
+        ax.legend(handles=legend_elements, title='Clusters', loc='best', fontsize='small')
+    else:
+        ax.legend(handles=legend_elements, title='Clusters', loc='center left', bbox_to_anchor=(1, 0.5))
+
+    ax.set_title('Clustering of the Whole Space')
+    ax.set_xlabel('Coordinate X')
+    ax.set_ylabel('Coordinate Y')
+
+    plt.show()
