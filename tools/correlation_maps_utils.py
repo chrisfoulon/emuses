@@ -71,7 +71,8 @@ def calculate_pointbiserial(embeddings, train_labels_bin, sigma=0.5):
     Returns:
     correlations (np.array): Correlation values for each embedding.
     """
-    correlations = np.full(embeddings.shape[0], np.nan)  # Initialize with np.nan to differentiate uncalculated values
+    # correlations = np.full(embeddings.shape[0], np.nan)  # Initialize with np.nan to differentiate uncalculated values
+    correlations = np.zeros(embeddings.shape[0])  # Initialize with zeros
 
     if isinstance(sigma, (list, np.ndarray)):  # Multi-scale approach
         for s in sigma:

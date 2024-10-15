@@ -4,6 +4,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 import torch
 from matplotlib.lines import Line2D
+import plotly.graph_objs as go
+from plotly.subplots import make_subplots
 
 
 def plot_embeddings_with_values(embeddings_dict, colour_dict, size_dict=None, name_dict=None, scale_colours=False,
@@ -115,13 +117,22 @@ def plot_latent_space(vae, test_loader, device, output_folder, filename):
 
 
 # Function to plot the clustering of the whole space
-def plot_clustering(embeddings, clusterer):
+def plot_clustering(embeddings, clusterer, grid_x, grid_y, gaussian_matrix, train_labels, filtered_indices,
+                    filtered_embeddings, cluster_labels, score_tag):
     """
-    Plot the clustering of the entire embedding space.
+    Plot the clustering of the entire embedding space, including heatmap and filtered points.
 
     Parameters:
     embeddings (np.array): Array of shape (n_samples, n_features) containing the embedding coordinates.
     clusterer (HDBSCAN object): Trained HDBSCAN model used for clustering.
+    grid_x (np.array): X-coordinates of the grid.
+    grid_y (np.array): Y-coordinates of the grid.
+    gaussian_matrix (np.array): Gaussian correlation matrix.
+    train_labels (np.array): Original labels for the embeddings.
+    filtered_indices (np.array): Indices of filtered coordinates.
+    filtered_embeddings (np.array): Filtered embedding coordinates.
+    cluster_labels (np.array): Cluster labels for the filtered coordinates.
+    score_tag (str): Label tag for the current score.
 
     Note:
     Ensure the `clusterer` object is properly trained before passing it to avoid runtime errors.
@@ -130,38 +141,89 @@ def plot_clustering(embeddings, clusterer):
         print("No clustering to plot.")
         return
 
-    fig, ax = plt.subplots(figsize=(10, 8))
-    unique_labels = np.unique(clusterer.labels_)
+    fig, axs = plt.subplots(1, 2, figsize=(20, 8))
 
-    # Use the new colormap method in Matplotlib
-    cmap = plt.colormaps.get_cmap('tab20')
+    # Heatmap subplot
+    cax = axs[0].imshow(gaussian_matrix.T, cmap='hot', interpolation='nearest', origin='lower',
+                        extent=[grid_x.min(), grid_x.max(), grid_y.min(), grid_y.max()])
+    axs[0].set_title(f'Gaussian Filter Heatmap for score {score_tag}')
+    axs[0].set_xlabel('Coordinate X')
+    axs[0].set_ylabel('Coordinate Y')
+    fig.colorbar(cax, ax=axs[0])
 
-    # Plot the data points
-    for idx, k in enumerate(unique_labels):
-        if k == -1:
-            # Noise points: grey color with reduced opacity
-            color = [0.5, 0.5, 0.5, 0.4]  # Grey with reduced opacity
-        else:
-            # Get a color from the colormap
-            color = cmap(idx / len(unique_labels))  # Get a distinct color based on the index
+    # Highlight embeddings corresponding to the current score_tag in red
+    matching_indices = np.where(train_labels == score_tag)[0]
+    matching_embeddings = embeddings[matching_indices]
+    axs[0].scatter(matching_embeddings[:, 0], matching_embeddings[:, 1], color='red', s=10, label=f'Label {score_tag}')
+    axs[0].legend()
 
-        class_member_mask = (clusterer.labels_ == k)
-        xy = embeddings[class_member_mask]
-        ax.plot(xy[:, 0], xy[:, 1], 'o', markerfacecolor=color,
-                markeredgecolor='k', markersize=4, alpha=0.75)
-
-    # Customize the legend
-    # Commenting out the existing static legend code
-    # ax.legend(handles=legend_elements, title='Clusters', loc='center left', bbox_to_anchor=(1, 0.5))
-
-    # Dynamic legend placement based on the number of clusters
-    if len(unique_labels) > 10:
-        ax.legend(handles=legend_elements, title='Clusters', loc='best', fontsize='small')
-    else:
-        ax.legend(handles=legend_elements, title='Clusters', loc='center left', bbox_to_anchor=(1, 0.5))
-
-    ax.set_title('Clustering of the Whole Space')
-    ax.set_xlabel('Coordinate X')
-    ax.set_ylabel('Coordinate Y')
+    # Plot the entire space with filtered points in color
+    unfiltered_labels = np.full(embeddings.shape[0], -1)
+    unfiltered_labels[filtered_indices] = cluster_labels
+    scatter = axs[1].scatter(embeddings[:, 0], embeddings[:, 1], c=unfiltered_labels, cmap='viridis', alpha=0.3)
+    axs[1].scatter(filtered_embeddings[:, 0], filtered_embeddings[:, 1], c=cluster_labels, cmap='viridis',
+                   edgecolor='k', s=50)
+    axs[1].set_title('Filtered Coordinates and Clusters')
+    axs[1].set_xlabel('Coordinate X')
+    axs[1].set_ylabel('Coordinate Y')
+    legend1 = axs[1].legend(*scatter.legend_elements(), title="Clusters")
+    axs[1].add_artist(legend1)
 
     plt.show()
+
+
+def plot_clustering_interactive_with_hover(embeddings, cluster_labels):
+    """
+    Plot the clustering of the entire embedding space interactively with hover functionality.
+
+    Parameters:
+    embeddings (np.array): Array of shape (n_samples, n_features) containing the embedding coordinates.
+    cluster_labels (np.array): Array of cluster labels for each embedding.
+    """
+    # Define unique cluster labels
+    unique_labels = np.unique(cluster_labels)
+
+    # Create a color map for the clusters
+    cmap = plt.colormaps.get_cmap('tab20')
+
+    # Create a Plotly figure with specified size to make it more balanced
+    fig = make_subplots(rows=1, cols=1)
+    fig.update_layout(width=800, height=800)  # Set width and height to make the plot more square
+
+    # Plot each cluster with a distinct color
+    for idx, k in enumerate(unique_labels):
+        if k == -1:
+            # Noise points: grey color
+            color = 'rgba(128, 128, 128, 0.6)'  # Grey with reduced opacity
+        else:
+            # Get a color from the colormap
+            color = f'rgba({cmap(idx / len(unique_labels))[0] * 255}, {cmap(idx / len(unique_labels))[1] * 255}, {cmap(idx / len(unique_labels))[2] * 255}, 0.75)'
+
+        # Filter points for the current cluster
+        class_member_mask = (cluster_labels == k)
+        cluster_points = embeddings[class_member_mask]
+
+        # Add a scatter trace for the current cluster
+        fig.add_trace(
+            go.Scatter(x=cluster_points[:, 0],
+                       y=cluster_points[:, 1],
+                       mode='markers',
+                       marker=dict(color=color, size=5, line=dict(width=0.5, color='black')),
+                       name=f'Cluster {k}' if k != -1 else 'Noise',
+                       hoverinfo='text',
+                       text=[f'Cluster {k}' for _ in range(len(cluster_points))])
+        )
+
+    # Update layout
+    fig.update_layout(
+        title='Interactive Clustering of the Whole Space',
+        xaxis_title='Coordinate X',
+        yaxis_title='Coordinate Y',
+        showlegend=True,
+        legend_title='Clusters',
+        xaxis=dict(scaleanchor='y', scaleratio=1),  # Maintain the aspect ratio of the plot
+        yaxis=dict(scaleanchor='x', scaleratio=1)   # Maintain the aspect ratio of the plot
+    )
+
+    # Show the interactive plot
+    fig.show()
