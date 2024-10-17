@@ -1,0 +1,14 @@
+# Automatically normalize line endings for all text files
+* text=auto
+
+# Specific file types to always use LF (Unix-style line endings)
+*.sh text eol=lf
+*.py text eol=lf
+*.yml text eol=lf
+*.md text eol=lf
+
+# Binary files should not be modified
+*.png binary
+*.jpg binary
+*.gif binary
+*.pdf binary
