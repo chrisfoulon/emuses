@@ -1,8 +1,14 @@
+from pathlib import Path
+
 import numpy as np
 import hdbscan
 from pandas.core.common import random_state
 from scipy.stats import pointbiserialr
 from tools.stats_utils import compute_gaussian_filter
+
+from tools.stats_utils import input_matrix_stat_map
+from tools.output_utils import save_statistical_maps
+from tools.visualisation import plot_statistical_map, plot_clustering
 
 
 # Function to calculate point-biserial correlation for each point in the grid
@@ -151,3 +157,113 @@ def cluster_coordinates(filtered_coordinates, min_cluster_size=5):
         cluster_labels = np.array([])
 
     return clusterer, cluster_labels
+
+
+def run_clustering_and_analysis(
+    embeddings, scores_vectors_dict, input_matrix, output_folder, output_format_info,
+    grid_size=100, sigma=None, correlation_threshold=0.3, min_cluster_size=5, highlight_points=True
+):
+    """
+    Run clustering, point-biserial correlation, and statistical analysis on the provided embeddings.
+
+    Parameters:
+    - embeddings : np.ndarray
+        Array of embeddings to analyze.
+    - scores_vectors_dict : dict
+        Dictionary containing score tags and their corresponding binary score vectors.
+    - input_matrix : np.ndarray
+        The original input data matrix used for analysis.
+    - output_folder : str
+        Path to the folder where results should be saved.
+    - output_format_info : various
+        Information needed to format the output. Could be an affine matrix (for NIfTI),
+        an output shape (for images), or a list of column names (for spreadsheets).
+    - grid_size : int, optional
+        Size of the grid for point-biserial correlations.
+    - sigma : float or None, optional
+        Sigma value for Gaussian smoothing.
+    - correlation_threshold : float, optional
+        Threshold for filtering coordinates based on correlation.
+    - min_cluster_size : int, optional
+        Minimum cluster size for HDBSCAN clustering.
+    - highlight_points : bool, optional
+        Whether to highlight filtered points based on the correlation threshold.
+    """
+    clusterer, cluster_labels = cluster_coordinates(embeddings, min_cluster_size=min_cluster_size)
+
+    for score_tag, train_labels_bin in scores_vectors_dict.items():
+        # Step 1: Calculate point-biserial correlations over a grid
+        print("Calculating point-biserial correlations over a grid...")
+        correlation_matrix, grid_x, grid_y = calculate_pointbiserial_grid(
+            embeddings, train_labels_bin, grid_size=grid_size, sigma=sigma
+        )
+        print(f"Point-biserial grid correlations for score {score_tag} calculated successfully.")
+
+        # Step 2: Calculate point-biserial correlations for each embedding
+        print("Calculating point-biserial correlations for each embedding...")
+        correlations = calculate_pointbiserial(embeddings, train_labels_bin, sigma=sigma)
+        print(f"Point-biserial correlations for score {score_tag} calculated successfully.")
+
+        # Step 4: Filter coordinates based on correlation values
+        print("Filtering coordinates based on correlation values...")
+        filtered_coordinates, filtered_indices = filter_coordinates(
+            embeddings, correlations, correlation_threshold=correlation_threshold
+        )
+        print(f"Filtered coordinates calculated successfully for score {score_tag}. Number of points after filtering: "
+              f"{len(filtered_coordinates)}")
+
+        # Step 5: Predict cluster labels for filtered coordinates
+        print("Predicting cluster labels for filtered coordinates...")
+        if filtered_coordinates.shape[0] > 0:
+            filtered_cluster_labels = cluster_labels[filtered_indices]
+            print("Prediction completed successfully for filtered coordinates.")
+        else:
+            filtered_cluster_labels = np.array([])
+            print("No filtered coordinates available for prediction.")
+
+        # Step 6: Separate filtered coordinates by cluster and run statistical analysis
+        unique_clusters = np.unique(filtered_cluster_labels)
+        for cluster in unique_clusters:
+            if cluster == -1:
+                continue  # Skip noise points
+            cluster_mask = (filtered_cluster_labels == cluster)
+            cluster_indices = filtered_indices[cluster_mask]
+
+            print(f"Running statistical analysis for cluster {cluster}...")
+            stat_map, pval_map, effect_size_map = input_matrix_stat_map(
+                input_matrix, cluster_indices, test_name='mann-whitney', n_cores=-1
+            )
+            print(f"Statistical analysis for cluster {cluster} completed.")
+
+            # Save the effect size map using save_statistical_maps
+            stat_maps_to_save = {cluster: effect_size_map}
+            save_statistical_maps(stat_maps_to_save, output_folder=output_folder, input_type='image',
+                                  output_format_info=output_format_info,
+                                  filename_prefix=f'effect_size_map_score_{score_tag}_cluster_{cluster}')
+            print(f"Effect size map saved for cluster {cluster} and score {score_tag}.")
+
+            # Save representative cluster data
+            representative_output_filename = f"representative_cluster_{cluster}_score_{score_tag}.npy"
+            np.save(Path(output_folder) / representative_output_filename, filtered_coordinates[cluster_mask])
+            print(f"Representative cluster data saved for cluster {cluster} and score {score_tag}.")
+
+        # Step 7: Plot clustering of the whole space
+        if clusterer is not None and filtered_coordinates.shape[0] == filtered_cluster_labels.shape[0]:
+            print("Plotting clustering of the whole space...")
+            plot_clustering(
+                embeddings=embeddings,
+                clusterer=clusterer,
+                grid_x=grid_x,
+                grid_y=grid_y,
+                gaussian_matrix=correlation_matrix,
+                filtered_indices=filtered_indices,
+                filtered_embeddings=filtered_coordinates,
+                cluster_labels=filtered_cluster_labels,
+                score_tag=score_tag,
+                highlight_points=highlight_points
+            )
+            print("Clustering plot created successfully.")
+        else:
+            print("Mismatch in dimensions or clustering failed. Skipping the plot.")
+
+

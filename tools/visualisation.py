@@ -117,8 +117,8 @@ def plot_latent_space(vae, test_loader, device, output_folder, filename):
 
 
 # Function to plot the clustering of the whole space
-def plot_clustering(embeddings, clusterer, grid_x, grid_y, gaussian_matrix, train_labels, filtered_indices,
-                    filtered_embeddings, cluster_labels, score_tag):
+def plot_clustering(embeddings, clusterer, grid_x, grid_y, gaussian_matrix, filtered_indices,
+                    filtered_embeddings, cluster_labels, score_tag, highlight_points=True):
     """
     Plot the clustering of the entire embedding space, including heatmap and filtered points.
 
@@ -128,11 +128,11 @@ def plot_clustering(embeddings, clusterer, grid_x, grid_y, gaussian_matrix, trai
     grid_x (np.array): X-coordinates of the grid.
     grid_y (np.array): Y-coordinates of the grid.
     gaussian_matrix (np.array): Gaussian correlation matrix.
-    train_labels (np.array): Original labels for the embeddings.
     filtered_indices (np.array): Indices of filtered coordinates.
     filtered_embeddings (np.array): Filtered embedding coordinates.
     cluster_labels (np.array): Cluster labels for the filtered coordinates.
     score_tag (str): Label tag for the current score.
+    highlight_points (bool): Whether to highlight filtered points based on the correlation threshold.
 
     Note:
     Ensure the `clusterer` object is properly trained before passing it to avoid runtime errors.
@@ -151,11 +151,10 @@ def plot_clustering(embeddings, clusterer, grid_x, grid_y, gaussian_matrix, trai
     axs[0].set_ylabel('Coordinate Y')
     fig.colorbar(cax, ax=axs[0])
 
-    # Highlight embeddings corresponding to the current score_tag in red
-    matching_indices = np.where(train_labels == score_tag)[0]
-    matching_embeddings = embeddings[matching_indices]
-    axs[0].scatter(matching_embeddings[:, 0], matching_embeddings[:, 1], color='red', s=10, label=f'Label {score_tag}')
-    axs[0].legend()
+    if highlight_points:
+        # Highlight filtered points on the heatmap
+        axs[0].scatter(filtered_embeddings[:, 0], filtered_embeddings[:, 1], color='red', s=10, label=f'Filtered points')
+        axs[0].legend()
 
     # Plot the entire space with filtered points in color
     unfiltered_labels = np.full(embeddings.shape[0], -1)
@@ -172,13 +171,20 @@ def plot_clustering(embeddings, clusterer, grid_x, grid_y, gaussian_matrix, trai
     plt.show()
 
 
-def plot_clustering_interactive_with_hover(embeddings, cluster_labels):
+
+def plot_clustering_interactive_with_hover(embeddings, cluster_labels, output_path=None, show_plot=True, return_plot=False):
     """
     Plot the clustering of the entire embedding space interactively with hover functionality.
 
     Parameters:
     embeddings (np.array): Array of shape (n_samples, n_features) containing the embedding coordinates.
     cluster_labels (np.array): Array of cluster labels for each embedding.
+    output_path (str or Path, optional): Path where the interactive plot will be saved. If None, the plot will not be saved.
+    show_plot (bool, optional): If True, the plot will be displayed.
+    return_plot (bool, optional): If True, the plot object will be returned.
+
+    Returns:
+    plotly.graph_objects.Figure or None: Returns the plot object if return_plot is True, otherwise returns None.
     """
     # Define unique cluster labels
     unique_labels = np.unique(cluster_labels)
@@ -225,8 +231,21 @@ def plot_clustering_interactive_with_hover(embeddings, cluster_labels):
         yaxis=dict(scaleanchor='x', scaleratio=1)   # Maintain the aspect ratio of the plot
     )
 
-    # Show the interactive plot
-    fig.show()
+    # Optionally save the interactive plot
+    if output_path:
+        import plotly
+        plotly.io.write_html(fig, output_path)
+        print(f"Interactive plot saved at: {output_path}")
+
+    # Show the interactive plot if requested
+    if show_plot:
+        fig.show()
+
+    # Return the plot if requested
+    if return_plot:
+        return fig
+    else:
+        return None
 
 
 def plot_statistical_map(data, title='', save_path=None, show_plot=False, return_plot=False):
