@@ -6,6 +6,7 @@
 *.py text eol=lf
 *.yml text eol=lf
 *.md text eol=lf
+*.ipynb text eol=lf
 
 # Binary files should not be modified
 *.png binary
