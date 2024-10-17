@@ -1,6 +1,7 @@
 from multiprocessing import Pool, cpu_count
 import os
 import pickle
+from pathlib import Path
 
 import matplotlib
 from bcblib.tools.arrays_utils import separate_clusters_and_extract_coords, find_centroid_and_check
@@ -164,7 +165,43 @@ def create_cluster_representative_maps(array, discrete_embeddings, input_matrix,
     return stat_maps, pval_maps, effect_size_maps, centroids
 
 
-def train_model(training_df, test_df, score_name, output_folder, categorical=False):
+def train_model(training_df, test_df, score_name, output_folder, categorical=False, num_permutations=100,
+                nb_fold=5):
+    """
+    Train and evaluate a model using training and test datasets.
+
+    Parameters:
+    - training_df: pd.DataFrame
+        DataFrame containing the training data with columns:
+        - 'embeddings': Coordinates or features for each training sample.
+        - 'scores': The target value or label for each sample.
+    - test_df: pd.DataFrame
+        DataFrame containing the test data with columns:
+        - 'embeddings': Coordinates or features for each test sample.
+        - 'scores': The target value or label for each sample.
+    - score_name: str
+        Name or identifier for the current model. Used for naming output files.
+    - output_folder: str or Path
+        Folder where the trained models and evaluation results will be saved.
+    - categorical: bool, optional
+        Indicates if the model is for classification. If True, categorical metrics like the confusion matrix are computed.
+        Default is False.
+    - num_permutations: int, optional
+        Number of permutations to use in k-fold cross-validation. Default is 100.
+    - nb_fold: int, optional
+        Number of folds to use in k-fold cross-validation. Default is 5.
+
+    Returns:
+    None
+
+    Outputs:
+    - Saves trained models, validation metrics, and plots in the specified output folder.
+    - Evaluation metrics include R², Mean Squared Error (MSE), Mean Absolute Error (MAE), and normalized errors.
+    - Generates and saves visualizations:
+        - Scatter plot of actual vs. predicted scores.
+        - Correlation plot.
+        - Confusion matrix (if categorical=True).
+    """
     os.makedirs(output_folder, exist_ok=True)
 
     # Drop rows with NaN values in the scores column
@@ -185,8 +222,7 @@ def train_model(training_df, test_df, score_name, output_folder, categorical=Fal
     range_of_values = max_score - min_score
 
     # Number of folds for cross-validation
-    k = 5
-    num_permutations = 100
+    k = nb_fold
 
     # Lists to store validation metrics
     permutation_metrics = []
@@ -271,10 +307,13 @@ def train_model(training_df, test_df, score_name, output_folder, categorical=Fal
     normalized_mae_test = (mae_test / range_of_values) * 100
     print(f'{score_name} - Avg Training R^2: {np.mean(best_permutation["r2_scores_train"])}')
     print(
-        f'{score_name} - Avg Normalized Training MSE: {np.mean(best_permutation["normalized_mse_train_list"]):.2f}%, Avg Normalized Training MAE: {np.mean(best_permutation["normalized_mae_train_list"]):.2f}%, Avg MAE_max% Training: {np.mean(best_permutation["mae_max_train_list"]):.2f}%')
+        f'{score_name} - Avg Normalized Training MSE: {np.mean(best_permutation["normalized_mse_train_list"]):.2f}%, '
+        f'Avg Normalized Training MAE: {np.mean(best_permutation["normalized_mae_train_list"]):.2f}%, '
+        f'Avg MAE_max% Training: {np.mean(best_permutation["mae_max_train_list"]):.2f}%')
     print(f'{score_name} - Test R^2: {r2_test}')
     print(
-        f'{score_name} - Normalized Test MSE: {normalized_mse_test:.2f}%, Normalized Test MAE: {normalized_mae_test:.2f}%, Test MAE_max%: {mae_max_test:.2f}%')
+        f'{score_name} - Normalized Test MSE: {normalized_mse_test:.2f}%, '
+        f'Normalized Test MAE: {normalized_mae_test:.2f}%, Test MAE_max%: {mae_max_test:.2f}%')
 
     # Save the models from the best permutation
     for i, model in enumerate(best_models):
@@ -361,6 +400,59 @@ def train_model(training_df, test_df, score_name, output_folder, categorical=Fal
         plt.savefig(os.path.join(output_folder, f'{score_name}_confusion_matrix.png'))
         plt.show()
     plt.close()
+
+
+def train_and_test_model_per_label(train_embeddings, train_labels, test_embeddings, test_labels, output_folder):
+    """
+    Train and test a model for each unique label in the training dataset.
+
+    Parameters:
+    - train_embeddings: ndarray
+        Embeddings for the training data.
+    - train_labels: ndarray
+        Labels for the training data.
+    - test_embeddings: ndarray
+        Embeddings for the test data.
+    - test_labels: ndarray
+        Labels for the test data.
+    - output_folder: str or Path
+        The folder where the output model and results will be saved.
+
+    Returns:
+    None
+    """
+
+    # Prepare training and test data as DataFrames
+    train_df = pd.DataFrame(data={'embeddings': [tuple(coord) for coord in train_embeddings], 'scores': train_labels})
+    test_df = pd.DataFrame(data={'embeddings': [tuple(coord) for coord in test_embeddings], 'scores': test_labels})
+
+    unique_labels = np.unique(train_labels)
+
+    # Ensure output_folder is a Path object
+    output_folder = Path(output_folder)
+
+    # Train a model for each label separately
+    for label in unique_labels:
+        print(f"Training model for label {label}...")
+        train_labels_bin = (train_labels == label).astype(int)
+        train_df_label = train_df.copy()
+        train_df_label['scores'] = train_labels_bin
+        test_labels_bin = (test_labels == label).astype(int)
+        test_df_label = test_df.copy()
+        test_df_label['scores'] = test_labels_bin
+        model_output_folder = output_folder / f'label_{label}'
+        model_output_folder.mkdir(parents=True, exist_ok=True)
+        print(f"Debug: train_df shape: {train_df_label.shape}, test_df shape: {test_df_label.shape}")
+        train_model(train_df_label, test_df_label, score_name=f'label_{label}', output_folder=model_output_folder)
+        print(f"Model for label {label} trained and saved.")
+
+    # Test the model with all labels together in a categorical setting
+    print("Testing model with all labels together...")
+    test_output_folder = output_folder / 'test_all_labels'
+    test_output_folder.mkdir(parents=True, exist_ok=True)
+    print(f"Debug: train_df shape: {train_df.shape}, test_df shape: {test_df.shape}")
+    train_model(train_df, test_df, score_name='all_labels', output_folder=test_output_folder, categorical=True)
+    print("Testing completed and results saved.")
 
 
 def estimate_memory_size(n_points, dtype_size=8):

@@ -227,3 +227,44 @@ def plot_clustering_interactive_with_hover(embeddings, cluster_labels):
 
     # Show the interactive plot
     fig.show()
+
+
+def plot_statistical_map(data, title='', save_path=None, show_plot=False, return_plot=False):
+    """
+    Plot a 2D statistical map with options to display, save, and/or return the plot.
+
+    Parameters:
+    - data: ndarray
+        2D array representing the statistical map to plot.
+    - title: str, optional
+        Title for the plot.
+    - save_path: str or Path, optional
+        Path where the plot will be saved. If None, the plot will not be saved.
+    - show_plot: bool, optional
+        If True, the plot will be displayed.
+    - return_plot: bool, optional
+        If True, the plot object will be returned. Note that the plot will not be closed if returned
+        and needs to be manually closed after use.
+
+    Returns:
+    - plt.Figure or None
+        Returns the plot object if return_plot is True, otherwise returns None.
+    """
+    if not save_path and not show_plot and not return_plot:
+        raise ValueError("At least one output option (save, show, or return) must be specified.")
+
+    fig, ax = plt.subplots()
+    ax.imshow(data, cmap='hot', interpolation='nearest')
+    ax.set_title(title)
+    ax.set_xlabel('X-axis')
+    ax.set_ylabel('Y-axis')
+    plt.colorbar(ax.imshow(data, cmap='hot', interpolation='nearest'), label='Effect Size', ax=ax)
+
+    if save_path:
+        plt.savefig(save_path)
+    if show_plot:
+        plt.show()
+    if return_plot:
+        return fig
+    else:
+        plt.close(fig)

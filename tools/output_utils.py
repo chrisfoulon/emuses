@@ -3,6 +3,7 @@ import nibabel as nib
 import pandas as pd
 import matplotlib.pyplot as plt
 
+from tools.visualisation import plot_statistical_map
 
 
 def save_statistical_maps(stat_maps, output_folder, input_type, output_format_info, filename_prefix='stat_map'):
@@ -42,7 +43,7 @@ def save_statistical_maps(stat_maps, output_folder, input_type, output_format_in
             output_shape = output_format_info
             stat_image = stat_map.reshape(output_shape)
             filename = output_folder / f"{filename_prefix}_cluster_{cluster}.png"
-            plt.imsave(filename, stat_image, cmap='hot')
+            plot_statistical_map(stat_image, title=f'Effect Size Map for Cluster {cluster}', save_path=filename)
         elif input_type == 'spreadsheet':
             # Save as CSV file
             columns = output_format_info
@@ -53,4 +54,4 @@ def save_statistical_maps(stat_maps, output_folder, input_type, output_format_in
         else:
             raise ValueError(f"Unsupported input type: {input_type}")
 
-    print(f"Statistical maps saved in {output_folder}")
+    print(f"Statistical maps saved in {output_folder}/{filename_prefix}_cluster_*.{input_type}")
