@@ -9,7 +9,7 @@ from pathlib import Path
 from PIL import Image
 
 from tools.inputs_utils import detect_dataset_type, process_images, mnist_features_to_input_matrix, \
-    load_and_preprocess_digits_dataset, nifti_dataset_to_matrix, load_inputs_scores_spreadsheet, prepare_input_matrix
+    load_and_preprocess_digits_dataset, nifti_dataset_to_matrix, prepare_input_matrix
 
 
 @pytest.fixture
@@ -94,16 +94,15 @@ def test_nifti_dataset_to_matrix(sample_nifti_file):
     assert not np.isnan(output_matrix).any(), "Output matrix contains NaN values."
 
 
-def test_load_inputs_scores_spreadsheet(sample_csv_file):
-    # Test loading inputs and scores from a spreadsheet
-    inputs_scores_df = load_inputs_scores_spreadsheet(str(sample_csv_file), header=0)
-    expected_columns = pd.read_csv(sample_csv_file).columns.tolist()
+def test_spreadsheet_to_input_df(sample_csv_file):
+    # Test the spreadsheet to input matrix conversion
+    inputs_df = spreadsheet_to_input_df(str(sample_csv_file), header=0)
+    expected_columns = pd.read_csv(sample_csv_file, header=0).columns.tolist()
 
-    assert inputs_scores_df.shape[1] == len(
-        expected_columns), "The number of columns in the loaded DataFrame is incorrect."
+    assert inputs_df.shape[1] == len(expected_columns), "The number of columns in the loaded DataFrame is incorrect."
     for column in expected_columns:
-        assert column in inputs_scores_df.columns, f"Column '{column}' not loaded properly from CSV."
-    assert not inputs_scores_df.isnull().values.any(), "DataFrame contains NaN values."
+        assert column in inputs_df.columns, f"Column '{column}' not loaded properly from CSV."
+    assert not inputs_df.isnull().values.any(), "DataFrame contains NaN values."
 
 
 def test_prepare_input_matrix(sample_image_files):
