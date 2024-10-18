@@ -26,6 +26,8 @@ setup(
         'seaborn',
         'bcblib',
         'hdbscan',
-        'pytest'
+        'pytest',
+        'pybids',
+        'plotly'
     ],
 )

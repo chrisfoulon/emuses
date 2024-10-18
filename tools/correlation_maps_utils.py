@@ -159,12 +159,12 @@ def cluster_coordinates(filtered_coordinates, min_cluster_size=5):
     return clusterer, cluster_labels
 
 
-def run_clustering_and_analysis(
-    embeddings, scores_vectors_dict, input_matrix, output_folder, output_format_info,
-    grid_size=100, sigma=None, correlation_threshold=0.3, min_cluster_size=5, highlight_points=True
+def run_heatmap_analysis(
+    embeddings, scores_vectors_dict, input_matrix, output_folder, output_format_info, clusterer, cluster_labels,
+    grid_size=100, sigma=None, correlation_threshold=0.3, highlight_points=True
 ):
     """
-    Run clustering, point-biserial correlation, and statistical analysis on the provided embeddings.
+    Run heatmap creation, point-biserial correlation, and statistical analysis on the provided embeddings.
 
     Parameters:
     - embeddings : np.ndarray
@@ -178,19 +178,22 @@ def run_clustering_and_analysis(
     - output_format_info : various
         Information needed to format the output. Could be an affine matrix (for NIfTI),
         an output shape (for images), or a list of column names (for spreadsheets).
+    - clusterer : HDBSCAN object
+        The trained clusterer (e.g., HDBSCAN model) used for clustering.
+    - cluster_labels : np.ndarray
+        Cluster labels from the clustering step for each point in the embedding.
     - grid_size : int, optional
         Size of the grid for point-biserial correlations.
-    - sigma : float or None, optional
-        Sigma value for Gaussian smoothing.
+    - sigma : float or list of floats
+        Sigma value for Gaussian smoothing. This determines the scale of the distance computation.
     - correlation_threshold : float, optional
         Threshold for filtering coordinates based on correlation.
-    - min_cluster_size : int, optional
-        Minimum cluster size for HDBSCAN clustering.
     - highlight_points : bool, optional
         Whether to highlight filtered points based on the correlation threshold.
     """
-    clusterer, cluster_labels = cluster_coordinates(embeddings, min_cluster_size=min_cluster_size)
-
+    if sigma is None:
+        sigma_percentage = np.array([0.005, 0.01, 0.02, 0.03])
+        sigma = sigma_percentage / np.max(embeddings)
     for score_tag, train_labels_bin in scores_vectors_dict.items():
         # Step 1: Calculate point-biserial correlations over a grid
         print("Calculating point-biserial correlations over a grid...")
@@ -265,5 +268,3 @@ def run_clustering_and_analysis(
             print("Clustering plot created successfully.")
         else:
             print("Mismatch in dimensions or clustering failed. Skipping the plot.")
-
-

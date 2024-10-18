@@ -11,6 +11,7 @@ from bcblib.tools.spreadsheet_io_utils import str_to_column_id
 from tqdm import tqdm
 from PIL import Image
 from scipy.sparse import lil_matrix
+from bids import BIDSLayout
 
 from tools.data_preproc import normalise_colours_in_array, rescale_image_array, find_min_resolution
 
@@ -40,6 +41,7 @@ def load_and_preprocess_digits_dataset(dataset='digits'):
     elif dataset == 'digits':
         # Load the Digits dataset
         digits = load_digits()
+        print(f'Shape of digits data: {digits.data.shape}')
         features = digits.data
         labels = digits.target
 
@@ -276,60 +278,6 @@ def spreadsheet_to_input_df(file_path, headers=None, index_col=None, filter_colu
     return df
 
 
-def load_inputs_scores_spreadsheet(file_path, inputs_columns=None, scores_column=None, header=None, index_col=None):
-    """
-    Load the inputs and scores from a spreadsheet.
-
-    Parameters:
-    ----------
-    file_path : str
-        Path to the spreadsheet.
-    inputs_columns : list of int or list of str
-        List of indices or names of the columns containing the inputs.
-    scores_column : int or str
-        Index or name of the column containing the scores.
-    header : int, optional
-        Index of the header row.
-    index_col : int, optional
-        Index of the column containing the row indices.
-
-    Returns:
-    -------
-    inputs : np.ndarray
-        Matrix containing the inputs.
-    scores : np.ndarray
-        Array containing the scores.
-    """
-
-    path = Path(file_path)
-    if path.suffix == '.csv':
-        df = pd.read_csv(path, header=header, index_col=index_col)
-    elif path.suffix in ['.xlsx', '.xls']:
-        df = pd.read_excel(path, header=header, index_col=index_col)
-    else:
-        raise ValueError(f"Unsupported file format: {path.suffix}")
-
-    # Determine scores column
-    if scores_column is None:
-        scores_column = df.columns[-1]
-    else:
-        scores_column = str_to_column_id(scores_column, df)
-
-    # Determine inputs columns
-    if inputs_columns is None:
-        inputs_columns = [col for col in df.columns if col != scores_column]
-    else:
-        inputs_columns = [str_to_column_id(col, df) for col in inputs_columns]
-
-    # Filter out rows where scores are NaN
-    df = df.dropna(subset=[scores_column])
-
-    # Extract inputs and scores in a filtered df
-    filtered_df = df[inputs_columns + [scores_column]]
-
-    return filtered_df
-
-
 def create_heatmap_data(dls, new_dataset, scores_file=None):
     """
     Prepare the DataFrame with embeddings and scores for creating a heatmap.
@@ -401,3 +349,48 @@ def prepare_scores(scores, embeddings_shape):
     if len(scores) != embeddings_shape[0]:
         raise ValueError("Scores length must match the number of embeddings")
     return scores
+
+
+def handle_bids_dataset(folder_path, filters=None, verbose=True):
+    """
+    Handles loading a BIDS dataset using PyBIDS.
+
+    Args:
+        folder_path (Path): The folder path where the BIDS dataset is located.
+        filters (dict): A dictionary of filters to be applied (e.g., {'modality': 'T1w', 'session': '1'}).
+        verbose (bool): If True, prints additional information about the dataset.
+
+    Returns:
+        list: A list of paths for the selected attributes.
+    """
+    try:
+        layout = BIDSLayout(folder_path)
+        # Apply filters if provided
+        if filters:
+            files = layout.get(**filters, extension=['.nii', '.nii.gz'])
+        else:
+            files = layout.get(extension=['.nii', '.nii.gz'])
+        paths_list = [f.path for f in files]
+
+        if verbose:
+            print(f'Found {len(paths_list)} files with filters {filters} in BIDS dataset at {folder_path}')
+
+        if len(paths_list) == 0:
+            raise argparse.ArgumentTypeError(f"No files found with filters {filters} in BIDS dataset at {folder_path}")
+
+        return paths_list
+
+    except Exception as e:
+        raise argparse.ArgumentTypeError(f"Error handling BIDS dataset: {e}")
+
+def is_bids_dataset(folder_path):
+    """
+    Checks if the given folder is a BIDS dataset.
+
+    Args:
+        folder_path (Path): The folder path to check.
+
+    Returns:
+        bool: True if the folder is a BIDS dataset, False otherwise.
+    """
+    return (folder_path / 'dataset_description.json').exists()
