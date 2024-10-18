@@ -9,7 +9,7 @@ from pathlib import Path
 from PIL import Image
 
 from tools.inputs_utils import detect_dataset_type, process_images, mnist_features_to_input_matrix, \
-    load_and_preprocess_digits_dataset, nifti_dataset_to_matrix, prepare_input_matrix
+    load_and_preprocess_digits_dataset, nifti_dataset_to_matrix, spreadsheet_to_input_df, prepare_input_matrix
 
 
 @pytest.fixture
