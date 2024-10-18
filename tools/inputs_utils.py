@@ -223,7 +223,7 @@ def process_images(image_list, target_size=(128, 128)):
     return np.array(images)
 
 
-def spreadsheet_to_input_df(file_path, headers=None, index_col=None, filter_columns_list=None,
+def spreadsheet_to_input_df(file_path, header=None, index_col=None, filter_columns_list=None,
                             filter_rows_list=None, columns_are_features=False):
     """
     Import a spreadsheet and make an input matrix (observations, features).
@@ -232,8 +232,8 @@ def spreadsheet_to_input_df(file_path, headers=None, index_col=None, filter_colu
     ----------
     file_path : str
         Path to the spreadsheet file.
-    headers : int or list of int, optional
-        Row(s) to use as the column names. Default is None.
+    header : int, optional
+        Row to use as the column names. Default is None.
     index_col : int or list of int, optional
         Column(s) to set as index (MultiIndex). Default is None.
     filter_columns_list : list of str, optional
@@ -251,7 +251,7 @@ def spreadsheet_to_input_df(file_path, headers=None, index_col=None, filter_colu
     Examples
     --------
     >>> file_path = 'path_to_your_spreadsheet.xlsx'
-    >>> input_matrix = spreadsheet_to_input_df(file_path, headers=0, index_col=0,
+    >>> input_matrix = spreadsheet_to_input_df(file_path, header=0, index_col=0,
     ...                                            filter_columns_list=['column1', 'column2'],
     ...                                            filter_rows_list=[0, 1, 2], columns_are_features=True)
     >>> print(input_matrix)
@@ -259,9 +259,9 @@ def spreadsheet_to_input_df(file_path, headers=None, index_col=None, filter_colu
 
     # Read the spreadsheet into a DataFrame
     if file_path.endswith('.csv'):
-        df = pd.read_csv(file_path, header=headers, index_col=index_col)
+        df = pd.read_csv(file_path, header=header, index_col=index_col)
     else:
-        df = pd.read_excel(file_path, header=headers, index_col=index_col)
+        df = pd.read_excel(file_path, header=header, index_col=index_col)
 
     # Filter columns if a list is provided
     if filter_columns_list is not None:
