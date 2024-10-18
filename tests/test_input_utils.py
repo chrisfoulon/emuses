@@ -96,12 +96,15 @@ def test_nifti_dataset_to_matrix(sample_nifti_file):
 
 def test_spreadsheet_to_input_df(sample_csv_file):
     # Test the spreadsheet to input matrix conversion
-    inputs_df = spreadsheet_to_input_df(str(sample_csv_file), header=0)
-    expected_columns = pd.read_csv(sample_csv_file, header=0).columns.tolist()
+    inputs_df = spreadsheet_to_input_df(sample_csv_file, header=0)
+    expected_columns = pd.read_csv(sample_csv_file, header=0).T.columns.tolist()
+
+    print(inputs_df.columns.tolist())
+    print(expected_columns)
 
     assert inputs_df.shape[1] == len(expected_columns), "The number of columns in the loaded DataFrame is incorrect."
     for column in expected_columns:
-        assert column in inputs_df.columns, f"Column '{column}' not loaded properly from CSV."
+        assert column in inputs_df.columns.tolist(), f"Column '{column}' not loaded properly from CSV."
     assert not inputs_df.isnull().values.any(), "DataFrame contains NaN values."
 
 

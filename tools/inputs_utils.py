@@ -258,7 +258,7 @@ def spreadsheet_to_input_df(file_path, header=None, index_col=None, filter_colum
     """
 
     # Read the spreadsheet into a DataFrame
-    if file_path.endswith('.csv'):
+    if str(file_path).endswith('.csv'):
         df = pd.read_csv(file_path, header=header, index_col=index_col)
     else:
         df = pd.read_excel(file_path, header=header, index_col=index_col)
