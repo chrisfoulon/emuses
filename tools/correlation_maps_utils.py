@@ -1,7 +1,6 @@
 from pathlib import Path
 
 import numpy as np
-import hdbscan
 from pandas.core.common import random_state
 from scipy.stats import pointbiserialr
 from tools.stats_utils import compute_gaussian_filter
@@ -127,36 +126,6 @@ def filter_coordinates(coordinates, correlations, correlation_threshold=0.3):
     filtered_coordinates = coordinates[filtered_indices]
 
     return filtered_coordinates, filtered_indices
-
-
-# Function to perform HDBSCAN clustering on filtered coordinates
-def cluster_coordinates(filtered_coordinates, min_cluster_size=5):
-    """
-    Perform HDBSCAN clustering on filtered coordinates.
-
-    Parameters:
-    filtered_coordinates (np.array): Array of shape (n_samples, 2) containing the filtered coordinates.
-    min_cluster_size (int): Minimum cluster size for HDBSCAN.
-
-    Returns:
-    clusterer (HDBSCAN object): Trained HDBSCAN model.
-    cluster_labels (np.array): Cluster labels for the filtered coordinates.
-    """
-    # Perform HDBSCAN clustering on filtered coordinates
-    if filtered_coordinates.shape[0] > 0:
-        try:
-            clusterer = hdbscan.HDBSCAN(min_cluster_size=min_cluster_size)
-            cluster_labels = clusterer.fit_predict(filtered_coordinates)
-        except ValueError as e:
-            print(f"Clustering failed due to insufficient data: {e}")
-            clusterer = None
-            cluster_labels = np.array([])
-    else:
-        print("Insufficient data for clustering.")
-        clusterer = None
-        cluster_labels = np.array([])
-
-    return clusterer, cluster_labels
 
 
 def run_heatmap_analysis(

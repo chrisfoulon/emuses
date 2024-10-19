@@ -442,7 +442,6 @@ def train_and_test_model_per_label(train_embeddings, train_labels, test_embeddin
         test_df_label['scores'] = test_labels_bin
         model_output_folder = output_folder / f'label_{label}'
         model_output_folder.mkdir(parents=True, exist_ok=True)
-        print(f"Debug: train_df shape: {train_df_label.shape}, test_df shape: {test_df_label.shape}")
         train_model(train_df_label, test_df_label, score_name=f'label_{label}', output_folder=model_output_folder)
         print(f"Model for label {label} trained and saved.")
 
@@ -450,7 +449,6 @@ def train_and_test_model_per_label(train_embeddings, train_labels, test_embeddin
     print("Testing model with all labels together...")
     test_output_folder = output_folder / 'test_all_labels'
     test_output_folder.mkdir(parents=True, exist_ok=True)
-    print(f"Debug: train_df shape: {train_df.shape}, test_df shape: {test_df.shape}")
     train_model(train_df, test_df, score_name='all_labels', output_folder=test_output_folder, categorical=True)
     print("Testing completed and results saved.")
 

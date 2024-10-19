@@ -230,7 +230,7 @@ def spreadsheet_to_input_df(file_path, header=None, index_col=None, filter_colum
 
     Parameters
     ----------
-    file_path : str
+    file_path : str or os.PathLike
         Path to the spreadsheet file.
     header : int, optional
         Row to use as the column names. Default is None.

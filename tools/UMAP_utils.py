@@ -110,7 +110,8 @@ def load_umap_model(base_path, prefix='', model_name='umap_model', joblib_versio
             break
 
     if counter > max_attempts:
-        raise RuntimeError(f"Failed to load UMAP model after {max_attempts} attempts. Either there are too many versions or another issue is preventing loading.")
+        raise RuntimeError(f"Failed to load UMAP model after {max_attempts} attempts. "
+                           f"Either there are too many versions or another issue is preventing loading.")
 
     # Return None and the next available filename if all attempts fail
     if prefix:
