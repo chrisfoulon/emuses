@@ -19,6 +19,32 @@ from pykrige.rk import Krige
 import xgboost as xgb
 
 
+def fwhm_to_sigma(fwhm):
+    """
+    Convert Full Width at Half Maximum (FWHM) to sigma (standard deviation) of a Gaussian.
+
+    Parameters:
+        fwhm (float): The FWHM value.
+
+    Returns:
+        float: The corresponding sigma value.
+    """
+    return fwhm / (2 * np.sqrt(2 * np.log(2)))
+
+
+def sigma_to_fwhm(sigma):
+    """
+    Convert sigma (standard deviation) of a Gaussian to Full Width at Half Maximum (FWHM).
+
+    Parameters:
+        sigma (float): The sigma value.
+
+    Returns:
+        float: The corresponding FWHM value.
+    """
+    return sigma * 2 * np.sqrt(2 * np.log(2))
+
+
 def process_column(args):
     filtered_data, other_data, test_name, i = args
 

@@ -1,9 +1,6 @@
-import os
-
 import numpy as np
 import matplotlib.pyplot as plt
-import torch
-from matplotlib.lines import Line2D
+import plotly
 import plotly.graph_objs as go
 from plotly.subplots import make_subplots
 
@@ -92,50 +89,31 @@ def plot_embeddings_with_values(embeddings_dict, colour_dict, size_dict=None, na
     plt.show()
 
 
-def plot_latent_space(vae, test_loader, device, output_folder, filename):
-    vae.eval()
-    z_means = []
-    labels = []
-    with torch.no_grad():
-        for data, label in test_loader:
-            data = data.to(device)
-            z_mean, z_logvar = vae.encoder(data)
-            z_means.append(z_mean)
-            labels.append(label)
-
-    z_means = torch.cat(z_means).cpu().numpy()
-    labels = torch.cat(labels).numpy()
-
-    plt.figure(figsize=(10, 8))
-    plt.scatter(z_means[:, 0], z_means[:, 1], c=labels, cmap='tab10')
-    plt.colorbar(label='Digit Label')
-    plt.xlabel('Latent Dimension 1')
-    plt.ylabel('Latent Dimension 2')
-    plt.title('Latent Space Visualization')
-    plt.savefig(os.path.join(output_folder, filename))
-    plt.close()
-
-
 # Function to plot the clustering of the whole space
-def plot_clustering(embeddings, clusterer, grid_x, grid_y, gaussian_matrix, filtered_indices,
-                    filtered_embeddings, cluster_labels, score_tag, highlight_points=True):
+def plot_clustering(
+    embeddings, clusterer, grid_x, grid_y, gaussian_matrix, filtered_indices,
+    filtered_embeddings, cluster_labels, score_tag, highlight_points=True,
+    show_plot=False, save_path=None
+):
     """
     Plot the clustering of the entire embedding space, including heatmap and filtered points.
 
     Parameters:
-    embeddings (np.array): Array of shape (n_samples, n_features) containing the embedding coordinates.
-    clusterer (HDBSCAN object): Trained HDBSCAN model used for clustering.
-    grid_x (np.array): X-coordinates of the grid.
-    grid_y (np.array): Y-coordinates of the grid.
-    gaussian_matrix (np.array): Gaussian correlation matrix.
-    filtered_indices (np.array): Indices of filtered coordinates.
-    filtered_embeddings (np.array): Filtered embedding coordinates.
-    cluster_labels (np.array): Cluster labels for the filtered coordinates.
-    score_tag (str): Label tag for the current score.
-    highlight_points (bool): Whether to highlight filtered points based on the correlation threshold.
+    - embeddings (np.array): Array of embedding coordinates.
+    - clusterer (HDBSCAN object): Trained clusterer.
+    - grid_x (np.array): X-coordinates of the grid.
+    - grid_y (np.array): Y-coordinates of the grid.
+    - gaussian_matrix (np.array): Gaussian correlation matrix.
+    - filtered_indices (np.array): Indices of filtered coordinates.
+    - filtered_embeddings (np.array): Filtered embedding coordinates.
+    - cluster_labels (np.array): Cluster labels for the filtered coordinates.
+    - score_tag (str): Label tag for the current score.
+    - highlight_points (bool): Whether to highlight filtered points.
+    - show_plot (bool): Whether to display the plot.
+    - save_path (str or Path): Path to save the plot image.
 
-    Note:
-    Ensure the `clusterer` object is properly trained before passing it to avoid runtime errors.
+    Returns:
+    - fig: Matplotlib figure object.
     """
     if clusterer is None:
         print("No clustering to plot.")
@@ -144,8 +122,10 @@ def plot_clustering(embeddings, clusterer, grid_x, grid_y, gaussian_matrix, filt
     fig, axs = plt.subplots(1, 2, figsize=(20, 8))
 
     # Heatmap subplot
-    cax = axs[0].imshow(gaussian_matrix.T, cmap='hot', interpolation='nearest', origin='lower',
-                        extent=[grid_x.min(), grid_x.max(), grid_y.min(), grid_y.max()])
+    cax = axs[0].imshow(
+        gaussian_matrix.T, cmap='hot', interpolation='nearest', origin='lower',
+        extent=[grid_x.min(), grid_x.max(), grid_y.min(), grid_y.max()]
+    )
     axs[0].set_title(f'Gaussian Filter Heatmap for score {score_tag}')
     axs[0].set_xlabel('Coordinate X')
     axs[0].set_ylabel('Coordinate Y')
@@ -153,23 +133,36 @@ def plot_clustering(embeddings, clusterer, grid_x, grid_y, gaussian_matrix, filt
 
     if highlight_points:
         # Highlight filtered points on the heatmap
-        axs[0].scatter(filtered_embeddings[:, 0], filtered_embeddings[:, 1], color='red', s=10, label=f'Filtered points')
+        axs[0].scatter(filtered_embeddings[:, 0], filtered_embeddings[:, 1], color='red', s=10, label='Filtered points')
         axs[0].legend()
 
     # Plot the entire space with filtered points in color
     unfiltered_labels = np.full(embeddings.shape[0], -1)
     unfiltered_labels[filtered_indices] = cluster_labels
-    scatter = axs[1].scatter(embeddings[:, 0], embeddings[:, 1], c=unfiltered_labels, cmap='viridis', alpha=0.3)
-    axs[1].scatter(filtered_embeddings[:, 0], filtered_embeddings[:, 1], c=cluster_labels, cmap='viridis',
-                   edgecolor='k', s=50)
+    scatter = axs[1].scatter(
+        embeddings[:, 0], embeddings[:, 1], c=unfiltered_labels, cmap='viridis', alpha=0.3
+    )
+    axs[1].scatter(
+        filtered_embeddings[:, 0], filtered_embeddings[:, 1], c=cluster_labels, cmap='viridis',
+        edgecolor='k', s=50
+    )
     axs[1].set_title('Filtered Coordinates and Clusters')
     axs[1].set_xlabel('Coordinate X')
     axs[1].set_ylabel('Coordinate Y')
     legend1 = axs[1].legend(*scatter.legend_elements(), title="Clusters")
     axs[1].add_artist(legend1)
 
-    plt.show()
+    # Save the plot if a save path is provided
+    if save_path:
+        fig.savefig(save_path)
+        print(f"Plot saved to {save_path}")
 
+    # Show the plot if requested
+    if show_plot:
+        plt.show()
+
+    # Return the figure object
+    return fig
 
 
 def plot_clustering_interactive_with_hover(embeddings, cluster_labels, output_path=None, show_plot=True, return_plot=False):
@@ -233,7 +226,6 @@ def plot_clustering_interactive_with_hover(embeddings, cluster_labels, output_pa
 
     # Optionally save the interactive plot
     if output_path:
-        import plotly
         plotly.io.write_html(fig, output_path)
         print(f"Interactive plot saved at: {output_path}")
 

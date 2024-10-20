@@ -1,178 +1,235 @@
-# Streamlit web interface for EMUSES pipeline
+# streamlit_app.py
+import queue
+import sys
+import threading
+import time
+
 import streamlit as st
-import os
+import logging
+import argparse
 from pathlib import Path
 import numpy as np
-import pandas as pd
-from datetime import datetime
 
-from bcblib.tools.general_utils import save_json, parse_file_list_argument
-from bcblib.tools.nifti_utils import load_nifti
-
-from tools.UMAP_utils import train_and_save_umap_and_embeddings, load_umap_model
-from tools.clustering_utils import load_hdbscan_model, save_hdbscan_model, cluster_coordinates
-from tools.inputs_utils import detect_dataset_type, process_images, nifti_dataset_to_matrix, load_and_preprocess_digits_dataset, prepare_scores, spreadsheet_to_input_df, is_bids_dataset, handle_bids_dataset
-from tools.data_preproc import find_min_resolution
-from tools.visualisation import plot_clustering_interactive_with_hover
-from tools.correlation_maps_utils import run_heatmap_analysis
-from tools.stats_utils import train_and_test_model_per_label
-from sklearn.model_selection import train_test_split
-from tools.emuses_utils import rescale_embedding
+# Import pipeline classes
+from pipelines.emuses_pipeline import EMUSESPipeline
+from pipelines.umap_stage import UMAPStage
+from pipelines.clustering_stage import ClusteringStage
+from pipelines.heatmap_stage import HeatmapStage
+from pipelines.prediction_stage import PredictionStage
 
 
 def main():
-    st.title('EMUSE Pipeline Web Interface')
+    st.title("EMUSES Pipeline Web Interface")
 
-    output_folder = st.text_input('Output Folder', value='./output')
-    prefix = st.text_input('Prefix for Output Files', value='')
-    os.makedirs(output_folder, exist_ok=True)
-    st.write('Output folder will be created if it does not exist.')
+    # Configure logging
+    logging.basicConfig(level=logging.INFO)
+    logger = logging.getLogger(__name__)
 
-    # Command selection
-    command = st.selectbox('Choose Command', ['full', 'umap', 'heatmap', 'clustering', 'prediction'])
+    # Sidebar for configuration
+    st.sidebar.header("Pipeline Configuration")
+    command = st.sidebar.selectbox("Select Command", ["full", "umap", "clustering", "heatmap", "prediction"])
 
-    # Load common arguments
-    input_dataset = st.text_input('Input Dataset Path')
-    test_size = st.slider('Test Size for Splitting Dataset', min_value=0.0, max_value=1.0, value=0.2)
+    # Common inputs
+    output_folder = st.sidebar.text_input("Output Folder", value="output")
 
-    # Additional arguments for each command
-    if command in ['full', 'umap', 'prediction']:
-        recursive_search = st.checkbox('Recursive File Search in Input Dataset', value=False)
-        input_file_types = st.text_area('Input File Types (comma-separated)', value='').split(',') if st.text_area('Input File Types (comma-separated)', value='') else None
-        arg_separator = st.text_input('Argument Separator', value=',')
+    # Initialize args namespace
+    args = argparse.Namespace()
+    args.command = command
+    args.output_folder = output_folder
 
-    load_umap = None
-    if command in ['full', 'heatmap', 'clustering', 'prediction']:
-        load_umap = st.text_input('Load Pre-trained UMAP Model Path', value='')
+    # Collect inputs based on command
+    if command in ["full", "umap", "prediction"]:
+        input_dataset = st.sidebar.text_input("Input Dataset (path or 'mnist')")
+        args.input_dataset = input_dataset
 
-    load_hdbscan = None
-    if command in ['full', 'clustering', 'heatmap']:
-        load_hdbscan = st.text_input('Load Pre-trained HDBSCAN Model Path', value='')
+        recursive_input_file_search = st.sidebar.checkbox("Recursive Input File Search", value=False)
+        args.recursive_input_file_search = recursive_input_file_search
 
-    load_embeddings = None
-    if command in ['full', 'clustering', 'heatmap', 'prediction']:
-        load_embeddings = st.text_input('Load Precomputed Embeddings Path', value='')
+        input_file_types = st.sidebar.text_input("Input File Types (comma-separated)", value="")
+        args.input_file_types = input_file_types.split(",") if input_file_types else None
 
-    interactive_plot = st.checkbox('Create Interactive Clustering Plots', value=False) if command in ['full', 'clustering'] else False
+        arg_separator = st.sidebar.text_input("Argument Separator", value=",")
+        args.arg_separator = arg_separator
 
-    if st.button('Run Pipeline'):
-        if not os.path.isdir(output_folder):
-            st.error(f"Output folder {output_folder} is not a valid path")
-            return
+        test_size = st.sidebar.slider("Test Size", min_value=0.0, max_value=1.0, value=0.2)
+        args.test_size = test_size
 
-        # Save arguments to a log file
-        os.makedirs(Path(output_folder) / 'log', exist_ok=True)
-        dict_args = {
-            'command': command,
-            'output_folder': output_folder,
-            'prefix': prefix,
-            'input_dataset': input_dataset,
-            'test_size': test_size,
-            'datetime': datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        }
-        save_json(Path(output_folder) / 'log' / f'arguments_{datetime.now().strftime("%Y-%m-%d_%H-%M-%S")}.json', dict_args)
+        # UMAP options
+        load_umap = st.sidebar.text_input("Load UMAP Model (optional)")
+        args.load_umap = load_umap if load_umap else None
 
-        # Detect dataset type
-        if str(input_dataset).lower() == 'mnist':
-            dataset_type = 'mnist'
-            paths_list = None
+        load_embeddings = st.sidebar.text_input("Load Embeddings (optional)")
+        args.load_embeddings = load_embeddings if load_embeddings else None
+
+        prefix = st.sidebar.text_input("Prefix for Output Names", value="")
+        args.prefix = prefix
+
+    if command in ["full", "heatmap", "prediction"]:
+        # Scores options
+        scores = st.sidebar.text_input("Scores File (optional)")
+        args.scores = scores if scores else None
+
+        scores_header = st.sidebar.text_input("Scores Header (optional)")
+        args.scores_header = scores_header if scores_header else None
+
+        scores_index_column = st.sidebar.text_input("Scores Index Column (optional)")
+        args.scores_index_column = scores_index_column if scores_index_column else None
+
+        scores_are_columns = st.sidebar.checkbox("Scores are Columns", value=False)
+        args.scores_are_columns = scores_are_columns
+
+        scores_column = st.sidebar.text_input("Scores Column(s) (comma-separated)", value="")
+        args.scores_column = scores_column.split(",") if scores_column else None
+
+        classification = st.sidebar.checkbox("Classification Problem", value=False)
+        args.classification = classification
+
+    if command in ["full", "clustering", "heatmap"]:
+        # Clustering options
+        load_hdbscan = st.sidebar.text_input("Load HDBSCAN Model (optional)")
+        args.load_hdbscan = load_hdbscan if load_hdbscan else None
+
+        min_cluster_size = st.sidebar.number_input("Minimum Cluster Size", min_value=2, value=5)
+        args.min_cluster_size = min_cluster_size
+
+        interactive_plot = st.sidebar.checkbox("Interactive Plot", value=False)
+        args.interactive_plot = interactive_plot
+
+    if command in ["full", "heatmap"]:
+        # Smoothing options
+        smoothing_option = st.sidebar.radio("Smoothing Option", ["Default", "Sigma", "FWHM"])
+        if smoothing_option == "Sigma":
+            sigma = st.sidebar.number_input("Sigma Value", min_value=0.0, value=1.0)
+            args.sigma = sigma
+            args.fwhm = None
+        elif smoothing_option == "FWHM":
+            fwhm = st.sidebar.number_input("FWHM Value", min_value=0.0, value=1.0)
+            args.fwhm = fwhm
+            args.sigma = None
         else:
-            input_dataset_path = Path(input_dataset).resolve()
-            if not input_dataset_path.exists():
-                st.error(f"Input dataset {input_dataset} is not a valid path")
-                return
+            args.sigma = None
+            args.fwhm = None
 
-            if not is_bids_dataset(input_dataset_path):
-                paths_list = parse_file_list_argument(input_dataset_path,
-                                                      recursive_file_search=recursive_search,
-                                                      file_types=input_file_types,
-                                                      arg_separator=arg_separator)
-                dataset_type = detect_dataset_type(paths_list)
-            else:
-                paths_list = handle_bids_dataset(input_dataset_path, verbose=True)
-                dataset_type = 'nifti'
+    if command == "clustering":
+        load_embeddings = st.sidebar.text_input("Load Embeddings")
+        args.load_embeddings = load_embeddings if load_embeddings else None
 
-        # Process input dataset
-        if dataset_type == 'image':
-            min_res = find_min_resolution(paths_list)
-            input_matrix = process_images(paths_list, min_res)
-            output_format_info = min_res
-        elif dataset_type == 'nifti':
-            input_matrix = nifti_dataset_to_matrix(paths_list)
-            output_format_info = load_nifti(paths_list[0]).affine
-        elif dataset_type == 'mnist':
-            mnist_features_normalized, mnist_labels = load_and_preprocess_digits_dataset()
-            input_matrix = mnist_features_normalized.to_numpy() if not isinstance(mnist_features_normalized, np.ndarray) else mnist_features_normalized
-            mnist_labels = mnist_labels.astype(int).to_numpy() if not isinstance(mnist_labels, np.ndarray) else mnist_labels
-            output_format_info = mnist_features_normalized[0].shape
-        else:
-            st.error(f"Unsupported dataset type: {dataset_type}")
-            return
+    if command == "heatmap":
+        embeddings = st.sidebar.text_input("Embeddings File")
+        args.embeddings = embeddings if embeddings else None
 
-        # Splitting dataset
-        train_features, test_features, train_labels, test_labels = train_test_split(
-            input_matrix, mnist_labels if dataset_type == 'mnist' else None, test_size=test_size, random_state=42)
+        output_format_info = st.sidebar.text_input("Output Format Info (optional)")
+        args.output_format_info = output_format_info if output_format_info else None
 
-        # Train or load UMAP
-        if load_umap:
-            trained_umap, _ = load_umap_model(Path(load_umap).resolve())
-        else:
-            trained_umap, embeddings, _, _, _ = train_and_save_umap_and_embeddings(
-                train_features, output_folder, pref=prefix)
-            st.success(f"UMAP model trained and saved.")
+        load_hdbscan = st.sidebar.text_input("Load HDBSCAN Model")
+        args.load_hdbscan = load_hdbscan if load_hdbscan else None
 
-        # Load or transform embeddings
-        if load_embeddings:
-            embeddings = np.load(load_embeddings)
-        else:
-            embeddings = trained_umap.transform(train_features)
+    # Option to show plots
+    show_plots = st.sidebar.checkbox("Display Plots", value=True)
+    args.show_plots = show_plots
 
-        # Clustering
-        if command in ['full', 'clustering']:
-            if load_hdbscan:
-                clusterer = load_hdbscan_model(load_hdbscan)
-                cluster_labels = clusterer.labels_
-            else:
-                clusterer, cluster_labels = cluster_coordinates(embeddings, min_cluster_size=5)
-                save_hdbscan_model(clusterer, output_folder, prefix=prefix)
-                st.success("Clustering completed and saved.")
+    # Create a queue to communicate between the pipeline thread and the main thread
+    if 'pipeline_queue' not in st.session_state:
+        st.session_state.pipeline_queue = queue.Queue()
+    pipeline_queue = st.session_state.pipeline_queue
 
+    # Function to run the pipeline in a separate thread
+    def run_pipeline():
+        try:
+            # Run the pipeline
+            pipeline.run()
+            # After completion, put a success message in the queue
+            pipeline_queue.put("Pipeline execution completed.")
+        except Exception as e:
+            # If there's an error, put the error message in the queue
+            pipeline_queue.put(f"An error occurred: {e}")
+            logger.exception("Exception during pipeline execution")
+
+    # Run Pipeline Button
+    if st.sidebar.button("Run Pipeline"):
+        try:
+            # Create the output folder if it doesn't exist
+            output_folder_path = Path(args.output_folder).resolve()
+            output_folder_path.mkdir(parents=True, exist_ok=True)
+
+            # Create the pipeline instance
+            pipeline = EMUSESPipeline(args)
+
+            # Determine which stages to add based on the command
+            stages_to_add = []
+
+            if command in ['umap', 'full', 'prediction']:
+                stages_to_add.append(UMAPStage(pipeline.config))
+
+            if command in ['clustering', 'full']:
+                stages_to_add.append(ClusteringStage(pipeline.config))
+
+            if command in ['heatmap', 'full']:
+                stages_to_add.append(HeatmapStage(
+                    pipeline.config,
+                    output_format_info=pipeline.context.get('output_format_info')
+                ))
+
+            if command in ['prediction', 'full']:
+                stages_to_add.append(PredictionStage(pipeline.config))
+
+            # Add the stages to the pipeline
+            for stage in stages_to_add:
+                pipeline.add_stage(stage)
+
+            # Start the pipeline thread
+            pipeline_thread = threading.Thread(target=run_pipeline)
+            pipeline_thread.start()
+
+            # Create placeholders for status and results
+            status_placeholder = st.empty()
+            plots_placeholder = st.empty()
+
+            # While the pipeline is running, check the queue for messages
+            while pipeline_thread.is_alive():
+                time.sleep(0.1)  # Avoid busy waiting
+                try:
+                    message = pipeline_queue.get_nowait()
+                    status_placeholder.info(message)
+                except queue.Empty:
+                    pass
+
+            # After the pipeline finishes
+            try:
+                message = pipeline_queue.get_nowait()
+                status_placeholder.info(message)
+            except queue.Empty:
+                pass
+
+            # Retrieve and display plots
+            heatmap_plots = pipeline.context.get('heatmap_plots', {})
+            for score_tag, plot_fig in heatmap_plots.items():
+                plots_placeholder.write(f"Clustering Plot for Score {score_tag}")
+                plots_placeholder.pyplot(plot_fig)
+
+            interactive_plot = pipeline.context.get('interactive_plot', None)
             if interactive_plot:
-                plot_clustering_interactive_with_hover(embeddings, cluster_labels,
-                                                       output_path=Path(output_folder) / 'clustering_plot.html')
+                plots_placeholder.plotly_chart(interactive_plot, use_container_width=True)
 
-        # Heatmap Analysis
-        if command in ['full', 'heatmap']:
-            if clusterer is None:
-                st.error("Clustering is required for heatmap analysis.")
-                return
+        except Exception as e:
+            st.error(f"An error occurred: {e}")
+            logger.exception("Exception during pipeline setup")
 
-            run_heatmap_analysis(
-                embeddings=embeddings,
-                scores_vectors_dict={label: (train_labels == label).astype(int) for label in np.unique(train_labels)},
-                input_matrix=train_features,
-                output_folder=output_folder,
-                clusterer=clusterer,
-                cluster_labels=cluster_labels,
-                output_format_info=output_format_info,
-                grid_size=100,
-                sigma=None,
-                correlation_threshold=0.3,
-                highlight_points=True
-            )
-            st.success("Heatmap analysis completed.")
+    # Exit logic (this needs to be outside the pipeline execution loop to avoid interference)
+    if "confirm_exit" not in st.session_state:
+        st.session_state.confirm_exit = False
 
-        # Prediction
-        if command in ['full', 'prediction']:
-            train_and_test_model_per_label(
-                train_embeddings=embeddings,
-                train_labels=train_labels,
-                test_embeddings=embeddings if test_features is None else trained_umap.transform(test_features),
-                test_labels=test_labels,
-                output_folder=Path(output_folder) / 'prediction_models'
-            )
-            st.success("Prediction model trained and saved.")
-
+    if not st.session_state.confirm_exit:
+        if st.sidebar.button("Exit App", key="exit_button"):
+            st.warning("Are you sure you want to exit? Click 'Confirm Exit' to proceed.")
+            st.session_state.confirm_exit = True
+    else:
+        if st.sidebar.button("Confirm Exit", key="confirm_exit_button"):
+            st.write("Exiting the app...")
+            sys.exit()
+        elif st.sidebar.button("Cancel", key="cancel_exit_button"):
+            st.session_state.confirm_exit = False
+            st.write("Exit canceled.")
 
 if __name__ == '__main__':
     main()

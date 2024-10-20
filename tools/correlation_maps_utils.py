@@ -130,7 +130,7 @@ def filter_coordinates(coordinates, correlations, correlation_threshold=0.3):
 
 def run_heatmap_analysis(
     embeddings, scores_vectors_dict, input_matrix, output_folder, output_format_info, clusterer, cluster_labels,
-    grid_size=100, sigma=None, correlation_threshold=0.3, highlight_points=True
+    grid_size=100, sigma=None, correlation_threshold=0.3, highlight_points=True, show_plots=False
 ):
     """
     Run heatmap creation, point-biserial correlation, and statistical analysis on the provided embeddings.
@@ -159,10 +159,14 @@ def run_heatmap_analysis(
         Threshold for filtering coordinates based on correlation.
     - highlight_points : bool, optional
         Whether to highlight filtered points based on the correlation threshold.
+    - show_plots : bool, optional
+        Whether to display plots interactively.
     """
     if sigma is None:
         sigma_percentage = np.array([0.005, 0.01, 0.02, 0.03])
         sigma = sigma_percentage / np.max(embeddings)
+
+    plots = {}  # Dictionary to collect plots
     for score_tag, train_labels_bin in scores_vectors_dict.items():
         # Step 1: Calculate point-biserial correlations over a grid
         print("Calculating point-biserial correlations over a grid...")
@@ -222,7 +226,7 @@ def run_heatmap_analysis(
         # Step 7: Plot clustering of the whole space
         if clusterer is not None and filtered_coordinates.shape[0] == filtered_cluster_labels.shape[0]:
             print("Plotting clustering of the whole space...")
-            plot_clustering(
+            plot_fig = plot_clustering(
                 embeddings=embeddings,
                 clusterer=clusterer,
                 grid_x=grid_x,
@@ -232,8 +236,13 @@ def run_heatmap_analysis(
                 filtered_embeddings=filtered_coordinates,
                 cluster_labels=filtered_cluster_labels,
                 score_tag=score_tag,
-                highlight_points=highlight_points
+                highlight_points=highlight_points,
+                show_plot=show_plots,
+                save_path=Path(output_folder) / f'clustering_plot_{score_tag}.png'
             )
+            plots[score_tag] = plot_fig
             print("Clustering plot created successfully.")
         else:
             print("Mismatch in dimensions or clustering failed. Skipping the plot.")
+
+    return plots  # Return the collected plots
