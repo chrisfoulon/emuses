@@ -138,11 +138,20 @@ def main():
         st.session_state.pipeline_queue = queue.Queue()
     pipeline_queue = st.session_state.pipeline_queue
 
+    # Create placeholders for progress bars and messages
+    stage_progress_bar = st.progress(0)
+    stage_placeholder = st.empty()
+
+    # Define the progress callback function
+    def progress_callback(stage_name, progress):
+        # Put a tuple into the queue
+        pipeline_queue.put(('stage_progress', stage_name, progress))
+
     # Function to run the pipeline in a separate thread
     def run_pipeline():
         try:
-            # Run the pipeline
-            pipeline.run()
+            # Run the pipeline with the progress_callback
+            pipeline.run(progress_callback=progress_callback)
             # After completion, put a success message in the queue
             pipeline_queue.put("Pipeline execution completed.")
         except Exception as e:
@@ -191,14 +200,37 @@ def main():
             # Create placeholders for status and results
             status_placeholder = st.empty()
 
+            # Create placeholders for progress bars and messages
+            status_placeholder = st.empty()
+            stage_progress_bar = st.progress(0)
+            stage_placeholder = st.empty()
+
             # While the pipeline is running, check the queue for messages
             while pipeline_thread.is_alive():
                 time.sleep(0.1)  # Avoid busy waiting
                 try:
-                    message = pipeline_queue.get_nowait()
-                    status_placeholder.info(message)
+                    while True:
+                        message = pipeline_queue.get_nowait()
+                        if isinstance(message, tuple):
+                            if message[0] == 'stage_progress':
+                                # Update the progress bar and placeholder
+                                stage_name, progress = message[1], message[2]
+                                stage_placeholder.text(f"Running stage: {stage_name}")
+                                progress_percent = int(progress * 100)
+                                stage_progress_bar.progress(progress_percent)
+                            # Handle other message types...
+                        elif "Pipeline execution completed." in message:
+                            status_placeholder.success(message)
+                        elif "An error occurred" in message:
+                            status_placeholder.error(message)
+                        else:
+                            status_placeholder.info(message)
                 except queue.Empty:
                     pass
+
+            # After the pipeline finishes, update the progress bar to 100%
+            stage_progress_bar.progress(100)
+            stage_placeholder.text("Pipeline execution completed.")
 
             # After the pipeline finishes
             try:
@@ -236,7 +268,7 @@ def main():
                             for cluster_tab, cluster in zip(cluster_tabs, clusters_labels):
                                 with cluster_tab:
                                     st.subheader(f"Data for Cluster {cluster}")
-                                    cluster_data = score_tag_plots[clusters_labels]
+                                    cluster_data = score_tag_plots[cluster]
                                     # Display cluster data as needed
                                     st.write("Representative Cluster:")
                                     if isinstance(cluster_data, plt.Figure):

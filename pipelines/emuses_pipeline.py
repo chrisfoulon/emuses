@@ -191,7 +191,14 @@ class EMUSESPipeline:
     def add_stage(self, stage):
         self.stages.append(stage)
 
-    def run(self):
-        for stage in self.stages:
+    def run(self, progress_callback=None):
+        total_stages = len(self.stages)
+        for i, stage in enumerate(self.stages):
+            # Update progress before running the stage
+            if progress_callback:
+                progress_callback(stage_name=stage.__class__.__name__, progress=i / total_stages)
+            # Run the stage
             stage.run(self.context)
-            # Each stage updates the context directly
+            # Update progress after running the stage
+            if progress_callback:
+                progress_callback(stage_name=stage.__class__.__name__, progress=(i + 1) / total_stages)

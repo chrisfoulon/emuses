@@ -350,7 +350,7 @@ def train_model(training_df, test_df, score_name, output_folder, categorical=Fal
 
     # Save the validation metrics, including the ensembled test metrics, to a spreadsheet
     metrics_df = pd.DataFrame({
-        'Fold': range(1, k + 1),
+        'Fold': [str(i) for i in range(1, k + 1)],
         'Training R^2': best_permutation['r2_scores_train'],
         'Validation R^2': best_permutation['r2_scores_val'],
         'Normalized Validation MSE (%)': best_permutation['normalized_mse_val_list'],
