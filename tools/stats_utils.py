@@ -398,7 +398,6 @@ def train_model(training_df, test_df, score_name, output_folder, categorical=Fal
     plt.savefig(os.path.join(output_folder, f'{score_name}_prediction_plot.png'))
     plt.show()
 
-
     # Plotting the correlation between actual and predicted scores
     plt.figure(figsize=(10, 6))
     plt.scatter(test_scores, test_predictions, alpha=0.6)

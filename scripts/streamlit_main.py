@@ -4,11 +4,15 @@ import sys
 import threading
 import time
 
+import plotly
 import streamlit as st
 import logging
 import argparse
 from pathlib import Path
 import numpy as np
+import signal
+
+from matplotlib import pyplot as plt
 
 # Import pipeline classes
 from pipelines.emuses_pipeline import EMUSESPipeline
@@ -38,7 +42,7 @@ def main():
     args.output_folder = output_folder
 
     # Collect inputs based on command
-    if command in ["full", "umap", "prediction"]:
+    if command in ["full", "heatmap", "umap", "prediction"]:
         input_dataset = st.sidebar.text_input("Input Dataset (path or 'mnist')")
         args.input_dataset = input_dataset
 
@@ -116,6 +120,7 @@ def main():
 
     if command == "heatmap":
         embeddings = st.sidebar.text_input("Embeddings File")
+        print(f'Is embeddings None? {embeddings is None}')
         args.embeddings = embeddings if embeddings else None
 
         output_format_info = st.sidebar.text_input("Output Format Info (optional)")
@@ -126,7 +131,7 @@ def main():
 
     # Option to show plots
     show_plots = st.sidebar.checkbox("Display Plots", value=True)
-    args.show_plots = show_plots
+    args.show_plots = True
 
     # Create a queue to communicate between the pipeline thread and the main thread
     if 'pipeline_queue' not in st.session_state:
@@ -146,7 +151,7 @@ def main():
             logger.exception("Exception during pipeline execution")
 
     # Run Pipeline Button
-    if st.sidebar.button("Run Pipeline"):
+    if st.sidebar.button("Run Pipeline", key="run_pipeline"):
         try:
             # Create the output folder if it doesn't exist
             output_folder_path = Path(args.output_folder).resolve()
@@ -165,6 +170,8 @@ def main():
                 stages_to_add.append(ClusteringStage(pipeline.config))
 
             if command in ['heatmap', 'full']:
+                if args.load_embeddings is not None:
+                    pipeline.context['embeddings'] = np.load(args.load_embeddings)
                 stages_to_add.append(HeatmapStage(
                     pipeline.config,
                     output_format_info=pipeline.context.get('output_format_info')
@@ -183,7 +190,6 @@ def main():
 
             # Create placeholders for status and results
             status_placeholder = st.empty()
-            plots_placeholder = st.empty()
 
             # While the pipeline is running, check the queue for messages
             while pipeline_thread.is_alive():
@@ -203,13 +209,51 @@ def main():
 
             # Retrieve and display plots
             heatmap_plots = pipeline.context.get('heatmap_plots', {})
-            for score_tag, plot_fig in heatmap_plots.items():
-                plots_placeholder.write(f"Clustering Plot for Score {score_tag}")
-                plots_placeholder.pyplot(plot_fig)
 
+            if heatmap_plots:
+                # Create tabs for each score_tag
+                score_tags = list(heatmap_plots.keys())
+                tabs = st.tabs(score_tags)
+
+                for tab, score_tag in zip(tabs, score_tags):
+                    with tab:
+                        st.header(f"Results for Score {score_tag}")
+                        # Get the plots dictionary for this score_tag
+                        score_tag_plots = heatmap_plots[score_tag]
+                        # Display clustering plot
+                        clustering_plot = score_tag_plots.get('clustering_plot', None)
+                        print(f'Is clustering plot None? {clustering_plot is None}')
+                        if clustering_plot:
+                            st.subheader("Clustering Plot:")
+                            st.pyplot(clustering_plot)
+                        else:
+                            st.write("No clustering plot available.")
+
+                        # Display representative data per cluster
+                        clusters_labels = [clu for clu in score_tag_plots if clu != 'clustering_plot']
+                        if clusters_labels:
+                            cluster_tabs = st.tabs([f"Cluster {cluster}" for cluster in clusters_labels])
+                            for cluster_tab, cluster in zip(cluster_tabs, clusters_labels):
+                                with cluster_tab:
+                                    st.subheader(f"Data for Cluster {cluster}")
+                                    cluster_data = score_tag_plots[clusters_labels]
+                                    # Display cluster data as needed
+                                    st.write("Representative Cluster:")
+                                    if isinstance(cluster_data, plt.Figure):
+                                        st.pyplot(cluster_data)
+                                    elif isinstance(cluster_data, plotly.graph_objects.Figure):
+                                        st.plotly_chart(cluster_data)
+                                    else:
+                                        st.write("No plot available for this cluster.")
+                        else:
+                            st.write("No representative cluster data available.")
+            else:
+                st.write("No heatmap plots available.")
+
+            # Display interactive Plotly plots if available
             interactive_plot = pipeline.context.get('interactive_plot', None)
             if interactive_plot:
-                plots_placeholder.plotly_chart(interactive_plot, use_container_width=True)
+                st.plotly_chart(interactive_plot, use_container_width=True)
 
         except Exception as e:
             st.error(f"An error occurred: {e}")
@@ -230,6 +274,7 @@ def main():
         elif st.sidebar.button("Cancel", key="cancel_exit_button"):
             st.session_state.confirm_exit = False
             st.write("Exit canceled.")
+
 
 if __name__ == '__main__':
     main()

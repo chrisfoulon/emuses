@@ -3,6 +3,7 @@ import logging
 from pipelines.pipeline_stage import PipelineStage
 from tools.stats_utils import train_and_test_model_per_label
 
+
 class PredictionStage(PipelineStage):
     def __init__(self, config):
         super().__init__(config)

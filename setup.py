@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name='emuse',
-    version='0.3',
+    version='0.4',
     packages=find_packages(),
     entry_points={
         'console_scripts': [
@@ -28,6 +28,7 @@ setup(
         'hdbscan',
         'pytest',
         'pybids',
-        'plotly'
+        'plotly',
+        'streamlit'
     ],
 )

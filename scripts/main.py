@@ -11,6 +11,7 @@ from pipelines.clustering_stage import ClusteringStage
 from pipelines.heatmap_stage import HeatmapStage
 from pipelines.prediction_stage import PredictionStage
 
+
 def get_input_dataset_parser():
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument('input_dataset', help='Input dataset of images (jpg), NIfTI, or MNIST')
@@ -20,11 +21,11 @@ def get_input_dataset_parser():
                         help='File types to search for in the input dataset folder')
     parser.add_argument('--arg_separator', default=',',
                         help='Separator for the input dataset list')
-    parser.add_argument('--input_header', default=None,
+    parser.add_argument('--input_header', default=None, type=int,
                         help='Header for the spreadsheet input dataset')
     parser.add_argument('--inputs_columns', nargs='+',
                         help='List of columns for inputs in the scores file')
-    parser.add_argument('--input_index_column', default=None,
+    parser.add_argument('--input_index_column', default=None, type=int,
                         help='Index column for the spreadsheet input dataset')
     parser.add_argument('--columns_as_features', action='store_true',
                         help='Columns are features in the spreadsheet input dataset')
@@ -32,18 +33,21 @@ def get_input_dataset_parser():
                         help='BIDS filters for the input dataset')
     return parser
 
+
 def get_scores_parser():
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument('--scores', help='Path to scores file associated with the dataset')
-    parser.add_argument('--scores_header', default=None, help='Header for the scores spreadsheet')
-    parser.add_argument('--scores_index_column', default=None,
+    parser.add_argument('--scores_header', type=int, default=None,
+                        help='Header for the scores spreadsheet')
+    parser.add_argument('--scores_index_column', type=int, default=None,
                         help='Index column for the scores spreadsheet')
-    parser.add_argument('--scores_are_columns', action='store_true',
+    parser.add_argument('--scores_are_rows', action='store_true',
                         help='Scores are in the columns of the spreadsheet input dataset')
     parser.add_argument('--scores_column', nargs='+', help='Column(s) for scores in the scores file')
     parser.add_argument('--classification', action='store_true',
                         help='Scores are integer classes in one column')
     return parser
+
 
 def get_umap_parser():
     parser = argparse.ArgumentParser(add_help=False)
@@ -54,6 +58,7 @@ def get_umap_parser():
     parser.add_argument('--prefix', default='', help='Prefix for the output path names')
     return parser
 
+
 def get_clustering_parser():
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument('--load_hdbscan', help='Path to a pre-trained HDBSCAN model')
@@ -62,6 +67,7 @@ def get_clustering_parser():
                         help='Option to create interactive clustering plots')
     return parser
 
+
 def get_smoothing_parser():
     parser = argparse.ArgumentParser(add_help=False)
     smoothing_group = parser.add_mutually_exclusive_group()
@@ -69,6 +75,7 @@ def get_smoothing_parser():
     smoothing_group.add_argument('--fwhm', type=float,
                                  help='Full width at half maximum value for the smoothing')
     return parser
+
 
 def main():
     # Configure logging
@@ -116,11 +123,11 @@ def main():
     # Subparser for the 'heatmap' command
     heatmap_parser = subparsers.add_parser(
         'heatmap',
-        parents=[scores_parser, smoothing_parser],
+        parents=[input_dataset_parser, scores_parser, smoothing_parser],
         help='Create a heatmap',
         add_help=True
     )
-    heatmap_parser.add_argument('embeddings', help='Embeddings from the UMAP')
+    heatmap_parser.add_argument('--load_embeddings', help='Embeddings from the UMAP')
     heatmap_parser.add_argument('--load_hdbscan', help='Path to a pre-trained HDBSCAN model')
     heatmap_parser.add_argument('--output_format_info', help='Output format information needed')
 
@@ -174,6 +181,7 @@ def main():
 
     # Run the pipeline
     pipeline.run()
+
 
 if __name__ == '__main__':
     main()

@@ -275,6 +275,9 @@ def spreadsheet_to_input_df(file_path, header=None, index_col=None, filter_colum
     if not columns_are_features:
         df = df.transpose()
 
+    # # Enforce data types to be float or int
+    # df = df.apply(pd.to_numeric, errors='coerce')
+
     return df
 
 
@@ -345,8 +348,10 @@ def prepare_input_matrix(paths_list, dataset_type):
 
 def prepare_scores(scores, embeddings_shape):
     """Prepare and validate the scores."""
-    scores = np.array([float(score) for score in scores])
-    if len(scores) != embeddings_shape[0]:
+    scores = np.vectorize(float)(scores)
+    if scores.ndim == 1:
+        scores = scores.reshape(-1, 1)
+    if scores.shape[0] != embeddings_shape[0]:
         raise ValueError("Scores length must match the number of embeddings")
     return scores
 

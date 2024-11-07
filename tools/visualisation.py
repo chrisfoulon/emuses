@@ -269,7 +269,7 @@ def plot_statistical_map(data, title='', save_path=None, show_plot=False, return
     ax.set_title(title)
     ax.set_xlabel('X-axis')
     ax.set_ylabel('Y-axis')
-    plt.colorbar(ax.imshow(data, cmap='hot', interpolation='nearest'), label='Effect Size', ax=ax)
+    plt.colorbar(ax.imshow(data, cmap='coolwarm', interpolation='nearest'), label='Effect Size', ax=ax)
 
     if save_path:
         plt.savefig(save_path)

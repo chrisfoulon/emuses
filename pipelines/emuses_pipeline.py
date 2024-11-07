@@ -51,6 +51,9 @@ class EMUSESPipeline:
             'dataset_type': self.dataset_type,
             'output_folder': self.output_folder,
         })
+        # Load embeddings if provided
+        if args.load_embeddings:
+            self.context['embeddings'] = np.load(args.load_embeddings)
 
     def validate_args(self):
         # Validation logic if needed
@@ -86,13 +89,16 @@ class EMUSESPipeline:
             if not args.input_dataset.exists():
                 raise ValueError(f"Input dataset {args.input_dataset} is not a valid path")
             if not is_bids_dataset(args.input_dataset):
-                self.paths_list = parse_file_list_argument(
-                    args.input_dataset,
-                    recursive_file_search=args.recursive_input_file_search,
-                    file_types=args.input_file_types,
-                    arg_separator=args.arg_separator
-                )
-                self.dataset_type = detect_dataset_type(self.paths_list)
+                if args.input_dataset.is_file():
+                    self.dataset_type = detect_dataset_type([args.input_dataset])
+                else:
+                    self.paths_list = parse_file_list_argument(
+                        args.input_dataset,
+                        recursive_file_search=args.recursive_input_file_search,
+                        file_types=args.input_file_types,
+                        arg_separator=args.arg_separator
+                    )
+                    self.dataset_type = detect_dataset_type(self.paths_list)
             else:
                 # Handle BIDS dataset
                 self.paths_list = handle_bids_dataset(args.input_dataset, args.bids_filters, verbose=True)
@@ -107,16 +113,19 @@ class EMUSESPipeline:
                 self.input_matrix = nifti_dataset_to_matrix(self.paths_list)
                 self.output_format_info = load_nifti(self.paths_list[0]).affine
             elif self.dataset_type in ['spreadsheet', 'tabular']:
-                inputs_df = spreadsheet_to_input_df(
-                    args.input_dataset,
-                    header=args.input_header,
-                    index_col=args.input_index_column,
-                    filter_columns_list=args.inputs_columns,
-                    filter_rows_list=None,  # TODO: add this option
-                    columns_are_features=args.columns_as_features
-                )
-                self.input_matrix = inputs_df.values
-                self.output_format_info = self.input_matrix.shape[1]
+                if args.input_file_types is None:
+                    inputs_df = spreadsheet_to_input_df(
+                        args.input_dataset,
+                        header=args.input_header,
+                        index_col=args.input_index_column,
+                        filter_columns_list=args.inputs_columns,
+                        filter_rows_list=None,  # TODO: add this option
+                        columns_are_features=args.columns_as_features
+                    )
+                    self.input_matrix = inputs_df.values
+                    self.output_format_info = self.input_matrix.shape[1]
+                    self.paths_list = None
+                    # TODO add a way to detect files in the spreadsheet
             else:
                 raise ValueError(f"Unsupported dataset type: {self.dataset_type}")
 
@@ -136,9 +145,9 @@ class EMUSESPipeline:
                 index_col=args.scores_index_column,
                 filter_columns_list=args.scores_column,
                 filter_rows_list=None,  # TODO: add this option
-                columns_are_features=args.scores_are_columns
+                columns_are_features=not args.scores_are_rows
             )
-            self.scores = prepare_scores(scores_df.values, self.input_matrix.shape[0])
+            self.scores = prepare_scores(scores_df.values, self.input_matrix.shape)
 
             # Update context with scores
             self.context['scores'] = self.scores
@@ -152,8 +161,19 @@ class EMUSESPipeline:
                 self.input_matrix,
                 self.scores if self.scores is not None else None,
                 test_size=test_size,
-                random_state=42
+                # TODO change that
+                # random_state=42
             )
+
+            # Create the split_dataset subfolder
+            split_folder = self.output_folder / "split_dataset"
+            split_folder.mkdir(parents=True, exist_ok=True)
+
+            # Save the splits
+            np.save(split_folder / "train_features.npy", train_features)
+            np.save(split_folder / "test_features.npy", test_features)
+            np.save(split_folder / "train_labels.npy", train_labels)
+            np.save(split_folder / "test_labels.npy", test_labels)
         else:
             train_features = self.input_matrix
             train_labels = self.scores

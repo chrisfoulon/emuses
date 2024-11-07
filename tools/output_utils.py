@@ -1,14 +1,20 @@
 from pathlib import Path
 import nibabel as nib
+import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+from nilearn.plotting import plot_stat_map
+import plotly.express as px
 
 from tools.visualisation import plot_statistical_map
 
 
-def save_statistical_maps(stat_maps, output_folder, input_type, output_format_info, filename_prefix='stat_map'):
+def save_statistical_maps(
+    stat_maps, output_folder, input_type, output_format_info,
+    filename_prefix='stat_map', save_output=True, generate_plots=False
+):
     """
-    Save statistical maps in the format matching the input type.
+    Save statistical maps in the format matching the input type, and optionally generate plots.
 
     Parameters:
     - stat_maps: dict
@@ -22,36 +28,99 @@ def save_statistical_maps(stat_maps, output_folder, input_type, output_format_in
         an output shape (for images), or a list of column names (for spreadsheets).
     - filename_prefix: str, optional
         The prefix for the output filenames. Default is 'stat_map'.
+    - save_output: bool, optional
+        Whether to save the output files. Default is True.
+    - generate_plots: bool, optional
+        Whether to generate and return plots of the statistical maps. Default is False.
 
     Returns:
-    None
+    - plots: dict
+        A dictionary containing plots for each cluster (only if generate_plots is True).
     """
     output_folder = Path(output_folder)
     output_folder.mkdir(parents=True, exist_ok=True)
 
+    plots = {} if generate_plots else None
+
     for cluster, stat_map in stat_maps.items():
         if input_type == 'nifti':
-            # Extract shape from affine matrix
-            output_shape = nib.aff2axcodes(output_format_info)
-            # Save as NIfTI file
+            # For NIfTI, output_format_info is a tuple of (output_shape, affine)
+            output_shape, affine = output_format_info
             stat_image = stat_map.reshape(output_shape)
-            nifti_img = nib.Nifti1Image(stat_image, output_format_info)
-            filename = output_folder / f"{filename_prefix}_cluster_{cluster}.nii.gz"
-            nib.save(nifti_img, filename)
+            nifti_img = nib.Nifti1Image(stat_image, affine)
+
+            # Generate the plot once
+            display = plot_stat_map(nifti_img, title=f'Effect Size Map for Cluster {cluster}')
+            fig = display.figure
+
+            if save_output:
+                # Save the NIfTI file
+                nifti_filename = output_folder / f"{filename_prefix}_cluster_{cluster}.nii.gz"
+                nib.save(nifti_img, nifti_filename)
+                # Save the plot as PNG
+                png_filename = output_folder / f"{filename_prefix}_cluster_{cluster}.png"
+                fig.savefig(png_filename)
+                print(f"Saved NIfTI image and plot for cluster {cluster}.")
+
+            if generate_plots:
+                plots[cluster] = fig
+
+            # Close the figure to free memory
+            plt.close(fig)
+
         elif input_type == 'image':
-            # Save as image file (e.g., PNG)
+            # For images, output_format_info is the output shape
             output_shape = output_format_info
             stat_image = stat_map.reshape(output_shape)
-            filename = output_folder / f"{filename_prefix}_cluster_{cluster}.png"
-            plot_statistical_map(stat_image, title=f'Effect Size Map for Cluster {cluster}', save_path=filename)
+
+            # Use the provided plot_statistical_map function
+            plot_title = f'Effect Size Map for Cluster {cluster}'
+            save_path = None
+            if save_output:
+                save_path = output_folder / f"{filename_prefix}_cluster_{cluster}.png"
+
+            fig = plot_statistical_map(
+                data=stat_image,
+                title=plot_title,
+                save_path=save_path,
+                show_plot=False,
+                return_plot=generate_plots
+            )
+
+            if generate_plots:
+                plots[cluster] = fig
+
         elif input_type == 'spreadsheet':
-            # Save as CSV file
+            # For spreadsheets, output_format_info is the list of column names
             columns = output_format_info
-            num_rows = len(stat_map) // len(columns)
-            df = pd.DataFrame(stat_map.reshape((num_rows, len(columns))), columns=columns)
-            filename = output_folder / f"{filename_prefix}_cluster_{cluster}.csv"
-            df.to_csv(filename, index=False)
+            df = pd.DataFrame([stat_map], columns=columns)
+
+            # Generate the plot once
+            df_long = df.melt(var_name='Feature', value_name='Effect Size')
+            fig = px.bar(df_long, x='Feature', y='Effect Size',
+                         title=f'Effect Size Map for Cluster {cluster}')
+
+            if save_output:
+                # Save the DataFrame to CSV
+                csv_filename = output_folder / f"{filename_prefix}_cluster_{cluster}.csv"
+                df.to_csv(csv_filename, index=False)
+                # Save the plot as PNG
+                png_filename = output_folder / f"{filename_prefix}_cluster_{cluster}.png"
+                fig.write_image(str(png_filename))
+                print(f"Saved CSV and plot for cluster {cluster}.")
+
+            if generate_plots:
+                plots[cluster] = fig
+
+            # No need to close Plotly figures
+
         else:
             raise ValueError(f"Unsupported input type: {input_type}")
 
-    print(f"Statistical maps saved in {output_folder}/{filename_prefix}_cluster_*.{input_type}")
+    if save_output:
+        print(f"Statistical maps saved in {output_folder}")
+
+    if generate_plots:
+        return plots
+    else:
+        return None
