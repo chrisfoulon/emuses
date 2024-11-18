@@ -1,3 +1,21 @@
-/emuse.egg-info/
+# Byte-compiled files
+*.pyc
+__pycache__/
 
+# Package metadata
+*.egg-info/
+output/
+
+# Pytest cache
+.pytest_cache/
+
+# IDE-specific files
 .idea/
+.vscode/
+
+# OS-specific files
+.DS_Store
+Thumbs.db
+
+# Git-specific files
+.git/

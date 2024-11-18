@@ -7,13 +7,12 @@ import nibabel as nib
 import pandas as pd
 from bcblib.tools.nifti_utils import reorient_to_canonical
 from bcblib.tools.general_utils import file_to_list
-from bcblib.tools.spreadsheet_io_utils import str_to_column_id
 from tqdm import tqdm
 from PIL import Image
 from scipy.sparse import lil_matrix
 from bids import BIDSLayout
 
-from tools.data_preproc import normalise_colours_in_array, rescale_image_array, find_min_resolution
+from emuses.tools.data_preproc import find_min_resolution
 
 
 from sklearn.datasets import fetch_openml, load_digits

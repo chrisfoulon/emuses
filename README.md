@@ -11,7 +11,8 @@ The `input_utils` module is responsible for importing different types of input d
 #### Example Usage
 
 ```python
-from tools.inputs_utils import detect_dataset_type, process_images, nifti_dataset_to_matrix, mnist_features_to_input_matrix
+from emuses.tools.inputs_utils import detect_dataset_type, process_images, nifti_dataset_to_matrix,
+    mnist_features_to_input_matrix
 
 # Detect dataset type (e.g., images or NIfTI)
 dataset_type = detect_dataset_type("input_folder")
@@ -42,10 +43,11 @@ The script uses the `train_and_save_umap_and_embeddings()` function to handle tr
 #### Example Usage
 
 ```python
-from tools.UMAP_utils import train_and_save_umap_and_embeddings
+from emuses.tools.UMAP_utils import train_and_save_umap_and_embeddings
 
 # Train UMAP model on input matrix and save embeddings
-umap_model, embeddings = train_and_save_umap_and_embeddings(input_matrix, output_folder="output/", n_neighbors=15, min_dist=0.1)
+umap_model, embeddings = train_and_save_umap_and_embeddings(input_matrix, output_folder="output/", n_neighbors=15,
+                                                            min_dist=0.1)
 ```
 
 The trained UMAP model and the corresponding embeddings are saved to the specified output folder, allowing them to be used for further analysis.

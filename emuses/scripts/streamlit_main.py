@@ -10,16 +10,15 @@ import logging
 import argparse
 from pathlib import Path
 import numpy as np
-import signal
 
 from matplotlib import pyplot as plt
 
 # Import pipeline classes
-from pipelines.emuses_pipeline import EMUSESPipeline
-from pipelines.umap_stage import UMAPStage
-from pipelines.clustering_stage import ClusteringStage
-from pipelines.heatmap_stage import HeatmapStage
-from pipelines.prediction_stage import PredictionStage
+from emuses.pipelines.emuses_pipeline import EMUSESPipeline
+from emuses.pipelines.umap_stage import UMAPStage
+from emuses.pipelines.clustering_stage import ClusteringStage
+from emuses.pipelines.heatmap_stage import HeatmapStage
+from emuses.pipelines.prediction_stage import PredictionStage
 
 
 def main():
@@ -150,8 +149,8 @@ def main():
     # Function to run the pipeline in a separate thread
     def run_pipeline():
         try:
-            # Run the pipeline with the progress_callback
-            pipeline.run(progress_callback=progress_callback)
+            # Run the pipeline with the progress_callback and progress_queue
+            pipeline.run(progress_callback=progress_callback, progress_queue=pipeline_queue)
             # After completion, put a success message in the queue
             pipeline_queue.put("Pipeline execution completed.")
         except Exception as e:
@@ -205,34 +204,57 @@ def main():
             stage_progress_bar = st.progress(0)
             stage_placeholder = st.empty()
 
+            # Create a placeholder for displaying plots in real-time
+            plot_placeholder = st.empty()
+
             # While the pipeline is running, check the queue for messages
             while pipeline_thread.is_alive():
                 time.sleep(0.1)  # Avoid busy waiting
                 try:
                     while True:
+                        # Retrieve message from the pipeline queue
                         message = pipeline_queue.get_nowait()
+
                         if isinstance(message, tuple):
-                            if message[0] == 'stage_progress':
-                                # Update the progress bar and placeholder
+                            # Handle plot messages
+                            if message[0] == 'plot':
+                                plot_title, plot_obj = message[1], message[2]
+                                with plot_placeholder.container():
+                                    st.subheader(plot_title)
+                                    st.plotly_chart(plot_obj)  # Display the new plot immediately
+
+                            # Handle stage progress messages
+                            elif message[0] == 'stage_progress':
                                 stage_name, progress = message[1], message[2]
                                 stage_placeholder.text(f"Running stage: {stage_name}")
-                                progress_percent = int(progress * 100)
-                                stage_progress_bar.progress(progress_percent)
-                            # Handle other message types...
+                                stage_progress_bar.progress(int(progress * 100))
+
                         elif "Pipeline execution completed." in message:
                             status_placeholder.success(message)
+                            break  # Exit loop after pipeline completion
+
                         elif "An error occurred" in message:
                             status_placeholder.error(message)
+                            break
+
                         else:
                             status_placeholder.info(message)
-                except queue.Empty:
-                    pass
 
-            # After the pipeline finishes, update the progress bar to 100%
+                except queue.Empty:
+                    pass  # Continue loop if no message is available in the queue
+
+            # After the pipeline finishes, complete the progress bar and status
             stage_progress_bar.progress(100)
             stage_placeholder.text("Pipeline execution completed.")
 
             # After the pipeline finishes
+
+            # Retrieve and display the clustering plot
+            clustering_plot = pipeline.context.get('clustering_plot', None)
+            if clustering_plot:
+                st.subheader("Clustering Plot:")
+                st.plotly_chart(clustering_plot)
+
             try:
                 message = pipeline_queue.get_nowait()
                 status_placeholder.info(message)

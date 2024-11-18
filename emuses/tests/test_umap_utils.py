@@ -1,6 +1,6 @@
 import numpy as np
 import pytest
-from tools.UMAP_utils import train_and_save_umap_and_embeddings
+from emuses.tools.UMAP_utils import train_and_save_umap_and_embeddings
 
 
 @pytest.fixture

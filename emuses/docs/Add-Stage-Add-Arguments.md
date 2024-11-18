@@ -40,7 +40,8 @@ This guide provides step-by-step instructions on how to add a new processing sta
 # pipelines/my_new_stage.py
 
 import logging
-from pipelines.pipeline_stage import PipelineStage
+from emuses.pipelines import PipelineStage
+
 
 class MyNewStage(PipelineStage):
     def __init__(self, config, **kwargs):
@@ -81,7 +82,7 @@ class MyNewStage(PipelineStage):
   ```python
   # main.py
 
-  from pipelines.my_new_stage import MyNewStage
+  from emuses.pipelines import MyNewStage
   ```
 
 - **Add the Stage to the Pipeline**:
@@ -308,7 +309,8 @@ class PipelineConfig:
 
 import logging
 import numpy as np
-from pipelines.pipeline_stage import PipelineStage
+from emuses.pipelines import PipelineStage
+
 
 class NormalizationStage(PipelineStage):
     def __init__(self, config):
@@ -323,11 +325,11 @@ class NormalizationStage(PipelineStage):
 
         if self.method == 'minmax':
             # Apply min-max normalization
-            normalized_matrix = (input_matrix - np.min(input_matrix, axis=0)) / \
+            normalized_matrix = (input_matrix - np.min(input_matrix, axis=0)) /
                                 (np.max(input_matrix, axis=0) - np.min(input_matrix, axis=0))
         elif self.method == 'zscore':
             # Apply z-score normalization
-            normalized_matrix = (input_matrix - np.mean(input_matrix, axis=0)) / \
+            normalized_matrix = (input_matrix - np.mean(input_matrix, axis=0)) /
                                 np.std(input_matrix, axis=0)
         else:
             normalized_matrix = input_matrix  # No normalization
@@ -341,7 +343,7 @@ class NormalizationStage(PipelineStage):
 - **Import the Stage in `main.py`**:
 
   ```python
-  from pipelines.normalization_stage import NormalizationStage
+  from emuses.pipelines import NormalizationStage
   ```
 
 - **Add the Stage to the Pipeline**:

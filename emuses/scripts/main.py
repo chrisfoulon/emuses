@@ -5,11 +5,11 @@ import logging
 from pathlib import Path
 
 # Import pipeline classes
-from pipelines.emuses_pipeline import EMUSESPipeline
-from pipelines.umap_stage import UMAPStage
-from pipelines.clustering_stage import ClusteringStage
-from pipelines.heatmap_stage import HeatmapStage
-from pipelines.prediction_stage import PredictionStage
+from emuses.pipelines.emuses_pipeline import EMUSESPipeline
+from emuses.pipelines.umap_stage import UMAPStage
+from emuses.pipelines.clustering_stage import ClusteringStage
+from emuses.pipelines.heatmap_stage import HeatmapStage
+from emuses.pipelines.prediction_stage import PredictionStage
 
 
 def get_input_dataset_parser():

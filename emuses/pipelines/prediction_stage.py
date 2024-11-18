@@ -1,14 +1,14 @@
 import logging
 
-from pipelines.pipeline_stage import PipelineStage
-from tools.stats_utils import train_and_test_model_per_label
+from emuses.pipelines.pipeline_stage import PipelineStage
+from emuses.tools.stats_utils import train_and_test_model_per_label
 
 
 class PredictionStage(PipelineStage):
     def __init__(self, config):
         super().__init__(config)
 
-    def run(self, context):
+    def run(self, context, progress_queue=None):
         logger = logging.getLogger(__name__)
         logger.info("Running Prediction Stage")
 

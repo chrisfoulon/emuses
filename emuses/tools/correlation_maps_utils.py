@@ -1,13 +1,12 @@
 from pathlib import Path
 
 import numpy as np
-from pandas.core.common import random_state
 from scipy.stats import pointbiserialr
-from tools.stats_utils import compute_gaussian_filter
+from emuses.tools.stats_utils import compute_gaussian_filter
 
-from tools.stats_utils import input_matrix_stat_map
-from tools.output_utils import save_statistical_maps
-from tools.visualisation import plot_statistical_map, plot_clustering
+from emuses.tools.stats_utils import input_matrix_stat_map
+from emuses.tools.output_utils import save_statistical_maps
+from emuses.tools.visualisation import plot_clustering
 
 
 # Function to calculate point-biserial correlation for each point in the grid

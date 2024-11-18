@@ -2,9 +2,9 @@ import numpy as np
 import logging
 from pathlib import Path
 
-from pipelines.pipeline_stage import PipelineStage
-from tools.UMAP_utils import train_and_save_umap_and_embeddings, load_umap_model
-from tools.emuses_utils import rescale_embedding
+from emuses.pipelines.pipeline_stage import PipelineStage
+from emuses.tools.UMAP_utils import train_and_save_umap_and_embeddings, load_umap_model
+from emuses.tools.emuses_utils import rescale_embedding
 
 class UMAPStage(PipelineStage):
     def __init__(self, config):
@@ -18,7 +18,7 @@ class UMAPStage(PipelineStage):
         self.min_embeddings = None
         self.max_embeddings = None
 
-    def run(self, context):
+    def run(self, context, progress_queue=None):
         logger = logging.getLogger(__name__)
         logger.info("Running UMAP Stage")
 
@@ -33,11 +33,12 @@ class UMAPStage(PipelineStage):
             logger.info(f"Loaded pre-trained UMAP model from: {self.umap_model_path}")
         else:
             # Train UMAP
-            self.trained_umap, embeddings, umap_path, embeddings_path, input_matrix_path = train_and_save_umap_and_embeddings(
+            self.trained_umap, embeddings, umap_path, embeddings_path, input_matrix_path = (
+                train_and_save_umap_and_embeddings(
                 train_features,
                 self.config.output_folder,
                 pref=args.prefix
-            )
+            ))
             self.umap_model_path = umap_path
             self.embeddings_path = embeddings_path
             logger.info(f"UMAP model saved at: {umap_path}")

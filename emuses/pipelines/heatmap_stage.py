@@ -3,10 +3,9 @@
 import numpy as np
 import logging
 
-from pipelines.pipeline_stage import PipelineStage
-from tools.correlation_maps_utils import run_heatmap_analysis
-from tools.clustering_utils import load_hdbscan_model
-from tools.stats_utils import fwhm_to_sigma  # Import the conversion function
+from emuses.pipelines.pipeline_stage import PipelineStage
+from emuses.tools.correlation_maps_utils import run_heatmap_analysis
+from emuses.tools.stats_utils import fwhm_to_sigma  # Import the conversion function
 
 
 class HeatmapStage(PipelineStage):
@@ -14,7 +13,7 @@ class HeatmapStage(PipelineStage):
         super().__init__(config)
         self.output_format_info = output_format_info
 
-    def run(self, context):
+    def run(self, context, progress_queue=None):
         logger = logging.getLogger(__name__)
         logger.info("Running Heatmap Stage")
 

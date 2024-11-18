@@ -1,12 +1,11 @@
 from pathlib import Path
 import nibabel as nib
-import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 from nilearn.plotting import plot_stat_map
 import plotly.express as px
 
-from tools.visualisation import plot_statistical_map
+from emuses.tools.visualisation import plot_statistical_map
 
 
 def save_statistical_maps(

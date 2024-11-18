@@ -1,12 +1,12 @@
 from setuptools import setup, find_packages
 
 setup(
-    name='emuse',
-    version='0.4',
+    name='emuses',
+    version='0.5',
     packages=find_packages(),
     entry_points={
         'console_scripts': [
-            'emuse=emuse.main:main',  # 'emuse' is the command, 'emuse.main:main' is the function to execute
+            'emuses=emuses.scripts.main:main',
         ],
     },
     install_requires=[

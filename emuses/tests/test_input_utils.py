@@ -1,14 +1,11 @@
-import os
-import sys
 import numpy as np
 import nibabel as nib
 import pandas as pd
 import pytest
 from unittest.mock import patch
-from pathlib import Path
 from PIL import Image
 
-from tools.inputs_utils import detect_dataset_type, process_images, mnist_features_to_input_matrix, \
+from emuses.tools.inputs_utils import detect_dataset_type, process_images, mnist_features_to_input_matrix, \
     load_and_preprocess_digits_dataset, nifti_dataset_to_matrix, spreadsheet_to_input_df, prepare_input_matrix
 
 

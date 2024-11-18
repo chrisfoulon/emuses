@@ -2,7 +2,6 @@ import os
 from pathlib import Path
 from multiprocessing import Pool
 
-from joblib import Parallel, delayed
 import numpy as np
 import umap
 from joblib import dump, load
@@ -13,7 +12,7 @@ from statsmodels.stats.multitest import multipletests
 from scipy.stats import pointbiserialr
 from tqdm import tqdm
 
-from tools.stats_utils import process_column
+from emuses.tools.stats_utils import process_column
 
 
 # def rescale_embedding(embedding, margin=0, max_coordinates=None, min_coordinates=None):

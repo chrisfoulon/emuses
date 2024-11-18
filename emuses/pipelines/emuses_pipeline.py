@@ -2,15 +2,13 @@
 
 import logging
 import numpy as np
-import pandas as pd
 from pathlib import Path
 
-from pipelines.pipeline_config import PipelineConfig
-from pipelines.pipeline_stage import PipelineStage
+from emuses.pipelines.pipeline_config import PipelineConfig
 
 from bcblib.tools.general_utils import parse_file_list_argument
 from bcblib.tools.nifti_utils import load_nifti
-from tools.inputs_utils import (
+from emuses.tools.inputs_utils import (
     detect_dataset_type,
     process_images,
     nifti_dataset_to_matrix,
@@ -20,7 +18,7 @@ from tools.inputs_utils import (
     is_bids_dataset,
     handle_bids_dataset
 )
-from tools.data_preproc import find_min_resolution
+from emuses.tools.data_preproc import find_min_resolution
 from sklearn.model_selection import train_test_split
 
 class EMUSESPipeline:
@@ -191,14 +189,17 @@ class EMUSESPipeline:
     def add_stage(self, stage):
         self.stages.append(stage)
 
-    def run(self, progress_callback=None):
+    def run(self, progress_callback=None, progress_queue=None):
         total_stages = len(self.stages)
         for i, stage in enumerate(self.stages):
             # Update progress before running the stage
             if progress_callback:
-                progress_callback(stage_name=stage.__class__.__name__, progress=i / total_stages)
+                progress = i / total_stages
+                progress_callback(stage_name=stage.__class__.__name__, progress=progress)
             # Run the stage
-            stage.run(self.context)
+            stage.run(self.context, progress_queue=progress_queue)
             # Update progress after running the stage
             if progress_callback:
-                progress_callback(stage_name=stage.__class__.__name__, progress=(i + 1) / total_stages)
+                progress = (i + 1) / total_stages
+                progress_callback(stage_name=stage.__class__.__name__, progress=progress)
+
