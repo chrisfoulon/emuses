@@ -12,9 +12,25 @@ from emuses.pipelines.heatmap_stage import HeatmapStage
 from emuses.pipelines.prediction_stage import PredictionStage
 
 
-def get_input_dataset_parser():
-    parser = argparse.ArgumentParser(add_help=False)
+def add_output_folder_argument(parser):
+    """
+    Adds the 'output_folder' positional argument to the parser.
+    """
+    parser.add_argument('output_folder', help='Output folder')
+
+
+def add_input_dataset_argument(parser):
+    """
+    Adds the 'input_dataset' positional argument to the parser.
+    """
     parser.add_argument('input_dataset', help='Input dataset of images (jpg), NIfTI, or MNIST')
+
+
+def add_input_dataset_arguments(parser):
+    """
+    Adds optional arguments related to the input dataset to the parser.
+    Note: Does NOT add positional arguments.
+    """
     parser.add_argument('-rs', '--recursive_input_file_search', action='store_true',
                         help='Search recursively in the input dataset folder')
     parser.add_argument('--input_file_types', nargs='+', default=None,
@@ -31,11 +47,12 @@ def get_input_dataset_parser():
                         help='Columns are features in the spreadsheet input dataset')
     parser.add_argument('--bids_filters', nargs='+', default=None,
                         help='BIDS filters for the input dataset')
-    return parser
 
 
-def get_scores_parser():
-    parser = argparse.ArgumentParser(add_help=False)
+def add_scores_arguments(parser):
+    """
+    Adds optional arguments related to the scores file to the parser.
+    """
     parser.add_argument('--scores', help='Path to scores file associated with the dataset')
     parser.add_argument('--scores_header', type=int, default=None,
                         help='Header for the scores spreadsheet')
@@ -46,35 +63,37 @@ def get_scores_parser():
     parser.add_argument('--scores_column', nargs='+', help='Column(s) for scores in the scores file')
     parser.add_argument('--classification', action='store_true',
                         help='Scores are integer classes in one column')
-    return parser
 
 
-def get_umap_parser():
-    parser = argparse.ArgumentParser(add_help=False)
+def add_umap_arguments(parser):
+    """
+    Adds optional arguments related to the UMAP stage to the parser.
+    """
     parser.add_argument('--load_umap', help='Path to a pre-trained UMAP model')
     parser.add_argument('--load_embeddings', help='Path to precomputed embeddings')
     parser.add_argument('--test_size', type=float, default=0.2,
                         help='Test size for splitting the dataset')
     parser.add_argument('--prefix', default='', help='Prefix for the output path names')
-    return parser
 
 
-def get_clustering_parser():
-    parser = argparse.ArgumentParser(add_help=False)
+def add_clustering_arguments(parser):
+    """
+    Adds optional arguments related to the clustering stage to the parser.
+    """
     parser.add_argument('--load_hdbscan', help='Path to a pre-trained HDBSCAN model')
     parser.add_argument('--min_cluster_size', type=int, default=5, help='Minimum cluster size')
     parser.add_argument('--interactive_plot', action='store_true',
                         help='Option to create interactive clustering plots')
-    return parser
 
 
-def get_smoothing_parser():
-    parser = argparse.ArgumentParser(add_help=False)
+def add_smoothing_arguments(parser):
+    """
+    Adds mutually exclusive optional arguments related to smoothing to the parser.
+    """
     smoothing_group = parser.add_mutually_exclusive_group()
     smoothing_group.add_argument('--sigma', type=float, help='Sigma value for the smoothing')
     smoothing_group.add_argument('--fwhm', type=float,
                                  help='Full width at half maximum value for the smoothing')
-    return parser
 
 
 def main():
@@ -84,60 +103,55 @@ def main():
 
     # Create the top-level parser
     parser = argparse.ArgumentParser(description='EMUSES pipeline')
-    parser.add_argument('output_folder', help='Output folder')
     subparsers = parser.add_subparsers(dest='command', required=True)
 
-    # Parent parsers for common arguments
-    input_dataset_parser = get_input_dataset_parser()
-    scores_parser = get_scores_parser()
-    umap_parser = get_umap_parser()
-    clustering_parser = get_clustering_parser()
-    smoothing_parser = get_smoothing_parser()
-
-    # Subparsers for commands
     # Subparser for the 'full' command
-    full_parser = subparsers.add_parser(
-        'full',
-        parents=[input_dataset_parser, scores_parser, umap_parser, clustering_parser, smoothing_parser],
-        help='Run the full pipeline',
-        add_help=True
-    )
+    full_parser = subparsers.add_parser('full', help='Run the full pipeline')
+    add_output_folder_argument(full_parser)  # Positional argument
+    add_input_dataset_argument(full_parser)  # Positional argument
+    # Add optional arguments
+    add_input_dataset_arguments(full_parser)
+    add_scores_arguments(full_parser)
+    add_umap_arguments(full_parser)
+    add_clustering_arguments(full_parser)
+    add_smoothing_arguments(full_parser)
 
     # Subparser for the 'umap' command
-    umap_cmd_parser = subparsers.add_parser(
-        'umap',
-        parents=[input_dataset_parser, umap_parser],
-        help='Train the UMAP and get the embeddings',
-        add_help=True
-    )
+    umap_parser = subparsers.add_parser('umap', help='Train the UMAP and get the embeddings')
+    add_output_folder_argument(umap_parser)  # Positional argument
+    add_input_dataset_argument(umap_parser)  # Positional argument
+    # Add optional arguments
+    add_input_dataset_arguments(umap_parser)
+    add_umap_arguments(umap_parser)
 
     # Subparser for the 'clustering' command
-    clustering_cmd_parser = subparsers.add_parser(
-        'clustering',
-        parents=[clustering_parser],
-        help='Perform clustering on embeddings',
-        add_help=True
-    )
-    clustering_cmd_parser.add_argument('--load_embeddings', help='Path to precomputed embeddings')
+    clustering_parser = subparsers.add_parser('clustering', help='Perform clustering on embeddings')
+    add_output_folder_argument(clustering_parser)  # Positional argument
+    # No 'input_dataset' positional argument here
+    # Add optional arguments
+    clustering_parser.add_argument('--load_embeddings', help='Path to precomputed embeddings')
+    add_clustering_arguments(clustering_parser)
 
     # Subparser for the 'heatmap' command
-    heatmap_parser = subparsers.add_parser(
-        'heatmap',
-        parents=[input_dataset_parser, scores_parser, smoothing_parser],
-        help='Create a heatmap',
-        add_help=True
-    )
+    heatmap_parser = subparsers.add_parser('heatmap', help='Create a heatmap')
+    add_output_folder_argument(heatmap_parser)  # Positional argument
+    add_input_dataset_argument(heatmap_parser)  # Positional argument
+    # Add optional arguments
+    add_input_dataset_arguments(heatmap_parser)
+    add_scores_arguments(heatmap_parser)
+    add_smoothing_arguments(heatmap_parser)
     heatmap_parser.add_argument('--load_embeddings', help='Embeddings from the UMAP')
     heatmap_parser.add_argument('--load_hdbscan', help='Path to a pre-trained HDBSCAN model')
     heatmap_parser.add_argument('--output_format_info', help='Output format information needed')
 
     # Subparser for the 'prediction' command
-    prediction_parser = subparsers.add_parser(
-        'prediction',
-        parents=[input_dataset_parser, scores_parser, umap_parser],
-        help='Train a prediction model',
-        add_help=True
-    )
+    prediction_parser = subparsers.add_parser('prediction', help='Train a prediction model')
+    add_output_folder_argument(prediction_parser)  # Positional argument
+    add_input_dataset_argument(prediction_parser)  # Positional argument
+    # Add optional arguments
+    add_input_dataset_arguments(prediction_parser)
+    add_scores_arguments(prediction_parser)
+    add_umap_arguments(prediction_parser)
 
     # Parse the command-line arguments
     args = parser.parse_args()

@@ -192,7 +192,7 @@ def create_cluster_representative_maps(array, discrete_embeddings, input_matrix,
 
 
 def train_model(training_df, test_df, score_name, output_folder, categorical=False, num_permutations=100,
-                nb_fold=5):
+                nb_fold=5, show_plot=False):
     """
     Train and evaluate a model using training and test datasets.
 
@@ -227,6 +227,10 @@ def train_model(training_df, test_df, score_name, output_folder, categorical=Fal
         - Scatter plot of actual vs. predicted scores.
         - Correlation plot.
         - Confusion matrix (if categorical=True).
+    """
+    """
+    - show_plot: bool, optional
+        Whether to display plots interactively. Default is True.
     """
     os.makedirs(output_folder, exist_ok=True)
 
@@ -396,7 +400,8 @@ def train_model(training_df, test_df, score_name, output_folder, categorical=Fal
     plt.ylabel('Predicted Scores')
     plt.title(f'Actual vs Predicted Scores - {score_name}\nR² = {r2:.2f}')
     plt.savefig(os.path.join(output_folder, f'{score_name}_prediction_plot.png'))
-    plt.show()
+    if show_plot:
+        plt.show()
 
     # Plotting the correlation between actual and predicted scores
     plt.figure(figsize=(10, 6))
@@ -407,7 +412,8 @@ def train_model(training_df, test_df, score_name, output_folder, categorical=Fal
         f'Actual vs Predicted Scores\nCorrelation: '
         f'{np.corrcoef(test_scores, test_predictions)[0, 1]:.2f}')
     plt.savefig(os.path.join(output_folder, f'{score_name}_correlation_plot.png'))
-    plt.show()
+    if show_plot:
+        plt.show()
 
     if categorical:
         # Convert predictions to classes
@@ -423,11 +429,13 @@ def train_model(training_df, test_df, score_name, output_folder, categorical=Fal
         plt.ylabel('Actual Classes')
         plt.title(f'Confusion Matrix - {score_name}\nAccuracy: {accuracy:.2f}%')
         plt.savefig(os.path.join(output_folder, f'{score_name}_confusion_matrix.png'))
-        plt.show()
+        if show_plot:
+            plt.show()
     plt.close()
 
 
-def train_and_test_model_per_label(train_embeddings, train_labels, test_embeddings, test_labels, output_folder):
+def train_and_test_model_per_label(train_embeddings, train_labels, test_embeddings, test_labels, output_folder,
+                                   show_plot=False):
     """
     Train and test a model for each unique label in the training dataset.
 
@@ -442,6 +450,8 @@ def train_and_test_model_per_label(train_embeddings, train_labels, test_embeddin
         Labels for the test data.
     - output_folder: str or Path
         The folder where the output model and results will be saved.
+    - show_plot: bool, optional
+        Whether to display plots interactively. Default is True.
 
     Returns:
     None
@@ -467,14 +477,16 @@ def train_and_test_model_per_label(train_embeddings, train_labels, test_embeddin
         test_df_label['scores'] = test_labels_bin
         model_output_folder = output_folder / f'label_{label}'
         model_output_folder.mkdir(parents=True, exist_ok=True)
-        train_model(train_df_label, test_df_label, score_name=f'label_{label}', output_folder=model_output_folder)
+        train_model(train_df_label, test_df_label, score_name=f'label_{label}', output_folder=model_output_folder,
+                    show_plot=show_plot)
         print(f"Model for label {label} trained and saved.")
 
     # Test the model with all labels together in a categorical setting
     print("Testing model with all labels together...")
     test_output_folder = output_folder / 'test_all_labels'
     test_output_folder.mkdir(parents=True, exist_ok=True)
-    train_model(train_df, test_df, score_name='all_labels', output_folder=test_output_folder, categorical=True)
+    train_model(train_df, test_df, score_name='all_labels', output_folder=test_output_folder, categorical=True,
+                show_plot=show_plot)
     print("Testing completed and results saved.")
 
 

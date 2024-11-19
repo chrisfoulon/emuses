@@ -62,7 +62,7 @@ class HeatmapStage(PipelineStage):
         # Decide whether to display plots
         show_plots = getattr(args, 'show_plots', False)
         context['show_plots'] = show_plots  # Store in context for use in functions
-        generate_plots = show_plots  # Generate plots if we are showing them
+        generate_plots = True  # Generate plots if we are showing them
 
         # Run heatmap analysis
         plots = run_heatmap_analysis(

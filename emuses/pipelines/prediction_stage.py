@@ -25,6 +25,10 @@ class PredictionStage(PipelineStage):
         if train_labels is None or test_labels is None:
             raise ValueError("Both training and test labels are required for prediction.")
 
+        # Decide whether to display plots
+        show_plots = getattr(args, 'show_plots', False)
+        context['show_plots'] = show_plots
+
         if getattr(args, 'classification', False):
             # Classification
             train_and_test_model_per_label(
@@ -33,6 +37,7 @@ class PredictionStage(PipelineStage):
                 test_embeddings=test_embeddings,
                 test_labels=test_labels,
                 output_folder=self.config.output_folder / 'prediction_models',
+                show_plot=show_plots
             )
             logger.info("Prediction model trained and saved.")
         else:
