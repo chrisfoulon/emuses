@@ -60,14 +60,6 @@ def evaluate_hdbscan(filtered_coordinates, size_factor=0.5):
                 print(f"Failed for min_cluster_size={min_cluster_size}, min_samples={min_samples}: {e}")
                 continue
 
-    if best_params:
-        print("Best parameters found:")
-        print(best_params)
-        with open("best_hdbscan_params.txt", "w") as file:
-            file.write(str(best_params))
-    else:
-        print("No valid clustering found.")
-
     return best_clusterer, best_params
 
 
