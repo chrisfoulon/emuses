@@ -5,13 +5,14 @@ from pathlib import Path
 
 import matplotlib
 from bcblib.tools.arrays_utils import separate_clusters_and_extract_coords, find_centroid_and_check
-from scipy.stats import mannwhitneyu, ttest_ind
+from narwhals.selectors import categorical
+from scipy.stats import mannwhitneyu, ttest_ind, mode
 from sklearn.linear_model import LinearRegression
 from tqdm import tqdm
 import numpy as np
 import pandas as pd
-from sklearn.ensemble import RandomForestRegressor
-from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score, confusion_matrix
+from sklearn.ensemble import RandomForestRegressor, RandomForestClassifier
+from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score, confusion_matrix, accuracy_score
 from sklearn.model_selection import KFold, GridSearchCV
 import matplotlib.pyplot as plt
 import seaborn as sns
@@ -216,21 +217,20 @@ def train_model(training_df, test_df, score_name, output_folder, categorical=Fal
         Number of permutations to use in k-fold cross-validation. Default is 100.
     - nb_fold: int, optional
         Number of folds to use in k-fold cross-validation. Default is 5.
+    - show_plot: bool, optional
+        Whether to display plots interactively. Default is False.
 
     Returns:
     None
 
     Outputs:
     - Saves trained models, validation metrics, and plots in the specified output folder.
-    - Evaluation metrics include R², Mean Squared Error (MSE), Mean Absolute Error (MAE), and normalized errors.
+    - Evaluation metrics include R², Mean Squared Error (MSE), Mean Absolute Error (MAE), and normalized errors for regression.
+      For classification, metrics include accuracy and confusion matrix.
     - Generates and saves visualizations:
-        - Scatter plot of actual vs. predicted scores.
-        - Correlation plot.
-        - Confusion matrix (if categorical=True).
-    """
-    """
-    - show_plot: bool, optional
-        Whether to display plots interactively. Default is True.
+        - Scatter plot of actual vs. predicted scores (regression).
+        - Correlation plot (regression).
+        - Confusion matrix (classification).
     """
     os.makedirs(output_folder, exist_ok=True)
 
@@ -246,10 +246,11 @@ def train_model(training_df, test_df, score_name, output_folder, categorical=Fal
     test_coords = np.array([list(coord) for coord in test_df['embeddings']])
     test_scores = test_df['scores'].values
 
-    # Determine the range of possible values
-    min_score = min(np.min(train_scores), np.min(test_scores))
-    max_score = max(np.max(train_scores), np.max(test_scores))
-    range_of_values = max_score - min_score
+    if not categorical:
+        # Determine the range of possible values for normalization
+        min_score = min(np.min(train_scores), np.min(test_scores))
+        max_score = max(np.max(train_scores), np.max(test_scores))
+        range_of_values = max_score - min_score
 
     # Number of folds for cross-validation
     k = nb_fold
@@ -260,22 +261,29 @@ def train_model(training_df, test_df, score_name, output_folder, categorical=Fal
     for perm in range(num_permutations):
         kf = KFold(n_splits=k, shuffle=True, random_state=perm)
 
-        # Lists to store metrics for each fold
-        r2_scores_train = []
-        r2_scores_val = []
-        normalized_mse_val_list = []
-        mae_max_scores = []
-        normalized_mae_train_list = []
-        normalized_mse_train_list = []
-        mae_max_train_list = []
+        # Initialize metrics lists
         models = []
+        if categorical:
+            accuracy_scores_train = []
+            accuracy_scores_val = []
+        else:
+            r2_scores_train = []
+            r2_scores_val = []
+            normalized_mse_val_list = []
+            mae_max_scores = []
+            normalized_mae_train_list = []
+            normalized_mse_train_list = []
+            mae_max_train_list = []
 
         for train_index, val_index in kf.split(train_coords):
             X_train, X_val = train_coords[train_index], train_coords[val_index]
             y_train, y_val = train_scores[train_index], train_scores[val_index]
 
             # Initialize and train the model
-            model = RandomForestRegressor(n_estimators=100, random_state=42)
+            if categorical:
+                model = RandomForestClassifier(n_estimators=100, random_state=42)
+            else:
+                model = RandomForestRegressor(n_estimators=100, random_state=42)
             model.fit(X_train, y_train)
 
             # Store the trained model
@@ -284,66 +292,105 @@ def train_model(training_df, test_df, score_name, output_folder, categorical=Fal
             # Evaluate on the validation set
             y_val_pred = model.predict(X_val)
             y_train_pred = model.predict(X_train)
-            mse_val = mean_squared_error(y_val, y_val_pred)
-            mae_val = mean_absolute_error(y_val, y_val_pred)
-            mae_max_val = (mae_val / max_score) * 100
-            normalized_mse_val = (mse_val / (range_of_values ** 2)) * 100
-            r2_val = r2_score(y_val, y_val_pred)
-            r2_train = r2_score(y_train, y_train_pred)
 
-            mae_max_scores.append(mae_max_val)
-            normalized_mse_val_list.append(normalized_mse_val)
-            r2_scores_val.append(r2_val)
-            r2_scores_train.append(r2_train)
+            if categorical:
+                # Classification metrics
+                acc_val = accuracy_score(y_val, y_val_pred)
+                acc_train = accuracy_score(y_train, y_train_pred)
 
-            # Normalize errors
-            normalized_mae_train = (mean_absolute_error(y_train, y_train_pred) / range_of_values) * 100
-            normalized_mse_train = (mean_squared_error(y_train, y_train_pred) / (range_of_values ** 2)) * 100
-            mae_max_train = (mean_absolute_error(y_train, y_train_pred) / max_score) * 100
-            normalized_mae_train_list.append(normalized_mae_train)
-            normalized_mse_train_list.append(normalized_mse_train)
-            mae_max_train_list.append(mae_max_train)
+                accuracy_scores_val.append(acc_val)
+                accuracy_scores_train.append(acc_train)
+            else:
+                # Regression metrics
+                mse_val = mean_squared_error(y_val, y_val_pred)
+                mae_val = mean_absolute_error(y_val, y_val_pred)
+                mae_max_val = (mae_val / max_score) * 100
+                normalized_mse_val = (mse_val / (range_of_values ** 2)) * 100
+                r2_val = r2_score(y_val, y_val_pred)
+                r2_train = r2_score(y_train, y_train_pred)
+
+                mae_max_scores.append(mae_max_val)
+                normalized_mse_val_list.append(normalized_mse_val)
+                r2_scores_val.append(r2_val)
+                r2_scores_train.append(r2_train)
+
+                # Normalize errors
+                normalized_mae_train = (mean_absolute_error(y_train, y_train_pred) / range_of_values) * 100
+                normalized_mse_train = (mean_squared_error(y_train, y_train_pred) / (range_of_values ** 2)) * 100
+                mae_max_train = (mean_absolute_error(y_train, y_train_pred) / max_score) * 100
+                normalized_mae_train_list.append(normalized_mae_train)
+                normalized_mse_train_list.append(normalized_mse_train)
+                mae_max_train_list.append(mae_max_train)
 
         # Record metrics for the permutation
-        permutation_metrics.append({
-            'models': models,
-            'r2_scores_train': r2_scores_train,
-            'r2_scores_val': r2_scores_val,
-            'normalized_mse_val_list': normalized_mse_val_list,
-            'mae_max_scores': mae_max_scores,
-            'normalized_mae_train_list': normalized_mae_train_list,
-            'normalized_mse_train_list': normalized_mse_train_list,
-            'mae_max_train_list': mae_max_train_list,
-        })
+        if categorical:
+            permutation_metrics.append({
+                'models': models,
+                'accuracy_scores_train': accuracy_scores_train,
+                'accuracy_scores_val': accuracy_scores_val,
+            })
+        else:
+            permutation_metrics.append({
+                'models': models,
+                'r2_scores_train': r2_scores_train,
+                'r2_scores_val': r2_scores_val,
+                'normalized_mse_val_list': normalized_mse_val_list,
+                'mae_max_scores': mae_max_scores,
+                'normalized_mae_train_list': normalized_mae_train_list,
+                'normalized_mse_train_list': normalized_mse_train_list,
+                'mae_max_train_list': mae_max_train_list,
+            })
 
-    # Select the best permutation based on average validation R^2 score
-    best_permutation = max(permutation_metrics, key=lambda x: np.mean(x['r2_scores_val']))
+    # Select the best permutation based on average validation score
+    if categorical:
+        best_permutation = max(permutation_metrics, key=lambda x: np.mean(x['accuracy_scores_val']))
+    else:
+        best_permutation = max(permutation_metrics, key=lambda x: np.mean(x['r2_scores_val']))
+
     best_models = best_permutation['models']
 
     # Make predictions on the test data using the ensemble of models from the best permutation
-    test_predictions = np.zeros(test_coords.shape[0])
-    for model in best_models:
-        test_predictions += model.predict(test_coords)
-    test_predictions /= len(best_models)
+    if categorical:
+        # For classification, use majority voting
+        test_predictions = []
+        for model in best_models:
+            preds = model.predict(test_coords)
+            test_predictions.append(preds)
+        test_predictions = np.array(test_predictions)
+        # Majority vote
+        test_predictions_mode, _ = mode(test_predictions, axis=0)
+        test_predictions = test_predictions_mode.flatten()
+    else:
+        # For regression, average the predictions
+        test_predictions = np.zeros(test_coords.shape[0])
+        for model in best_models:
+            test_predictions += model.predict(test_coords)
+        test_predictions /= len(best_models)
 
-    # Calculate the Mean Squared Error, Mean Absolute Error, and R^2 on the test data
-    mse_test = mean_squared_error(test_scores, test_predictions)
-    mae_test = mean_absolute_error(test_scores, test_predictions)
-    mae_max_test = (mae_test / max_score) * 100
-    normalized_mse_test = (mse_test / (range_of_values ** 2)) * 100
-    r2_test = r2_score(test_scores, test_predictions)
-
-    # Normalize errors
-    normalized_mae_test = (mae_test / range_of_values) * 100
-    print(f'{score_name} - Avg Training R^2: {np.mean(best_permutation["r2_scores_train"])}')
-    print(
-        f'{score_name} - Avg Normalized Training MSE: {np.mean(best_permutation["normalized_mse_train_list"]):.2f}%, '
-        f'Avg Normalized Training MAE: {np.mean(best_permutation["normalized_mae_train_list"]):.2f}%, '
-        f'Avg MAE_max% Training: {np.mean(best_permutation["mae_max_train_list"]):.2f}%')
-    print(f'{score_name} - Test R^2: {r2_test}')
-    print(
-        f'{score_name} - Normalized Test MSE: {normalized_mse_test:.2f}%, '
-        f'Normalized Test MAE: {normalized_mae_test:.2f}%, Test MAE_max%: {mae_max_test:.2f}%')
+    # Calculate evaluation metrics on the test data
+    if categorical:
+        # Classification metrics
+        acc_test = accuracy_score(test_scores, test_predictions)
+        cm = confusion_matrix(test_scores, test_predictions)
+        print(f'{score_name} - Avg Training Accuracy: {np.mean(best_permutation["accuracy_scores_train"]):.2f}')
+        print(f'{score_name} - Test Accuracy: {acc_test:.2f}')
+    else:
+        # Regression metrics
+        mse_test = mean_squared_error(test_scores, test_predictions)
+        mae_test = mean_absolute_error(test_scores, test_predictions)
+        mae_max_test = (mae_test / max_score) * 100
+        normalized_mse_test = (mse_test / (range_of_values ** 2)) * 100
+        r2_test = r2_score(test_scores, test_predictions)
+        normalized_mae_test = (mae_test / range_of_values) * 100
+        print(f'{score_name} - Avg Training R^2: {np.mean(best_permutation["r2_scores_train"]):.2f}')
+        print(
+            f'{score_name} - Avg Normalized Training MSE: {np.mean(best_permutation["normalized_mse_train_list"]):.2f}%, '
+            f'Avg Normalized Training MAE: {np.mean(best_permutation["normalized_mae_train_list"]):.2f}%, '
+            f'Avg MAE_max% Training: {np.mean(best_permutation["mae_max_train_list"]):.2f}%')
+        print(f'{score_name} - Test R^2: {r2_test:.2f}')
+        print(
+            f'{score_name} - Normalized Test MSE: {normalized_mse_test:.2f}%, '
+            f'Normalized Test MAE: {normalized_mae_test:.2f}%, Test MAE_max%: {mae_max_test:.2f}%')
 
     # Save the models from the best permutation
     for i, model in enumerate(best_models):
@@ -353,75 +400,61 @@ def train_model(training_df, test_df, score_name, output_folder, categorical=Fal
         print(f'Model {i} saved to {model_path}')
 
     # Save the validation metrics, including the ensembled test metrics, to a spreadsheet
-    metrics_df = pd.DataFrame({
-        'Fold': [str(i) for i in range(1, k + 1)],
-        'Training R^2': best_permutation['r2_scores_train'],
-        'Validation R^2': best_permutation['r2_scores_val'],
-        'Normalized Validation MSE (%)': best_permutation['normalized_mse_val_list'],
-        'MAE_max%': best_permutation['mae_max_scores'],
-    })
-    metrics_df['Normalized MAE (%)'] = best_permutation['normalized_mae_train_list']
-
-    # Calculate and append the average training metrics
-    avg_training_r2 = np.mean(best_permutation['r2_scores_train'])
-    avg_normalized_mae_train = np.mean(best_permutation['normalized_mae_train_list'])
-    avg_normalized_mse_train = np.mean(best_permutation['normalized_mse_train_list'])
-    avg_mae_max_train = np.mean(best_permutation['mae_max_train_list'])
-    metrics_df.loc[k, 'Fold'] = 'Avg Training'
-    metrics_df.loc[k, 'Training R^2'] = avg_training_r2
-    metrics_df.loc[k, 'Normalized Validation MSE (%)'] = avg_normalized_mse_train
-    metrics_df.loc[k, 'MAE_max%'] = avg_mae_max_train
-    metrics_df.loc[k, 'Normalized MAE (%)'] = avg_normalized_mae_train
-
-    # Append the ensembled test metrics to the DataFrame
-    metrics_df.loc[k + 1, 'Fold'] = 'Test Ensemble'
-    metrics_df.loc[k + 1, 'Test R^2'] = r2_test
-    metrics_df.loc[k + 1, 'Normalized Validation MSE (%)'] = normalized_mse_test
-    metrics_df.loc[k + 1, 'MAE_max%'] = mae_max_test
-    metrics_df.loc[k + 1, 'Normalized MAE (%)'] = normalized_mae_test
-
-    # Save to Excel
-    metrics_df.to_excel(os.path.join(output_folder, f'{score_name}_validation_metrics.xlsx'), index=False)
-
-    # Assuming test_scores and test_predictions are already defined
-    # Calculate R² value
-    r2 = r2_score(test_scores, test_predictions)
-
-    # Fit a linear regression model
-    reg_model = LinearRegression()
-    reg_model.fit(np.array(test_scores).reshape(-1, 1), test_predictions)
-    reg_line = reg_model.predict(np.array(test_scores).reshape(-1, 1))
-
-    # Plotting the data
-    plt.figure(figsize=(10, 6))
-    plt.scatter(test_scores, test_predictions, alpha=0.6)
-    plt.plot(test_scores, reg_line, color='red', linewidth=2, label='Fit line')
-    plt.xlabel('Actual Scores')
-    plt.ylabel('Predicted Scores')
-    plt.title(f'Actual vs Predicted Scores - {score_name}\nR² = {r2:.2f}')
-    plt.savefig(os.path.join(output_folder, f'{score_name}_prediction_plot.png'))
-    if show_plot:
-        plt.show()
-
-    # Plotting the correlation between actual and predicted scores
-    plt.figure(figsize=(10, 6))
-    plt.scatter(test_scores, test_predictions, alpha=0.6)
-    plt.xlabel('Actual Scores')
-    plt.ylabel('Predicted Scores')
-    plt.title(
-        f'Actual vs Predicted Scores\nCorrelation: '
-        f'{np.corrcoef(test_scores, test_predictions)[0, 1]:.2f}')
-    plt.savefig(os.path.join(output_folder, f'{score_name}_correlation_plot.png'))
-    if show_plot:
-        plt.show()
-
     if categorical:
-        # Convert predictions to classes
-        test_predictions_classes = np.round(test_predictions)
+        metrics_df = pd.DataFrame({
+            'Fold': [str(i) for i in range(1, k + 1)],
+            'Training Accuracy': best_permutation['accuracy_scores_train'],
+            'Validation Accuracy': best_permutation['accuracy_scores_val'],
+        })
+
+        # Calculate and append the average training metrics
+        avg_training_acc = np.mean(best_permutation['accuracy_scores_train'])
+        metrics_df.loc[k, 'Fold'] = 'Avg Training'
+        metrics_df.loc[k, 'Training Accuracy'] = avg_training_acc
+
+        # Append the test metrics to the DataFrame
+        metrics_df.loc[k + 1, 'Fold'] = 'Test Ensemble'
+        metrics_df.loc[k + 1, 'Test Accuracy'] = acc_test
+
+        # Save to Excel
+        metrics_df.to_excel(os.path.join(output_folder, f'{score_name}_validation_metrics.xlsx'), index=False)
+    else:
+        metrics_df = pd.DataFrame({
+            'Fold': [str(i) for i in range(1, k + 1)],
+            'Training R^2': best_permutation['r2_scores_train'],
+            'Validation R^2': best_permutation['r2_scores_val'],
+            'Normalized Validation MSE (%)': best_permutation['normalized_mse_val_list'],
+            'MAE_max%': best_permutation['mae_max_scores'],
+        })
+        metrics_df['Normalized MAE (%)'] = best_permutation['normalized_mae_train_list']
+
+        # Calculate and append the average training metrics
+        avg_training_r2 = np.mean(best_permutation['r2_scores_train'])
+        avg_normalized_mae_train = np.mean(best_permutation['normalized_mae_train_list'])
+        avg_normalized_mse_train = np.mean(best_permutation['normalized_mse_train_list'])
+        avg_mae_max_train = np.mean(best_permutation['mae_max_train_list'])
+        metrics_df.loc[k, 'Fold'] = 'Avg Training'
+        metrics_df.loc[k, 'Training R^2'] = avg_training_r2
+        metrics_df.loc[k, 'Normalized Validation MSE (%)'] = avg_normalized_mse_train
+        metrics_df.loc[k, 'MAE_max%'] = avg_mae_max_train
+        metrics_df.loc[k, 'Normalized MAE (%)'] = avg_normalized_mae_train
+
+        # Append the ensembled test metrics to the DataFrame
+        metrics_df.loc[k + 1, 'Fold'] = 'Test Ensemble'
+        metrics_df.loc[k + 1, 'Test R^2'] = r2_test
+        metrics_df.loc[k + 1, 'Normalized Validation MSE (%)'] = normalized_mse_test
+        metrics_df.loc[k + 1, 'MAE_max%'] = mae_max_test
+        metrics_df.loc[k + 1, 'Normalized MAE (%)'] = normalized_mae_test
+
+        # Save to Excel
+        metrics_df.to_excel(os.path.join(output_folder, f'{score_name}_validation_metrics.xlsx'), index=False)
+
+    # Plotting and saving figures
+    if categorical:
         # Plot confusion matrix
-        cm = confusion_matrix(test_scores, test_predictions_classes)
+        cm = confusion_matrix(test_scores, test_predictions)
         cm_percent = cm.astype('float') / cm.sum(axis=1)[:, np.newaxis] * 100
-        accuracy = np.trace(cm) / np.sum(cm) * 100  # Calculate classification accuracy
+        accuracy = accuracy_score(test_scores, test_predictions) * 100
 
         plt.figure(figsize=(10, 6))
         sns.heatmap(cm_percent, annot=True, fmt=".2f", cmap="Blues", cbar=False)
@@ -431,11 +464,36 @@ def train_model(training_df, test_df, score_name, output_folder, categorical=Fal
         plt.savefig(os.path.join(output_folder, f'{score_name}_confusion_matrix.png'))
         if show_plot:
             plt.show()
-    plt.close()
+        plt.close()
+    else:
+        # Plotting the data
+        plt.figure(figsize=(10, 6))
+        plt.scatter(test_scores, test_predictions, alpha=0.6)
+        plt.plot([test_scores.min(), test_scores.max()], [test_scores.min(), test_scores.max()], 'k--', lw=2)
+        plt.xlabel('Actual Scores')
+        plt.ylabel('Predicted Scores')
+        plt.title(f'Actual vs Predicted Scores - {score_name}\nR² = {r2_test:.2f}')
+        plt.savefig(os.path.join(output_folder, f'{score_name}_prediction_plot.png'))
+        if show_plot:
+            plt.show()
+        plt.close()
+
+        # Plotting the correlation between actual and predicted scores
+        plt.figure(figsize=(10, 6))
+        plt.scatter(test_scores, test_predictions, alpha=0.6)
+        plt.xlabel('Actual Scores')
+        plt.ylabel('Predicted Scores')
+        plt.title(
+            f'Actual vs Predicted Scores\nCorrelation: '
+            f'{np.corrcoef(test_scores, test_predictions)[0, 1]:.2f}')
+        plt.savefig(os.path.join(output_folder, f'{score_name}_correlation_plot.png'))
+        if show_plot:
+            plt.show()
+        plt.close()
 
 
 def train_and_test_model_per_label(train_embeddings, train_labels, test_embeddings, test_labels, output_folder,
-                                   show_plot=False):
+                                   categorical=True, show_plot=False):
     """
     Train and test a model for each unique label in the training dataset.
 
@@ -450,44 +508,61 @@ def train_and_test_model_per_label(train_embeddings, train_labels, test_embeddin
         Labels for the test data.
     - output_folder: str or Path
         The folder where the output model and results will be saved.
+    - categorical: bool, optional
+        Whether the target variable is categorical (classification) or continuous (regression).
+        Default is True.
     - show_plot: bool, optional
-        Whether to display plots interactively. Default is True.
+        Whether to display plots interactively. Default is False.
 
     Returns:
     None
     """
 
     # Prepare training and test data as DataFrames
-    train_df = pd.DataFrame(data={'embeddings': [tuple(coord) for coord in train_embeddings], 'scores': train_labels})
-    test_df = pd.DataFrame(data={'embeddings': [tuple(coord) for coord in test_embeddings], 'scores': test_labels})
-
-    unique_labels = np.unique(train_labels)
+    train_df = pd.DataFrame(data={'embeddings': [list(coord) for coord in train_embeddings], 'scores': train_labels})
+    test_df = pd.DataFrame(data={'embeddings': [list(coord) for coord in test_embeddings], 'scores': test_labels})
 
     # Ensure output_folder is a Path object
     output_folder = Path(output_folder)
+    output_folder.mkdir(parents=True, exist_ok=True)
 
-    # Train a model for each label separately
-    for label in unique_labels:
-        print(f"Training model for label {label}...")
-        train_labels_bin = (train_labels == label).astype(int)
-        train_df_label = train_df.copy()
-        train_df_label['scores'] = train_labels_bin
-        test_labels_bin = (test_labels == label).astype(int)
-        test_df_label = test_df.copy()
-        test_df_label['scores'] = test_labels_bin
-        model_output_folder = output_folder / f'label_{label}'
-        model_output_folder.mkdir(parents=True, exist_ok=True)
-        train_model(train_df_label, test_df_label, score_name=f'label_{label}', output_folder=model_output_folder,
-                    show_plot=show_plot)
-        print(f"Model for label {label} trained and saved.")
+    if categorical:
+        unique_labels = np.unique(train_labels)
 
-    # Test the model with all labels together in a categorical setting
-    print("Testing model with all labels together...")
-    test_output_folder = output_folder / 'test_all_labels'
-    test_output_folder.mkdir(parents=True, exist_ok=True)
-    train_model(train_df, test_df, score_name='all_labels', output_folder=test_output_folder, categorical=True,
-                show_plot=show_plot)
-    print("Testing completed and results saved.")
+        # Train a model for each label separately (One-vs-Rest)
+        for label in unique_labels:
+            print(f"Training model for label {label} (One-vs-Rest)...")
+            # Create binary labels for current label vs rest
+            train_labels_bin = (train_labels == label).astype(int)
+            test_labels_bin = (test_labels == label).astype(int)
+
+            train_df_label = train_df.copy()
+            train_df_label['scores'] = train_labels_bin
+            test_df_label = test_df.copy()
+            test_df_label['scores'] = test_labels_bin
+
+            model_output_folder = output_folder / f'label_{label}'
+            model_output_folder.mkdir(parents=True, exist_ok=True)
+
+            train_model(train_df_label, test_df_label, score_name=f'label_{label}', output_folder=model_output_folder,
+                        categorical=True, show_plot=show_plot)
+            print(f"Model for label {label} trained and saved.")
+
+        # Train a multi-class classifier on all labels
+        print("Training multi-class classifier on all labels...")
+        multi_output_folder = output_folder / 'multi_class_classifier'
+        multi_output_folder.mkdir(parents=True, exist_ok=True)
+        train_model(train_df, test_df, score_name='all_labels', output_folder=multi_output_folder,
+                    categorical=True, show_plot=show_plot)
+        print("Multi-class classification completed and results saved.")
+    else:
+        # For continuous target variables
+        print("Training regression model on continuous target variable...")
+        regression_output_folder = output_folder / 'regression_model'
+        regression_output_folder.mkdir(parents=True, exist_ok=True)
+        train_model(train_df, test_df, score_name='continuous_target', output_folder=regression_output_folder,
+                    categorical=False, show_plot=show_plot)
+        print("Regression model trained and results saved.")
 
 
 def estimate_memory_size(n_points, dtype_size=8):

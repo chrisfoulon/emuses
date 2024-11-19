@@ -1,5 +1,7 @@
 import logging
 
+from statsmodels.tools import categorical
+
 from emuses.pipelines.pipeline_stage import PipelineStage
 from emuses.tools.stats_utils import train_and_test_model_per_label
 
@@ -28,18 +30,15 @@ class PredictionStage(PipelineStage):
         # Decide whether to display plots
         show_plots = getattr(args, 'show_plots', False)
         context['show_plots'] = show_plots
-
-        if getattr(args, 'classification', False):
-            # Classification
-            train_and_test_model_per_label(
-                train_embeddings=train_embeddings,
-                train_labels=train_labels,
-                test_embeddings=test_embeddings,
-                test_labels=test_labels,
-                output_folder=self.config.output_folder / 'prediction_models',
-                show_plot=show_plots
-            )
-            logger.info("Prediction model trained and saved.")
-        else:
-            # Regression (Not implemented in the original code)
-            raise NotImplementedError("Regression prediction is not implemented yet.")
+        categorical = getattr(args, 'classification', False)
+        # Classification
+        train_and_test_model_per_label(
+            train_embeddings=train_embeddings,
+            train_labels=train_labels,
+            test_embeddings=test_embeddings,
+            test_labels=test_labels,
+            output_folder=self.config.output_folder / 'prediction_models',
+            categorical=categorical,
+            show_plot=show_plots
+        )
+        logger.info("Prediction model trained and saved.")

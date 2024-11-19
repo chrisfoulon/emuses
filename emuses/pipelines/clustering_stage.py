@@ -11,6 +11,7 @@ class ClusteringStage(PipelineStage):
         super().__init__(config)
         self.clusterer = None
         self.cluster_labels = None
+        self.best_params = None
 
     def run(self, context, progress_queue=None):
         logger = logging.getLogger(__name__)
@@ -33,12 +34,13 @@ class ClusteringStage(PipelineStage):
             logger.info(f"Loaded pre-trained HDBSCAN model from: {args.load_hdbscan}")
         else:
             min_cluster_size = self.config.clustering_params.get('min_cluster_size', 5)
-            self.clusterer, self.cluster_labels = cluster_coordinates(
+            self.clusterer, self.cluster_labels, self.best_params = cluster_coordinates(
                 embeddings,
-                min_cluster_size=min_cluster_size
             )
             # Save clustering labels
             save_json(self.config.output_folder / 'cluster_labels.json', self.cluster_labels.tolist())
+            # Save the best parameters
+            save_json(self.config.output_folder / 'best_params.json', self.best_params)
             # Save the HDBSCAN model
             save_hdbscan_model(self.clusterer, self.config.output_folder, prefix=args.prefix)
             logger.info("Clustering completed and saved.")

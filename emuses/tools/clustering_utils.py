@@ -3,35 +3,105 @@ from pathlib import Path
 import hdbscan
 import joblib
 import numpy as np
+from sklearn.metrics import silhouette_score
 
 
-def cluster_coordinates(filtered_coordinates, min_cluster_size=5):
+def evaluate_hdbscan(filtered_coordinates, size_factor=0.5):
     """
-    Perform HDBSCAN clustering on filtered coordinates.
+    Automatically selects the best parameters for HDBSCAN clustering.
 
     Parameters:
     filtered_coordinates (np.array): Array of shape (n_samples, 2) containing the filtered coordinates.
-    min_cluster_size (int): Minimum cluster size for HDBSCAN.
+    size_factor (float): Fraction of total data points to use as the upper bound for `min_cluster_size`.
 
     Returns:
-    clusterer (HDBSCAN object): Trained HDBSCAN model.
-    cluster_labels (np.array): Cluster labels for the filtered coordinates.
+    best_params (dict): Best parameters and corresponding metrics (stability, silhouette).
+    best_clusterer (HDBSCAN object): Trained HDBSCAN model with the best parameters.
     """
-    # Perform HDBSCAN clustering on filtered coordinates
+    if filtered_coordinates.shape[0] <= 1:
+        print("Insufficient data for clustering.")
+        return None, {}
+
+    # Determine dynamic range for min_cluster_size and min_samples
+    n_samples = filtered_coordinates.shape[0]
+    max_cluster_size = int(size_factor * n_samples)
+    # TODO might need to adjust the number of clusters and numuber of values to test
+    min_cluster_sizes = np.linspace(2, max(2, max_cluster_size), num=5, dtype=int).tolist()
+    min_samples_list = [1, 2, 5, 10]
+
+    best_score = -np.inf
+    best_params = {}
+    best_clusterer = None
+
+    for min_cluster_size in min_cluster_sizes:
+        for min_samples in min_samples_list:
+            try:
+                clusterer = hdbscan.HDBSCAN(min_cluster_size=min_cluster_size, min_samples=min_samples)
+                labels = clusterer.fit_predict(filtered_coordinates)
+
+                # Ignore results with no clusters
+                if len(set(labels)) > 1:
+                    stability = np.mean(clusterer.cluster_persistence_)
+                    silhouette = silhouette_score(filtered_coordinates, labels)
+
+                    # Combine metrics to select the best clustering
+                    score = stability + silhouette
+                    if score > best_score:
+                        best_score = score
+                        best_params = {
+                            "min_cluster_size": min_cluster_size,
+                            "min_samples": min_samples,
+                            "stability": stability,
+                            "silhouette": silhouette,
+                            "score": score
+                        }
+                        best_clusterer = clusterer
+            except ValueError as e:
+                print(f"Failed for min_cluster_size={min_cluster_size}, min_samples={min_samples}: {e}")
+                continue
+
+    if best_params:
+        print("Best parameters found:")
+        print(best_params)
+        with open("best_hdbscan_params.txt", "w") as file:
+            file.write(str(best_params))
+    else:
+        print("No valid clustering found.")
+
+    return best_clusterer, best_params
+
+
+def cluster_coordinates(filtered_coordinates, size_factor=0.5):
+    """
+    Perform HDBSCAN clustering on filtered coordinates with automated parameter selection.
+
+    Parameters:
+    filtered_coordinates (np.array): Array of shape (n_samples, 2) containing the filtered coordinates.
+    size_factor (float): Fraction of total data points to use as the upper bound for `min_cluster_size`.
+
+    Returns:
+    clusterer (HDBSCAN object): Trained HDBSCAN model with the best parameters.
+    cluster_labels (np.array): Cluster labels for the filtered coordinates.
+    best_params (dict): Best parameters and corresponding metrics.
+    """
     if filtered_coordinates.shape[0] > 0:
-        try:
-            clusterer = hdbscan.HDBSCAN(min_cluster_size=min_cluster_size)
-            cluster_labels = clusterer.fit_predict(filtered_coordinates)
-        except ValueError as e:
-            print(f"Clustering failed due to insufficient data: {e}")
-            clusterer = None
+        # Call the automated evaluation function to find the best parameters
+        best_clusterer, best_params = evaluate_hdbscan(filtered_coordinates, size_factor=size_factor)
+
+        if best_clusterer:
+            # Use the best clusterer to generate labels
+            cluster_labels = best_clusterer.labels_
+        else:
+            print("No valid clustering found. Returning empty labels.")
             cluster_labels = np.array([])
+            best_params = {}
     else:
         print("Insufficient data for clustering.")
-        clusterer = None
+        best_clusterer = None
         cluster_labels = np.array([])
+        best_params = {}
 
-    return clusterer, cluster_labels
+    return best_clusterer, cluster_labels, best_params
 
 
 def save_hdbscan_model(clusterer, output_folder, prefix='', model_name='hdbscan_model', joblib_version=None):

@@ -26,7 +26,7 @@ def add_input_dataset_argument(parser):
     parser.add_argument('input_dataset', help='Input dataset of images (jpg), NIfTI, or MNIST')
 
 
-def add_input_dataset_arguments(parser):
+def add_input_dataset_optional_arguments(parser):
     """
     Adds optional arguments related to the input dataset to the parser.
     Note: Does NOT add positional arguments.
@@ -110,7 +110,7 @@ def main():
     add_output_folder_argument(full_parser)  # Positional argument
     add_input_dataset_argument(full_parser)  # Positional argument
     # Add optional arguments
-    add_input_dataset_arguments(full_parser)
+    add_input_dataset_optional_arguments(full_parser)
     add_scores_arguments(full_parser)
     add_umap_arguments(full_parser)
     add_clustering_arguments(full_parser)
@@ -121,7 +121,7 @@ def main():
     add_output_folder_argument(umap_parser)  # Positional argument
     add_input_dataset_argument(umap_parser)  # Positional argument
     # Add optional arguments
-    add_input_dataset_arguments(umap_parser)
+    add_input_dataset_optional_arguments(umap_parser)
     add_umap_arguments(umap_parser)
 
     # Subparser for the 'clustering' command
@@ -137,7 +137,7 @@ def main():
     add_output_folder_argument(heatmap_parser)  # Positional argument
     add_input_dataset_argument(heatmap_parser)  # Positional argument
     # Add optional arguments
-    add_input_dataset_arguments(heatmap_parser)
+    add_input_dataset_optional_arguments(heatmap_parser)
     add_scores_arguments(heatmap_parser)
     add_smoothing_arguments(heatmap_parser)
     heatmap_parser.add_argument('--load_embeddings', help='Embeddings from the UMAP')
@@ -149,7 +149,7 @@ def main():
     add_output_folder_argument(prediction_parser)  # Positional argument
     add_input_dataset_argument(prediction_parser)  # Positional argument
     # Add optional arguments
-    add_input_dataset_arguments(prediction_parser)
+    add_input_dataset_optional_arguments(prediction_parser)
     add_scores_arguments(prediction_parser)
     add_umap_arguments(prediction_parser)
 
