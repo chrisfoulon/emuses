@@ -2,6 +2,7 @@
 
 import argparse
 import logging
+import sys
 from pathlib import Path
 
 # Import pipeline classes
@@ -63,6 +64,8 @@ def add_scores_arguments(parser):
     parser.add_argument('--scores_column', nargs='+', help='Column(s) for scores in the scores file')
     parser.add_argument('--classification', action='store_true',
                         help='Scores are integer classes in one column')
+    parser.add_argument('--correlation_method', default='pearson', choices=['pearson', 'spearman', 'pointbiserial'],
+                        help='Method to use for correlation calculation (default: pearson)')
 
 
 def add_umap_arguments(parser):
@@ -167,6 +170,10 @@ def main():
     # Create the output folder if it doesn't exist
     output_folder = Path(args.output_folder).resolve()
     output_folder.mkdir(parents=True, exist_ok=True)
+
+    command_file = output_folder / 'command.txt'
+    with open(command_file, 'w') as f:
+        f.write(' '.join(sys.argv))
 
     # Create the pipeline instance
     pipeline = EMUSESPipeline(args)

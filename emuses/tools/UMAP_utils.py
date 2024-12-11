@@ -1,55 +1,158 @@
 import joblib
+import optuna
 from joblib import dump, load
 from pathlib import Path
+from itertools import product
 import numpy as np
 import umap
 import warnings
 from joblib import __version__ as joblib_version
+from scipy.stats import entropy
+from sklearn.manifold import trustworthiness
+from sklearn.metrics import silhouette_score, pairwise_distances
+from sklearn.neighbors import NearestNeighbors
+
+from emuses.tools.emuses_utils import plot_embeddings
 
 
-def train_and_save_umap_and_embeddings(input_matrix, output_folder, pref=None, **kwargs):
+def evaluate_embedding_statistics(embeddings):
     """
-    Train a UMAP model on the input matrix and save the model, embeddings, and input matrix to disk using joblib for serialization.
+    Evaluate statistical properties of the UMAP embedding.
+
     Parameters:
-    - input_matrix : np.ndarray or scipy.sparse.csr_matrix
-        The input matrix to be used for training.
-    - output_folder : str
-        The directory where the model, embeddings, and input matrix will be saved.
-    - pref : str, optional
-        A prefix to add to the output filenames. If not provided, no prefix is added.
-    - kwargs : dict
-        Additional keyword arguments to pass to the UMAP constructor.
+    - embeddings (np.ndarray): Low-dimensional embeddings from UMAP.
+
+    Returns:
+    - metrics (dict): Dictionary containing spread, density variability, entropy, and distance statistics.
     """
-    output_folder = Path(output_folder)
-    Path.mkdir(output_folder, exist_ok=True)
+    # Spread: Total variance of the embedding
+    spread = np.var(embeddings, axis=0).sum()
 
-    # Check if the input matrix has valid dimensions
-    if input_matrix.shape[0] == 0 or input_matrix.shape[1] == 0:
-        raise ValueError("Input matrix must have at least one sample and one feature.")
+    # Density variability: Standard deviation of point densities
+    nbrs = NearestNeighbors(n_neighbors=10).fit(embeddings)
+    distances, _ = nbrs.kneighbors(embeddings)
+    avg_distances = distances.mean(axis=1)
+    density_variability = np.std(avg_distances)
 
-    # Check if the input matrix has only one sample or one feature
-    if input_matrix.shape[0] == 1:
-        warnings.warn("The input matrix has only one sample. UMAP may not perform optimally.")
-    if input_matrix.shape[1] == 1:
-        warnings.warn("The input matrix has only one feature. UMAP may not perform optimally.")
+    # Entropy: Distribution of points in space
+    hist, _ = np.histogramdd(embeddings, bins=20)  # Create a 2D histogram
+    point_entropy = entropy(hist.flatten())
 
-    # Train the UMAP model
-    umap_model = umap.UMAP(**kwargs)
+    # Pairwise distance statistics
+    pairwise_dists = pairwise_distances(embeddings)
+    mean_distance = np.mean(pairwise_dists)
+    std_distance = np.std(pairwise_dists)
+
+    return {
+        "spread": spread,
+        "density_variability": density_variability,
+        "entropy": point_entropy,
+        "mean_distance": mean_distance,
+        "std_distance": std_distance,
+    }
+
+
+def train_and_save_umap_with_bayesian_search(
+    input_matrix,
+    output_folder,
+    param_ranges,
+    n_trials=50,
+    maximize_metrics=None,
+    pref=None,
+    **kwargs,
+):
+    """
+    Train a UMAP model on the input matrix using Bayesian optimization to search for the best parameters.
+
+    Parameters:
+    - input_matrix: np.ndarray
+        High-dimensional input data.
+    - output_folder: str
+        Directory where the model, embeddings, and input matrix will be saved.
+    - param_ranges: dict
+        Dictionary defining the ranges for each parameter.
+        Example:
+        {
+            "n_neighbors": {"type": "int", "low": 5, "high": 50, "step": 5},
+            "min_dist": {"type": "float", "low": 0.01, "high": 0.5},
+            "spread": {"type": "float", "low": 1.0, "high": 5.0},
+            "repulsion_strength": {"type": "float", "low": 0.1, "high": 2.0},
+            "negative_sample_rate": {"type": "int", "low": 1, "high": 10},
+            "learning_rate": {"type": "float", "low": 1.0, "high": 10.0},
+        }
+    - n_trials: int, optional
+        Number of optimization trials.
+    - maximize_metrics: dict, optional
+        Dictionary specifying whether to maximize (True) or minimize (False) each metric.
+    - pref: str, optional
+        Prefix for the saved files.
+    """
+    def objective(trial, output_subfolder=None):
+        # Suggest UMAP parameters dynamically from param_ranges
+        params = {}
+        for param_name, param_info in param_ranges.items():
+            if param_info["type"] == "int":
+                params[param_name] = trial.suggest_int(
+                    param_name, param_info["low"], param_info["high"], step=param_info.get("step", 1)
+                )
+            elif param_info["type"] == "float":
+                params[param_name] = trial.suggest_float(
+                    param_name, param_info["low"], param_info["high"]
+                )
+            elif param_info["type"] == "categorical":
+                params[param_name] = trial.suggest_categorical(
+                    param_name, param_info["choices"]
+                )
+
+        # Train UMAP model with suggested parameters
+        umap_model = umap.UMAP(**params, **kwargs)
+        embeddings = umap_model.fit_transform(input_matrix)
+
+        if output_subfolder:
+            # save the plot of the embeddings
+            plot_embeddings(embeddings, output_subfolder / f"embeddings_{trial.number}.png")
+
+        # Evaluate metrics
+        metrics = evaluate_embedding_statistics(embeddings)
+
+        # Combine metrics into a single score
+        score = 0
+        for metric_name, maximize in maximize_metrics.items():
+            metric_value = metrics[metric_name]
+            score += metric_value if maximize else -metric_value
+
+        return score
+
+    # Run the optimization
+    study = optuna.create_study(direction="maximize")
+    study.optimize(objective, n_trials=n_trials)
+
+    # Retrieve the best parameters
+    best_params = study.best_params
+    print(f"Best Parameters: {best_params}")
+    print(f"Best Objective Score: {study.best_value}")
+
+    # Train the UMAP model with the best parameters
+    umap_model = umap.UMAP(**best_params, **kwargs)
     embeddings = umap_model.fit_transform(input_matrix)
 
-    # Ensure prefix ends correctly
+    # Save the model, embeddings, and input matrix
     prefix = f"{pref}_" if pref else ""
-    model_filename = f"{prefix}umap_model_joblib{joblib_version}.joblib"
+    model_filename = f"{prefix}umap_model.joblib"
     embeddings_filename = f"{prefix}embeddings.npy"
     input_matrix_filename = f"{prefix}input_matrix.npy"
 
-    # Save the UMAP model, embeddings, and input matrix
     dump(umap_model, output_folder / model_filename)
     np.save(output_folder / embeddings_filename, embeddings)
     np.save(output_folder / input_matrix_filename, input_matrix)
 
-    return (umap_model, embeddings, output_folder / model_filename,
-            output_folder / embeddings_filename, output_folder / input_matrix_filename)
+    return (
+        umap_model,
+        embeddings,
+        output_folder / model_filename,
+        output_folder / embeddings_filename,
+        output_folder / input_matrix_filename,
+    )
 
 
 def is_umap_file(umap_path):

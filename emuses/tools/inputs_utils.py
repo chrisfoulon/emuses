@@ -1,3 +1,4 @@
+import argparse
 import os
 from pathlib import Path
 from typing import List, Optional, Tuple
@@ -280,39 +281,39 @@ def spreadsheet_to_input_df(file_path, header=None, index_col=None, filter_colum
     return df
 
 
-def create_heatmap_data(dls, new_dataset, scores_file=None):
-    """
-    Prepare the DataFrame with embeddings and scores for creating a heatmap.
-    Parameters:
-    - dls: DiscreteLatentSpace
-        The DLS object.
-    - new_dataset: str
-        Path to the new dataset (spreadsheet or text file).
-    - scores_file: str, optional
-        Separate file for scores if not in new_dataset.
-
-    Returns:
-    - embeddings, scores: np.ndarray, np.ndarray
-    """
-    if scores_file and new_dataset is None:  # Case 1: Separate scores file
-        scores = file_to_list(scores_file)
-        embeddings = dls.raw_embeddings
-        if len(scores) != len(embeddings):
-            raise ValueError("Scores and embeddings must have the same length.")
-    else:  # Case 2: Spreadsheet with inputs and scores
-        inputs, scores = load_inputs_scores_spreadsheet(new_dataset)
-        # if inputs are just a list of paths we need to use one of the functions to create an input matrix
-        # otherwise, we need to make a matrix with the values in the inputs
-        if isinstance(inputs, list):
-            if inputs[0].endswith('.nii') or inputs[0].endswith('.nii.gz'):
-                inputs = nifti_dataset_to_matrix([nib.load(p) for p in inputs])
-            elif inputs[0].endswith('.jpg') or inputs[0].endswith('.png'):
-                inputs = process_images(inputs)
-            else:
-                raise ValueError(f"Unsupported file format: {Path(inputs[0]).suffix}")
-        embeddings = dls.trained_umap.transform(inputs)
-
-    return embeddings, scores
+# def create_heatmap_data(dls, new_dataset, scores_file=None):
+#     """
+#     Prepare the DataFrame with embeddings and scores for creating a heatmap.
+#     Parameters:
+#     - dls: DiscreteLatentSpace
+#         The DLS object.
+#     - new_dataset: str
+#         Path to the new dataset (spreadsheet or text file).
+#     - scores_file: str, optional
+#         Separate file for scores if not in new_dataset.
+#
+#     Returns:
+#     - embeddings, scores: np.ndarray, np.ndarray
+#     """
+#     if scores_file and new_dataset is None:  # Case 1: Separate scores file
+#         scores = file_to_list(scores_file)
+#         embeddings = dls.raw_embeddings
+#         if len(scores) != len(embeddings):
+#             raise ValueError("Scores and embeddings must have the same length.")
+#     else:  # Case 2: Spreadsheet with inputs and scores
+#         inputs, scores = load_inputs_scores_spreadsheet(new_dataset)
+#         # if inputs are just a list of paths we need to use one of the functions to create an input matrix
+#         # otherwise, we need to make a matrix with the values in the inputs
+#         if isinstance(inputs, list):
+#             if inputs[0].endswith('.nii') or inputs[0].endswith('.nii.gz'):
+#                 inputs = nifti_dataset_to_matrix([nib.load(p) for p in inputs])
+#             elif inputs[0].endswith('.jpg') or inputs[0].endswith('.png'):
+#                 inputs = process_images(inputs)
+#             else:
+#                 raise ValueError(f"Unsupported file format: {Path(inputs[0]).suffix}")
+#         embeddings = dls.trained_umap.transform(inputs)
+#
+#     return embeddings, scores
 
 
 def reshape_input_matrix_data(input_matrix, original_shape, indices=None):
@@ -348,6 +349,8 @@ def prepare_input_matrix(paths_list, dataset_type):
 def prepare_scores(scores, embeddings_shape):
     """Prepare and validate the scores."""
     scores = np.vectorize(float)(scores)
+    print(f"Scores shape: {scores.shape}")
+    print(f"Embeddings shape: {embeddings_shape}")
     if scores.ndim == 1:
         scores = scores.reshape(-1, 1)
     if scores.shape[0] != embeddings_shape[0]:

@@ -64,6 +64,8 @@ class HeatmapStage(PipelineStage):
         context['show_plots'] = show_plots  # Store in context for use in functions
         generate_plots = True  # Generate plots if we are showing them
 
+        correlation_method = self.config.heatmap_params.get('correlation_method', 'pearson')
+
         # Run heatmap analysis
         plots = run_heatmap_analysis(
             embeddings=embeddings,
@@ -79,6 +81,7 @@ class HeatmapStage(PipelineStage):
             highlight_points=True,
             show_plots=show_plots,  # For immediate display (e.g., plt.show())
             generate_plots=generate_plots,  # For returning plots to display in Streamlit
+            correlation_method=correlation_method,
         )
         logger.info("Heatmap analysis completed.")
 

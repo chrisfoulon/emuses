@@ -25,8 +25,9 @@ def evaluate_hdbscan(filtered_coordinates, size_factor=0.5):
     # Determine dynamic range for min_cluster_size and min_samples
     n_samples = filtered_coordinates.shape[0]
     max_cluster_size = int(size_factor * n_samples)
-    # TODO might need to adjust the number of clusters and numuber of values to test
-    min_cluster_sizes = np.linspace(2, max(2, max_cluster_size), num=5, dtype=int).tolist()
+    # TODO might need to adjust the number of clusters and number of values to test
+    # min_cluster_sizes = np.linspace(2, max(2, max_cluster_size), num=5, dtype=int).tolist()
+    min_cluster_sizes = [5]
     min_samples_list = [1, 2, 5, 10]
 
     best_score = -np.inf
@@ -72,7 +73,7 @@ def cluster_coordinates(filtered_coordinates, size_factor=0.5):
     size_factor (float): Fraction of total data points to use as the upper bound for `min_cluster_size`.
 
     Returns:
-    clusterer (HDBSCAN object): Trained HDBSCAN model with the best parameters.
+    best_clusterer (HDBSCAN object): Trained HDBSCAN model with the best parameters.
     cluster_labels (np.array): Cluster labels for the filtered coordinates.
     best_params (dict): Best parameters and corresponding metrics.
     """

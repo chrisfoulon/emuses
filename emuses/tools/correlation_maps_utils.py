@@ -1,7 +1,7 @@
 from pathlib import Path
 
 import numpy as np
-from scipy.stats import pointbiserialr
+from scipy.stats import pointbiserialr, pearsonr, spearmanr
 from emuses.tools.stats_utils import compute_gaussian_filter
 
 from emuses.tools.stats_utils import input_matrix_stat_map
@@ -9,16 +9,16 @@ from emuses.tools.output_utils import save_statistical_maps
 from emuses.tools.visualisation import plot_clustering
 
 
-# Function to calculate point-biserial correlation for each point in the grid
-def calculate_pointbiserial_grid(embeddings, train_labels_bin, grid_size, sigma=0.5):
+def calculate_correlation_grid(embeddings, train_labels, grid_size, sigma=0.5, correlation_method='pearson'):
     """
-    Calculate point-biserial correlations over a grid to evaluate the relationship between the embeddings and the labels.
+    Calculate correlations over a grid to evaluate the relationship between the embeddings and the labels.
 
     Parameters:
     embeddings (np.array): Array of shape (n_samples, n_features) containing the embedding coordinates.
-    train_labels_bin (np.array): Binary labels corresponding to each embedding.
+    train_labels (np.array): Labels corresponding to each embedding. Can be binary or continuous.
     grid_size (int): Number of grid points along each dimension.
     sigma (float or list of floats): Standard deviation for the Gaussian filter used in distance computation.
+    correlation_method (str): The correlation method to use ('pearson', 'spearman', or 'pointbiserial').
 
     Returns:
     correlation_matrix (np.array): Correlation values for each grid point.
@@ -35,6 +35,19 @@ def calculate_pointbiserial_grid(embeddings, train_labels_bin, grid_size, sigma=
 
     correlation_matrix = np.zeros((grid_size, grid_size))
 
+    # Select the appropriate correlation function
+    if correlation_method == 'pearson':
+        correlation_func = pearsonr
+    elif correlation_method == 'spearman':
+        correlation_func = spearmanr
+    elif correlation_method == 'pointbiserial':
+        correlation_func = pointbiserialr
+        # Ensure that train_labels are binary
+        if not np.array_equal(train_labels, train_labels.astype(bool)):
+            raise ValueError("For point-biserial correlation, train_labels must be binary.")
+    else:
+        raise ValueError(f"Unsupported correlation method: {correlation_method}")
+
     if isinstance(sigma, (list, np.ndarray)):  # Multi-scale approach
         for s in sigma:
             temp_correlation_matrix = np.zeros((grid_size, grid_size))
@@ -43,9 +56,9 @@ def calculate_pointbiserial_grid(embeddings, train_labels_bin, grid_size, sigma=
             for idx, coord in enumerate(grid_points):
                 dist_vector = dist_vectors[idx]
                 if np.all(dist_vector == dist_vector[0]):  # Check if dist_vector is constant
-                    correlation = 0  # Set to 0 or np.nan if you prefer
+                    correlation = 0
                 else:
-                    correlation, _ = pointbiserialr(dist_vector, train_labels_bin)
+                    correlation, _ = correlation_func(dist_vector, train_labels)
                 temp_correlation_matrix[idx // grid_size, idx % grid_size] = correlation
             correlation_matrix += temp_correlation_matrix
         correlation_matrix /= len(sigma)
@@ -54,31 +67,43 @@ def calculate_pointbiserial_grid(embeddings, train_labels_bin, grid_size, sigma=
             [compute_gaussian_filter(embeddings, coord.reshape(1, -1), sigma=sigma) for coord in grid_points])
         for idx, coord in enumerate(grid_points):
             dist_vector = dist_vectors[idx]
-            # Check if dist_vector or train_labels_bin is close to 0
-            if np.all(np.isclose(dist_vector, 0)) or np.all(np.isclose(train_labels_bin, 0)):
-                correlation = 0  # Set to 0 or np.nan if you prefer
+            if np.all(np.isclose(dist_vector, 0)) or np.all(np.isclose(train_labels, 0)):
+                correlation = 0
             else:
-                correlation, _ = pointbiserialr(dist_vector, train_labels_bin)
+                correlation, _ = correlation_func(dist_vector, train_labels)
             correlation_matrix[idx // grid_size, idx % grid_size] = correlation
 
     return correlation_matrix, grid_x, grid_y
 
 
-# Function to calculate point-biserial correlation for each embedding
-def calculate_pointbiserial(embeddings, train_labels_bin, sigma=0.5):
+# Updated function to calculate correlation for each embedding
+def calculate_correlation(embeddings, train_labels, sigma=0.5, correlation_method='pearson'):
     """
-    Calculate point-biserial correlations for each embedding.
+    Calculate correlations for each embedding.
 
     Parameters:
     embeddings (np.array): Array of shape (n_samples, n_features) containing the embedding coordinates.
-    train_labels_bin (np.array): Binary labels corresponding to each embedding.
+    train_labels (np.array): Labels corresponding to each embedding. Can be binary or continuous.
     sigma (float or list of floats): Standard deviation for the Gaussian filter used in distance computation.
+    correlation_method (str): The correlation method to use ('pearson', 'spearman', or 'pointbiserial').
 
     Returns:
     correlations (np.array): Correlation values for each embedding.
     """
-    # correlations = np.full(embeddings.shape[0], np.nan)  # Initialize with np.nan to differentiate uncalculated values
-    correlations = np.zeros(embeddings.shape[0])  # Initialize with zeros
+    correlations = np.zeros(embeddings.shape[0])
+
+    # Select the appropriate correlation function
+    if correlation_method == 'pearson':
+        correlation_func = pearsonr
+    elif correlation_method == 'spearman':
+        correlation_func = spearmanr
+    elif correlation_method == 'pointbiserial':
+        correlation_func = pointbiserialr
+        # Ensure that train_labels are binary
+        if not np.array_equal(train_labels, train_labels.astype(bool)):
+            raise ValueError("For point-biserial correlation, train_labels must be binary.")
+    else:
+        raise ValueError(f"Unsupported correlation method: {correlation_method}")
 
     if isinstance(sigma, (list, np.ndarray)):  # Multi-scale approach
         for s in sigma:
@@ -86,9 +111,9 @@ def calculate_pointbiserial(embeddings, train_labels_bin, sigma=0.5):
             for idx, embedding in enumerate(embeddings):
                 dist_vector = compute_gaussian_filter(embeddings, embedding.reshape(1, -1), sigma=s)
                 if np.all(dist_vector == dist_vector[0]):  # Check if dist_vector is constant
-                    correlation = 0  # Set to 0 or np.nan if you prefer
+                    correlation = 0
                 else:
-                    correlation, _ = pointbiserialr(dist_vector, train_labels_bin)
+                    correlation, _ = correlation_func(dist_vector, train_labels)
                 temp_correlations[idx] = correlation
             correlations += temp_correlations
         correlations /= len(sigma)
@@ -96,9 +121,9 @@ def calculate_pointbiserial(embeddings, train_labels_bin, sigma=0.5):
         for idx, embedding in enumerate(embeddings):
             dist_vector = compute_gaussian_filter(embeddings, embedding.reshape(1, -1), sigma)
             if np.all(dist_vector == dist_vector[0]):  # Check if dist_vector is constant
-                correlation = 0  # Set to 0 or np.nan if you prefer
+                correlation = 0
             else:
-                correlation, _ = pointbiserialr(dist_vector, train_labels_bin)
+                correlation, _ = correlation_func(dist_vector, train_labels)
             correlations[idx] = correlation
 
     return correlations
@@ -130,9 +155,8 @@ def filter_coordinates(coordinates, correlations, correlation_threshold=0.3):
 
 def run_heatmap_analysis(
     embeddings, scores_vectors_dict, input_matrix, output_folder, output_format_info, clusterer, cluster_labels,
-    input_type='image',
-    grid_size=100, sigma=None, correlation_threshold=0.3, highlight_points=True, show_plots=False,
-    generate_plots=False
+    input_type='image', grid_size=100, sigma=None, correlation_threshold=0.3, highlight_points=True, show_plots=False,
+    generate_plots=False, correlation_method='pearson'
 ):
     """
     Run heatmap creation, point-biserial correlation, and statistical analysis on the provided embeddings.
@@ -179,17 +203,18 @@ def run_heatmap_analysis(
     plots = {} if generate_plots else None  # Dictionary to collect plots per score_tag
 
     for score_tag, train_labels_bin in scores_vectors_dict.items():
-        # Step 1: Calculate point-biserial correlations over a grid
-        print("Calculating point-biserial correlations over a grid...")
-        correlation_matrix, grid_x, grid_y = calculate_pointbiserial_grid(
-            embeddings, train_labels_bin, grid_size=grid_size, sigma=sigma
+        # Step 1: Calculate correlations over a grid
+        print("Calculating correlations over a grid...")
+        correlation_matrix, grid_x, grid_y = calculate_correlation_grid(
+            embeddings, train_labels_bin, grid_size=grid_size, sigma=sigma, correlation_method=correlation_method
         )
-        print(f"Point-biserial grid correlations for score {score_tag} calculated successfully.")
+        print(f"Grid correlations for score {score_tag} calculated successfully.")
 
-        # Step 2: Calculate point-biserial correlations for each embedding
-        print("Calculating point-biserial correlations for each embedding...")
-        correlations = calculate_pointbiserial(embeddings, train_labels_bin, sigma=sigma)
-        print(f"Point-biserial correlations for score {score_tag} calculated successfully.")
+        # Step 2: Calculate correlations for each embedding
+        print("Calculating correlations for each embedding...")
+        correlations = calculate_correlation(embeddings, train_labels_bin, sigma=sigma,
+                                             correlation_method=correlation_method)
+        print(f"Correlations for score {score_tag} calculated successfully.")
 
         # Step 3: Filter coordinates based on correlation values
         print("Filtering coordinates based on correlation values...")

@@ -3,7 +3,7 @@ import logging
 from pathlib import Path
 
 from emuses.pipelines.pipeline_stage import PipelineStage
-from emuses.tools.UMAP_utils import train_and_save_umap_and_embeddings, load_umap_model
+from emuses.tools.UMAP_utils import train_and_save_umap_with_bayesian_search, load_umap_model
 from emuses.tools.emuses_utils import rescale_embedding
 
 class UMAPStage(PipelineStage):
@@ -32,13 +32,36 @@ class UMAPStage(PipelineStage):
             self.trained_umap, _ = load_umap_model(self.umap_model_path)
             logger.info(f"Loaded pre-trained UMAP model from: {self.umap_model_path}")
         else:
-            # Train UMAP
+            # Define the Bayesian search configuration for UMAP
+            # Define parameter ranges
+            param_ranges = {
+                "n_neighbors": {"type": "int", "low": 5, "high": 50, "step": 5},
+                "min_dist": {"type": "float", "low": 0.01, "high": 0.5},
+                # "spread": {"type": "float", "low": 1.0, "high": 5.0},
+                # "repulsion_strength": {"type": "float", "low": 0.1, "high": 2.0},
+                # "negative_sample_rate": {"type": "int", "low": 1, "high": 10},
+                # "learning_rate": {"type": "float", "low": 1.0, "high": 10.0},
+            }
+
+            maximize_metrics = {
+                "spread": True,
+                "density_variability": False,
+                "entropy": True,
+                "mean_distance": False,
+                "std_distance": False,
+            }
+
             self.trained_umap, embeddings, umap_path, embeddings_path, input_matrix_path = (
-                train_and_save_umap_and_embeddings(
-                train_features,
-                self.config.output_folder,
-                pref=args.prefix
-            ))
+                train_and_save_umap_with_bayesian_search(
+                    input_matrix=train_features,
+                    output_folder=self.config.output_folder,
+                    param_ranges=param_ranges,
+                    n_trials=50,
+                    maximize_metrics=maximize_metrics,
+                    pref=args.prefix,
+                )
+            )
+
             self.umap_model_path = umap_path
             self.embeddings_path = embeddings_path
             logger.info(f"UMAP model saved at: {umap_path}")

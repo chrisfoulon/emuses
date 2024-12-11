@@ -519,8 +519,10 @@ def train_and_test_model_per_label(train_embeddings, train_labels, test_embeddin
     """
 
     # Prepare training and test data as DataFrames
-    train_df = pd.DataFrame(data={'embeddings': [list(coord) for coord in train_embeddings], 'scores': train_labels})
-    test_df = pd.DataFrame(data={'embeddings': [list(coord) for coord in test_embeddings], 'scores': test_labels})
+    train_df = pd.DataFrame(data={'embeddings': [list(coord) for coord in train_embeddings],
+                                  'scores': train_labels.squeeze()})
+    test_df = pd.DataFrame(data={'embeddings': [list(coord) for coord in test_embeddings],
+                                 'scores': test_labels.squeeze()})
 
     # Ensure output_folder is a Path object
     output_folder = Path(output_folder)

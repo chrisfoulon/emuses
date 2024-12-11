@@ -19,3 +19,4 @@ Thumbs.db
 
 # Git-specific files
 .git/
+/build/

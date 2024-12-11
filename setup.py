@@ -29,6 +29,9 @@ setup(
         'pytest',
         'pybids',
         'plotly',
-        'streamlit'
+        'streamlit',
+        'pykrige',
+        'narwhals',
+        'xgboost'
     ],
 )
