@@ -1,47 +1,116 @@
 import numpy as np
 import pytest
-from emuses.tools.UMAP_utils import train_and_save_umap_and_embeddings
+import joblib
+from unittest.mock import patch, MagicMock
+
+# Importing the functions from your module (adjust the import as needed)
+from emuses.tools.UMAP_utils import (
+    evaluate_embedding_statistics,
+    train_and_save_umap_with_bayesian_search,
+    is_umap_file,
+    load_umap_model
+)
 
 
 @pytest.fixture
-def tmp_output_folder(tmp_path):
-    return tmp_path
+def small_input_data():
+    # A small random input matrix (10 samples, 5 features)
+    return np.random.rand(10, 5)
 
-def test_train_and_save_umap_and_embeddings(tmp_output_folder):
-    # Test with a valid input matrix
-    input_matrix = np.random.rand(100, 10)
-    umap_model, embeddings, model_filename, embeddings_filename, input_matrix_filename = (
-        train_and_save_umap_and_embeddings(
-        input_matrix, tmp_output_folder, pref="test"
-    ))
 
-    # Check if files are saved correctly
-    assert model_filename.exists(), "UMAP model file was not saved."
-    assert embeddings_filename.exists(), "Embeddings file was not saved."
-    assert input_matrix_filename.exists(), "Input matrix file was not saved."
+@pytest.fixture
+def small_embeddings():
+    # A tiny embedding (10 samples, 2D)
+    return np.random.rand(10, 2)
 
-    # Check if embeddings have correct shape
-    assert embeddings.shape == (100, 2), "Embeddings shape is incorrect."
 
-    # Test with an input matrix with only one sample
-    input_matrix = np.random.rand(1, 10)
-    with pytest.warns(UserWarning, match="The input matrix has only one sample. UMAP may not perform optimally."):
-        train_and_save_umap_and_embeddings(input_matrix, tmp_output_folder, pref="single_sample")
+def test_evaluate_embedding_statistics(small_embeddings):
+    metrics = evaluate_embedding_statistics(small_embeddings)
+    expected_keys = {
+        "spread",
+        "density_variability",
+        "entropy",
+        "mean_distance",
+        "std_distance"
+    }
+    assert set(metrics.keys()) == expected_keys
+    # Check that the values are numeric
+    for val in metrics.values():
+        assert isinstance(val, float) or isinstance(val, np.floating)
 
-    # Test with an input matrix with only one feature
-    input_matrix = np.random.rand(100, 1)
-    with pytest.warns(UserWarning, match="The input matrix has only one feature. UMAP may not perform optimally."):
-        train_and_save_umap_and_embeddings(input_matrix, tmp_output_folder, pref="single_feature")
 
-    # Test with an empty input matrix
-    input_matrix = np.empty((0, 10))
-    with pytest.raises(ValueError, match="Input matrix must have at least one sample and one feature."):
-        train_and_save_umap_and_embeddings(input_matrix, tmp_output_folder, pref="empty")
+def test_is_umap_file():
+    assert is_umap_file("model.joblib") is True
+    assert is_umap_file("model.txt") is False
+    assert is_umap_file("umap_model.joblib") is True
+    assert is_umap_file("umap_model.jobli") is False
 
-    # Test with an input matrix with only one sample and one feature
-    input_matrix = np.random.rand(1, 1)
-    with pytest.warns(UserWarning):
-        train_and_save_umap_and_embeddings(input_matrix, tmp_output_folder, pref="single_sample_feature")
 
-if __name__ == "__main__":
-    pytest.main()
+def test_load_umap_model_no_file(tmp_path):
+    # No files exist, should return None and a next available filename
+    loaded_model, filepath = load_umap_model(tmp_path)
+    assert loaded_model is None
+    assert filepath.exists() is False
+    # filepath should be a generated name ending with .joblib
+    assert filepath.suffix == ".joblib"
+
+
+def test_load_umap_model_existing_file(tmp_path):
+    # Create a fake joblib file
+    dummy_model = {"umap": "fake_model"}
+    filename = tmp_path / "umap_model_joblib1.3.2.joblib"  # adjust joblib version if needed
+    joblib.dump(dummy_model, filename)
+
+    loaded_model, filepath = load_umap_model(tmp_path, joblib_version="1.3.2")
+    assert loaded_model is not None
+    assert loaded_model["umap"] == "fake_model"
+    assert filepath == filename
+
+
+def test_load_umap_model_failing_file(tmp_path):
+    # Create a file that is not actually a joblib object
+    filename = tmp_path / "umap_model_joblib1.3.2.joblib"
+    filename.write_text("Not a joblib model")
+
+    # Should fail to load and return None and next filepath
+    loaded_model, filepath = load_umap_model(tmp_path, joblib_version="1.3.2")
+    assert loaded_model is None
+    assert filepath.exists() is False
+    assert "umap_model_joblib1.3.2_1.joblib" in str(filepath)
+
+
+@patch("your_module.optuna.create_study")
+@patch("your_module.plot_embeddings", MagicMock())
+def test_train_and_save_umap_with_bayesian_search(mock_study, small_input_data, tmp_path):
+    # Mock study to return a simple best_params and best_value
+    mock_study_instance = MagicMock()
+    mock_study_instance.best_params = {"n_neighbors": 5, "min_dist": 0.1}
+    mock_study_instance.best_value = 1.0
+    mock_study.return_value = mock_study_instance
+
+    # Set param_ranges for minimal search
+    param_ranges = {
+        "n_neighbors": {"type": "int", "low": 5, "high": 5},
+        "min_dist": {"type": "float", "low": 0.1, "high": 0.1}
+    }
+
+    # Use minimal trials and fixed parameters to avoid heavy computation
+    umap_model, embeddings, model_path, embeddings_path, input_matrix_path = train_and_save_umap_with_bayesian_search(
+        small_input_data,
+        tmp_path,
+        param_ranges,
+        n_trials=1,
+        maximize_metrics={"spread": True}  # Just one metric for simplicity
+    )
+
+    # Check that files are saved
+    assert model_path.exists()
+    assert embeddings_path.exists()
+    assert input_matrix_path.exists()
+
+    # Check model and embeddings shape
+    assert umap_model is not None
+    # Since UMAP is run with fixed params, embeddings should have shape (10, 2) by default
+    assert embeddings.shape[0] == small_input_data.shape[0]
+    # We don't know the exact dimensionality but typically UMAP default is 2D
+    assert embeddings.shape[1] == 2
