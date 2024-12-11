@@ -1,6 +1,7 @@
 import numpy as np
 import pytest
 import joblib
+import optuna
 from unittest.mock import patch, MagicMock
 
 # Importing the functions from your module (adjust the import as needed)
@@ -79,8 +80,8 @@ def test_load_umap_model_failing_file(tmp_path):
     assert "umap_model_joblib1.3.2_1.joblib" in str(filepath)
 
 
-@patch("your_module.optuna.create_study")
-@patch("your_module.plot_embeddings", MagicMock())
+@patch("emuses.tools.UMAP_utils.optuna.create_study")
+@patch("emuses.tools.UMAP_utils.plot_embeddings", MagicMock())
 def test_train_and_save_umap_with_bayesian_search(mock_study, small_input_data, tmp_path):
     # Mock study to return a simple best_params and best_value
     mock_study_instance = MagicMock()
