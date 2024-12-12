@@ -72,7 +72,7 @@ def test_mnist_features_to_input_matrix(sample_mnist_data):
 
 def test_load_and_preprocess_digits_dataset():
     # Mock the dataset download to avoid repeated downloads
-    with patch("tools.inputs_utils.fetch_openml") as mock_fetch_openml:
+    with patch("emuses.tools.inputs_utils.fetch_openml") as mock_fetch_openml:
         mock_fetch_openml.return_value = (np.random.rand(100, 784), np.random.randint(0, 10, 100))
         features, labels = load_and_preprocess_digits_dataset()
 
