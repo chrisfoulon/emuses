@@ -77,7 +77,7 @@ def test_load_umap_model_failing_file(tmp_path):
     loaded_model, filepath = load_umap_model(tmp_path, joblib_version="1.3.2")
     assert loaded_model is None
     assert filepath.exists() is False
-    assert "umap_model_joblib1.3.2.joblib" in str(filepath)
+    assert "umap_model_joblib1.3.2_1.joblib" in str(filepath)
 
 
 @patch("emuses.tools.UMAP_utils.optuna.create_study")

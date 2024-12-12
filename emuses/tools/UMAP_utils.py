@@ -159,32 +159,44 @@ def is_umap_file(umap_path):
     return str(umap_path).endswith('.joblib')
 
 
-def load_umap_model(base_path, prefix='', model_name='umap_model', joblib_version=None, max_attempts=10):
+def load_umap_model(base_path, prefix='', model_name='umap_model', joblib_version=None):
     """
-    Load a UMAP model based on the filename convention and system joblib version.
+    Load a UMAP model based on the filename convention and local joblib version.
+    If loading the specified joblib version fails, try all others in the directory.
 
     Parameters:
-    base_path (Path or str): The directory where UMAP models are saved.
-    prefix (str): Prefix for the UMAP model filename.
-    model_name (str): Base name of the model.
-    joblib_version (str, optional): Version of joblib used in the saved file. If None, the current system joblib version is used.
-    max_attempts (int): Maximum number of attempts to load different versions of the model.
+    -----------
+    base_path : Path or str
+        The directory where UMAP models are saved.
+    prefix : str
+        Prefix for the UMAP model filename.
+    model_name : str
+        Base name of the model.
+    joblib_version : str, optional
+        Version of joblib used in the saved file. If None, the current system joblib version is used.
 
     Returns:
-    loaded_umap (object or None): Loaded UMAP model or None if loading failed.
-    filepath (Path): Path of the loaded or next available filename.
+    --------
+    loaded_umap : object or None
+        Loaded UMAP model or None if loading failed.
+    filepath : Path
+        Path of the loaded file or next available filename if loading failed.
     """
     base_path = Path(base_path)
-    if joblib_version is None or not joblib_version:
-        joblib_version = joblib.__version__
-    current_joblib_version = joblib.__version__
-    if prefix:
-        filename_pattern = f"{prefix}_{model_name}_joblib{joblib_version}.joblib"
-    else:
-        filename_pattern = f"{model_name}_joblib{joblib_version}.joblib"
-    filepath = base_path / filename_pattern
 
-    # Try to load the file with the given filename convention
+    # If no joblib_version is provided, use the current local version
+    current_joblib_version = joblib.__version__
+    if joblib_version is None or not joblib_version:
+        joblib_version = current_joblib_version
+
+    if prefix:
+        filename = f"{prefix}_{model_name}_joblib{joblib_version}.joblib"
+    else:
+        filename = f"{model_name}_joblib{joblib_version}.joblib"
+
+    filepath = base_path / filename
+
+    # Try the main file first
     if filepath.exists() and is_umap_file(filepath):
         try:
             loaded_umap = joblib.load(filepath)
@@ -192,35 +204,34 @@ def load_umap_model(base_path, prefix='', model_name='umap_model', joblib_versio
             return loaded_umap, filepath
         except Exception as e:
             print(f"Failed to load UMAP model from: {filepath}, due to: {e}")
-
-    # If the initial file cannot be loaded, try numbered variations
-    counter = 1
-    while counter <= max_attempts:
-        if prefix:
-            numbered_filename = f"{prefix}_{model_name}_joblib{joblib_version}_{counter}.joblib"
-        else:
-            numbered_filename = f"{model_name}_joblib{joblib_version}_{counter}.joblib"
-        numbered_filepath = base_path / numbered_filename
-        if numbered_filepath.exists() and is_umap_file(numbered_filepath):
-            try:
-                loaded_umap = joblib.load(numbered_filepath)
-                print(f"Successfully loaded UMAP model from: {numbered_filepath}")
-                return loaded_umap, numbered_filepath
-            except Exception as e:
-                print(f"Failed to load UMAP model from: {numbered_filepath}, due to: {e}")
-                counter += 1
-        else:
-            break
-
-    if counter > max_attempts:
-        raise RuntimeError(f"Failed to load UMAP model after {max_attempts} attempts. "
-                           f"Either there are too many versions or another issue is preventing loading.")
-
-    # Return None and the next available filename if all attempts fail
-    if prefix:
-        next_available_filename = f"{prefix}_{model_name}_joblib{current_joblib_version}_{counter}.joblib"
     else:
-        next_available_filename = f"{model_name}_joblib{current_joblib_version}_{counter}.joblib"
-    next_filepath = base_path / next_available_filename
-    print(f"Returning next available filename: {next_filepath}")
+        print(f"No model found at: {filepath}")
+
+    # If the exact file didn't load, try all other files in the directory that match the pattern:
+    # Pattern: {prefix_}model_name_joblib{someversion}.joblib or with the prefix if provided.
+    pattern = f"{prefix}_{model_name}_joblib*.joblib" if prefix else f"{model_name}_joblib*.joblib"
+    candidate_files = list(base_path.glob(pattern))
+
+    # Sort candidates to try a deterministic order (optional)
+    candidate_files.sort()
+
+    for candidate in candidate_files:
+        # Skip the one we already tried
+        if candidate == filepath:
+            continue
+        if is_umap_file(candidate):
+            try:
+                loaded_umap = joblib.load(candidate)
+                print(f"Successfully loaded UMAP model from: {candidate}")
+                return loaded_umap, candidate
+            except Exception as e:
+                print(f"Failed to load UMAP model from: {candidate}, due to: {e}")
+
+    # If none could be loaded, suggest next filename using current joblib version
+    if prefix:
+        next_filename = f"{prefix}_{model_name}_joblib{current_joblib_version}.joblib"
+    else:
+        next_filename = f"{model_name}_joblib{current_joblib_version}.joblib"
+    next_filepath = base_path / next_filename
+    print(f"No suitable model found. Returning next available filename: {next_filepath}")
     return None, next_filepath
