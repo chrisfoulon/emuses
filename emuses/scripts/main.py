@@ -48,6 +48,10 @@ def add_input_dataset_optional_arguments(parser):
                         help='Columns are features in the spreadsheet input dataset')
     parser.add_argument('--bids_filters', nargs='+', default=None,
                         help='BIDS filters for the input dataset')
+    # Add normalization argument for input data
+    parser.add_argument('--input_normalization', '-inorm', default='none',
+                        choices=['none', 'zscore', 'min-max', 'zero-max'],
+                        help='Normalization method for input data.')
 
 
 def add_scores_arguments(parser):
@@ -66,6 +70,10 @@ def add_scores_arguments(parser):
                         help='Scores are integer classes in one column')
     parser.add_argument('--correlation_method', default='pearson', choices=['pearson', 'spearman', 'pointbiserial'],
                         help='Method to use for correlation calculation (default: pearson)')
+    # Add normalization argument for scores data
+    parser.add_argument('--scores_normalization', '-snorm', default='none',
+                        choices=['none', 'zscore', 'min-max', 'zero-max'],
+                        help='Normalization method for scores data.')
 
 
 def add_umap_arguments(parser):

@@ -226,7 +226,8 @@ def process_images(image_list, target_size=(128, 128)):
 def spreadsheet_to_input_df(file_path, header=None, index_col=None, filter_columns_list=None,
                             filter_rows_list=None, columns_are_features=False):
     """
-    Import a spreadsheet and make an input matrix (observations, features).
+    Import a spreadsheet and make an input matrix (observations, features),
+    with automatic handling of invalid columns and data conversion.
 
     Parameters
     ----------
@@ -246,7 +247,12 @@ def spreadsheet_to_input_df(file_path, header=None, index_col=None, filter_colum
     Returns
     -------
     pd.DataFrame
-        The resulting input matrix.
+        The resulting input matrix with invalid columns removed and data types handled.
+
+    Raises
+    ------
+    ValueError
+        If the resulting DataFrame contains non-numeric columns.
 
     Examples
     --------
@@ -275,8 +281,65 @@ def spreadsheet_to_input_df(file_path, header=None, index_col=None, filter_colum
     if not columns_are_features:
         df = df.transpose()
 
-    # # Enforce data types to be float or int
-    # df = df.apply(pd.to_numeric, errors='coerce')
+    # Remove constant columns
+    constant_columns = df.columns[df.nunique() <= 1].tolist()
+    if constant_columns:
+        print(f"Removed constant columns: {constant_columns}")
+        df = df.loc[:, df.nunique() > 1]
+
+    # Convert boolean columns to integers
+    boolean_columns = df.select_dtypes(include=['bool']).columns.tolist()
+    if boolean_columns:
+        print(f"Converted boolean columns to integers: {boolean_columns}")
+        for col in boolean_columns:
+            df[col] = df[col].astype(int)
+
+    # Handle object columns
+    columns_to_remove = []
+    unprocessable_examples = {}
+    for col in df.select_dtypes(include=['object']).columns:
+        try:
+            # Attempt to parse as datetime with a specified format
+            df[col] = pd.to_datetime(df[col], format='%Y-%m-%d', errors='raise')
+        except (ValueError, TypeError):
+            try:
+                # Attempt to parse as time-only and convert to timedelta
+                df[col] = pd.to_datetime(df[col], format='%H:%M:%S', errors='raise').dt.time
+                df[col] = pd.to_timedelta(df[col].astype(str))
+            except (ValueError, TypeError):
+                try:
+                    # Attempt to parse as timedelta
+                    df[col] = pd.to_timedelta(df[col], errors='raise')
+                except (ValueError, TypeError):
+                    try:
+                        # Attempt to convert to numeric
+                        df[col] = pd.to_numeric(df[col], errors='raise')
+                    except ValueError:
+                        # Mark column for removal if all attempts fail
+                        columns_to_remove.append(col)
+                        unprocessable_examples[col] = df[col].dropna().unique()[:5].tolist()
+
+    # Show examples of unprocessable columns
+    if unprocessable_examples:
+        for col, examples in unprocessable_examples.items():
+            print(f"Column '{col}' could not be converted. Examples: {examples}")
+
+    # Remove columns that couldn't be converted
+    if columns_to_remove:
+        print(f"Removed unprocessable object columns: {columns_to_remove}")
+        df.drop(columns=columns_to_remove, inplace=True)
+
+    # Check if all remaining columns are numeric, datetime, or timedelta
+    remaining_string_columns = [
+        col for col in df.columns if pd.api.types.is_string_dtype(df[col])
+    ]
+    if remaining_string_columns:
+        for col in remaining_string_columns:
+            print(f"Unconverted string column detected: {col}")
+            print(f"Sample values: {df[col].dropna().unique()[:5].tolist()}")
+        raise ValueError(
+            "The resulting DataFrame contains unconverted string columns. Please inspect the sample values."
+        )
 
     return df
 

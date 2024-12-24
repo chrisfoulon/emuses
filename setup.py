@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name='emuses',
-    version='0.5',
+    version='0.6',
     packages=find_packages(),
     entry_points={
         'console_scripts': [
@@ -32,6 +32,7 @@ setup(
         'streamlit',
         'pykrige',
         'narwhals',
-        'xgboost'
+        'xgboost',
+        'kaleido'
     ],
 )

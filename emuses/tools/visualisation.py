@@ -240,6 +240,164 @@ def plot_clustering_interactive_with_hover(embeddings, cluster_labels, output_pa
         return None
 
 
+def plot_embeddings(
+    embeddings,
+    cluster_labels=None,
+    output_path=None,
+    show_plot=True,
+    return_plot=False,
+    interactive=True,
+    title='Embeddings',
+    marker_size=5,
+    opacity=0.75
+):
+    """
+    Plot embeddings interactively or as static images with optional clustering and hover functionality.
+    Supports both 2D and 3D embeddings:
+      - If embeddings.shape[1] == 2, a 2D scatter plot is created.
+      - If embeddings.shape[1] == 3, a 3D scatter plot is created.
+
+    Parameters:
+    - embeddings (np.array): Array of shape (n_samples, n_features) containing the embedding coordinates.
+                             Must have n_features = 2 or 3.
+    - cluster_labels (np.array or None, optional): Array of cluster labels for each embedding.
+                                                   If None, all points are plotted as one group.
+    - output_path (str or Path, optional):
+        Path where the plot will be saved.
+        If interactive=True and output_path ends with '.html', saves an interactive HTML file.
+        If interactive=False, attempts to save a static image (e.g., '.png') using fig.write_image().
+    - show_plot (bool, optional): If True, the plot will be displayed in a browser (if interactive=True).
+                                  If interactive=False and show_plot=True, the function won't automatically show the plot,
+                                  but you can open the saved image manually or handle it via return_plot.
+    - return_plot (bool, optional): If True, returns the plotly figure object.
+    - interactive (bool, optional): If True, create an interactive plot (HTML). If False, create a static image.
+    - title (str, optional): Title for the plot.
+    - marker_size (int, optional): Size of the markers.
+    - opacity (float, optional): Opacity of the markers.
+
+    Returns:
+    - go.Figure or None: Returns the plot object if return_plot is True, otherwise None.
+
+    Raises:
+    - ValueError: If embeddings are not 2D or 3D.
+    """
+    if embeddings.ndim != 2 or embeddings.shape[1] not in [2, 3]:
+        raise ValueError("Embeddings must be a 2D array with either 2 or 3 columns.")
+
+    dims = embeddings.shape[1]
+    is_3d = (dims == 3)
+
+    # Handle cluster_labels optional
+    if cluster_labels is None:
+        cluster_labels = np.zeros(embeddings.shape[0], dtype=int)
+        unique_labels = np.array([0])
+    else:
+        unique_labels = np.unique(cluster_labels)
+
+    # Create a colormap from matplotlib
+    cmap = plt.colormaps.get_cmap('tab20')
+
+    # Initialize a figure
+    fig = go.Figure()
+
+    # Plot each cluster
+    for idx, k in enumerate(unique_labels):
+        class_member_mask = (cluster_labels == k)
+        cluster_points = embeddings[class_member_mask]
+
+        if k == -1:
+            # Noise points: grey color
+            color = 'rgba(128, 128, 128, 0.6)'
+            name = 'Noise'
+        else:
+            # Map cluster index to a color
+            r, g, b, a = cmap(idx / len(unique_labels))
+            color = f'rgba({int(r*255)}, {int(g*255)}, {int(b*255)}, {opacity})'
+            name = f'Cluster {k}' if len(unique_labels) > 1 else 'All Points'
+
+        if is_3d:
+            fig.add_trace(
+                go.Scatter3d(
+                    x=cluster_points[:, 0],
+                    y=cluster_points[:, 1],
+                    z=cluster_points[:, 2],
+                    mode='markers',
+                    marker=dict(color=color, size=marker_size, line=dict(width=0.5, color='black')),
+                    name=name,
+                    hoverinfo='text',
+                    text=[name for _ in range(len(cluster_points))]
+                )
+            )
+        else:
+            fig.add_trace(
+                go.Scatter(
+                    x=cluster_points[:, 0],
+                    y=cluster_points[:, 1],
+                    mode='markers',
+                    marker=dict(color=color, size=marker_size, line=dict(width=0.5, color='black')),
+                    name=name,
+                    hoverinfo='text',
+                    text=[name for _ in range(len(cluster_points))]
+                )
+            )
+
+    # Update layout depending on dimensionality
+    if is_3d:
+        fig.update_layout(
+            title=title,
+            showlegend=True,
+            legend_title='Clusters',
+            scene=dict(
+                xaxis_title='Dimension 1',
+                yaxis_title='Dimension 2',
+                zaxis_title='Dimension 3',
+                aspectmode='cube'
+            )
+        )
+    else:
+        fig.update_layout(
+            title=title,
+            xaxis_title='Dimension 1',
+            yaxis_title='Dimension 2',
+            showlegend=True,
+            legend_title='Clusters',
+            xaxis=dict(scaleanchor='y', scaleratio=1),
+            yaxis=dict(scaleanchor='x', scaleratio=1)
+        )
+
+    # Save output
+    if output_path:
+        output_path = str(output_path)
+        if interactive:
+            # Save as HTML
+            if not output_path.endswith('.html'):
+                output_path += '.html'
+            plotly.io.write_html(fig, output_path)
+            print(f"Interactive plot saved at: {output_path}")
+        else:
+            # Save as a static image (requires kaleido)
+            # Common formats: .png, .jpg, .jpeg, .svg, .pdf
+            if not any(output_path.lower().endswith(ext) for ext in ['.png', '.jpg', '.jpeg', '.svg', '.pdf']):
+                output_path += '.png'
+            fig.write_image(output_path)
+            print(f"Static image saved at: {output_path}")
+
+    # Show plot
+    if show_plot:
+        if interactive:
+            fig.show()
+        else:
+            # For a static image, we don't have an automatic show in the browser.
+            # Inform the user to open the saved image manually or handle it via return_plot.
+            print("Static mode: The plot is not displayed interactively. Open the saved image file to view.")
+
+    # Return figure if requested
+    if return_plot:
+        return fig
+    else:
+        return None
+
+
 def plot_statistical_map(data, title='', save_path=None, show_plot=False, return_plot=False):
     """
     Plot a 2D statistical map with options to display, save, and/or return the plot.
@@ -265,14 +423,60 @@ def plot_statistical_map(data, title='', save_path=None, show_plot=False, return
         raise ValueError("At least one output option (save, show, or return) must be specified.")
 
     fig, ax = plt.subplots()
-    ax.imshow(data, cmap='hot', interpolation='nearest')
+    img = ax.imshow(data, cmap='hot', interpolation='nearest')
     ax.set_title(title)
     ax.set_xlabel('X-axis')
     ax.set_ylabel('Y-axis')
-    plt.colorbar(ax.imshow(data, cmap='coolwarm', interpolation='nearest'), label='Effect Size', ax=ax)
+    plt.colorbar(img, label='Effect Size', ax=ax)
 
     if save_path:
         plt.savefig(save_path)
+    if show_plot:
+        plt.show()
+    if return_plot:
+        return fig
+    else:
+        plt.close(fig)
+
+
+def plot_embeddings_old(embeddings, title='', save_path=None, show_plot=False, return_plot=False):
+    """
+    Plot UMAP embeddings as a scatter plot with options to display, save, and/or return the plot.
+
+    Parameters:
+    - embeddings: ndarray
+        2D array representing the UMAP latent space (e.g., shape (n_samples, 2)).
+    - title: str, optional
+        Title for the plot.
+    - save_path: str or Path, optional
+        Path where the plot will be saved. If None, the plot will not be saved.
+    - show_plot: bool, optional
+        If True, the plot will be displayed.
+    - return_plot: bool, optional
+        If True, the plot object will be returned. Note that the plot will not be closed if returned
+        and needs to be manually closed after use.
+
+    Returns:
+    - plt.Figure or None
+        Returns the plot object if return_plot is True, otherwise returns None.
+
+    Raises:
+    - ValueError: If the embeddings array is not 2-dimensional.
+    """
+    if not save_path and not show_plot and not return_plot:
+        raise ValueError("At least one output option (save, show, or return) must be specified.")
+
+    if embeddings.ndim != 2 or embeddings.shape[1] != 2:
+        raise ValueError("Embeddings should be a 2D array with shape (n_samples, 2).")
+
+    fig, ax = plt.subplots(figsize=(8, 6))
+    scatter = ax.scatter(embeddings[:, 0], embeddings[:, 1], s=10, alpha=0.7, cmap='viridis')
+    ax.set_title(title)
+    ax.set_xlabel('Dimension 1')
+    ax.set_ylabel('Dimension 2')
+
+    if save_path:
+        plt.savefig(save_path, bbox_inches='tight')
     if show_plot:
         plt.show()
     if return_plot:

@@ -12,7 +12,7 @@ from sklearn.manifold import trustworthiness
 from sklearn.metrics import silhouette_score, pairwise_distances
 from sklearn.neighbors import NearestNeighbors
 
-from emuses.tools.emuses_utils import plot_embeddings
+from emuses.tools.visualisation import plot_embeddings
 
 
 def evaluate_embedding_statistics(embeddings):
@@ -67,7 +67,7 @@ def train_and_save_umap_with_bayesian_search(
     Parameters:
     - input_matrix: np.ndarray
         High-dimensional input data.
-    - output_folder: str
+    - output_folder: str or Path
         Directory where the model, embeddings, and input matrix will be saved.
     - param_ranges: dict
         Dictionary defining the ranges for each parameter.
@@ -86,8 +86,15 @@ def train_and_save_umap_with_bayesian_search(
         Dictionary specifying whether to maximize (True) or minimize (False) each metric.
     - pref: str, optional
         Prefix for the saved files.
+    - **kwargs: additional keyword arguments
+        Additional parameters to pass to UMAP.
     """
-    def objective(trial, output_subfolder=None):
+    output_folder = Path(output_folder)
+    output_folder.mkdir(parents=True, exist_ok=True)  # Ensure output folder exists
+    print(f"Output folder set to: {output_folder}")
+
+    def objective(trial):
+        print(f"Starting trial {trial.number + 1}/{n_trials}")
         # Suggest UMAP parameters dynamically from param_ranges
         params = {}
         for param_name, param_info in param_ranges.items():
@@ -104,37 +111,64 @@ def train_and_save_umap_with_bayesian_search(
                     param_name, param_info["choices"]
                 )
 
+        print(f"Trial {trial.number + 1}: Suggested parameters: {params}")
+
         # Train UMAP model with suggested parameters
         umap_model = umap.UMAP(**params, **kwargs)
         embeddings = umap_model.fit_transform(input_matrix)
+        print(f"Trial {trial.number + 1}: UMAP training completed.")
 
-        if output_subfolder:
-            # save the plot of the embeddings
-            plot_embeddings(embeddings, output_subfolder / f"embeddings_{trial.number}.png")
+        # Define subfolder for this trial's outputs
+        trial_subfolder = output_folder / f"trial_{trial.number}"
+        trial_subfolder.mkdir(parents=True, exist_ok=True)
+        print(f"Trial {trial.number + 1}: Created subfolder at {trial_subfolder}")
+
+        # Save the plot of the embeddings as a static image (interactive=False)
+        plot_embeddings(
+            embeddings,
+            cluster_labels=None,  # No clustering labels during optimization
+            output_path=trial_subfolder / f"embeddings_{trial.number}.png",
+            show_plot=False,
+            return_plot=False,
+            interactive=False  # Save as static image
+        )
+        print(f"Trial {trial.number + 1}: Saved plot at {trial_subfolder / f'embeddings_{trial.number}.png'}")
 
         # Evaluate metrics
         metrics = evaluate_embedding_statistics(embeddings)
+        print(f"Trial {trial.number + 1}: Evaluated metrics: {metrics}")
 
         # Combine metrics into a single score
         score = 0
-        for metric_name, maximize in maximize_metrics.items():
-            metric_value = metrics[metric_name]
-            score += metric_value if maximize else -metric_value
+        if maximize_metrics:
+            for metric_name, maximize in maximize_metrics.items():
+                metric_value = metrics.get(metric_name, 0)
+                if maximize:
+                    score += metric_value
+                else:
+                    score -= metric_value
+            print(f"Trial {trial.number + 1}: Combined score: {score}")
 
         return score
 
-    # Run the optimization
+    # Initialize Optuna study
     study = optuna.create_study(direction="maximize")
+    print("Optuna study created.")
+
+    # Run optimization
     study.optimize(objective, n_trials=n_trials)
+    print("Optuna optimization completed.")
 
     # Retrieve the best parameters
     best_params = study.best_params
+    best_score = study.best_value
     print(f"Best Parameters: {best_params}")
-    print(f"Best Objective Score: {study.best_value}")
+    print(f"Best Objective Score: {best_score}")
 
     # Train the UMAP model with the best parameters
-    umap_model = umap.UMAP(**best_params, **kwargs)
-    embeddings = umap_model.fit_transform(input_matrix)
+    best_umap_model = umap.UMAP(**best_params, **kwargs)
+    best_embeddings = best_umap_model.fit_transform(input_matrix)
+    print("Trained UMAP model with best parameters.")
 
     # Save the model, embeddings, and input matrix
     prefix = f"{pref}_" if pref else ""
@@ -142,13 +176,18 @@ def train_and_save_umap_with_bayesian_search(
     embeddings_filename = f"{prefix}embeddings.npy"
     input_matrix_filename = f"{prefix}input_matrix.npy"
 
-    dump(umap_model, output_folder / model_filename)
-    np.save(output_folder / embeddings_filename, embeddings)
+    dump(best_umap_model, output_folder / model_filename)
+    print(f"UMAP model saved at: {output_folder / model_filename}")
+
+    np.save(output_folder / embeddings_filename, best_embeddings)
+    print(f"Embeddings saved at: {output_folder / embeddings_filename}")
+
     np.save(output_folder / input_matrix_filename, input_matrix)
+    print(f"Input matrix saved at: {output_folder / input_matrix_filename}")
 
     return (
-        umap_model,
-        embeddings,
+        best_umap_model,
+        best_embeddings,
         output_folder / model_filename,
         output_folder / embeddings_filename,
         output_folder / input_matrix_filename,

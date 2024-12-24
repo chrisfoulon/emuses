@@ -13,6 +13,7 @@ from scipy.stats import pointbiserialr
 from tqdm import tqdm
 
 from emuses.tools.stats_utils import process_column
+from emuses.tools.visualisation import plot_embeddings
 
 
 # def rescale_embedding(embedding, margin=0, max_coordinates=None, min_coordinates=None):
@@ -162,7 +163,7 @@ def optimize_discrete_space(rescaled_embedding, overlap_percentage):
     return prev_discrete_space, prev_points, prev_overlap, prev_cells_per_dimension
 
 
-def plot_embeddings(embeddings, title, rescaled_mode=False):
+def plot_embeddings_old(embeddings, title, rescaled_mode=False):
     if rescaled_mode:
         if np.any(embeddings < 0) or np.any(embeddings > 1):
             print("Some values are outside the [0, 1] interval and will not be displayed on the plot.")

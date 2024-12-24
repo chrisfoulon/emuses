@@ -2,7 +2,7 @@ from pathlib import Path
 
 import numpy as np
 from scipy.stats import pointbiserialr, pearsonr, spearmanr
-from emuses.tools.stats_utils import compute_gaussian_filter
+from emuses.tools.stats_utils import compute_gaussian_filter, compute_sigma_median
 
 from emuses.tools.stats_utils import input_matrix_stat_map
 from emuses.tools.output_utils import save_statistical_maps
@@ -197,8 +197,7 @@ def run_heatmap_analysis(
         Dictionary containing plots per score_tag and cluster.
     """
     if sigma is None:
-        sigma_percentage = np.array([0.005, 0.01, 0.02, 0.03])
-        sigma = sigma_percentage / np.max(embeddings)
+        sigma = compute_sigma_median(embeddings, sample_size=0)
 
     plots = {} if generate_plots else None  # Dictionary to collect plots per score_tag
 

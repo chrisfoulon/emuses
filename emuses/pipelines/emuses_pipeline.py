@@ -7,6 +7,7 @@ from pathlib import Path
 from emuses.pipelines.pipeline_config import PipelineConfig
 
 from bcblib.tools.general_utils import parse_file_list_argument
+from bcblib.tools.dataframe_filtering import normalize_dataframe
 from bcblib.tools.nifti_utils import load_nifti
 from emuses.tools.inputs_utils import (
     detect_dataset_type,
@@ -120,6 +121,19 @@ class EMUSESPipeline:
                         filter_rows_list=None,  # TODO: add this option
                         columns_are_features=args.columns_as_features
                     )
+
+                    # Apply normalization if requested
+                    if args.input_normalization and args.input_normalization.lower() != 'none':
+                        self.logger.info(f"Normalizing input dataframe with method={args.input_normalization}")
+                        before_shape = inputs_df.shape
+                        inputs_df = normalize_dataframe(inputs_df, method=args.input_normalization)
+                        after_shape = inputs_df.shape
+                        if after_shape != before_shape:
+                            self.logger.warning(
+                                f"Input DataFrame shape changed after normalization (unexpected). "
+                                f"Shape changed from {before_shape} to {after_shape}."
+                            )
+
                     self.input_matrix = inputs_df.values
                     self.output_format_info = self.input_matrix.shape[1]
                     self.paths_list = None
@@ -145,6 +159,18 @@ class EMUSESPipeline:
                 filter_rows_list=None,  # TODO: add this option
                 columns_are_features=not args.scores_are_rows
             )
+
+            if args.scores_normalization and args.scores_normalization.lower() != 'none':
+                self.logger.info(f"Normalizing scores dataframe with method={args.scores_normalization}")
+                before_shape = scores_df.shape
+                scores_df = normalize_dataframe(scores_df, method=args.scores_normalization)
+                after_shape = scores_df.shape
+                if after_shape != before_shape:
+                    self.logger.warning(
+                        f"Scores DataFrame shape changed after normalization (unexpected). "
+                        f"Shape changed from {before_shape} to {after_shape}."
+                    )
+
             self.scores = prepare_scores(scores_df.values, self.input_matrix.shape)
 
             # Update context with scores

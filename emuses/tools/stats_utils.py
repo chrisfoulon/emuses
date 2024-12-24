@@ -12,7 +12,8 @@ from tqdm import tqdm
 import numpy as np
 import pandas as pd
 from sklearn.ensemble import RandomForestRegressor, RandomForestClassifier
-from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score, confusion_matrix, accuracy_score
+from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score, confusion_matrix, accuracy_score, \
+    pairwise_distances
 from sklearn.model_selection import KFold, GridSearchCV
 import matplotlib.pyplot as plt
 import seaborn as sns
@@ -990,3 +991,38 @@ def compute_gaussian_filter(embeddings, coord, sigma=1.0):
     gaussian_values = np.exp(-0.5 * (distances / sigma) ** 2)
     return gaussian_values
 
+
+def compute_sigma_median(embeddings, sample_size=None):
+    """
+    Compute the median pairwise distance (sigma) from a set of embeddings.
+
+    Parameters
+    ----------
+    embeddings : np.ndarray
+        2D array of shape (n_samples, n_features), i.e., the coordinates in the latent space.
+    sample_size : int or None
+        If specified, randomly sample 'sample_size' points from the embeddings to speed up
+        distance computation on very large datasets. If None, use all points.
+
+    Returns
+    -------
+    float
+        The median pairwise distance between the sampled points.
+    """
+    if sample_size is not None and sample_size < len(embeddings):
+        # Randomly sample data to reduce computation if needed
+        idx = np.random.choice(len(embeddings), size=sample_size, replace=False)
+        sub_embeddings = embeddings[idx]
+    else:
+        sub_embeddings = embeddings
+
+    # Compute the pairwise distance matrix
+    distance_matrix = pairwise_distances(sub_embeddings, sub_embeddings)
+
+    # Extract the upper-triangular (or all) distances and compute the median
+    # (excluding the diagonal, which is zero)
+    # Flatten and filter out zeros from the diagonal
+    distances = distance_matrix[np.triu_indices_from(distance_matrix, k=1)]
+    median_dist = np.median(distances)
+
+    return median_dist
