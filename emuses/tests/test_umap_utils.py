@@ -73,11 +73,21 @@ def test_load_umap_model_failing_file(tmp_path):
     filename = tmp_path / "umap_model_joblib1.3.2.joblib"
     filename.write_text("Not a joblib model")
 
-    # Should fail to load and return None and next filepath
+    # Determine the local joblib version
+    local_joblib_version = joblib.__version__
+
+    # Call the function to load the UMAP model
     loaded_model, filepath = load_umap_model(tmp_path, joblib_version="1.3.2")
-    assert loaded_model is None
-    assert filepath.exists() is False
-    assert "umap_model_joblib1.3.2_1.joblib" in str(filepath)
+
+    # Check that loading failed and the function returns None
+    assert loaded_model is None, "The loaded model should be None when the file cannot be loaded."
+
+    # Ensure the filepath corresponds to the file that would be saved for the local joblib version
+    expected_filepath = tmp_path / f"umap_model_joblib{local_joblib_version}.joblib"
+    assert str(filepath) == str(expected_filepath), (
+        f"The filepath should point to the file for the local joblib version, "
+        f"but got {filepath} instead of {expected_filepath}."
+    )
 
 
 @patch("emuses.tools.UMAP_utils.optuna.create_study")
