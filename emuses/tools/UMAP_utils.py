@@ -51,6 +51,32 @@ def evaluate_embedding_statistics(embeddings):
         "std_distance": std_distance,
     }
 
+"""
+Example of optim_dict to implement the new system:
+optim_dict = {'param': {
+        'umap': {
+            'min_dist': {'name': 'min_dist', 'low': 0.01, 'high': 0.5},
+            'n_neighbors': {'name': 'n_neighbors', 'low': 5, 'high': 50, 'step': 5},
+            'n_components': {'value': 2},
+            'metric': {'name': 'metric', 'choices': ['euclidean', 'cosine']}
+        },
+        'hdbscan': {
+            'min_cluster_size': {'name': 'min_cluster_size', 'low': 5, 'high': 50},
+            'min_samples': {'name': 'min_samples', 'low': 1, 'high': 10}
+        }
+    } 
+    'metrics': {
+        'umap': {
+            'spread': {'weight': 1, 'target': 0.6},
+            'trustworthiness': {'weight': 1.5}
+        },
+        'hdbscan': {
+            'validity_index': {'weight': 1}
+        }
+    }
+}
+"""
+
 
 def train_and_save_umap_with_bayesian_search(
     input_matrix,
@@ -76,7 +102,7 @@ def train_and_save_umap_with_bayesian_search(
             "n_neighbors": {"type": "int", "low": 5, "high": 50, "step": 5},
             "min_dist": {"type": "float", "low": 0.01, "high": 0.5},
             "spread": {"type": "float", "low": 1.0, "high": 5.0},
-            "repulsion_strength": {"type": "float", "low": 0.1, "high": 2.0},
+            "repulsion_strength": {"type": "float", "low": 0.1, "high": 2.0},c
             "negative_sample_rate": {"type": "int", "low": 1, "high": 10},
             "learning_rate": {"type": "float", "low": 1.0, "high": 10.0},
         }

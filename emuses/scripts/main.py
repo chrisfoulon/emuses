@@ -192,9 +192,6 @@ def main():
     if args.command in ['umap', 'full', 'prediction']:
         stages_to_add.append(UMAPStage(pipeline.config))
 
-    if args.command in ['clustering', 'full']:
-        stages_to_add.append(ClusteringStage(pipeline.config))
-
     if args.command in ['heatmap', 'full']:
         stages_to_add.append(HeatmapStage(
             pipeline.config,

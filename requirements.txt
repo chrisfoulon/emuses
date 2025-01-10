@@ -18,3 +18,7 @@ pytest
 pybids
 plotly
 streamlit
+pykrige
+narwhals
+xgboost
+kaleido
