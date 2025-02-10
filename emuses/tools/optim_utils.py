@@ -128,3 +128,24 @@ def calculate_composite_score(optim_dict, metrics_values_dict):
         total_score /= max_score
 
     return total_score
+
+
+def calculate_score(metrics, metrics_config):
+    """
+    Calculate a weighted score from computed metrics.
+    For each metric:
+      - If 'target' and 'epsilon' are defined, the score is weight*(1 - abs(value - target)/epsilon).
+      - Otherwise, the score is simply weight * value.
+    """
+    score = 0.0
+    for metric_name, config in metrics_config.items():
+        if metric_name in metrics:
+            value = metrics[metric_name]
+            if 'target' in config and 'epsilon' in config:
+                diff = abs(value - config['target'])
+                # Here, if the difference exceeds epsilon, the score may become negative.
+                metric_score = config['weight'] * (1 - diff / config['epsilon'])
+            else:
+                metric_score = config['weight'] * value
+            score += metric_score
+    return score

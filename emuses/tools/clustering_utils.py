@@ -3,7 +3,117 @@ from pathlib import Path
 import hdbscan
 import joblib
 import numpy as np
+import optuna
 from sklearn.metrics import silhouette_score
+
+from emuses.tools.optim_utils import calculate_score, suggest_parameters
+
+
+def compute_cluster_persistence(clusterer):
+    """
+    Compute the mean persistence of clusters from an HDBSCAN clusterer.
+
+    Parameters:
+        clusterer (HDBSCAN object): Fitted HDBSCAN clusterer.
+
+    Returns:
+        float: Mean cluster persistence.
+    """
+    if hasattr(clusterer, 'cluster_persistence_'):
+        return np.mean(clusterer.cluster_persistence_)
+    return 0.0
+
+
+def compute_noise_ratio(labels):
+    """
+    Compute the noise ratio of the clustering.
+
+    Parameters:
+        labels (np.ndarray): Cluster labels from the HDBSCAN clusterer (-1 represents noise).
+
+    Returns:
+        float: Noise ratio (proportion of points labeled as noise).
+    """
+    noise_points = np.sum(labels == -1)
+    total_points = len(labels)
+    return noise_points / total_points if total_points > 0 else 0.0
+
+
+def compute_cluster_validity_index(clusterer):
+    """
+    Compute the cluster validity index, balancing compactness and separation.
+
+    Parameters:
+        clusterer (HDBSCAN object): Fitted HDBSCAN clusterer.
+
+    Returns:
+        float: Validity index of the clustering.
+    """
+    if hasattr(clusterer, 'relative_validity_'):
+        return clusterer.relative_validity_
+    return 0.0
+
+
+def evaluate_clustering_metrics(clusterer, embeddings):
+    """
+    Evaluate clustering metrics: persistence, noise ratio, and validity index.
+
+    Parameters:
+        clusterer (HDBSCAN object): Fitted HDBSCAN clusterer.
+        embeddings (np.ndarray): The embedding coordinates.
+
+    Returns:
+        dict: Clustering metrics.
+    """
+    labels = clusterer.labels_
+    metrics = {
+        'cluster_persistence': compute_cluster_persistence(clusterer),
+        'noise_ratio': compute_noise_ratio(labels),
+        'validity_index': compute_cluster_validity_index(clusterer)
+    }
+    return metrics
+
+
+###########################################################
+# --- Inner (HDBSCAN) Optimization Using optim_dict --- #
+###########################################################
+
+def inner_optimize_hdbscan(embeddings, optim_dict, n_inner_trials=20):
+    """
+    For a given UMAP embedding, optimize HDBSCAN parameters.
+
+    Parameters:
+      embeddings: np.ndarray (the UMAP latent space)
+      optim_dict: The full optim_dict; only the 'hdbscan' part is used.
+      n_inner_trials: Number of inner trials.
+
+    Returns:
+      best_params, best_score, best_clusterer, best_labels, best_metrics
+    """
+    # Prepare a sub-dictionary for HDBSCAN only.
+    inner_optim_dict = {
+        "param": {"hdbscan": optim_dict["param"]["hdbscan"]},
+        "metrics": {"hdbscan": optim_dict["metrics"]["hdbscan"]}
+    }
+
+    def inner_objective(inner_trial):
+        params_all = suggest_parameters(inner_trial, inner_optim_dict)
+        hdbscan_params = params_all["hdbscan"]
+        clusterer = hdbscan.HDBSCAN(**hdbscan_params)
+        labels = clusterer.fit_predict(embeddings)
+        metrics = evaluate_clustering_metrics(clusterer, embeddings)
+        score = calculate_score(metrics, inner_optim_dict["metrics"]["hdbscan"])
+        return score
+
+    inner_study = optuna.create_study(direction="maximize")
+    inner_study.optimize(inner_objective, n_trials=n_inner_trials)
+    best_params = inner_study.best_params
+    best_score = inner_study.best_value
+    # Re-train best HDBSCAN model using the best parameters.
+    best_clusterer = hdbscan.HDBSCAN(**best_params["hdbscan"])
+    best_labels = best_clusterer.fit_predict(embeddings)
+    best_metrics = evaluate_clustering_metrics(best_clusterer, embeddings)
+    return best_params, best_score, best_clusterer, best_labels, best_metrics
 
 
 def evaluate_hdbscan(filtered_coordinates, size_factor=0.5):
