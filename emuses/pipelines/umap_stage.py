@@ -3,8 +3,13 @@ import logging
 from pathlib import Path
 
 from emuses.pipelines.pipeline_stage import PipelineStage
-from emuses.tools.UMAP_utils import train_and_save_umap_with_bayesian_search, load_umap_model
+from emuses.tools.UMAP_utils import (
+    train_and_save_umap_optim_with_nested_clustering,
+    load_umap_model
+)
 from emuses.tools.emuses_utils import rescale_embedding
+# Import the default optimization dictionary from your configuration module.
+from emuses.config.optim_configs import optim_dict_default
 
 class UMAPStage(PipelineStage):
     def __init__(self, config):
@@ -17,6 +22,11 @@ class UMAPStage(PipelineStage):
         self.test_embeddings_path = None
         self.min_embeddings = None
         self.max_embeddings = None
+        # New clustering-related attributes:
+        self.best_clusterer = None
+        self.cluster_labels = None
+        self.cluster_model_path = None
+        self.cluster_labels_path = None
 
     def run(self, context, progress_queue=None):
         logger = logging.getLogger(__name__)
@@ -32,49 +42,51 @@ class UMAPStage(PipelineStage):
             self.trained_umap, _ = load_umap_model(self.umap_model_path)
             logger.info(f"Loaded pre-trained UMAP model from: {self.umap_model_path}")
         else:
-            # Define the Bayesian search configuration for UMAP
-            # Define parameter ranges
-            param_ranges = {
-                "n_neighbors": {"type": "int", "low": 5, "high": 50, "step": 5},
-                "min_dist": {"type": "float", "low": 0.01, "high": 0.5},
-                # "spread": {"type": "float", "low": 1.0, "high": 5.0},
-                # "repulsion_strength": {"type": "float", "low": 0.1, "high": 2.0},
-                # "negative_sample_rate": {"type": "int", "low": 1, "high": 10},
-                # "learning_rate": {"type": "float", "low": 1.0, "high": 10.0},
-            }
+            # Use the default optimization dictionary from the configuration file if not provided in the context.
+            if 'optim_dict' not in context or not context['optim_dict']:
+                optim_dict = optim_dict_default
+            else:
+                optim_dict = context['optim_dict']
 
-            maximize_metrics = {
-                "spread": True,
-                "density_variability": False,
-                "entropy": True,
-                "mean_distance": False,
-                "std_distance": False,
-            }
-
-            self.trained_umap, embeddings, umap_path, embeddings_path, input_matrix_path = (
-                train_and_save_umap_with_bayesian_search(
+            # Run nested optimization for UMAP + HDBSCAN.
+            (self.trained_umap,
+             embeddings,
+             umap_path,
+             embeddings_path,
+             best_clusterer,
+             best_labels,
+             cluster_model_path,
+             cluster_labels_path,
+             input_matrix_path) = train_and_save_umap_optim_with_nested_clustering(
                     input_matrix=train_features,
                     output_folder=self.config.output_folder,
-                    param_ranges=param_ranges,
+                    optim_dict=optim_dict,
                     n_trials=50,
-                    maximize_metrics=maximize_metrics,
+                    n_inner_trials=20,  # Adjust as needed
                     pref=args.prefix,
+                    random_state=getattr(args, 'random_state', None)
                 )
-            )
 
             self.umap_model_path = umap_path
             self.embeddings_path = embeddings_path
+            self.best_clusterer = best_clusterer
+            self.cluster_labels = best_labels
+            self.cluster_model_path = cluster_model_path
+            self.cluster_labels_path = cluster_labels_path
+
             logger.info(f"UMAP model saved at: {umap_path}")
             logger.info(f"Embeddings saved at: {embeddings_path}")
+            logger.info(f"HDBSCAN model saved at: {cluster_model_path}")
+            logger.info(f"Cluster labels saved at: {cluster_labels_path}")
 
-        # Load precomputed embeddings if provided
+        # Load precomputed embeddings if provided.
         if getattr(args, 'load_embeddings', None):
             self.embeddings = np.load(args.load_embeddings)
             logger.info(f"Loaded precomputed embeddings from: {args.load_embeddings}")
         else:
             self.embeddings = self.trained_umap.transform(train_features)
 
-        # Rescale embeddings
+        # Rescale embeddings.
         self.min_embeddings = self.embeddings.min(axis=0)
         self.max_embeddings = self.embeddings.max(axis=0)
         self.embeddings = rescale_embedding(
@@ -83,7 +95,7 @@ class UMAPStage(PipelineStage):
             preset_max=self.max_embeddings
         )
 
-        # Process test embeddings if test set exists
+        # Process test embeddings if test set exists.
         if test_features is not None:
             self.test_embeddings = self.trained_umap.transform(test_features)
             self.test_embeddings = rescale_embedding(
@@ -91,16 +103,20 @@ class UMAPStage(PipelineStage):
                 preset_min=self.min_embeddings,
                 preset_max=self.max_embeddings
             )
-            # Save test embeddings
+            # Save test embeddings.
             self.test_embeddings_path = self.config.output_folder / 'test_embeddings.npy'
             np.save(self.test_embeddings_path, self.test_embeddings)
             logger.info(f"Test embeddings saved at: {self.test_embeddings_path}")
 
-        # Update context with embeddings
+        # Update context with UMAP and clustering outputs.
         context.update({
             'embeddings': self.embeddings,
             'test_embeddings': self.test_embeddings,
             'trained_umap': self.trained_umap,
             'min_embeddings': self.min_embeddings,
-            'max_embeddings': self.max_embeddings
+            'max_embeddings': self.max_embeddings,
+            'best_clusterer': self.best_clusterer,
+            'cluster_labels': self.cluster_labels,
+            'cluster_model_path': self.cluster_model_path,
+            'cluster_labels_path': self.cluster_labels_path
         })

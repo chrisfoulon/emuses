@@ -165,7 +165,8 @@ def plot_clustering(
     return fig
 
 
-def plot_clustering_interactive_with_hover(embeddings, cluster_labels, output_path=None, show_plot=True, return_plot=False):
+def plot_clustering_interactive_with_hover(embeddings, cluster_labels, output_path=None, show_plot=True,
+                                           return_plot=False):
     """
     Plot the clustering of the entire embedding space interactively with hover functionality.
 

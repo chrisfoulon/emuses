@@ -9,49 +9,66 @@ from sklearn.metrics import silhouette_score
 from emuses.tools.optim_utils import calculate_score, suggest_parameters
 
 
-def compute_cluster_persistence(clusterer):
+def compute_cluster_persistence(clusterer, normalized=True, max_value=1.0):
     """
     Compute the mean persistence of clusters from an HDBSCAN clusterer.
 
+    If normalized is True, the persistence is divided by max_value (capped at 1).
+
     Parameters:
-        clusterer (HDBSCAN object): Fitted HDBSCAN clusterer.
+        clusterer: A fitted HDBSCAN object.
+        normalized (bool): Whether to return a normalized value.
+        max_value (float): The maximum expected persistence value.
 
     Returns:
-        float: Mean cluster persistence.
+        float: Cluster persistence.
     """
-    if hasattr(clusterer, 'cluster_persistence_'):
-        return np.mean(clusterer.cluster_persistence_)
-    return 0.0
+    persistence = np.mean(clusterer.cluster_persistence_) if hasattr(clusterer, 'cluster_persistence_') else 0.0
+    if not normalized:
+        return persistence
+    return min(1, persistence / max_value)
 
 
-def compute_noise_ratio(labels):
+def compute_noise_ratio(labels, normalized=True):
     """
     Compute the noise ratio of the clustering.
 
+    If normalized is True, returns 1 - (noise ratio), so that 1 is best (no noise)
+    and 0 is worst (all noise).
+
     Parameters:
-        labels (np.ndarray): Cluster labels from the HDBSCAN clusterer (-1 represents noise).
+        labels (np.ndarray): Cluster labels (-1 indicates noise).
+        normalized (bool): Whether to return a normalized value.
 
     Returns:
-        float: Noise ratio (proportion of points labeled as noise).
+        float: Noise ratio (or normalized noise score).
     """
     noise_points = np.sum(labels == -1)
     total_points = len(labels)
-    return noise_points / total_points if total_points > 0 else 0.0
+    raw_ratio = noise_points / total_points if total_points > 0 else 0.0
+    if not normalized:
+        return raw_ratio
+    return 1 - raw_ratio
 
 
-def compute_cluster_validity_index(clusterer):
+def compute_cluster_validity_index(clusterer, normalized=True, max_value=1.0):
     """
-    Compute the cluster validity index, balancing compactness and separation.
+    Compute the cluster validity index.
+
+    If normalized is True, the index is divided by max_value.
 
     Parameters:
-        clusterer (HDBSCAN object): Fitted HDBSCAN clusterer.
+        clusterer: A fitted HDBSCAN object.
+        normalized (bool): Whether to return a normalized value.
+        max_value (float): The maximum expected validity index.
 
     Returns:
-        float: Validity index of the clustering.
+        float: Cluster validity index.
     """
-    if hasattr(clusterer, 'relative_validity_'):
-        return clusterer.relative_validity_
-    return 0.0
+    val = clusterer.relative_validity_ if hasattr(clusterer, 'relative_validity_') else 0.0
+    if not normalized:
+        return val
+    return min(1, val / max_value)
 
 
 def evaluate_clustering_metrics(clusterer, embeddings):
@@ -98,19 +115,32 @@ def inner_optimize_hdbscan(embeddings, optim_dict, n_inner_trials=20):
 
     def inner_objective(inner_trial):
         params_all = suggest_parameters(inner_trial, inner_optim_dict)
-        hdbscan_params = params_all["hdbscan"]
+        # Expecting params_all to have the structure: {"hdbscan": { ... }}, but it might be flattened.
+        # So try to retrieve the hdbscan part:
+        if "hdbscan" in params_all:
+            hdbscan_params = params_all["hdbscan"]
+        else:
+            hdbscan_params = params_all
         clusterer = hdbscan.HDBSCAN(**hdbscan_params)
-        labels = clusterer.fit_predict(embeddings)
+        clusterer.fit(embeddings)
         metrics = evaluate_clustering_metrics(clusterer, embeddings)
         score = calculate_score(metrics, inner_optim_dict["metrics"]["hdbscan"])
         return score
 
     inner_study = optuna.create_study(direction="maximize")
     inner_study.optimize(inner_objective, n_trials=n_inner_trials)
+
     best_params = inner_study.best_params
     best_score = inner_study.best_value
+
+    # Check if best_params is nested or flat.
+    if "hdbscan" in best_params:
+        best_hdbscan_params = best_params["hdbscan"]
+    else:
+        best_hdbscan_params = best_params
+
     # Re-train best HDBSCAN model using the best parameters.
-    best_clusterer = hdbscan.HDBSCAN(**best_params["hdbscan"])
+    best_clusterer = hdbscan.HDBSCAN(**best_hdbscan_params)
     best_labels = best_clusterer.fit_predict(embeddings)
     best_metrics = evaluate_clustering_metrics(best_clusterer, embeddings)
     return best_params, best_score, best_clusterer, best_labels, best_metrics

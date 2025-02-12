@@ -1,7 +1,7 @@
 import hdbscan
 import joblib
 import optuna
-from emuses.tools.UMAP_utils import inner_optimize_hdbscan
+from bcblib.tools.general_utils import save_json
 from joblib import dump, load
 from pathlib import Path
 from itertools import product
@@ -13,47 +13,38 @@ from scipy.stats import entropy
 from sklearn.manifold import trustworthiness
 from sklearn.metrics import silhouette_score, pairwise_distances
 from sklearn.neighbors import NearestNeighbors
+import optuna.visualization as ov
 
-from emuses.tools.clustering_utils import evaluate_clustering_metrics
-from emuses.tools.optim_utils import calculate_composite_score, suggest_parameters, calculate_score
-from emuses.tools.visualisation import plot_embeddings
+from emuses.tools.clustering_utils import evaluate_clustering_metrics, inner_optimize_hdbscan
+from emuses.tools.optim_utils import calculate_composite_score, suggest_parameters, calculate_score, auto_n_neighbors
+from emuses.tools.visualisation import plot_embeddings, plot_clustering_interactive_with_hover
 
 
-def evaluate_embedding_statistics(embeddings):
+def evaluate_embedding_statistics(embeddings, metrics_config):
     """
-    Evaluate statistical properties of the UMAP embedding.
+    Evaluate the statistical properties of the UMAP embedding based on the provided metrics configuration.
 
     Parameters:
-    - embeddings (np.ndarray): Low-dimensional embeddings from UMAP.
+        embeddings (np.ndarray): Low-dimensional embeddings from UMAP.
+        metrics_config (dict): Dictionary defining which metrics to compute (and any additional configuration).
+            For example:
+            {
+                "spread": {"weight": 1.0, "target": 1.0, "epsilon": 0.1},
+                "density_variability": {"weight": 1.2, "target": 0.4, "epsilon": 0.1},
+                "entropy": {"weight": 1.5}
+            }
 
     Returns:
-    - metrics (dict): Dictionary containing spread, density variability, entropy, and distance statistics.
+        dict: Dictionary containing the computed metric values.
     """
-    # Spread: Total variance of the embedding
-    spread = np.var(embeddings, axis=0).sum()
+    computed_metrics = {}
+    for metric_name in metrics_config.keys():
+        if metric_name in metric_functions:
+            computed_metrics[metric_name] = metric_functions[metric_name](embeddings)
+        else:
+            print(f"Warning: No computation function defined for metric '{metric_name}'.")
+    return computed_metrics
 
-    # Density variability: Standard deviation of point densities
-    nbrs = NearestNeighbors(n_neighbors=10).fit(embeddings)
-    distances, _ = nbrs.kneighbors(embeddings)
-    avg_distances = distances.mean(axis=1)
-    density_variability = np.std(avg_distances)
-
-    # Entropy: Distribution of points in space
-    hist, _ = np.histogramdd(embeddings, bins=20)  # Create a 2D histogram
-    point_entropy = entropy(hist.flatten())
-
-    # Pairwise distance statistics
-    pairwise_dists = pairwise_distances(embeddings)
-    mean_distance = np.mean(pairwise_dists)
-    std_distance = np.std(pairwise_dists)
-
-    return {
-        "spread": spread,
-        "density_variability": density_variability,
-        "entropy": point_entropy,
-        "mean_distance": mean_distance,
-        "std_distance": std_distance,
-    }
 
 """
 optim_dict_example = {
@@ -104,85 +95,113 @@ optim_dict_example = {
 """
 
 
-def compute_spread(embedding):
+def compute_spread(embeddings, normalized=True):
     """
-    Compute the spread of a given embedding.
+    Compute the spread (total variance) of the embedding.
+
+    If normalized is True, the spread is divided by the maximum theoretical spread,
+    where the maximum for each dimension is (range^2)/4.
 
     Parameters:
-    embedding (np.ndarray): An array of shape (n_samples, n_dimensions).
+        embeddings (np.ndarray): Array of shape (n_samples, n_dimensions).
+        normalized (bool): Whether to return a normalized value between 0 and 1.
 
     Returns:
-    float: The computed spread.
+        float: Spread (raw if normalized=False, normalized if True).
     """
-    # Compute variance along each dimension
-    variances = np.var(embedding, axis=0)
+    # Compute raw spread (sum of variances)
+    raw_spread = np.sum(np.var(embeddings, axis=0))
+    if not normalized:
+        return raw_spread
+    # Compute ranges along each dimension (max - min)
+    ranges = np.ptp(embeddings, axis=0)
+    # Maximum variance per dimension is (range^2)/4
+    max_variances = (ranges ** 2) / 4.0
+    max_theoretical_spread = np.sum(max_variances)
+    return raw_spread / max_theoretical_spread # here we could add a tiny epsilon to avoid division by zero
 
-    # Sum variances to get the spread
-    spread = np.sum(variances)
-    return spread
 
-
-def compute_density_variability(embedding, n_neighbors=15):
+def compute_density_variability(embeddings, n_neighbors=None, normalized=True, alpha=3.0, beta=1.0):
     """
     Compute the density variability of an embedding.
 
+    The raw density variability is the coefficient of variation of the average distance to
+    n_neighbors nearest neighbors. If n_neighbors is not provided, it is computed automatically
+    based on the dataset size. Then, if normalized is True, the raw value is mapped to [0, 1]
+    using a transformation based on the observed min and max.
+
     Parameters:
-    embedding (np.ndarray): An array of shape (n_samples, n_dimensions).
-    n_neighbors (int): Number of nearest neighbors to consider.
+        embeddings (np.ndarray): Array of shape (n_samples, n_dimensions).
+        n_neighbors (int, optional): Number of nearest neighbors. If None, computed automatically.
+        normalized (bool): Whether to return a normalized value between 0 and 1.
+        alpha (float): Parameter for the logistic (sigmoid) transformation (if used).
+        beta (float): Parameter that defines the midpoint of the logistic transformation.
 
     Returns:
-    float: Density variability of the embedding.
+        float: Density variability, with 1 being best (most uniform).
     """
-    # Find nearest neighbors
-    nbrs = NearestNeighbors(n_neighbors=n_neighbors, metric="euclidean").fit(embedding)
-    distances, _ = nbrs.kneighbors(embedding)
+    if n_neighbors is None:
+        n_neighbors = auto_n_neighbors(embeddings.shape[0])
 
-    # Compute mean distance for each point (local density proxy)
+    nbrs = NearestNeighbors(n_neighbors=n_neighbors, metric="euclidean").fit(embeddings)
+    distances, _ = nbrs.kneighbors(embeddings)
     local_densities = np.mean(distances, axis=1)
+    raw_cv = np.std(local_densities) / (np.mean(local_densities) + 1e-8)
 
-    # Compute the standard deviation and mean of densities
-    std_density = np.std(local_densities)
-    mean_density = np.mean(local_densities)
+    if not normalized:
+        return raw_cv
 
-    # Density variability (coefficient of variation)
-    density_variability = std_density / mean_density # here we could add a tiny epsilon to avoid division by zero
-    return density_variability
+    # Instead of a fixed sigmoid, we can also try a relative normalization approach:
+    d_min = np.min(local_densities)
+    d_max = np.max(local_densities)
+    if d_max + d_min < 1e-8:
+        return 1.0
+    max_cv = (d_max - d_min) / (d_max + d_min)
+    if max_cv < 1e-8:
+        return 1.0
+    normalized_cv = 1 - (raw_cv / max_cv)
+    return max(0, min(1, normalized_cv))
 
 
-def compute_entropy(embedding, n_bins=20):
+def compute_entropy(embeddings, n_bins=20, normalized=True):
     """
-    Compute the entropy of the point distribution in an embedding.
+    Compute the Shannon entropy of the point distribution in an embedding.
+
+    If normalized is True, the entropy is divided by the maximum entropy (log of the number of histogram bins),
+    so that the returned value is between 0 and 1.
 
     Parameters:
-    embedding (np.ndarray): An array of shape (n_samples, n_dimensions).
-    n_bins (int): Number of bins along each dimension.
+        embeddings (np.ndarray): Array of shape (n_samples, n_dimensions).
+        n_bins (int): Number of bins along each dimension.
+        normalized (bool): Whether to return a normalized value.
 
     Returns:
-    float: The computed entropy.
+        float: Entropy (raw if normalized=False, normalized if True).
     """
-    # Create a histogram over the embedding space
-    hist, edges = np.histogramdd(embedding, bins=n_bins)
-
-    # Flatten the histogram and calculate probabilities
+    hist, _ = np.histogramdd(embeddings, bins=n_bins)
     hist_flat = hist.flatten()
-    probabilities = hist_flat / np.sum(hist_flat)
-
-    # Filter out zero probabilities
+    probabilities = hist_flat / (np.sum(hist_flat) + 1e-8)
     probabilities = probabilities[probabilities > 0]
-
-    # Compute Shannon entropy
-    entropy = -np.sum(probabilities * np.log(probabilities))
-
-    # Normalize entropy (optional)
-    max_entropy = np.log(hist.size)
-    normalized_entropy = entropy / max_entropy # here we could add a tiny epsilon to avoid division by zero
-
-    return normalized_entropy
+    ent = -np.sum(probabilities * np.log(probabilities))
+    if not normalized:
+        return ent
+    max_ent = np.log(hist.size)
+    return ent / max_ent # here we could add a tiny epsilon to avoid division by zero
 
 
 ######################################################################
 # --- Outer (UMAP) + Nested HDBSCAN Optimization Using optim_dict --- #
 ######################################################################
+
+
+metric_functions = {
+    "spread": compute_spread,
+    "density_variability": lambda emb: compute_density_variability(emb, n_neighbors=10),
+    "entropy": lambda emb: compute_entropy(emb, n_bins=20),
+    "mean_distance": lambda emb: np.mean(pairwise_distances(emb)),
+    "std_distance": lambda emb: np.std(pairwise_distances(emb))
+}
+
 
 def train_and_save_umap_optim_with_nested_clustering(
         input_matrix,
@@ -197,26 +216,67 @@ def train_and_save_umap_optim_with_nested_clustering(
     Perform nested Bayesian optimization using a unified optim_dict.
 
     The outer loop optimizes UMAP parameters, and for each UMAP embedding the inner loop
-    optimizes HDBSCAN parameters. The composite score is computed from both UMAP and HDBSCAN metrics.
+    optimizes HDBSCAN parameters. A composite score is computed from both UMAP and HDBSCAN
+    metrics (by merging their metric dictionaries and using a composite scoring function)
+    to reflect both the properties of the latent space and its clusterability.
+
+    Trial details (parameters, metrics, and composite scores) are logged to a JSON file.
+    An interactive clustering plot (HTML) is also generated for the best trial.
+
+    Additionally, the best UMAP model is saved to disk as soon as a new best composite score is achieved.
 
     Parameters:
       input_matrix: np.ndarray, the high-dimensional data.
       output_folder: str or Path, where outputs are saved.
       optim_dict: dict, the unified optimization dictionary.
-      n_trials: int, outer (UMAP) trials.
-      n_inner_trials: int, inner (HDBSCAN) trials per UMAP trial.
+      n_trials: int, number of outer (UMAP) trials.
+      n_inner_trials: int, number of inner (HDBSCAN) trials per UMAP trial.
       pref: str, optional prefix for saved files.
       **kwargs: additional parameters for UMAP.
 
     Returns:
-      A tuple of best models, embeddings, file paths, and other outputs.
+      A tuple of:
+        - best_umap_model,
+        - best_embeddings,
+        - umap_model_path,
+        - embeddings_path,
+        - best_clusterer,
+        - best_labels,
+        - cluster_model_path,
+        - cluster_labels_path,
+        - input_matrix_path.
     """
     output_folder = Path(output_folder)
     output_folder.mkdir(parents=True, exist_ok=True)
     print(f"Output folder set to: {output_folder}")
 
+    # Folder to store static plots for each trial.
+    output_plot_folder = output_folder / "plots"
+    output_plot_folder.mkdir(parents=True, exist_ok=True)
+
+    # Define path for the best UMAP model file.
+    best_model_path = output_folder / (f"{pref}_best_umap_model.joblib" if pref else "best_umap_model.joblib")
+
+    # List to store trial log information.
+    trial_logs = []
+
+    # Global variable to track best composite score.
+    best_score_so_far = -float("inf")
+
+    def save_best_model_callback(study, trial):
+        nonlocal best_score_so_far
+        # When a new best trial is found, retrain the model on the full data and save it.
+        if trial.value > best_score_so_far:
+            best_score_so_far = trial.value
+            best_umap_params = trial.user_attrs["umap_params"]
+            # Train the model using these parameters.
+            best_model = umap.UMAP(**best_umap_params, **kwargs)
+            best_model.fit(input_matrix)
+            dump(best_model, best_model_path)
+            print(f"New best model saved (trial {trial.number} with score {trial.value}) at {best_model_path}")
+
     def outer_objective(trial):
-        # Use the unified optim_dict to suggest parameters for both UMAP and HDBSCAN.
+        # Suggest parameters for UMAP (and HDBSCAN).
         params_all = suggest_parameters(trial, optim_dict)
         umap_params = params_all["umap"]
         print(f"Trial {trial.number}: Suggested UMAP parameters: {umap_params}")
@@ -226,31 +286,43 @@ def train_and_save_umap_optim_with_nested_clustering(
         embeddings = umap_model.fit_transform(input_matrix)
         print(f"Trial {trial.number}: UMAP training completed.")
 
-        # (Optional) Save a plot for this trial.
-        trial_subfolder = output_folder / f"trial_{trial.number}"
-        trial_subfolder.mkdir(parents=True, exist_ok=True)
-        plot_path = trial_subfolder / f"embeddings_{trial.number}.png"
-        plot_embeddings(embeddings, cluster_labels=None, output_path=plot_path, interactive=False, show_plot=False)
+        # Save a static plot for this trial.
+        plot_path = output_plot_folder / f"embeddings_{trial.number}.png"
+        plot_embeddings(embeddings, cluster_labels=None, output_path=plot_path,
+                        interactive=False, show_plot=False)
         print(f"Trial {trial.number}: Embedding plot saved at {plot_path}")
 
         # Evaluate UMAP metrics.
-        umap_metrics = evaluate_embedding_statistics(embeddings)
+        umap_metrics = evaluate_embedding_statistics(embeddings, optim_dict["metrics"]["umap"])
         print(f"Trial {trial.number}: UMAP metrics: {umap_metrics}")
-        umap_score = calculate_score(umap_metrics, optim_dict["metrics"]["umap"])
-        print(f"Trial {trial.number}: UMAP score: {umap_score}")
 
         # Inner optimization: optimize HDBSCAN for this UMAP embedding.
-        best_hdbscan_params, best_hdbscan_score, best_clusterer, best_labels, best_hdbscan_metrics = inner_optimize_hdbscan(
-            embeddings, optim_dict, n_inner_trials=n_inner_trials
-        )
+        (best_hdbscan_params, best_hdbscan_score, best_clusterer, best_labels,
+         best_hdbscan_metrics) = inner_optimize_hdbscan(embeddings, optim_dict, n_inner_trials=n_inner_trials)
         print(f"Trial {trial.number}: Best HDBSCAN parameters: {best_hdbscan_params}")
         print(f"Trial {trial.number}: Best HDBSCAN score: {best_hdbscan_score}")
 
-        # Composite score: combine UMAP and HDBSCAN scores.
-        composite_score = umap_score + best_hdbscan_score
+        # Combine metrics from both UMAP and HDBSCAN.
+        combined_metrics = {
+            "umap": umap_metrics,
+            "hdbscan": best_hdbscan_metrics
+        }
+        # Compute a composite score that weights all metrics together.
+        composite_score = calculate_composite_score(optim_dict, combined_metrics)
         print(f"Trial {trial.number}: Composite score: {composite_score}")
 
-        # Save extra info in the trial (user attributes).
+        # Log trial details.
+        trial_info = {
+            "trial_number": trial.number,
+            "umap_params": umap_params,
+            "umap_metrics": umap_metrics,
+            "hdbscan_best_params": best_hdbscan_params,
+            "hdbscan_metrics": best_hdbscan_metrics,
+            "composite_score": composite_score
+        }
+        trial_logs.append(trial_info)
+
+        # Save extra info in the trial.
         trial.set_user_attr("umap_params", umap_params)
         trial.set_user_attr("umap_metrics", umap_metrics)
         trial.set_user_attr("hdbscan_best_params", best_hdbscan_params)
@@ -258,31 +330,48 @@ def train_and_save_umap_optim_with_nested_clustering(
         trial.set_user_attr("hdbscan_metrics", best_hdbscan_metrics)
         trial.set_user_attr("hdbscan_best_clusterer", best_clusterer)
         trial.set_user_attr("hdbscan_best_labels", best_labels)
+
         return composite_score
 
-    # Outer optimization.
+    # Create the study with the callback.
     outer_study = optuna.create_study(direction="maximize")
     print("Starting outer (UMAP) optimization...")
-    outer_study.optimize(outer_objective, n_trials=n_trials)
+    outer_study.optimize(outer_objective, n_trials=n_trials, callbacks=[save_best_model_callback])
     print("Outer optimization completed.")
 
+    # Retrieve best trial information.
     best_outer_trial = outer_study.best_trial
     best_umap_params = best_outer_trial.user_attrs["umap_params"]
-    print(f"Best UMAP parameters: {best_umap_params}")
+    best_composite_score = outer_study.best_value
+    best_hdbscan_params = best_outer_trial.user_attrs["hdbscan_best_params"]
 
-    # Retrain UMAP model using best parameters.
+    print(f"Best composite score: {best_composite_score}")
+    print(f"Best UMAP parameters: {best_umap_params}")
+    print(f"Best HDBSCAN parameters (from best trial): {best_hdbscan_params}")
+
+    # Retrain the best UMAP model on the full input data.
     best_umap_model = umap.UMAP(**best_umap_params, **kwargs)
     best_embeddings = best_umap_model.fit_transform(input_matrix)
     print("Trained UMAP model with best parameters.")
 
-    # Retrieve the best HDBSCAN results from the best outer trial.
-    best_hdbscan_params = best_outer_trial.user_attrs["hdbscan_best_params"]
+    # Retrieve the best HDBSCAN results.
     best_clusterer = best_outer_trial.user_attrs["hdbscan_best_clusterer"]
     best_labels = best_outer_trial.user_attrs["hdbscan_best_labels"]
-    best_hdbscan_metrics = best_outer_trial.user_attrs["hdbscan_metrics"]
+    # best_hdbscan_metrics = best_outer_trial.user_attrs["hdbscan_metrics"]
     print("Retrieved best HDBSCAN results from outer optimization.")
 
-    # Save final models and outputs.
+    # Save an interactive clustering plot for the best trial.
+    best_clustering_plot_path = output_folder / (f"{pref}_best_clustering.html" if pref else "best_clustering.html")
+    plot_clustering_interactive_with_hover(
+        best_embeddings,
+        best_labels,
+        output_path=best_clustering_plot_path,
+        show_plot=False,
+        return_plot=False
+    )
+    print(f"Interactive clustering plot saved at: {best_clustering_plot_path}")
+
+    # Define file paths for final outputs.
     prefix = f"{pref}_" if pref else ""
     umap_model_path = output_folder / f"{prefix}umap_model.joblib"
     embeddings_path = output_folder / f"{prefix}embeddings.npy"
@@ -290,6 +379,7 @@ def train_and_save_umap_optim_with_nested_clustering(
     cluster_model_path = output_folder / f"{prefix}hdbscan_model.joblib"
     cluster_labels_path = output_folder / f"{prefix}cluster_labels.npy"
 
+    # Save the final UMAP model, embeddings, input matrix, and clustering results.
     dump(best_umap_model, umap_model_path)
     np.save(embeddings_path, best_embeddings)
     np.save(input_matrix_path, input_matrix)
@@ -301,6 +391,16 @@ def train_and_save_umap_optim_with_nested_clustering(
     print(f"Input matrix saved at: {input_matrix_path}")
     print(f"HDBSCAN model saved at: {cluster_model_path}")
     print(f"Cluster labels saved at: {cluster_labels_path}")
+
+    # Save the trial logs to a JSON file.
+    log_path = output_folder / "parameter_search_log.json"
+    save_json(log_path, trial_logs)
+    print(f"Parameter search log saved at: {log_path}")
+
+    # Optionally, generate and save an optimization history plot using Optuna's visualization:
+    fig = ov.plot_optimization_history(outer_study)
+    fig.write_html(str(output_folder / "optimization_history.html"))
+    print(f"Optimization history plot saved at: {output_folder / 'optimization_history.html'}")
 
     return (
         best_umap_model,

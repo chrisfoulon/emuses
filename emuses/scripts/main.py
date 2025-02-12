@@ -8,7 +8,6 @@ from pathlib import Path
 # Import pipeline classes
 from emuses.pipelines.emuses_pipeline import EMUSESPipeline
 from emuses.pipelines.umap_stage import UMAPStage
-from emuses.pipelines.clustering_stage import ClusteringStage
 from emuses.pipelines.heatmap_stage import HeatmapStage
 from emuses.pipelines.prediction_stage import PredictionStage
 
