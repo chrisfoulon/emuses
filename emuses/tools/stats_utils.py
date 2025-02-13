@@ -1007,22 +1007,30 @@ def compute_sigma_median(embeddings, sample_size=None):
     Returns
     -------
     float
-        The median pairwise distance between the sampled points.
+        The median pairwise distance between the sampled points, or a default value if the
+        resulting set is empty.
     """
+    # If sample_size is provided and less than the total number of embeddings, sample accordingly.
     if sample_size is not None and sample_size < len(embeddings):
-        # Randomly sample data to reduce computation if needed
         idx = np.random.choice(len(embeddings), size=sample_size, replace=False)
         sub_embeddings = embeddings[idx]
     else:
         sub_embeddings = embeddings
 
+    # If the sub_embeddings array is empty, return a default sigma (e.g., 1.0).
+    if sub_embeddings.shape[0] == 0:
+        return 1.0
+
     # Compute the pairwise distance matrix
     distance_matrix = pairwise_distances(sub_embeddings, sub_embeddings)
 
-    # Extract the upper-triangular (or all) distances and compute the median
-    # (excluding the diagonal, which is zero)
-    # Flatten and filter out zeros from the diagonal
+    # Extract the upper triangular part of the distance matrix (excluding the diagonal)
     distances = distance_matrix[np.triu_indices_from(distance_matrix, k=1)]
-    median_dist = np.median(distances)
 
+    # If there are no distances (which might happen if there is only one point), return default sigma.
+    if distances.size == 0:
+        return 1.0
+
+    # Compute and return the median distance.
+    median_dist = np.median(distances)
     return median_dist

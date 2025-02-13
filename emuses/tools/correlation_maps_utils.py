@@ -147,7 +147,7 @@ def filter_coordinates(coordinates, correlations, correlation_threshold=0.3):
     Ensure that the `correlation_threshold` is chosen carefully to retain relevant data points without excessive noise.
     """
     # Filter coordinates based on correlation threshold
-    filtered_indices = np.where(correlations > correlation_threshold)[0]
+    filtered_indices = np.where(np.abs(correlations) > correlation_threshold)[0]
     filtered_coordinates = coordinates[filtered_indices]
 
     return filtered_coordinates, filtered_indices
@@ -155,7 +155,7 @@ def filter_coordinates(coordinates, correlations, correlation_threshold=0.3):
 
 def run_heatmap_analysis(
     embeddings, scores_vectors_dict, input_matrix, output_folder, output_format_info, clusterer, cluster_labels,
-    input_type='image', grid_size=100, sigma=None, correlation_threshold=0.3, highlight_points=True, show_plots=False,
+    input_type='image', grid_size=100, sigma=None, correlation_threshold=0.2, highlight_points=True, show_plots=False,
     generate_plots=False, correlation_method='pearson'
 ):
     """
@@ -209,11 +209,14 @@ def run_heatmap_analysis(
         )
         print(f"Grid correlations for score {score_tag} calculated successfully.")
 
+
         # Step 2: Calculate correlations for each embedding
         print("Calculating correlations for each embedding...")
         correlations = calculate_correlation(embeddings, train_labels_bin, sigma=sigma,
                                              correlation_method=correlation_method)
+
         print(f"Correlations for score {score_tag} calculated successfully.")
+        print(f"Non-zero correlation values for score {score_tag}: {np.count_nonzero(correlations)}")
 
         # Step 3: Filter coordinates based on correlation values
         print("Filtering coordinates based on correlation values...")
@@ -234,6 +237,7 @@ def run_heatmap_analysis(
 
         # Step 5: Separate filtered coordinates by cluster and run statistical analysis
         unique_clusters = np.unique(filtered_cluster_labels)
+        print(f"Unique clusters for score {score_tag}: {unique_clusters}")
         if generate_plots:
             plots[score_tag] = {}  # Initialize a dictionary for this score_tag's plots
 
@@ -245,13 +249,13 @@ def run_heatmap_analysis(
 
             print(f"Running statistical analysis for cluster {cluster}...")
             # Run statistical analysis to get the effect_size_map
-            stat_map, _, _ = input_matrix_stat_map(
+            _, _, effect_size_map = input_matrix_stat_map(
                 input_matrix, cluster_indices, test_name='mann-whitney', n_cores=-1
             )
             print(f"Statistical analysis for cluster {cluster} completed.")
 
             # Save the effect size map and generate plots if requested
-            stat_maps_to_save = {cluster: stat_map}
+            stat_maps_to_save = {cluster: effect_size_map}
             effect_size_plots = save_statistical_maps(
                 stat_maps=stat_maps_to_save,
                 output_folder=output_folder,
@@ -289,5 +293,24 @@ def run_heatmap_analysis(
             print("Clustering plot created successfully.")
         else:
             print("Mismatch in dimensions or clustering failed. Skipping the plot.")
+            # saving the plot without filtering
+            if generate_plots:
+                plot_fig = plot_clustering(
+                    embeddings=embeddings,
+                    clusterer=clusterer,
+                    grid_x=grid_x,
+                    grid_y=grid_y,
+                    gaussian_matrix=correlation_matrix,
+                    filtered_indices=None,
+                    filtered_embeddings=None,
+                    cluster_labels=cluster_labels,
+                    score_tag=score_tag,
+                    highlight_points=highlight_points,
+                    show_plot=show_plots,
+                    save_path=Path(output_folder) / f'clustering_plot_{score_tag}.png'
+                )
+                # Store the plot under the score_tag
+                plots[score_tag]['clustering_plot'] = plot_fig
+                print("Clustering plot created successfully.")
 
     return plots  # Return the collected plots if generate_plots is True

@@ -7,9 +7,11 @@ from emuses.tools.UMAP_utils import (
     train_and_save_umap_optim_with_nested_clustering,
     load_umap_model
 )
+from emuses.tools.clustering_utils import load_hdbscan_model
 from emuses.tools.emuses_utils import rescale_embedding
 # Import the default optimization dictionary from your configuration module.
-from emuses.config.optim_configs import optim_dict_default
+from emuses.config.optim_configs import optim_dict_default, optim_dict_test
+
 
 class UMAPStage(PipelineStage):
     def __init__(self, config):
@@ -22,7 +24,7 @@ class UMAPStage(PipelineStage):
         self.test_embeddings_path = None
         self.min_embeddings = None
         self.max_embeddings = None
-        # New clustering-related attributes:
+        # Clustering-related attributes:
         self.best_clusterer = None
         self.cluster_labels = None
         self.cluster_model_path = None
@@ -37,14 +39,15 @@ class UMAPStage(PipelineStage):
         train_features = context.get('train_features')
         test_features = context.get('test_features')
 
+        # First, check if we are loading a pre-trained UMAP model.
         if getattr(args, 'load_umap', None):
             self.umap_model_path = Path(args.load_umap).resolve()
             self.trained_umap, _ = load_umap_model(self.umap_model_path)
             logger.info(f"Loaded pre-trained UMAP model from: {self.umap_model_path}")
         else:
-            # Use the default optimization dictionary from the configuration file if not provided in the context.
+            # Use the provided optimization dictionary or fallback to default.
             if 'optim_dict' not in context or not context['optim_dict']:
-                optim_dict = optim_dict_default
+                optim_dict = optim_dict_test  # or optim_dict_default as needed
             else:
                 optim_dict = context['optim_dict']
 
@@ -61,7 +64,7 @@ class UMAPStage(PipelineStage):
                     input_matrix=train_features,
                     output_folder=self.config.output_folder,
                     optim_dict=optim_dict,
-                    n_trials=50,
+                    n_trials=1,
                     n_inner_trials=20,  # Adjust as needed
                     pref=args.prefix,
                     random_state=getattr(args, 'random_state', None)
@@ -79,6 +82,22 @@ class UMAPStage(PipelineStage):
             logger.info(f"HDBSCAN model saved at: {cluster_model_path}")
             logger.info(f"Cluster labels saved at: {cluster_labels_path}")
 
+        # Check if a pre-saved clustering result should be loaded.
+        if getattr(args, 'load_clusterer', None):
+            self.cluster_model_path = Path(args.load_clusterer).resolve()
+            try:
+                self.best_clusterer = load_hdbscan_model(self.cluster_model_path)
+                logger.info(f"Loaded pre-trained clusterer from: {self.cluster_model_path}")
+            except Exception as e:
+                logger.error(f"Failed to load clusterer from {self.cluster_model_path}: {e}")
+        if getattr(args, 'load_cluster_labels', None):
+            self.cluster_labels_path = Path(args.load_cluster_labels).resolve()
+            try:
+                self.cluster_labels = np.load(self.cluster_labels_path)
+                logger.info(f"Loaded pre-trained cluster labels from: {self.cluster_labels_path}")
+            except Exception as e:
+                logger.error(f"Failed to load cluster labels from {self.cluster_labels_path}: {e}")
+
         # Load precomputed embeddings if provided.
         if getattr(args, 'load_embeddings', None):
             self.embeddings = np.load(args.load_embeddings)
@@ -95,7 +114,7 @@ class UMAPStage(PipelineStage):
             preset_max=self.max_embeddings
         )
 
-        # Process test embeddings if test set exists.
+        # Process test embeddings if a test set exists.
         if test_features is not None:
             self.test_embeddings = self.trained_umap.transform(test_features)
             self.test_embeddings = rescale_embedding(
@@ -109,13 +128,14 @@ class UMAPStage(PipelineStage):
             logger.info(f"Test embeddings saved at: {self.test_embeddings_path}")
 
         # Update context with UMAP and clustering outputs.
+        # Use keys that downstream stages (e.g., HeatmapStage) expect.
         context.update({
             'embeddings': self.embeddings,
             'test_embeddings': self.test_embeddings,
             'trained_umap': self.trained_umap,
             'min_embeddings': self.min_embeddings,
             'max_embeddings': self.max_embeddings,
-            'best_clusterer': self.best_clusterer,
+            'clusterer': self.best_clusterer,  # Using 'clusterer' as the key
             'cluster_labels': self.cluster_labels,
             'cluster_model_path': self.cluster_model_path,
             'cluster_labels_path': self.cluster_labels_path

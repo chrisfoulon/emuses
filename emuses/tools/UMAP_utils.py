@@ -85,7 +85,7 @@ optim_dict_example = {
                 'target': 0.1,
                 'epsilon': 0.05  # Tolerance for low noise
             },
-            'validity_index': {
+            'dbcv': {
                 'weight': 1.5
             }
         }

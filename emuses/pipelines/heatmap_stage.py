@@ -75,6 +75,7 @@ class HeatmapStage(PipelineStage):
             output_format_info=self.output_format_info,
             clusterer=clusterer,
             cluster_labels=cluster_labels,
+            input_type=context['dataset_type'],
             grid_size=100,
             sigma=sigma,
             correlation_threshold=0.3,

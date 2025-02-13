@@ -4,6 +4,7 @@ import hdbscan
 import joblib
 import numpy as np
 import optuna
+from hdbscan import validity
 from sklearn.metrics import silhouette_score
 
 from emuses.tools.optim_utils import calculate_score, suggest_parameters
@@ -51,24 +52,23 @@ def compute_noise_ratio(labels, normalized=True):
     return 1 - raw_ratio
 
 
-def compute_cluster_validity_index(clusterer, normalized=True, max_value=1.0):
+def compute_dbcv(embeddings, labels, normalized=True):
     """
-    Compute the cluster validity index.
-
-    If normalized is True, the index is divided by max_value.
+    Compute the DBCV score using HDBSCAN's validity module.
 
     Parameters:
-        clusterer: A fitted HDBSCAN object.
-        normalized (bool): Whether to return a normalized value.
-        max_value (float): The maximum expected validity index.
+        embeddings (np.ndarray): The original input data (or appropriate feature matrix).
+        labels (np.ndarray): Cluster labels obtained from HDBSCAN.
+        normalized (bool): If True, transforms the score from [-1,1] to [0,1].
 
     Returns:
-        float: Cluster validity index.
+        float: The DBCV score (normalized if requested).
     """
-    val = clusterer.relative_validity_ if hasattr(clusterer, 'relative_validity_') else 0.0
-    if not normalized:
-        return val
-    return min(1, val / max_value)
+    embeddings = np.asarray(embeddings, dtype=np.float64)
+    dbcv_score = validity.validity_index(embeddings, labels)
+    if normalized:
+        return (dbcv_score + 1) / 2
+    return dbcv_score
 
 
 def evaluate_clustering_metrics(clusterer, embeddings):
@@ -86,7 +86,7 @@ def evaluate_clustering_metrics(clusterer, embeddings):
     metrics = {
         'cluster_persistence': compute_cluster_persistence(clusterer),
         'noise_ratio': compute_noise_ratio(labels),
-        'validity_index': compute_cluster_validity_index(clusterer)
+        'dbcv': compute_dbcv(embeddings, labels)
     }
     return metrics
 
