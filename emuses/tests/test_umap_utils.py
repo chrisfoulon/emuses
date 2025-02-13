@@ -26,13 +26,16 @@ def small_embeddings():
 
 
 def test_evaluate_embedding_statistics(small_embeddings):
-    metrics = evaluate_embedding_statistics(small_embeddings)
+    metrics_dict = {
+        "spread": {"weight": 1.0, "target": 1.0, "epsilon": 0.1},
+        "density_variability": {"weight": 1.2, "target": 0.4, "epsilon": 0.1},
+        "entropy": {"weight": 1.5}
+    }
+    metrics = evaluate_embedding_statistics(small_embeddings, metrics_dict)
     expected_keys = {
         "spread",
         "density_variability",
         "entropy",
-        "mean_distance",
-        "std_distance"
     }
     assert set(metrics.keys()) == expected_keys
     # Check that the values are numeric
