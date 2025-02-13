@@ -302,15 +302,15 @@ def run_heatmap_analysis(
                     grid_y=grid_y,
                     gaussian_matrix=correlation_matrix,
                     filtered_indices=None,
-                    filtered_embeddings=None,
+                    filtered_embeddings=embeddings,
                     cluster_labels=cluster_labels,
                     score_tag=score_tag,
                     highlight_points=highlight_points,
                     show_plot=show_plots,
-                    save_path=Path(output_folder) / f'clustering_plot_{score_tag}.png'
+                    save_path=Path(output_folder) / f'unfiltered_clustering_plot_{score_tag}.png'
                 )
                 # Store the plot under the score_tag
                 plots[score_tag]['clustering_plot'] = plot_fig
-                print("Clustering plot created successfully.")
+                print("Unfiltered clustering plot created successfully.")
 
     return plots  # Return the collected plots if generate_plots is True
