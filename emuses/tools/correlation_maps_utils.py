@@ -155,125 +155,144 @@ def filter_coordinates(coordinates, correlations, correlation_threshold=0.3):
 
 def run_heatmap_analysis(
     embeddings, scores_vectors_dict, input_matrix, output_folder, output_format_info, clusterer, cluster_labels,
-    input_type='image', grid_size=100, sigma=None, correlation_threshold=0.2, highlight_points=True, show_plots=False,
-    generate_plots=False, correlation_method='pearson'
+    input_type='image', grid_size=100, sigma=None, correlation_threshold=0.2, effect_size_threshold=0.5,
+    highlight_points=True, show_plots=False, generate_plots=False, correlation_method='pearson'
 ):
     """
     Run heatmap creation, point-biserial correlation, and statistical analysis on the provided embeddings.
 
-    Parameters:
-    - embeddings : np.ndarray
-        Array of embeddings to analyze.
-    - scores_vectors_dict : dict
-        Dictionary containing score tags and their corresponding binary score vectors.
-    - input_matrix : np.ndarray
-        The original input data matrix used for analysis.
-    - output_folder : str
-        Path to the folder where results should be saved.
-    - output_format_info : various
-        Information needed to format the output. Could be an affine matrix (for NIfTI),
-        an output shape (for images), or a list of column names (for spreadsheets).
-    - clusterer : HDBSCAN object
-        The trained clusterer (e.g., HDBSCAN model) used for clustering.
-    - cluster_labels : np.ndarray
-        Cluster labels from the clustering step for each point in the embedding.
-    - input_type : str, optional
-        Type of the input data ('image', 'nifti', 'spreadsheet').
-    - grid_size : int, optional
-        Size of the grid for point-biserial correlations.
-    - sigma : float or list of floats
-        Sigma value for Gaussian smoothing. This determines the scale of the distance computation.
-    - correlation_threshold : float, optional
-        Threshold for filtering coordinates based on correlation.
-    - highlight_points : bool, optional
-        Whether to highlight filtered points based on the correlation threshold.
-    - show_plots : bool, optional
-        Whether to display plots interactively.
-    - generate_plots : bool, optional
-        Whether to generate and return plots. Default is False.
+    For each score tag in scores_vectors_dict, the function:
+      1. Computes a correlation grid using Gaussian‐filtered distances.
+      2. Calculates a correlation value for each embedding.
+      3. Filters the embeddings to retain only those with a correlation above a given threshold
+         (correlation_threshold) for visualization.
+      4. Among these filtered points, further select only those whose correlation exceeds a higher
+         threshold (effect_size_threshold) and then, for each unique cluster (excluding noise) having at least
+         3 such points, compute an effect size map on the original input_matrix.
+      5. Finally, plots the overall clustering of the filtered embeddings.
 
-    Returns:
-    - plots : dict
-        Dictionary containing plots per score_tag and cluster.
+    Parameters
+    ----------
+    embeddings : np.ndarray
+        Array of embeddings to analyze.
+    scores_vectors_dict : dict
+        Dictionary containing score tags and their corresponding binary score vectors.
+    input_matrix : np.ndarray
+        The original input data matrix used for analysis (each row is a flattened input).
+    output_folder : str
+        Path to the folder where results should be saved.
+    output_format_info : various
+        Information needed to format the output (e.g. output shape for images, affine matrix for NIfTI).
+    clusterer : object
+        The trained clustering model (e.g., HDBSCAN) used for clustering.
+    cluster_labels : np.ndarray
+        Cluster labels from the clustering step for each point in the embedding.
+    input_type : str, optional
+        Type of the input data ('image', 'nifti', 'spreadsheet').
+    grid_size : int, optional
+        Number of grid points along each dimension.
+    sigma : float or list of floats
+        Sigma value for Gaussian smoothing (if None, computed from the embeddings).
+    correlation_threshold : float, optional
+        Threshold for filtering coordinates based on correlation for plotting.
+    effect_size_threshold : float, optional
+        Only among the points with a correlation above this threshold (e.g., 0.5) will effect size maps be computed.
+    highlight_points : bool, optional
+        Whether to highlight filtered points on plots.
+    show_plots : bool, optional
+        Whether to display plots interactively.
+    generate_plots : bool, optional
+        Whether to generate and return plots.
+    correlation_method : str, optional
+        The correlation method to use ('pearson', 'spearman', or 'pointbiserial').
+
+    Returns
+    -------
+    plots : dict
+        Dictionary mapping each score tag to a dict with keys:
+          'mean_heatmap'      : np.ndarray of shape (grid_size, grid_size) with ensemble mean correlations.
+          'grid_x'            : 1D array of x-coordinates for the grid.
+          'grid_y'            : 1D array of y-coordinates for the grid.
+          'models'            : (Not used in this function; for compatibility.)
+          'effect_size'       : Dictionary mapping each cluster (excluding noise) to its effect size map.
+          'plot'              : (Optional) Matplotlib figure object of the clustering plot.
     """
+    # If sigma is not provided, compute a median-based sigma from embeddings.
     if sigma is None:
         sigma = compute_sigma_median(embeddings, sample_size=0)
 
-    plots = {} if generate_plots else None  # Dictionary to collect plots per score_tag
+    plots = {} if generate_plots else None  # Dictionary to collect plots per score tag
 
     for score_tag, train_labels_bin in scores_vectors_dict.items():
-        # Step 1: Calculate correlations over a grid
         print("Calculating correlations over a grid...")
         correlation_matrix, grid_x, grid_y = calculate_correlation_grid(
             embeddings, train_labels_bin, grid_size=grid_size, sigma=sigma, correlation_method=correlation_method
         )
         print(f"Grid correlations for score {score_tag} calculated successfully.")
 
-
-        # Step 2: Calculate correlations for each embedding
         print("Calculating correlations for each embedding...")
-        correlations = calculate_correlation(embeddings, train_labels_bin, sigma=sigma,
-                                             correlation_method=correlation_method)
-
+        correlations = calculate_correlation(
+            embeddings, train_labels_bin, sigma=sigma, correlation_method=correlation_method
+        )
         print(f"Correlations for score {score_tag} calculated successfully.")
         print(f"Non-zero correlation values for score {score_tag}: {np.count_nonzero(correlations)}")
 
-        # Step 3: Filter coordinates based on correlation values
-        print("Filtering coordinates based on correlation values...")
+        print("Filtering coordinates based on correlation threshold...")
         filtered_coordinates, filtered_indices = filter_coordinates(
             embeddings, correlations, correlation_threshold=correlation_threshold
         )
-        print(f"Filtered coordinates calculated successfully for score {score_tag}. Number of points after filtering: "
-              f"{len(filtered_coordinates)}")
+        print(f"Number of points after filtering: {len(filtered_coordinates)}")
 
-        # Step 4: Get cluster labels for filtered coordinates
         print("Getting cluster labels for filtered coordinates...")
         if filtered_coordinates.shape[0] > 0:
             filtered_cluster_labels = cluster_labels[filtered_indices]
-            print("Cluster labels obtained successfully for filtered coordinates.")
+            print("Cluster labels obtained for filtered points.")
         else:
             filtered_cluster_labels = np.array([])
             print("No filtered coordinates available for obtaining cluster labels.")
 
-        # Step 5: Separate filtered coordinates by cluster and run statistical analysis
-        unique_clusters = np.unique(filtered_cluster_labels)
-        print(f"Unique clusters for score {score_tag}: {unique_clusters}")
-        if generate_plots:
-            plots[score_tag] = {}  # Initialize a dictionary for this score_tag's plots
+        # ---- New: Effect Size Maps on High-Confidence Points ----
+        # Use a stricter threshold (effect_size_threshold) on the correlations.
+        high_confidence_indices = np.where(correlations > effect_size_threshold)[0]
+        if len(high_confidence_indices) == 0:
+            print(f"No points with correlation above {effect_size_threshold} for score {score_tag}.")
+            effect_size_maps = {}
+        else:
+            # Restrict to the high-confidence indices
+            high_conf_embeddings = embeddings[high_confidence_indices]
+            high_conf_cluster_labels = cluster_labels[high_confidence_indices]
+            unique_clusters = np.unique(high_conf_cluster_labels)
+            print(f"Unique clusters among high-confidence points for score {score_tag}: {unique_clusters}")
+            effect_size_maps = {}
+            for cluster in unique_clusters:
+                if cluster == -1:
+                    continue  # Skip noise.
+                # Get indices among high-confidence points for this cluster.
+                cluster_indices = high_confidence_indices[high_conf_cluster_labels == cluster]
+                if len(cluster_indices) < 3:
+                    print(f"Cluster {cluster} has fewer than 3 high-confidence points; skipping effect size map.")
+                    continue
+                print(f"Computing effect size map for cluster {cluster} and score tag '{score_tag}'...")
+                # Compute effect size map; input_matrix_stat_map returns (stat_map, pval_map, effect_size_map)
+                _, _, effect_size_map = input_matrix_stat_map(
+                    input_matrix, cluster_indices, test_name='mann-whitney', n_cores=-1
+                )
+                effect_size_maps[cluster] = effect_size_map
+                # Save the effect size map using your existing function (which will handle reshaping using output_format_info)
+                stat_maps_to_save = {cluster: effect_size_map}
+                save_statistical_maps(
+                    stat_maps=stat_maps_to_save,
+                    output_folder=output_folder,
+                    input_type=input_type,
+                    output_format_info=output_format_info,
+                    filename_prefix=f'effect_size_map_score_{score_tag}_cluster_{cluster}',
+                    save_output=True,
+                    generate_plots=generate_plots
+                )
+                print(f"Effect size map for cluster {cluster} saved.")
 
-        for cluster in unique_clusters:
-            if cluster == -1:
-                continue  # Skip noise points
-            cluster_mask = (filtered_cluster_labels == cluster)
-            cluster_indices = filtered_indices[cluster_mask]
-
-            print(f"Running statistical analysis for cluster {cluster}...")
-            # Run statistical analysis to get the effect_size_map
-            _, _, effect_size_map = input_matrix_stat_map(
-                input_matrix, cluster_indices, test_name='mann-whitney', n_cores=-1
-            )
-            print(f"Statistical analysis for cluster {cluster} completed.")
-
-            # Save the effect size map and generate plots if requested
-            stat_maps_to_save = {cluster: effect_size_map}
-            effect_size_plots = save_statistical_maps(
-                stat_maps=stat_maps_to_save,
-                output_folder=output_folder,
-                input_type=input_type,
-                output_format_info=output_format_info,
-                filename_prefix=f'effect_size_map_score_{score_tag}_cluster_{cluster}',
-                save_output=True,
-                generate_plots=generate_plots
-            )
-            print(f"Effect size map saved for cluster {cluster} and score {score_tag}.")
-
-            # Collect the effect size plot
-            if generate_plots and effect_size_plots:
-                plots[score_tag][cluster] = effect_size_plots[cluster]
-
-        # Step 6: Plot clustering of the whole space
+        print("Plotting clustering of the whole space...")
         if generate_plots and clusterer is not None and filtered_coordinates.shape[0] == filtered_cluster_labels.shape[0]:
-            print("Plotting clustering of the whole space...")
             plot_fig = plot_clustering(
                 embeddings=embeddings,
                 clusterer=clusterer,
@@ -288,12 +307,13 @@ def run_heatmap_analysis(
                 show_plot=show_plots,
                 save_path=Path(output_folder) / f'clustering_plot_{score_tag}.png'
             )
-            # Store the plot under the score_tag
-            plots[score_tag]['clustering_plot'] = plot_fig
+            if generate_plots:
+                if score_tag not in plots:
+                    plots[score_tag] = {}
+                plots[score_tag]['clustering_plot'] = plot_fig
             print("Clustering plot created successfully.")
         else:
-            print("Mismatch in dimensions or clustering failed. Skipping the plot.")
-            # saving the plot without filtering
+            print("Mismatch in dimensions or clustering info not available. Skipping clustering plot.")
             if generate_plots:
                 plot_fig = plot_clustering(
                     embeddings=embeddings,
@@ -309,8 +329,9 @@ def run_heatmap_analysis(
                     show_plot=show_plots,
                     save_path=Path(output_folder) / f'unfiltered_clustering_plot_{score_tag}.png'
                 )
-                # Store the plot under the score_tag
+                if score_tag not in plots:
+                    plots[score_tag] = {}
                 plots[score_tag]['clustering_plot'] = plot_fig
                 print("Unfiltered clustering plot created successfully.")
 
-    return plots  # Return the collected plots if generate_plots is True
+    return plots

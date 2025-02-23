@@ -187,6 +187,8 @@ def main():
 
     # Determine which stages to add based on the command
     stages_to_add = []
+    # TODO make a parameter for the random state
+    args.random_state = 42  # Set the random state for reproducibility
 
     if args.command in ['umap', 'full', 'prediction']:
         stages_to_add.append(UMAPStage(pipeline.config))

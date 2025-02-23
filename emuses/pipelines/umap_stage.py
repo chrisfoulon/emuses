@@ -47,7 +47,8 @@ class UMAPStage(PipelineStage):
         else:
             # Use the provided optimization dictionary or fallback to default.
             if 'optim_dict' not in context or not context['optim_dict']:
-                optim_dict = optim_dict_test  # or optim_dict_default as needed
+                optim_dict = optim_dict_default  # or optim_dict_default as needed
+                # optim_dict = optim_dict_test  # or optim_dict_default as needed
             else:
                 optim_dict = context['optim_dict']
 
@@ -64,8 +65,8 @@ class UMAPStage(PipelineStage):
                     input_matrix=train_features,
                     output_folder=self.config.output_folder,
                     optim_dict=optim_dict,
-                    n_trials=1,
-                    n_inner_trials=20,  # Adjust as needed
+                    n_trials=100,
+                    n_inner_trials=100,  # Adjust as needed
                     pref=args.prefix,
                     random_state=getattr(args, 'random_state', None)
                 )

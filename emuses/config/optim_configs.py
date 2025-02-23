@@ -15,7 +15,7 @@ optim_dict_default = {
         'umap': {
             'spread': {
                 'weight': 1.2,
-                'target': 0.6,
+                'target': 0.2,
                 'epsilon': 0.05
             },
             'density_variability': {
@@ -33,7 +33,7 @@ optim_dict_default = {
             },
             'noise_ratio': {
                 'weight': 1.0,
-                'target': 0.1,
+                'target': 0.9, # noise is normalised so 0.9 is 10% noise
                 'epsilon': 0.05
             },
             'validity_index': {
@@ -55,6 +55,98 @@ optim_dict_test = {
         'hdbscan': {
             'min_cluster_size': {'name': 'min_cluster_size', 'low': 5, 'high': 50},
             'min_samples': {'name': 'min_samples', 'low': 1, 'high': 10}
+        }
+    },
+    'metrics': {
+        'umap': {
+            'spread': {
+                'weight': 1.0,
+                'target': 0.6,
+                'epsilon': 0.1
+            },
+            'density_variability': {
+                'weight': 1.2,
+                'target': 0.4,
+                'epsilon': 0.1
+            },
+            'entropy': {
+                'weight': 1.5
+            }
+        },
+        'hdbscan': {
+            'cluster_persistence': {
+                'weight': 2.0
+            },
+            'noise_ratio': {
+                'weight': 1.0,
+                'target': 0.1,
+                'epsilon': 0.05
+            },
+            'validity_index': {
+                'weight': 1.5
+            }
+        }
+    }
+}
+
+
+optim_dict_mnist = {
+    'param': {
+        'umap': {
+            'min_dist': {'name': 'min_dist', 'value': 0.08393266179885042},
+            'n_neighbors': {'name': 'n_neighbors', 'value': 5},
+            'n_components': {'name': 'n_components', 'value': 2},
+            'metric': {'name': 'metric', 'choices': ['euclidean']}
+        },
+        'hdbscan': {
+            'min_cluster_size': {'name': 'min_cluster_size', 'value': 40},
+            'min_samples': {'name': 'min_samples', 'value': 4}
+        }
+    },
+    'metrics': {
+        'umap': {
+            'spread': {
+                'weight': 1.0,
+                'target': 0.6,
+                'epsilon': 0.1
+            },
+            'density_variability': {
+                'weight': 1.2,
+                'target': 0.4,
+                'epsilon': 0.1
+            },
+            'entropy': {
+                'weight': 1.5
+            }
+        },
+        'hdbscan': {
+            'cluster_persistence': {
+                'weight': 2.0
+            },
+            'noise_ratio': {
+                'weight': 1.0,
+                'target': 0.1,
+                'epsilon': 0.05
+            },
+            'validity_index': {
+                'weight': 1.5
+            }
+        }
+    }
+}
+
+
+optim_dict_hcp = {
+    'param': {
+        'umap': {
+            'min_dist': {'name': 'min_dist', 'value': 0.3628075254313345},
+            'n_neighbors': {'name': 'n_neighbors', 'value': 10},
+            'n_components': {'name': 'n_components', 'value': 2},
+            'metric': {'name': 'metric', 'choices': ['euclidean']}
+        },
+        'hdbscan': {
+            'min_cluster_size': {'name': 'min_cluster_size', 'value': 49},
+            'min_samples': {'name': 'min_samples', 'value': 10}
         }
     },
     'metrics': {

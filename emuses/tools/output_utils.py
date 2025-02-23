@@ -67,7 +67,7 @@ def save_statistical_maps(
             # Close the figure to free memory
             plt.close(fig)
 
-        elif input_type == 'image':
+        elif input_type == 'image' or input_type == 'mnist':
             # For images, output_format_info is the output shape
             output_shape = output_format_info
             stat_image = stat_map.reshape(output_shape)

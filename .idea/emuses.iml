@@ -5,8 +5,9 @@
       <excludeFolder url="file://$MODULE_DIR$/emuse.egg-info" />
       <excludeFolder url="file://$MODULE_DIR$/emuses.egg-info" />
       <excludeFolder url="file://$MODULE_DIR$/output" />
+      <excludeFolder url="file://$MODULE_DIR$/build" />
     </content>
-    <orderEntry type="jdk" jdkName="$USER_HOME$/miniconda3" jdkType="Python SDK" />
+    <orderEntry type="jdk" jdkName="emuses" jdkType="Python SDK" />
     <orderEntry type="sourceFolder" forTests="false" />
   </component>
 </module>

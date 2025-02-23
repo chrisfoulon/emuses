@@ -135,7 +135,7 @@ class EMUSESPipeline:
                             )
 
                     self.input_matrix = inputs_df.values
-                    self.output_format_info = self.input_matrix.shape[1]
+                    self.output_format_info = list(inputs_df.columns)
                     self.paths_list = None
                     # TODO add a way to detect files in the spreadsheet
             else:

@@ -286,11 +286,8 @@ def train_and_save_umap_optim_with_nested_clustering(
         embeddings = umap_model.fit_transform(input_matrix)
         print(f"Trial {trial.number}: UMAP training completed.")
 
-        # Save a static plot for this trial.
-        plot_path = output_plot_folder / f"embeddings_{trial.number}.png"
-        plot_embeddings(embeddings, cluster_labels=None, output_path=plot_path,
-                        interactive=False, show_plot=False)
-        print(f"Trial {trial.number}: Embedding plot saved at {plot_path}")
+        # Instead of saving a static plot with plot_embeddings, we will generate an interactive plot
+        # after the inner optimization has produced clustering results.
 
         # Evaluate UMAP metrics.
         umap_metrics = evaluate_embedding_statistics(embeddings, optim_dict["metrics"]["umap"])
@@ -301,6 +298,16 @@ def train_and_save_umap_optim_with_nested_clustering(
          best_hdbscan_metrics) = inner_optimize_hdbscan(embeddings, optim_dict, n_inner_trials=n_inner_trials)
         print(f"Trial {trial.number}: Best HDBSCAN parameters: {best_hdbscan_params}")
         print(f"Trial {trial.number}: Best HDBSCAN score: {best_hdbscan_score}")
+
+        # Generate an interactive clustering plot for the inner-loop best clustering.
+        interactive_plot_path = output_plot_folder / f"interactive_{trial.number}.html"
+        fig = plot_clustering_interactive_with_hover(
+            embeddings, best_labels,
+            output_path=interactive_plot_path,
+            show_plot=False,
+            return_plot=True
+        )
+        print(f"Trial {trial.number}: Interactive clustering plot saved at {interactive_plot_path}")
 
         # Combine metrics from both UMAP and HDBSCAN.
         combined_metrics = {
@@ -318,7 +325,8 @@ def train_and_save_umap_optim_with_nested_clustering(
             "umap_metrics": umap_metrics,
             "hdbscan_best_params": best_hdbscan_params,
             "hdbscan_metrics": best_hdbscan_metrics,
-            "composite_score": composite_score
+            "composite_score": composite_score,
+            "interactive_plot": interactive_plot_path.as_posix()
         }
         trial_logs.append(trial_info)
 
@@ -348,6 +356,25 @@ def train_and_save_umap_optim_with_nested_clustering(
     print(f"Best composite score: {best_composite_score}")
     print(f"Best UMAP parameters: {best_umap_params}")
     print(f"Best HDBSCAN parameters (from best trial): {best_hdbscan_params}")
+
+    # After outer optimization is completed:
+    best_outer_trial = outer_study.best_trial
+    best_umap_params = best_outer_trial.user_attrs["umap_params"]
+    best_hdbscan_params = best_outer_trial.user_attrs["hdbscan_best_params"]
+    best_composite_score = outer_study.best_value
+
+    # Save best trial info to a separate JSON file
+    best_trial_info = {
+        "trial_number": best_outer_trial.number,
+        "umap_params": best_umap_params,
+        "hdbscan_params": best_hdbscan_params,
+        "composite_score": best_composite_score,
+        "umap_metrics": best_outer_trial.user_attrs.get("umap_metrics"),
+        "hdbscan_metrics": best_outer_trial.user_attrs.get("hdbscan_metrics")
+    }
+    log_path_best = output_folder / "best_trial_info.json"
+    save_json(log_path_best, best_trial_info)
+    print(f"Best trial info saved at: {log_path_best}")
 
     # Retrain the best UMAP model on the full input data.
     best_umap_model = umap.UMAP(**best_umap_params, **kwargs)

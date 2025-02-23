@@ -58,13 +58,15 @@ def auto_n_neighbors(n_samples, lower_bound=10, upper_bound=200):
 
 def calculate_composite_score(optim_dict, metrics_values_dict):
     """
-    Calculate the normalized composite score by combining normalized metrics based on the optim_dict.
+    Calculate the composite score by combining normalized metrics based on the optim_dict.
 
     For each metric, if a target and epsilon are specified, the component is:
-         weight * max(0, 1 - abs(value - target) / epsilon)
-    Otherwise, it is simply weight * value.
+         weight * max(0, 1 - abs(metric_value - target) / epsilon)
+    Otherwise, it is simply weight * metric_value.
 
-    Returns a value between 0 and 1.
+    Returns:
+        composite_score (float): Normalized composite score between 0 and 1.
+        normalized_metrics (dict): A dictionary containing the normalized score for each metric.
     """
     total_score = 0
     max_score = 0
@@ -73,18 +75,22 @@ def calculate_composite_score(optim_dict, metrics_values_dict):
         calculated_metrics = metrics_values_dict.get(model, {})
         for metric_name, metric_config in model_metrics.items():
             weight = metric_config.get("weight", 1.0)
-            target = metric_config.get("target", None)
+            # Use default target 1 if none is provided
+            target = metric_config.get("target", 1.0)
             metric_value = calculated_metrics.get(metric_name)
             if metric_value is None:
                 continue
-            if target is not None:
+            # If target is 1, you might bypass the computation if you think it clarifies your intent.
+            if target == 1.0:
+                # For a metric normalized in [0,1], this is essentially weight * metric_value
+                component = weight * metric_value
+            else:
                 epsilon = metric_config.get("epsilon", 0.1)
                 component = weight * max(0, 1 - abs(metric_value - target) / epsilon)
-            else:
-                component = weight * metric_value
             total_score += component
             max_score += weight
     return total_score / max_score if max_score > 0 else 0
+
 
 
 def calculate_score(metrics, metrics_config):
