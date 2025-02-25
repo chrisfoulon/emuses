@@ -56,41 +56,60 @@ def auto_n_neighbors(n_samples, lower_bound=10, upper_bound=200):
     return int(max(lower_bound, min(upper_bound, np.sqrt(n_samples))))
 
 
-def calculate_composite_score(optim_dict, metrics_values_dict):
+def calculate_composite_score(metrics_values_nested, metrics_config_nested):
     """
-    Calculate the composite score by combining normalized metrics based on the optim_dict.
+    Calculate a composite score from computed metric values using a nested configuration.
 
-    For each metric, if a target and epsilon are specified, the component is:
+    The expected format for both dictionaries is:
+
+    metrics_values_nested = {
+        "umap": {"spread": value1, "density_variability": value2, "entropy": value3},
+        "hdbscan": {"cluster_persistence": value4, "noise_ratio": value5, "validity_index": value6}
+    }
+
+    metrics_config_nested = {
+        "umap": {
+            "spread": {"weight": w1, "target": t1, "epsilon": e1},
+            "density_variability": {"weight": w2, "target": t2, "epsilon": e2},
+            "entropy": {"weight": w3, "target": t3, "epsilon": e3}
+        },
+        "hdbscan": {
+            "cluster_persistence": {"weight": w4},
+            "noise_ratio": {"weight": w5, "target": t5, "epsilon": e5},
+            "validity_index": {"weight": w6}
+        }
+    }
+
+    For each metric, if a target and epsilon are provided, the component is:
          weight * max(0, 1 - abs(metric_value - target) / epsilon)
-    Otherwise, it is simply weight * metric_value.
+    Otherwise, it is weight * metric_value.
+
+    The final composite score is normalized by the total weight.
 
     Returns:
-        composite_score (float): Normalized composite score between 0 and 1.
-        normalized_metrics (dict): A dictionary containing the normalized score for each metric.
+        float: Normalized composite score between 0 and 1.
     """
-    total_score = 0
-    max_score = 0
-    metric_configs = optim_dict.get("metrics", {})
-    for model, model_metrics in metric_configs.items():
-        calculated_metrics = metrics_values_dict.get(model, {})
-        for metric_name, metric_config in model_metrics.items():
-            weight = metric_config.get("weight", 1.0)
-            # Use default target 1 if none is provided
-            target = metric_config.get("target", 1.0)
-            metric_value = calculated_metrics.get(metric_name)
-            if metric_value is None:
-                continue
-            # If target is 1, you might bypass the computation if you think it clarifies your intent.
-            if target == 1.0:
-                # For a metric normalized in [0,1], this is essentially weight * metric_value
-                component = weight * metric_value
-            else:
-                epsilon = metric_config.get("epsilon", 0.1)
-                component = weight * max(0, 1 - abs(metric_value - target) / epsilon)
-            total_score += component
-            max_score += weight
-    return total_score / max_score if max_score > 0 else 0
+    total_score = 0.0
+    total_weight = 0.0
 
+    # Iterate over each group (e.g., "umap", "hdbscan")
+    for group, config_dict in metrics_config_nested.items():
+        values_dict = metrics_values_nested.get(group, {})
+        for metric_name, config in config_dict.items():
+            weight = config.get("weight", 1.0)
+            target = config.get("target")
+            epsilon = config.get("epsilon", 0.1)
+            value = values_dict.get(metric_name)
+            if value is None:
+                continue
+            if target is not None:
+                component = weight * max(0, 1 - abs(value - target) / epsilon)
+            else:
+                component = weight * value
+            total_score += component
+            total_weight += weight
+
+    return total_score / total_weight if total_weight > 0 else 0.0
 
 
 def calculate_score(metrics, metrics_config):

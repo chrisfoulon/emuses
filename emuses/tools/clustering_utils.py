@@ -7,7 +7,7 @@ import optuna
 from hdbscan import validity
 from sklearn.metrics import silhouette_score
 
-from emuses.tools.optim_utils import calculate_score, suggest_parameters
+from emuses.tools.optim_utils import calculate_score, suggest_parameters, calculate_composite_score
 
 
 def compute_cluster_persistence(clusterer, normalized=True, max_value=1.0):
@@ -71,24 +71,41 @@ def compute_dbcv(embeddings, labels, normalized=True):
     return dbcv_score
 
 
-def evaluate_clustering_metrics(clusterer, embeddings):
+def evaluate_clustering_metrics(clusterer, embeddings, metrics_config=None):
     """
-    Evaluate clustering metrics: persistence, noise ratio, and validity index.
+    Evaluate clustering metrics based on a provided configuration.
 
     Parameters:
         clusterer (HDBSCAN object): Fitted HDBSCAN clusterer.
         embeddings (np.ndarray): The embedding coordinates.
+        metrics_config (dict, optional): Dictionary defining which metrics to compute.
+            For example, optim_dict["metrics"]["hdbscan"]. If None, defaults to:
+                {"noise_ratio": {}, "dbcv": {}}
 
     Returns:
-        dict: Clustering metrics.
+        dict: Computed clustering metrics.
     """
     labels = clusterer.labels_
-    metrics = {
-        'cluster_persistence': compute_cluster_persistence(clusterer),
-        'noise_ratio': compute_noise_ratio(labels),
-        'dbcv': compute_dbcv(embeddings, labels)
-    }
-    return metrics
+    computed_metrics = {}
+
+    # Set default configuration if none provided.
+    if metrics_config is None:
+        metrics_config = {"noise_ratio": {}, "dbcv": {}}
+
+    # Loop over the metrics requested in the config.
+    for metric_name in metrics_config.keys():
+        if metric_name == "noise_ratio":
+            computed_metrics["noise_ratio"] = compute_noise_ratio(labels)
+        elif metric_name in ("dbcv", "validity_index"):
+            # We assume here that dbcv and validity_index refer to the same computation.
+            computed_metrics["dbcv"] = compute_dbcv(embeddings, labels)
+        elif metric_name == "cluster_persistence":
+            computed_metrics["cluster_persistence"] = compute_cluster_persistence(clusterer)
+        else:
+            # If you add more metrics in the future, handle them here.
+            print(f"Warning: No computation defined for metric '{metric_name}'.")
+
+    return computed_metrics
 
 
 ###########################################################
@@ -115,16 +132,13 @@ def inner_optimize_hdbscan(embeddings, optim_dict, n_inner_trials=20):
 
     def inner_objective(inner_trial):
         params_all = suggest_parameters(inner_trial, inner_optim_dict)
-        # Expecting params_all to have the structure: {"hdbscan": { ... }}, but it might be flattened.
-        # So try to retrieve the hdbscan part:
-        if "hdbscan" in params_all:
-            hdbscan_params = params_all["hdbscan"]
-        else:
-            hdbscan_params = params_all
+        hdbscan_params = params_all.get("hdbscan", params_all)
         clusterer = hdbscan.HDBSCAN(**hdbscan_params)
         clusterer.fit(embeddings)
         metrics = evaluate_clustering_metrics(clusterer, embeddings)
-        score = calculate_score(metrics, inner_optim_dict["metrics"]["hdbscan"])
+        # Wrap the metrics under the "hdbscan" key to match the nested configuration
+        score = calculate_composite_score({"hdbscan": metrics},
+                                          inner_optim_dict["metrics"])
         return score
 
     inner_study = optuna.create_study(direction="maximize")
@@ -133,17 +147,14 @@ def inner_optimize_hdbscan(embeddings, optim_dict, n_inner_trials=20):
     best_params = inner_study.best_params
     best_score = inner_study.best_value
 
-    # Check if best_params is nested or flat.
-    if "hdbscan" in best_params:
-        best_hdbscan_params = best_params["hdbscan"]
-    else:
-        best_hdbscan_params = best_params
+    best_hdbscan_params = best_params.get("hdbscan", best_params)
 
     # Re-train best HDBSCAN model using the best parameters.
     best_clusterer = hdbscan.HDBSCAN(**best_hdbscan_params)
     best_labels = best_clusterer.fit_predict(embeddings)
     best_metrics = evaluate_clustering_metrics(best_clusterer, embeddings)
     return best_params, best_score, best_clusterer, best_labels, best_metrics
+
 
 
 def evaluate_hdbscan(filtered_coordinates, size_factor=0.5):

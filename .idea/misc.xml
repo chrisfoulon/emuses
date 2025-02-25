@@ -3,5 +3,5 @@
   <component name="Black">
     <option name="sdkName" value="C:\Users\tolhs\miniconda3" />
   </component>
-  <component name="ProjectRootManager" version="2" project-jdk-name="emuses" project-jdk-type="Python SDK" />
+  <component name="ProjectRootManager" version="2" project-jdk-name="$USER_HOME$/miniconda3" project-jdk-type="Python SDK" />
 </project>

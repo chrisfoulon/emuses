@@ -165,18 +165,38 @@ def compute_density_variability(embeddings, n_neighbors=None, normalized=True, a
 
 def compute_entropy(embeddings, n_bins=20, normalized=True):
     """
-    Compute the Shannon entropy of the point distribution in an embedding.
+    Compute the Shannon entropy of the point distribution in an embedding using a histogram-based approach.
 
-    If normalized is True, the entropy is divided by the maximum entropy (log of the number of histogram bins),
-    so that the returned value is between 0 and 1.
+    This method discretizes the continuous latent space into a grid by dividing the range of each dimension
+    into 'n_bins' equally spaced intervals. The resulting multidimensional histogram counts the number of points
+    falling into each cell, thereby approximating a discrete probability distribution over the latent space.
+
+    The Shannon entropy is then calculated from this probability distribution:
+        H = -∑ p_i * log(p_i)
+    where p_i is the probability of a point falling into the i-th bin.
+
+    The rationale for using this approach is:
+      - It provides a simple, intuitive measure of how uniformly the data points are distributed.
+      - A high entropy (close to 1 when normalized) indicates that points are spread nearly uniformly across the grid,
+        suggesting a lack of distinct clusters or substructures.
+      - A low entropy (close to 0) suggests that points are concentrated in a few regions, indicating the presence of
+        well-defined clusters or substructures in the embedding.
+
+    Note on binning:
+      - 'n_bins' defines the number of equal intervals along each dimension, not the number of points per bin.
+      - For a 2D embedding with n_bins=20, the space is divided into a 20x20 grid. This discretization is essential
+        to approximate a continuous distribution with a discrete one for entropy calculation.
+
+    If 'normalized' is True, the computed entropy is divided by the maximum possible entropy (log(total number of bins))
+    so that the final value is scaled between 0 and 1. This normalized entropy makes it easier to compare different embeddings.
 
     Parameters:
-        embeddings (np.ndarray): Array of shape (n_samples, n_dimensions).
-        n_bins (int): Number of bins along each dimension.
-        normalized (bool): Whether to return a normalized value.
+        embeddings (np.ndarray): Array of shape (n_samples, n_dimensions) containing the embedding coordinates.
+        n_bins (int): Number of bins along each dimension used for discretization.
+        normalized (bool): Whether to return a normalized entropy value in [0, 1].
 
     Returns:
-        float: Entropy (raw if normalized=False, normalized if True).
+        float: The computed entropy. If normalized is False, the raw entropy is returned; if True, the normalized entropy is returned.
     """
     hist, _ = np.histogramdd(embeddings, bins=n_bins)
     hist_flat = hist.flatten()
@@ -186,7 +206,7 @@ def compute_entropy(embeddings, n_bins=20, normalized=True):
     if not normalized:
         return ent
     max_ent = np.log(hist.size)
-    return ent / max_ent # here we could add a tiny epsilon to avoid division by zero
+    return ent / max_ent  # normalized entropy between 0 and 1
 
 
 ######################################################################
@@ -262,7 +282,7 @@ def train_and_save_umap_optim_with_nested_clustering(
 
     # Global variable to track best composite score.
     best_score_so_far = -float("inf")
-
+    # TODO USELESS
     def save_best_model_callback(study, trial):
         nonlocal best_score_so_far
         # When a new best trial is found, retrain the model on the full data and save it.
@@ -315,7 +335,7 @@ def train_and_save_umap_optim_with_nested_clustering(
             "hdbscan": best_hdbscan_metrics
         }
         # Compute a composite score that weights all metrics together.
-        composite_score = calculate_composite_score(optim_dict, combined_metrics)
+        composite_score = calculate_composite_score(combined_metrics, optim_dict["metrics"])
         print(f"Trial {trial.number}: Composite score: {composite_score}")
 
         # Log trial details.

@@ -3,6 +3,8 @@ import matplotlib.pyplot as plt
 import plotly
 import plotly.graph_objs as go
 from plotly.subplots import make_subplots
+import streamlit as st
+from pathlib import Path
 
 
 def plot_embeddings_with_values(embeddings_dict, colour_dict, size_dict=None, name_dict=None, scale_colours=False,
@@ -484,3 +486,31 @@ def plot_embeddings_old(embeddings, title='', save_path=None, show_plot=False, r
         return fig
     else:
         plt.close(fig)
+
+
+def load_umap_tabs(folder, prefix):
+    folder = Path(folder)
+    # Find all HTML files that start with the given prefix
+    html_files = sorted(folder.glob(f"{prefix}*.html"))
+
+    if not html_files:
+        st.warning("No HTML files found with that prefix.")
+        return
+
+    # Optional filter: allow the user to type a search query
+    search_query = st.text_input("Filter files by name:", "")
+    if search_query:
+        html_files = [f for f in html_files if search_query.lower() in f.name.lower()]
+
+    # Create tab names by extracting the part after the prefix.
+    # For example, if the file is "umap_1.html" and prefix is "umap", the tab title will be "1".
+    tab_names = [f.stem.replace(prefix, "").strip("_") or f.stem for f in html_files]
+
+    # Create a tab for each file
+    tabs = st.tabs(tab_names)
+
+    for tab, file in zip(tabs, html_files):
+        with tab:
+            html_content = file.read_text(encoding="utf-8")
+            # Increase height and enable scrolling so the full plot is visible
+            st.components.v1.html(html_content, height=800, width=1000, scrolling=True)

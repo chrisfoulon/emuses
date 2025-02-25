@@ -14,34 +14,37 @@ optim_dict_default = {
     'metrics': {
         'umap': {
             'spread': {
-                'weight': 1.2,
+                'weight': 1.0,       # Slightly reduced if you want clusters to be tighter.
                 'target': 0.2,
                 'epsilon': 0.05
             },
             'density_variability': {
-                'weight': 1.2,
+                'weight': 1.5,
                 'target': 0.4,
                 'epsilon': 0.05
             },
             'entropy': {
-                'weight': 1.0
+                'weight': 1.2,       # Increase the weight on entropy to drive down uniformity.
+                'target': 0.3,       # Target lower entropy to encourage well-defined subregions.
+                'epsilon': 0.1
             }
         },
         'hdbscan': {
             'cluster_persistence': {
-                'weight': 1.2
+                'weight': 1.0
             },
             'noise_ratio': {
                 'weight': 1.0,
-                'target': 0.9, # noise is normalised so 0.9 is 10% noise
+                'target': 0.9,       # Ensuring a low noise level (e.g., 10% noise).
                 'epsilon': 0.05
             },
             'validity_index': {
-                'weight': 1.5
+                'weight': 2.0        # High weight to ensure clusters are compact and well separated.
             }
         }
     }
 }
+
 
 
 optim_dict_test = {
@@ -60,7 +63,7 @@ optim_dict_test = {
     'metrics': {
         'umap': {
             'spread': {
-                'weight': 1.0,
+                'weight': 1.5,
                 'target': 0.6,
                 'epsilon': 0.1
             },
@@ -70,13 +73,13 @@ optim_dict_test = {
                 'epsilon': 0.1
             },
             'entropy': {
-                'weight': 1.5
+                'weight': 1.0
             }
         },
         'hdbscan': {
-            'cluster_persistence': {
-                'weight': 2.0
-            },
+            # 'cluster_persistence': {
+            #     'weight': 2.0
+            # },
             'noise_ratio': {
                 'weight': 1.0,
                 'target': 0.1,
@@ -120,9 +123,9 @@ optim_dict_mnist = {
             }
         },
         'hdbscan': {
-            'cluster_persistence': {
-                'weight': 2.0
-            },
+            # 'cluster_persistence': {
+            #     'weight': 2.0
+            # },
             'noise_ratio': {
                 'weight': 1.0,
                 'target': 0.1,
@@ -166,9 +169,9 @@ optim_dict_hcp = {
             }
         },
         'hdbscan': {
-            'cluster_persistence': {
-                'weight': 2.0
-            },
+            # 'cluster_persistence': {
+            #     'weight': 2.0
+            # },
             'noise_ratio': {
                 'weight': 1.0,
                 'target': 0.1,
