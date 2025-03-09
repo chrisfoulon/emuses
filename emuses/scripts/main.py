@@ -84,6 +84,8 @@ def add_umap_arguments(parser):
     parser.add_argument('--test_size', type=float, default=0.2,
                         help='Test size for splitting the dataset')
     parser.add_argument('--prefix', default='', help='Prefix for the output path names')
+    parser.add_argument('--optim_dict', default='optim_dict_default',
+                        help='Name of an optim_dict in optim_configs.py of Path to the optimization dictionary')
 
 
 def add_clustering_arguments(parser):

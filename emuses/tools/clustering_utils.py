@@ -90,7 +90,7 @@ def evaluate_clustering_metrics(clusterer, embeddings, metrics_config=None):
 
     # Set default configuration if none provided.
     if metrics_config is None:
-        metrics_config = {"noise_ratio": {}, "dbcv": {}}
+        metrics_config = {"noise_ratio": {}, "dbcv": {}, "cluster_persistence": {}}
 
     # Loop over the metrics requested in the config.
     for metric_name in metrics_config.keys():
@@ -135,7 +135,7 @@ def inner_optimize_hdbscan(embeddings, optim_dict, n_inner_trials=20):
         hdbscan_params = params_all.get("hdbscan", params_all)
         clusterer = hdbscan.HDBSCAN(**hdbscan_params)
         clusterer.fit(embeddings)
-        metrics = evaluate_clustering_metrics(clusterer, embeddings)
+        metrics = evaluate_clustering_metrics(clusterer, embeddings, inner_optim_dict["metrics"]["hdbscan"])
         # Wrap the metrics under the "hdbscan" key to match the nested configuration
         score = calculate_composite_score({"hdbscan": metrics},
                                           inner_optim_dict["metrics"])
@@ -154,7 +154,6 @@ def inner_optimize_hdbscan(embeddings, optim_dict, n_inner_trials=20):
     best_labels = best_clusterer.fit_predict(embeddings)
     best_metrics = evaluate_clustering_metrics(best_clusterer, embeddings)
     return best_params, best_score, best_clusterer, best_labels, best_metrics
-
 
 
 def evaluate_hdbscan(filtered_coordinates, size_factor=0.5):

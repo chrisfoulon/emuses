@@ -2,6 +2,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 import plotly
 import plotly.graph_objs as go
+import plotly.express as px
+import plotly.io as pio
 from plotly.subplots import make_subplots
 import streamlit as st
 from pathlib import Path
@@ -488,6 +490,105 @@ def plot_embeddings_old(embeddings, title='', save_path=None, show_plot=False, r
         plt.close(fig)
 
 
+def plot_spreadsheet_stat_map(
+    df_long,
+    cluster,
+    output_path=None,
+    orientation='h',
+    interactive=False,
+    width=1200,
+    height=None,
+    title=None,
+    show_plot=False,
+    return_plot=False
+):
+    """
+    Create a bar plot for a melted DataFrame of features and effect sizes.
+
+    Parameters
+    ----------
+    df_long : pd.DataFrame
+        Melted DataFrame with columns ['Feature', 'Effect Size'].
+    cluster : str or int
+        The cluster label, used in the plot title if not provided.
+    output_path : str or Path, optional
+        If provided, the figure is saved here.
+        - If interactive=True and output_path ends with '.html', saves an interactive HTML file.
+        - Otherwise, saves a static image (PNG, PDF, etc.) if a recognized extension is present.
+    orientation : {'h', 'v'}, default='h'
+        Orientation of the bars. 'h' for horizontal, 'v' for vertical.
+    interactive : bool, default=False
+        If True, create an interactive Plotly figure. Otherwise, create a static figure.
+    width : int, default=1200
+        Figure width in pixels.
+    height : int or None, default=None
+        Figure height in pixels. If None, an automatic height is used.
+    title : str, optional
+        Plot title. If None, uses a default title with the cluster.
+    show_plot : bool, default=False
+        If True and interactive=True, displays the plot in a browser.
+        If True and interactive=False, note that Plotly does not automatically pop up a window,
+        so you typically rely on the saved image.
+    return_plot : bool, default=False
+        If True, returns the Plotly figure object.
+
+    Returns
+    -------
+    fig : plotly.graph_objects.Figure or None
+        Returns the figure if return_plot is True, otherwise None.
+    """
+    if title is None:
+        title = f"Effect Size Map for Cluster {cluster}"
+
+    # Decide how to set x/y depending on orientation
+    if orientation == 'h':
+        x_col = 'Effect Size'
+        y_col = 'Feature'
+    else:
+        x_col = 'Feature'
+        y_col = 'Effect Size'
+
+    fig = px.bar(
+        df_long,
+        x=x_col,
+        y=y_col,
+        orientation=orientation,
+        title=title
+    )
+
+    # Adjust layout
+    fig.update_layout(
+        width=width,
+        height=height if height else (25 * len(df_long) if orientation == 'h' else 800),
+        margin=dict(l=100, r=50, b=50, t=80)
+    )
+
+    if output_path:
+        output_path = str(output_path)  # ensure string
+        if interactive:
+            # If user wants HTML but didn't provide .html, we can auto-add
+            if not output_path.lower().endswith('.html'):
+                output_path += '.html'
+            pio.write_html(fig, output_path)
+            print(f"Interactive HTML saved to: {output_path}")
+        else:
+            # For a static image, rely on kaleido
+            # If no recognized extension is present, default to .png
+            valid_exts = ('.png', '.jpg', '.jpeg', '.svg', '.pdf')
+            if not any(output_path.lower().endswith(ext) for ext in valid_exts):
+                output_path += '.png'
+            fig.write_image(output_path)
+            print(f"Static bar chart saved to: {output_path}")
+
+    if show_plot and interactive:
+        fig.show()
+
+    if return_plot:
+        return fig
+    else:
+        return None
+
+
 def load_umap_tabs(folder, prefix):
     folder = Path(folder)
     # Find all HTML files that start with the given prefix
@@ -513,4 +614,4 @@ def load_umap_tabs(folder, prefix):
         with tab:
             html_content = file.read_text(encoding="utf-8")
             # Increase height and enable scrolling so the full plot is visible
-            st.components.v1.html(html_content, height=800, width=1000, scrolling=True)
+            st.components.v1.html(html_content, height=1000, width=1200, scrolling=True)

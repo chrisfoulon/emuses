@@ -163,7 +163,7 @@ def compute_density_variability(embeddings, n_neighbors=None, normalized=True, a
     return max(0, min(1, normalized_cv))
 
 
-def compute_entropy(embeddings, n_bins=20, normalized=True):
+def compute_entropy_old(embeddings, n_bins=20, normalized=True):
     """
     Compute the Shannon entropy of the point distribution in an embedding using a histogram-based approach.
 
@@ -209,6 +209,64 @@ def compute_entropy(embeddings, n_bins=20, normalized=True):
     return ent / max_ent  # normalized entropy between 0 and 1
 
 
+def compute_entropy_range_mean(
+    embeddings,
+    n_bins_min=10,
+    n_bins_max=50,
+    steps=20,
+    normalized=True
+):
+    """
+    Compute the mean Shannon entropy of the point distribution in an embedding
+    across a range of binning resolutions.
+
+    By default, the function discretizes the continuous latent space into
+    grids defined by bin counts from 'n_bins_min' to 'n_bins_max', in 'steps'
+    equally spaced intervals, and computes the entropy at each bin count.
+
+    The Shannon entropy is then calculated from each histogram-based probability distribution:
+        H = -∑ p_i * log(p_i)
+    where p_i is the probability of a point falling into the i-th bin.
+
+    Finally, the function returns the mean of these entropy values over the entire range of bin counts.
+
+    If 'normalized' is True, each entropy value is divided by the maximum possible
+    entropy for that bin count (log(total number of bins)), so the final values are
+    in [0, 1]. The mean is then computed from those normalized values.
+
+    Parameters:
+        embeddings (np.ndarray): Array of shape (n_samples, n_dimensions)
+            containing the embedding coordinates.
+        n_bins_min (int): Minimum number of bins along each dimension (default: 10).
+        n_bins_max (int): Maximum number of bins along each dimension (default: 50).
+        steps (int): Number of bin-count values to evaluate in the range (default: 20).
+        normalized (bool): Whether to use normalized entropy ([0,1]) or raw entropy.
+
+    Returns:
+        float: The mean entropy value computed over all bin counts in the specified range.
+    """
+    bin_values = np.linspace(n_bins_min, n_bins_max, steps, dtype=int)
+    entropies = []
+
+    for n_bins in bin_values:
+        hist, _ = np.histogramdd(embeddings, bins=n_bins)
+        hist_flat = hist.flatten()
+        probabilities = hist_flat / (np.sum(hist_flat) + 1e-8)
+        probabilities = probabilities[probabilities > 0]
+
+        raw_entropy = -np.sum(probabilities * np.log(probabilities))
+        if normalized:
+            max_ent = np.log(hist.size)  # total bins = n_bins^n_dimensions
+            ent = raw_entropy / max_ent
+        else:
+            ent = raw_entropy
+
+        entropies.append(ent)
+
+    return float(np.mean(entropies))
+
+
+
 ######################################################################
 # --- Outer (UMAP) + Nested HDBSCAN Optimization Using optim_dict --- #
 ######################################################################
@@ -217,7 +275,7 @@ def compute_entropy(embeddings, n_bins=20, normalized=True):
 metric_functions = {
     "spread": compute_spread,
     "density_variability": lambda emb: compute_density_variability(emb, n_neighbors=10),
-    "entropy": lambda emb: compute_entropy(emb, n_bins=20),
+    "entropy": lambda emb: compute_entropy_range_mean(emb),
     "mean_distance": lambda emb: np.mean(pairwise_distances(emb)),
     "std_distance": lambda emb: np.std(pairwise_distances(emb))
 }

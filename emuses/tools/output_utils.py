@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 from nilearn.plotting import plot_stat_map
 import plotly.express as px
 
-from emuses.tools.visualisation import plot_statistical_map
+from emuses.tools.visualisation import plot_statistical_map, plot_spreadsheet_stat_map
 
 
 def save_statistical_maps(
@@ -89,26 +89,65 @@ def save_statistical_maps(
             if generate_plots:
                 plots[cluster] = fig
 
+
+
         elif input_type == 'spreadsheet':
+
             # For spreadsheets, output_format_info is the list of column names
+
             columns = output_format_info
+
             df = pd.DataFrame([stat_map], columns=columns)
 
-            # Generate the plot once
-            df_long = df.melt(var_name='Feature', value_name='Effect Size')
-            fig = px.bar(df_long, x='Feature', y='Effect Size',
-                         title=f'Effect Size Map for Cluster {cluster}')
+            # Save the DataFrame to CSV
 
             if save_output:
-                # Save the DataFrame to CSV
                 csv_filename = output_folder / f"{filename_prefix}_cluster_{cluster}.csv"
-                df.to_csv(csv_filename, index=False)
-                # Save the plot as PNG
-                png_filename = output_folder / f"{filename_prefix}_cluster_{cluster}.png"
-                fig.write_image(str(png_filename))
-                print(f"Saved CSV and plot for cluster {cluster}.")
 
-            if generate_plots:
+                df.to_csv(csv_filename, index=False)
+
+                print(f"Saved CSV for cluster {cluster}.")
+
+            # Convert to long format for bar chart
+
+            df_long = df.melt(var_name='Feature', value_name='Effect Size')
+
+            # For demonstration, let's pick orientation='h' and interactive=False by default
+
+            # or you can parametrize these choices.
+
+            bar_output_path = None
+
+            if save_output:
+                # We'll produce a static PNG in this example
+
+                bar_output_path = output_folder / f"{filename_prefix}_cluster_{cluster}.png"
+
+            fig = plot_spreadsheet_stat_map(
+
+                df_long=df_long,
+
+                cluster=cluster,
+
+                output_path=bar_output_path,
+
+                orientation='h',  # horizontal
+
+                interactive=True,
+
+                width=1200,
+
+                height=None,  # auto-based on number of features
+
+                title=f'Effect Size Map for Cluster {cluster}',
+
+                show_plot=False,  # or True if you want to see it pop up
+
+                return_plot=generate_plots
+
+            )
+
+            if generate_plots and fig is not None:
                 plots[cluster] = fig
 
             # No need to close Plotly figures

@@ -62,29 +62,40 @@ def calculate_composite_score(metrics_values_nested, metrics_config_nested):
 
     The expected format for both dictionaries is:
 
-    metrics_values_nested = {
-        "umap": {"spread": value1, "density_variability": value2, "entropy": value3},
-        "hdbscan": {"cluster_persistence": value4, "noise_ratio": value5, "validity_index": value6}
-    }
-
-    metrics_config_nested = {
-        "umap": {
-            "spread": {"weight": w1, "target": t1, "epsilon": e1},
-            "density_variability": {"weight": w2, "target": t2, "epsilon": e2},
-            "entropy": {"weight": w3, "target": t3, "epsilon": e3}
-        },
-        "hdbscan": {
-            "cluster_persistence": {"weight": w4},
-            "noise_ratio": {"weight": w5, "target": t5, "epsilon": e5},
-            "validity_index": {"weight": w6}
+        metrics_values_nested = {
+            "umap": {"spread": value1, "density_variability": value2, "entropy": value3},
+            "hdbscan": {"cluster_persistence": value4, "noise_ratio": value5, "validity_index": value6}
         }
-    }
 
-    For each metric, if a target and epsilon are provided, the component is:
-         weight * max(0, 1 - abs(metric_value - target) / epsilon)
-    Otherwise, it is weight * metric_value.
+        metrics_config_nested = {
+            "umap": {
+                "spread": {"weight": w1, "target": t1, "epsilon": e1},          # Use hard mode if "epsilon" is provided.
+                "density_variability": {"weight": w2, "target": t2, "min_penalty": mp2},  # Use linear mode if "min_penalty" is provided.
+                "entropy": {"weight": w3, "target": t3, "epsilon": e3}           # Hard mode example.
+            },
+            "hdbscan": {
+                "cluster_persistence": {"weight": w4},                          # No target; just raw contribution.
+                "noise_ratio": {"weight": w5, "target": t5, "min_penalty": mp5},  # Linear mode.
+                "validity_index": {"weight": w6}                                 # No target.
+            }
+        }
 
-    The final composite score is normalized by the total weight.
+    For each metric with a target:
+      - If "epsilon" is present, the component is computed as:
+            weight * max(0, 1 - abs(metric_value - target) / epsilon)
+      - If "min_penalty" is present (and epsilon is not), we assume a linear scaling. Assuming the metric is in [0,1],
+        compute the maximum possible deviation as:
+            max_dev = max(target, 1 - target)
+        Then compute the normalized difference:
+            normalized_diff = abs(metric_value - target) / max_dev
+        And define a penalty that linearly scales from 1 (when deviation is 0) to min_penalty (when deviation is maximal):
+            penalty = min_penalty + (1 - min_penalty) * (1 - normalized_diff)
+        The component becomes:
+            weight * metric_value * penalty
+
+    For metrics without a target, the component is simply weight * metric_value.
+
+    The final composite score is the sum of all components normalized by the sum of weights.
 
     Returns:
         float: Normalized composite score between 0 and 1.
@@ -97,15 +108,29 @@ def calculate_composite_score(metrics_values_nested, metrics_config_nested):
         values_dict = metrics_values_nested.get(group, {})
         for metric_name, config in config_dict.items():
             weight = config.get("weight", 1.0)
-            target = config.get("target")
-            epsilon = config.get("epsilon", 0.1)
             value = values_dict.get(metric_name)
             if value is None:
                 continue
+
+            target = config.get("target")
             if target is not None:
-                component = weight * max(0, 1 - abs(value - target) / epsilon)
+                # If an "epsilon" key is present, use hard mode:
+                if "epsilon" in config:
+                    epsilon = config["epsilon"]
+                    component = weight * max(0, 1 - abs(value - target) / epsilon)
+                # Else if "min_penalty" is present, use linear scaling:
+                elif "min_penalty" in config:
+                    min_penalty = config["min_penalty"]
+                    max_dev = max(target, 1 - target)
+                    normalized_diff = abs(value - target) / max_dev if max_dev > 0 else 0
+                    penalty = min_penalty + (1 - min_penalty) * (1 - normalized_diff)
+                    component = weight * value * penalty
+                else:
+                    # Fallback: if target is specified but no scaling parameter, simply use weight * value.
+                    component = weight * value
             else:
                 component = weight * value
+
             total_score += component
             total_weight += weight
 
