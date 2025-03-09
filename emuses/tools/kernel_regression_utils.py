@@ -314,6 +314,70 @@ def ensemble_predict(models, X):
     return mean_prediction, std_prediction
 
 
+def evaluate_ensemble_on_test(models, X_test, y_test, classification=False):
+    """
+    Evaluate an ensemble of kernel regression (or logistic regression) models on the test set.
+
+    Parameters
+    ----------
+    models : list
+        List of trained kernel regression (or logistic regression) models.
+    X_test : np.ndarray of shape (n_samples, n_features)
+        Test data.
+    y_test : np.ndarray of shape (n_samples,)
+        True labels for test data.
+    classification : bool, default=False
+        If True, compute classification metrics; if False, compute regression metrics.
+
+    Returns
+    -------
+    results : dict
+        Dictionary containing:
+            - 'mean_prediction': Ensemble mean prediction over models.
+            - 'std_prediction': Standard deviation of predictions.
+            Plus, if classification:
+                - 'accuracy', 'confusion_matrix', 'roc_auc', 'f1_score', 'precision', 'recall'
+            Otherwise (regression):
+                - 'r2', 'mse', 'mae', 'normalized_mse_%', 'normalized_mae_%'
+    """
+    # Use the ensemble_predict function to get predictions and their standard deviation.
+    mean_pred, std_pred = ensemble_predict(models, X_test)
+    results = {'mean_prediction': mean_pred, 'std_prediction': std_pred}
+
+    if classification:
+        # Convert probabilities to binary predictions (threshold=0.5)
+        y_pred = (mean_pred >= 0.5).astype(int)
+        from sklearn.metrics import accuracy_score, confusion_matrix, roc_auc_score, f1_score, precision_score, \
+            recall_score
+        results['accuracy'] = accuracy_score(y_test, y_pred)
+        results['confusion_matrix'] = confusion_matrix(y_test, y_pred).tolist()
+        try:
+            results['roc_auc'] = roc_auc_score(y_test, mean_pred)
+        except Exception:
+            results['roc_auc'] = None
+        results['f1_score'] = f1_score(y_test, y_pred)
+        results['precision'] = precision_score(y_test, y_pred)
+        results['recall'] = recall_score(y_test, y_pred)
+    else:
+        # Regression metrics
+        from sklearn.metrics import r2_score, mean_squared_error, mean_absolute_error
+        results['r2'] = r2_score(y_test, mean_pred)
+        results['mse'] = mean_squared_error(y_test, mean_pred)
+        results['mae'] = mean_absolute_error(y_test, mean_pred)
+        # Normalize errors based on the range of y_test (could also use training set range)
+        target_range = np.max(y_test) - np.min(y_test)
+        if target_range == 0:
+            normalized_mse = None
+            normalized_mae = None
+        else:
+            normalized_mse = (results['mse'] / (target_range ** 2)) * 100
+            normalized_mae = (results['mae'] / target_range) * 100
+        results['normalized_mse_%'] = normalized_mse
+        results['normalized_mae_%'] = normalized_mae
+
+    return results
+
+
 def run_kernel_heatmap_analysis(
         embeddings,
         scores_vectors_dict,
@@ -540,4 +604,3 @@ def run_kernel_heatmap_analysis(
     print(f"Saved aggregated CV performance metrics to {perf_path}")
 
     return heatmap_dict, cv_performance_all
-
