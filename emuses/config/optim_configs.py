@@ -23,6 +23,57 @@ optim_dict_default = {
             'spread': {
                 'weight': 1.0,       # Slightly reduced if you want clusters to be tighter.
                 'target': 0.6,
+                "epsilon": 0.2
+            },
+            'density_variability': {
+                'weight': 1.0,
+                'target': 0.4,
+                "epsilon": 0.2
+            },
+            'entropy': {
+                'weight': 3,       # Increase the weight on entropy to drive down uniformity.
+                'target': 0.6,       # Target lower entropy to encourage well-defined subregions.
+                "epsilon": 0.2
+            }
+        },
+        'hdbscan': {
+            'cluster_persistence': {
+                'weight': 1.5,       # Seems to maintain a stable (and reasonable) number of clusters.
+            },
+            'noise_ratio': {
+                'weight': 1.0,
+                'target': 0.9,       # Ensuring a low noise level (e.g., 10% noise).
+                "epsilon": 0.05
+            },
+            'validity_index': {
+                'weight': 1.0,       # High weight to ensure clusters are compact and well separated.
+                'target': 1,
+                'epsilon': 0.5       # Becasue 0.5 normalized is 0 in the raw DBCV score
+            }
+        }
+    }
+}
+
+
+
+optim_dict_test = {
+    'param': {
+        "umap": {
+            "min_dist": 0.04625027098983125,
+            "n_neighbors": 5,
+            "n_components": 2,
+            "metric": "euclidean"
+        },
+        "hdbscan": {
+            "min_cluster_size": 26,
+            "min_samples": 1
+        }
+    },
+    'metrics': {
+        'umap': {
+            'spread': {
+                'weight': 1.0,       # Slightly reduced if you want clusters to be tighter.
+                'target': 0.6,
                 "epsilon": 0.3
             },
             'density_variability': {
@@ -47,53 +98,6 @@ optim_dict_default = {
             },
             'validity_index': {
                 'weight': 1.0        # High weight to ensure clusters are compact and well separated.
-            }
-        }
-    }
-}
-
-
-
-optim_dict_test = {
-    'param': {
-        'umap': {
-            'min_dist': {'name': 'min_dist', 'value': 0.39},
-            'n_neighbors': {'name': 'n_neighbors', 'value': 50},
-            'n_components': {'value': 2},
-            'metric': {'name': 'metric', 'choices': ['euclidean']}
-        },
-        'hdbscan': {
-            'min_cluster_size': {'name': 'min_cluster_size', 'low': 5, 'high': 50},
-            'min_samples': {'name': 'min_samples', 'low': 1, 'high': 10}
-        }
-    },
-    'metrics': {
-        'umap': {
-            'spread': {
-                'weight': 1.5,
-                'target': 0.6,
-                'epsilon': 0.1
-            },
-            'density_variability': {
-                'weight': 1.2,
-                'target': 0.4,
-                'epsilon': 0.1
-            },
-            'entropy': {
-                'weight': 1.0
-            }
-        },
-        'hdbscan': {
-            'cluster_persistence': {
-                'weight': 2.0
-            },
-            'noise_ratio': {
-                'weight': 1.0,
-                'target': 0.1,
-                'epsilon': 0.05
-            },
-            'validity_index': {
-                'weight': 1.0
             }
         }
     }
@@ -541,40 +545,35 @@ def load_optim_dict(name):
     Returns:
         dict: The selected optimization dictionary.
 
-    Raises:c
-        ValueError: If the base variable is not found or if processing fails.
+    Raises:
+        ValueError: If the variable is not found or if processing fails.
     """
-    # Access module-level globals.
     globals_dict = globals()
 
+    # First, check if the full name exists.
+    if name in globals_dict:
+        return globals_dict[name]
+
+    # Otherwise, try to split at the last underscore.
     if "_" in name:
-        # Split at the last underscore.
         base, param = name.rsplit("_", 1)
         if base in globals_dict:
             obj = globals_dict[base]
             try:
                 if isinstance(obj, list):
-                    # If it's a list, treat 'param' as an index.
                     idx = int(param)
                     return obj[idx]
                 elif callable(obj):
-                    # If it's a function, try to convert 'param' to int if possible.
                     try:
                         param_val = int(param)
                     except ValueError:
                         param_val = param
                     return obj(param_val)
                 else:
-                    # Otherwise, just return the object.
                     return obj
             except Exception as e:
                 raise ValueError(f"Error processing {name}: {e}")
         else:
             raise ValueError(f"Variable '{base}' not found in optim_configs.")
     else:
-        # No underscore, simply return the variable if it exists.
-        if name in globals_dict:
-            return globals_dict[name]
-        else:
-            raise ValueError(f"Variable '{name}' not found in optim_configs.")
-
+        raise ValueError(f"Variable '{name}' not found in optim_configs.")

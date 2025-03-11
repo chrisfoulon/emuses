@@ -118,13 +118,17 @@ def inner_optimize_hdbscan(embeddings, optim_dict, n_inner_trials=20):
 
     Parameters:
       embeddings: np.ndarray (the UMAP latent space)
-      optim_dict: The full optim_dict; only the 'hdbscan' part is used.
-      n_inner_trials: Number of inner trials.
+      optim_dict: dict, the full optimization dictionary. Expected to have:
+                  optim_dict["param"]["hdbscan"] and optim_dict["metrics"]["hdbscan"].
+      n_inner_trials: int, number of inner trials.
 
     Returns:
       best_params, best_score, best_clusterer, best_labels, best_metrics
     """
-    # Prepare a sub-dictionary for HDBSCAN only.
+    # Enforce the correct key for HDBSCAN parameters.
+    if "hdbscan" not in optim_dict["param"]:
+        raise ValueError("The optimization dictionary must have a 'hdbscan' key in optim_dict['param'].")
+
     inner_optim_dict = {
         "param": {"hdbscan": optim_dict["param"]["hdbscan"]},
         "metrics": {"hdbscan": optim_dict["metrics"]["hdbscan"]}
@@ -147,6 +151,10 @@ def inner_optimize_hdbscan(embeddings, optim_dict, n_inner_trials=20):
     best_params = inner_study.best_params
     best_score = inner_study.best_value
 
+    # If best_params is empty (which can happen if all parameters are fixed), fall back to the fixed dict.
+    if not best_params:
+        best_params = inner_optim_dict["param"]["hdbscan"]
+
     best_hdbscan_params = best_params.get("hdbscan", best_params)
 
     # Re-train best HDBSCAN model using the best parameters.
@@ -154,6 +162,7 @@ def inner_optimize_hdbscan(embeddings, optim_dict, n_inner_trials=20):
     best_labels = best_clusterer.fit_predict(embeddings)
     best_metrics = evaluate_clustering_metrics(best_clusterer, embeddings)
     return best_params, best_score, best_clusterer, best_labels, best_metrics
+
 
 
 def evaluate_hdbscan(filtered_coordinates, size_factor=0.5):

@@ -49,36 +49,37 @@ def sigma_to_fwhm(sigma):
 
 def process_column(args):
     filtered_data, other_data, test_name, i = args
+    try:
+        # Check if one of the vectors is too short or all zeros.
+        if len(filtered_data) < 3 or len(other_data) < 3 or np.all(filtered_data == 0) or np.all(other_data == 0):
+            return i, np.nan, np.nan, np.nan
 
-    # Check if one of the vectors is only zeros or if the length of one of them is smaller than 3
-    if len(filtered_data) < 3 or len(other_data) < 3 or np.all(filtered_data == 0) or np.all(other_data == 0):
+        if test_name == 'mann-whitney':
+            # Using method='asymptotic' can sometimes help avoid tie issues.
+            stat, pval = mannwhitneyu(filtered_data, other_data, method='asymptotic')
+            # Compute a z-score conversion (if desired)
+            n1 = len(filtered_data)
+            n2 = len(other_data)
+            mu_u = n1 * n2 / 2
+            sigma_u = np.sqrt(n1 * n2 * (n1 + n2 + 1) / 12)
+            z = (stat - mu_u) / sigma_u if sigma_u != 0 else np.nan
+            r = z / np.sqrt(n1 + n2) if (n1+n2) != 0 else np.nan
+            return i, z, pval, r
+
+        elif test_name == 't-test':
+            stat, pval = ttest_ind(filtered_data, other_data, equal_var=False)
+            n1 = len(filtered_data)
+            n2 = len(other_data)
+            mean1, mean2 = np.mean(filtered_data), np.mean(other_data)
+            std1, std2 = np.std(filtered_data, ddof=1), np.std(other_data, ddof=1)
+            pooled_std = np.sqrt(((n1 - 1)*std1**2 + (n2 - 1)*std2**2) / (n1+n2-2)) if (n1+n2-2) != 0 else np.nan
+            cohen_d = (mean1 - mean2) / pooled_std if pooled_std != 0 else np.nan
+            return i, stat, pval, cohen_d
+
+    except Exception as e:
+        # Log the error if desired, then return NaN values for this column.
+        print(f"Error processing column {i}: {e}")
         return i, np.nan, np.nan, np.nan
-
-    if test_name == 'mann-whitney':
-        stat, pval = mannwhitneyu(filtered_data, other_data)
-        # Convert U statistic to z-score
-        n1 = len(filtered_data)
-        n2 = len(other_data)
-        mu_u = n1 * n2 / 2
-        sigma_u = np.sqrt(n1 * n2 * (n1 + n2 + 1) / 12)
-        z = (stat - mu_u) / sigma_u
-        # Compute effect size
-        r = z / np.sqrt(n1 + n2)
-        return i, z, pval, r
-
-    elif test_name == 't-test':
-        n1 = len(filtered_data)
-        n2 = len(other_data)
-        stat, pval = ttest_ind(filtered_data, other_data, equal_var=False)
-        # Compute effect size (Cohen's d) for unequal variances
-        mean1, mean2 = np.mean(filtered_data), np.mean(other_data)
-        std1, std2 = np.std(filtered_data, ddof=1), np.std(other_data, ddof=1)
-        pooled_std = np.sqrt(((n1 - 1) * std1 ** 2 + (n2 - 1) * std2 ** 2) / (n1 + n2 - 2))
-        cohen_d = (mean1 - mean2) / pooled_std
-        return i, stat, pval, cohen_d
-
-    else:
-        raise ValueError(f"Invalid test name: {test_name}. Options are 'mann-whitney' and 't-test'.")
 
 
 def input_matrix_stat_map(input_matrix, indices, test_name='mann-whitney', n_cores=-1):

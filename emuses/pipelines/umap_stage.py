@@ -10,7 +10,7 @@ from emuses.tools.UMAP_utils import (
 from emuses.tools.clustering_utils import load_hdbscan_model
 from emuses.tools.emuses_utils import rescale_embedding
 # Import the default optimization dictionary from your configuration module.
-from emuses.config.optim_configs import optim_dict_default, optim_dict_test
+from emuses.config.optim_configs import load_optim_dict, optim_dict_default
 
 
 class UMAPStage(PipelineStage):
@@ -45,12 +45,19 @@ class UMAPStage(PipelineStage):
             self.trained_umap, _ = load_umap_model(self.umap_model_path)
             logger.info(f"Loaded pre-trained UMAP model from: {self.umap_model_path}")
         else:
-            # Use the provided optimization dictionary or fallback to default.
-            if 'optim_dict' not in context or not context['optim_dict']:
-                optim_dict = optim_dict_default  # or optim_dict_default as needed
-                # optim_dict = optim_dict_test  # or optim_dict_default as needed
+            if "optim_dict" in context and context["optim_dict"]:
+                # If an optim_dict is already in context, assume it's already a dictionary.
+                optim_dict = context["optim_dict"]
+            elif "cli_args" in context and "optim_dict" in context["cli_args"]:
+                # If the CLI provided an optim_dict name, load it.
+                optim_dict_name = context["cli_args"]["optim_dict"]
+                try:
+                    optim_dict = load_optim_dict(optim_dict_name)
+                except Exception as e:
+                    print(f"Error loading optim_dict '{optim_dict_name}': {e}. Falling back to default.")
+                    optim_dict = optim_dict_default
             else:
-                optim_dict = context['optim_dict']
+                optim_dict = optim_dict_default
 
             # Run nested optimization for UMAP + HDBSCAN.
             (self.trained_umap,

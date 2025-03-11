@@ -13,6 +13,8 @@ from sklearn.metrics import (accuracy_score, roc_auc_score, r2_score, mean_squar
 
 from emuses.tools.output_utils import save_statistical_maps
 from emuses.tools.stats_utils import input_matrix_stat_map
+from sklearn.metrics import accuracy_score, confusion_matrix, roc_auc_score, f1_score, precision_score, \
+    recall_score
 
 
 class KernelRegressor(BaseEstimator, RegressorMixin):
@@ -333,8 +335,8 @@ def evaluate_ensemble_on_test(models, X_test, y_test, classification=False):
     -------
     results : dict
         Dictionary containing:
-            - 'mean_prediction': Ensemble mean prediction over models.
-            - 'std_prediction': Standard deviation of predictions.
+            - 'mean_prediction': Ensemble mean prediction (as a list).
+            - 'std_prediction': Standard deviation of predictions (as a list).
             Plus, if classification:
                 - 'accuracy', 'confusion_matrix', 'roc_auc', 'f1_score', 'precision', 'recall'
             Otherwise (regression):
@@ -342,28 +344,36 @@ def evaluate_ensemble_on_test(models, X_test, y_test, classification=False):
     """
     # Use the ensemble_predict function to get predictions and their standard deviation.
     mean_pred, std_pred = ensemble_predict(models, X_test)
-    results = {'mean_prediction': mean_pred, 'std_prediction': std_pred}
+    # Convert NumPy arrays to lists for JSON serialization.
+    results = {
+        'mean_prediction': mean_pred.tolist(),
+        'std_prediction': std_pred.tolist()
+    }
 
     if classification:
-        # Convert probabilities to binary predictions (threshold=0.5)
+        # Convert probabilities to predictions (threshold=0.5)
         y_pred = (mean_pred >= 0.5).astype(int)
-        from sklearn.metrics import accuracy_score, confusion_matrix, roc_auc_score, f1_score, precision_score, \
-            recall_score
-        results['accuracy'] = accuracy_score(y_test, y_pred)
+        results['accuracy'] = float(accuracy_score(y_test, y_pred))
         results['confusion_matrix'] = confusion_matrix(y_test, y_pred).tolist()
         try:
-            results['roc_auc'] = roc_auc_score(y_test, mean_pred)
+            results['roc_auc'] = float(roc_auc_score(y_test, mean_pred))
         except Exception:
             results['roc_auc'] = None
-        results['f1_score'] = f1_score(y_test, y_pred)
-        results['precision'] = precision_score(y_test, y_pred)
-        results['recall'] = recall_score(y_test, y_pred)
+
+        # Determine the appropriate averaging method for multiclass vs binary.
+        average_param = 'binary'
+        if len(np.unique(y_test)) > 2:
+            average_param = 'macro'
+
+        results['f1_score'] = float(f1_score(y_test, y_pred, average=average_param))
+        results['precision'] = float(precision_score(y_test, y_pred, average=average_param))
+        results['recall'] = float(recall_score(y_test, y_pred, average=average_param))
     else:
         # Regression metrics
         from sklearn.metrics import r2_score, mean_squared_error, mean_absolute_error
-        results['r2'] = r2_score(y_test, mean_pred)
-        results['mse'] = mean_squared_error(y_test, mean_pred)
-        results['mae'] = mean_absolute_error(y_test, mean_pred)
+        results['r2'] = float(r2_score(y_test, mean_pred))
+        results['mse'] = float(mean_squared_error(y_test, mean_pred))
+        results['mae'] = float(mean_absolute_error(y_test, mean_pred))
         # Normalize errors based on the range of y_test (could also use training set range)
         target_range = np.max(y_test) - np.min(y_test)
         if target_range == 0:
@@ -546,7 +556,8 @@ def run_kernel_heatmap_analysis(
 
         high_pred_indices = np.where(train_pred_mean > dynamic_threshold)[0]
         if len(high_pred_indices) < 3:
-            print(f"Not enough high-confidence points for score tag '{score_tag}' (n={len(high_pred_indices)}); skipping effect size maps.")
+            print(f"Not enough high-confidence points for score tag '{score_tag}' (n={len(high_pred_indices)}); "
+                  f"skipping effect size maps.")
             effect_size_maps = {}
         else:
             high_clusters = cluster_labels[high_pred_indices] if cluster_labels is not None else None
@@ -560,7 +571,8 @@ def run_kernel_heatmap_analysis(
                     continue
                 cluster_high_indices = high_pred_indices[high_clusters == cluster]
                 if len(cluster_high_indices) < 3:
-                    print(f"Cluster {cluster} for score tag '{score_tag}' has fewer than 3 high-confidence points; skipping.")
+                    print(f"Cluster {cluster} for score tag '{score_tag}' has fewer than 3 "
+                          f"high-confidence points; skipping.")
                     continue
                 print(f"Computing effect size map for cluster {cluster} and score tag '{score_tag}'...")
                 _, _, effect_size_map = input_matrix_stat_map(

@@ -229,7 +229,7 @@ class HeatmapStage(PipelineStage):
                 context['interactive_clustering_plots'] = interactive_plots
 
         # Run the kernel regression–based heatmap analysis.
-        heatmaps = run_kernel_heatmap_analysis(
+        heatmap_dict, cv_performance_all = run_kernel_heatmap_analysis(
             embeddings=embeddings,
             scores_vectors_dict=scores_vectors_dict,
             input_matrix=train_features,
@@ -239,6 +239,7 @@ class HeatmapStage(PipelineStage):
             threshold=0.5,
             uncertainty_penalty=0.5,
             input_type=context['dataset_type'],
+            classification=getattr(args, 'classification', False),
             cluster_labels=cluster_labels,
             effect_size_test='mann-whitney',
             highlight_points=True,
@@ -249,4 +250,5 @@ class HeatmapStage(PipelineStage):
         logger.info("Kernel regression heatmap analysis completed.")
 
         # Store heatmap results in the context.
-        context['heatmap_plots'] = heatmaps
+        context['heatmap_plots'] = heatmap_dict
+        context['cv_performance_all'] = cv_performance_all

@@ -54,6 +54,8 @@ class EMUSESPipeline:
         if args.load_embeddings:
             self.context['embeddings'] = np.load(args.load_embeddings)
 
+        self.context["cli_args"] = vars(self.args)
+
     def validate_args(self):
         # Validation logic if needed
         pass

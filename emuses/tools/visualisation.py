@@ -4,6 +4,7 @@ import plotly
 import plotly.graph_objs as go
 import plotly.express as px
 import plotly.io as pio
+from bcblib.tools.general_utils import open_json
 from plotly.subplots import make_subplots
 import streamlit as st
 from pathlib import Path
@@ -615,3 +616,92 @@ def load_umap_tabs(folder, prefix):
             html_content = file.read_text(encoding="utf-8")
             # Increase height and enable scrolling so the full plot is visible
             st.components.v1.html(html_content, height=1000, width=1200, scrolling=True)
+
+
+def save_optimization_log_plot(trial_logs, optim_dict, output_folder=".",
+                               plot_filename="optimization_log_plot.png"):
+    """
+    Generate and save a plot showing the evolution of normalized UMAP parameters and metric contributions
+    across trials, using parameter ranges and metric keys extracted directly from optim_dict.
+
+    Parameters:
+      trial_logs: either a list/dictionary of trial logs or a path to a JSON file containing them.
+      optim_dict (dict): The optimization dictionary, e.g. optim_dict_default.
+         It must contain:
+           - 'param': {'umap': {parameter_name: { 'low': value, 'high': value, ... }, ...}}
+           - 'metrics': {'umap': {metric_name: { ... }, ...}}
+      output_folder (str or Path): Folder where the plot image will be saved.
+      plot_filename (str): Name of the output plot file.
+
+    Returns:
+      None. Saves the plot to the specified output folder.
+    """
+    # Load trial_logs if a path is provided.
+    if isinstance(trial_logs, (str, Path)):
+        trial_logs = open_json(trial_logs)
+
+    # Extract UMAP parameter ranges from optim_dict['param']['umap'].
+    optim_param_ranges = {}
+    for param, details in optim_dict.get("param", {}).get("umap", {}).items():
+        if isinstance(details, dict) and "low" in details and "high" in details:
+            optim_param_ranges[param] = (details["low"], details["high"])
+
+    # Extract UMAP metric keys from optim_dict['metrics']['umap'].
+    metric_keys = list(optim_dict.get("metrics", {}).get("umap", {}).keys())
+
+    trial_numbers = []
+    composite_scores = []
+    normalized_params = {param: [] for param in optim_param_ranges.keys()}
+    detailed_components = {metric: [] for metric in metric_keys}
+
+    # Process each trial log.
+    for log in trial_logs:
+        trial_numbers.append(log.get("trial_number"))
+        composite_scores.append(log.get("composite_score"))
+        umap_params = log.get("umap_params", {})
+
+        # Normalize each parameter using its defined range.
+        for param, (low, high) in optim_param_ranges.items():
+            if param in umap_params:
+                val = umap_params[param]
+                norm_val = (val - low) / (high - low) if high != low else np.nan
+                normalized_params[param].append(norm_val)
+            else:
+                normalized_params[param].append(np.nan)
+
+        # Get detailed metric components from the trial log (if available).
+        dcomp = log.get("detailed_umap_components", {})
+        for metric in metric_keys:
+            detailed_components[metric].append(dcomp.get(metric, np.nan))
+
+    # Create the plot.
+    fig, (ax_params, ax_metrics) = plt.subplots(2, 1, figsize=(12, 10), sharex=True)
+
+    # Plot normalized UMAP parameters.
+    for param, norm_vals in normalized_params.items():
+        ax_params.plot(trial_numbers, norm_vals, marker='o', linestyle='-', label=f"{param} (norm)")
+    ax_params.set_ylabel("Normalized Parameter Value")
+    ax_params.set_title("Evolution of Normalized UMAP Parameters")
+    ax_params.legend()
+    ax_params.grid(True)
+
+    # Plot composite score (black) and detailed UMAP metric components.
+    ax_metrics.plot(trial_numbers, composite_scores, marker='o', linestyle='-',
+                    linewidth=2, color='black', label="Composite Score")
+    for metric, comp_vals in detailed_components.items():
+        ax_metrics.plot(trial_numbers, comp_vals, marker='o', linestyle='--', label=f"{metric} component")
+    ax_metrics.set_xlabel("Trial Number")
+    ax_metrics.set_ylabel("Metric Contribution")
+    ax_metrics.set_title("Evolution of Composite Score and UMAP Metric Components")
+    ax_metrics.legend()
+    ax_metrics.grid(True)
+
+    plt.tight_layout()
+
+    # Save the plot.
+    output_folder = Path(output_folder)
+    output_folder.mkdir(parents=True, exist_ok=True)
+    save_path = output_folder / plot_filename
+    plt.savefig(save_path)
+    plt.close(fig)
+    print(f"Optimization log plot saved at: {save_path}")

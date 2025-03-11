@@ -16,7 +16,10 @@ def suggest_parameters(trial, optim_dict):
     for model, model_params in optim_dict['param'].items():
         params[model] = {}
         for name, details in model_params.items():
-            if 'value' in details:  # Fixed parameter
+            if not isinstance(details, dict):
+                # TODO do we need some sanity checks here?
+                params[model][name] = details
+            elif 'value' in details:  # Fixed parameter
                 params[model][name] = details['value']
             elif 'choices' in details:  # Categorical parameter
                 params[model][name] = trial.suggest_categorical(
@@ -39,6 +42,23 @@ def suggest_parameters(trial, optim_dict):
                     log=details.get('log', False)
                 )
     return params
+
+
+def are_parameters_fixed(params_dict):
+    """
+    Returns True if every parameter in params_dict is fixed,
+    i.e. if every parameter (assumed to be a dict) has a 'value' key,
+    and does not have a 'low' or 'choices' entry.
+    """
+    for key, param in params_dict.items():
+        if isinstance(param, dict):
+            if 'value' in param:
+                continue
+            if 'low' in param or 'choices' in param:
+                return False
+        # If the parameter is not a dict, we assume it's fixed.
+    return True
+
 
 
 def auto_n_neighbors(n_samples, lower_bound=10, upper_bound=200):
