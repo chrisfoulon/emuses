@@ -86,6 +86,10 @@ def add_umap_arguments(parser):
     parser.add_argument('--prefix', default='', help='Prefix for the output path names')
     parser.add_argument('--optim_dict', default='optim_dict_default',
                         help='Name of an optim_dict in optim_configs.py of Path to the optimization dictionary')
+    parser.add_argument('--umap_trials', type=int, default=50,
+                        help='Number of outer (UMAP) optimization trials')
+    parser.add_argument('--hdbscan_trials', type=int, default=20,
+                        help='Number of inner (HDBSCAN) optimization trials')
 
 
 def add_clustering_arguments(parser):

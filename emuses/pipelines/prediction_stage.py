@@ -67,7 +67,7 @@ class PredictionStage(PipelineStage):
 
                 # If test_labels is multi-column, extract the corresponding column.
                 if test_labels.ndim == 1:
-                    y_test_column = test_labels
+                    y_test_column = (test_labels == int(score_tag)).astype(int)
                 else:
                     if score_index >= test_labels.shape[1]:
                         logger.error(

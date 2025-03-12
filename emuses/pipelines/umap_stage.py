@@ -72,8 +72,8 @@ class UMAPStage(PipelineStage):
                     input_matrix=train_features,
                     output_folder=self.config.output_folder,
                     optim_dict=optim_dict,
-                    n_trials=200,
-                    n_inner_trials=100,  # Adjust as needed
+                    n_trials=getattr(args, 'umap_trials', 50),
+                    n_inner_trials=getattr(args, 'hdbscan_trials', 20),
                     pref=args.prefix,
                     random_state=getattr(args, 'random_state', None)
                 )

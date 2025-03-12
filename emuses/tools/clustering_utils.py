@@ -16,18 +16,32 @@ def compute_cluster_persistence(clusterer, normalized=True, max_value=1.0):
 
     If normalized is True, the persistence is divided by max_value (capped at 1).
 
+    In the special case where every point is labeled as noise, this function returns 0,
+    because even if the underlying persistence values might be high (or undefined),
+    we do not want to reward an all-noise clustering.
+
     Parameters:
         clusterer: A fitted HDBSCAN object.
         normalized (bool): Whether to return a normalized value.
         max_value (float): The maximum expected persistence value.
 
     Returns:
-        float: Cluster persistence.
+        float: Cluster persistence (or 0 if all points are noise).
     """
-    persistence = np.mean(clusterer.cluster_persistence_) if hasattr(clusterer, 'cluster_persistence_') else 0.0
+    # Check if labels are available and all points are noise.
+    if hasattr(clusterer, 'labels_') and np.all(clusterer.labels_ == -1):
+        return 0.0
+
+    # Compute the raw persistence.
+    if hasattr(clusterer, 'cluster_persistence_') and len(clusterer.cluster_persistence_) > 0:
+        persistence = np.mean(clusterer.cluster_persistence_)
+    else:
+        persistence = 0.0
+
     if not normalized:
         return persistence
     return min(1, persistence / max_value)
+
 
 
 def compute_noise_ratio(labels, normalized=True):
@@ -96,7 +110,7 @@ def evaluate_clustering_metrics(clusterer, embeddings, metrics_config=None):
     for metric_name in metrics_config.keys():
         if metric_name == "noise_ratio":
             computed_metrics["noise_ratio"] = compute_noise_ratio(labels)
-        elif metric_name in ("dbcv", "validity_index"):
+        elif metric_name in ("dbcv"):
             # We assume here that dbcv and validity_index refer to the same computation.
             computed_metrics["dbcv"] = compute_dbcv(embeddings, labels)
         elif metric_name == "cluster_persistence":

@@ -123,6 +123,37 @@ def compute_spread(embeddings, normalized=True):
     return raw_spread / max_theoretical_spread # here we could add a tiny epsilon to avoid division by zero
 
 
+def compute_eigen_spread(embeddings, normalized=True):
+    """
+    Compute the total spread of the embeddings using the eigenvalues of the covariance matrix,
+    and compute an anisotropy ratio (smallest/largest eigenvalue).
+
+    Parameters:
+        embeddings (np.ndarray): Array of shape (n_samples, n_dimensions).
+        normalized (bool): If True, normalize the total spread by the sum of eigenvalues.
+
+    Returns:
+        total_spread: Total variance (sum of eigenvalues) (normalized if requested).
+        anisotropy_ratio: Ratio of the smallest eigenvalue to the largest.
+    """
+    # Compute the covariance matrix (columns as variables)
+    cov_matrix = np.cov(embeddings, rowvar=False)
+    # Compute eigenvalues
+    eigenvalues, _ = np.linalg.eig(cov_matrix)
+    # Sort in descending order (largest first)
+    eigenvalues = np.sort(eigenvalues)[::-1]
+
+    total_spread = np.sum(eigenvalues)
+    if normalized and total_spread != 0:
+        # Normalized total spread could be defined as fraction of total variance
+        total_spread /= total_spread  # Always 1 when normalized in this trivial way.
+        # You might instead want to leave it as raw variance for comparison
+    # For anisotropy, we use the ratio of smallest to largest eigenvalue.
+    anisotropy_ratio = eigenvalues[-1] / eigenvalues[0] if eigenvalues[0] > 0 else 0.0
+
+    return total_spread, anisotropy_ratio
+
+
 def compute_density_variability(embeddings, n_neighbors=None, normalized=True, alpha=3.0, beta=1.0):
     """
     Compute the density variability of an embedding.
@@ -136,8 +167,6 @@ def compute_density_variability(embeddings, n_neighbors=None, normalized=True, a
         embeddings (np.ndarray): Array of shape (n_samples, n_dimensions).
         n_neighbors (int, optional): Number of nearest neighbors. If None, computed automatically.
         normalized (bool): Whether to return a normalized value between 0 and 1.
-        alpha (float): Parameter for the logistic (sigmoid) transformation (if used).
-        beta (float): Parameter that defines the midpoint of the logistic transformation.
 
     Returns:
         float: Density variability, with 1 being best (most uniform).
@@ -415,15 +444,7 @@ def train_and_save_umap_optim_with_nested_clustering(
         composite_score = calculate_composite_score(combined_metrics, optim_dict["metrics"])
         print(f"Trial {trial.number}: Composite score: {composite_score}")
 
-        # Log detailed metric values in the trial attributes.
-        trial.set_user_attr("umap_params", umap_params)
-        trial.set_user_attr("umap_metrics", umap_metrics)
-        trial.set_user_attr("hdbscan_metrics", best_hdbscan_metrics)
-        trial.set_user_attr("composite_score", composite_score)
-        trial.set_user_attr("hdbscan_best_params", best_hdbscan_params)
-        trial.set_user_attr("hdbscan_best_clusterer", best_clusterer)
-        trial.set_user_attr("hdbscan_best_labels", best_labels)
-
+        # Log detailed UMAP metric values.
         detailed_umap = {}
         for metric, config in optim_dict["metrics"]["umap"].items():
             value = umap_metrics.get(metric)
@@ -443,6 +464,37 @@ def train_and_save_umap_optim_with_nested_clustering(
             detailed_umap[metric] = component
         trial.set_user_attr("detailed_umap_components", detailed_umap)
 
+        # --- New: Compute detailed HDBSCAN metric contributions ---
+        detailed_hdbscan = {}
+        # Loop over the HDBSCAN metrics defined in the optimization dictionary.
+        for metric, config in optim_dict["metrics"]["hdbscan"].items():
+            value = best_hdbscan_metrics.get(metric)
+            target = config.get("target")
+            if target is not None:
+                if "epsilon" in config:
+                    component = config["weight"] * max(0, 1 - abs(value - target) / config["epsilon"])
+                elif "min_penalty" in config:
+                    max_dev = max(target, 1 - target)
+                    normalized_diff = abs(value - target) / max_dev if max_dev > 0 else 0
+                    penalty = config["min_penalty"] + (1 - config["min_penalty"]) * (1 - normalized_diff)
+                    component = config["weight"] * value * penalty
+                else:
+                    component = config["weight"] * value
+            else:
+                component = config["weight"] * value
+            detailed_hdbscan[metric] = component
+        trial.set_user_attr("detailed_hdbscan_components", detailed_hdbscan)
+        # --- End new HDBSCAN logging ---
+
+        # Log the rest of the trial attributes.
+        trial.set_user_attr("umap_params", umap_params)
+        trial.set_user_attr("umap_metrics", umap_metrics)
+        trial.set_user_attr("hdbscan_metrics", best_hdbscan_metrics)
+        trial.set_user_attr("composite_score", composite_score)
+        trial.set_user_attr("hdbscan_best_params", best_hdbscan_params)
+        trial.set_user_attr("hdbscan_best_clusterer", best_clusterer)
+        trial.set_user_attr("hdbscan_best_labels", best_labels)
+
         # Append trial log information.
         trial_info = {
             "trial_number": trial.number,
@@ -451,6 +503,7 @@ def train_and_save_umap_optim_with_nested_clustering(
             "detailed_umap_components": detailed_umap,
             "hdbscan_best_params": best_hdbscan_params,
             "hdbscan_metrics": best_hdbscan_metrics,
+            "detailed_hdbscan_components": detailed_hdbscan,
             "composite_score": composite_score,
             "interactive_plot": interactive_plot_path.as_posix()
         }
@@ -484,6 +537,10 @@ def train_and_save_umap_optim_with_nested_clustering(
         "metrics": {
             "umap": best_outer_trial.user_attrs.get("umap_metrics"),
             "hdbscan": best_outer_trial.user_attrs.get("hdbscan_metrics")
+        },
+        "detailed": {
+            "umap": best_outer_trial.user_attrs.get("detailed_umap_components"),
+            "hdbscan": best_outer_trial.user_attrs.get("detailed_hdbscan_components")
         }
     }
     log_path_best = output_folder / "best_trial_info.json"

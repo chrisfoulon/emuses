@@ -20,10 +20,13 @@ optim_dict_default = {
     },
     'metrics': {
         'umap': {
-            'spread': {
-                'weight': 1.0,       # Slightly reduced if you want clusters to be tighter.
-                'target': 0.6,
-                "epsilon": 0.2
+            # 'spread': {
+            #     'weight': 1.0,
+            #     'target': 0.3,
+            #     "epsilon": 0.2
+            # },
+            'eigen_spread': {
+                'weight': 1.0,
             },
             'density_variability': {
                 'weight': 1.0,
@@ -33,22 +36,22 @@ optim_dict_default = {
             'entropy': {
                 'weight': 3,       # Increase the weight on entropy to drive down uniformity.
                 'target': 0.6,       # Target lower entropy to encourage well-defined subregions.
-                "epsilon": 0.2
+                "epsilon": 0.25
             }
         },
         'hdbscan': {
             'cluster_persistence': {
-                'weight': 1.5,       # Seems to maintain a stable (and reasonable) number of clusters.
+                'weight': 2,       # Seems to maintain a stable (and reasonable) number of clusters.
             },
             'noise_ratio': {
                 'weight': 1.0,
                 'target': 0.9,       # Ensuring a low noise level (e.g., 10% noise).
                 "epsilon": 0.05
             },
-            'validity_index': {
+            'dbcv': {
                 'weight': 1.0,       # High weight to ensure clusters are compact and well separated.
                 'target': 1,
-                'epsilon': 0.5       # Becasue 0.5 normalized is 0 in the raw DBCV score
+                'epsilon': 0.5       # Because 0.5 normalized is 0 in the raw DBCV score
             }
         }
     }
@@ -96,7 +99,7 @@ optim_dict_test = {
                 'target': 0.9,       # Ensuring a low noise level (e.g., 10% noise).
                 "epsilon": 0.25
             },
-            'validity_index': {
+            'dbcv': {
                 'weight': 1.0        # High weight to ensure clusters are compact and well separated.
             }
         }
@@ -142,7 +145,7 @@ optim_dict_mnist = {
                 'target': 0.1,
                 'epsilon': 0.05
             },
-            'validity_index': {
+            'dbcv': {
                 'weight': 1.5
             }
         }
@@ -188,7 +191,7 @@ optim_dict_hcp = {
                 'target': 0.1,
                 'epsilon': 0.05
             },
-            'validity_index': {
+            'dbcv': {
                 'weight': 1.0
             }
         }
@@ -247,7 +250,7 @@ def generate_dynamic_metrics_configs(n_configs=10):
                     "target": noise_target,
                     "min_penalty": min_penalty_val
                 },
-                "validity_index": {
+                "dbcv": {
                     "weight": 1.0  # No target.
                 }
             }
@@ -271,7 +274,7 @@ DEFAULT_WEIGHTS = {
     "hdbscan": {
         "cluster_persistence": 1.0,
         "noise_ratio": 1.0,
-        "validity_index": 1.0
+        "dbcv": 1.0
     }
 }
 
@@ -335,10 +338,10 @@ def generate_educated_weight_configs(n_configs=None, random_seed=42):
 
     The scenarios are as follows:
 
-    Scenario A: Focus on HDBSCAN cluster persistence & validity_index.
+    Scenario A: Focus on HDBSCAN cluster persistence & dbcv.
       - For HDBSCAN:
           cluster_persistence: candidate multipliers: [1.3, 1.5, 1.7, 2.0]
-          validity_index: candidate multipliers: [1.3, 1.5, 1.7, 2.0]
+          dbcv: candidate multipliers: [1.3, 1.5, 1.7, 2.0]
           noise_ratio: candidate multipliers: [0.5, 0.8]
       - For UMAP: keep moderate values:
           spread: [0.8, 1.0]
@@ -358,7 +361,7 @@ def generate_educated_weight_configs(n_configs=None, random_seed=42):
       - For all parameters, use candidate multipliers: [0.8, 1.0, 1.2]
       Sample 6 configurations.
 
-    Scenario D: Focus on both UMAP density_variability and HDBSCAN (cluster_persistence & validity_index),
+    Scenario D: Focus on both UMAP density_variability and HDBSCAN (cluster_persistence & dbcv),
                 while reducing spread, entropy, and noise_ratio.
       - For UMAP:
           spread: [0.5, 0.8]
@@ -366,7 +369,7 @@ def generate_educated_weight_configs(n_configs=None, random_seed=42):
           entropy: [0.8]
       - For HDBSCAN:
           cluster_persistence: [1.5, 1.7]
-          validity_index: [1.5, 1.7]
+          dbcv: [1.5, 1.7]
           noise_ratio: [0.5, 0.8]
       Sample 8 configurations.
 
@@ -404,7 +407,7 @@ def generate_educated_weight_configs(n_configs=None, random_seed=42):
     # Scenario F: Variation on one parameter at a time.
     base = {
         "umap": {"spread": 1.0, "density_variability": 1.5, "entropy": 1.2},
-        "hdbscan": {"cluster_persistence": 1.0, "noise_ratio": 1.0, "validity_index": 1.0}
+        "hdbscan": {"cluster_persistence": 1.0, "noise_ratio": 1.0, "dbcv": 1.0}
     }
     single_param_candidates = [0.5, 0.8, 1.3, 1.7]
     configs_F = []
@@ -415,7 +418,7 @@ def generate_educated_weight_configs(n_configs=None, random_seed=42):
             config["umap"][metric] = cand * base["umap"][metric]
             configs_F.append(config)
     # For HDBSCAN parameters:
-    for metric in ["cluster_persistence", "noise_ratio", "validity_index"]:
+    for metric in ["cluster_persistence", "noise_ratio", "dbcv"]:
         for cand in single_param_candidates:
             config = copy.deepcopy(base)
             config["hdbscan"][metric] = cand * base["hdbscan"][metric]
@@ -432,7 +435,7 @@ def generate_educated_weight_configs(n_configs=None, random_seed=42):
     cand_hdbscan_A = {
         "cluster_persistence": [1.3, 1.5, 1.7, 2.0],
         "noise_ratio": [0.5, 0.8],
-        "validity_index": [1.3, 1.5, 1.7, 2.0]
+        "dbcv": [1.3, 1.5, 1.7, 2.0]
     }
     configs_A = generate_configs_from_candidates(cand_umap_A, cand_hdbscan_A, DEFAULT_WEIGHTS)
     scenarios.append(("A", configs_A, 8))
@@ -446,7 +449,7 @@ def generate_educated_weight_configs(n_configs=None, random_seed=42):
     cand_hdbscan_B = {
         "cluster_persistence": [1.0],
         "noise_ratio": [1.0],
-        "validity_index": [1.0]
+        "dbcv": [1.0]
     }
     configs_B = generate_configs_from_candidates(cand_umap_B, cand_hdbscan_B, DEFAULT_WEIGHTS)
     scenarios.append(("B", configs_B, 6))
@@ -460,7 +463,7 @@ def generate_educated_weight_configs(n_configs=None, random_seed=42):
     cand_hdbscan_C = {
         "cluster_persistence": [0.8, 1.0, 1.2],
         "noise_ratio": [0.8, 1.0, 1.2],
-        "validity_index": [0.8, 1.0, 1.2]
+        "dbcv": [0.8, 1.0, 1.2]
     }
     configs_C = generate_configs_from_candidates(cand_umap_C, cand_hdbscan_C, DEFAULT_WEIGHTS)
     scenarios.append(("C", configs_C, 6))
@@ -474,7 +477,7 @@ def generate_educated_weight_configs(n_configs=None, random_seed=42):
     cand_hdbscan_D = {
         "cluster_persistence": [1.5, 1.7],
         "noise_ratio": [0.5, 0.8],
-        "validity_index": [1.5, 1.7]
+        "dbcv": [1.5, 1.7]
     }
     configs_D = generate_configs_from_candidates(cand_umap_D, cand_hdbscan_D, DEFAULT_WEIGHTS)
     scenarios.append(("D", configs_D, 8))
@@ -488,7 +491,7 @@ def generate_educated_weight_configs(n_configs=None, random_seed=42):
     cand_hdbscan_E = {
         "cluster_persistence": [1.0],
         "noise_ratio": [0.5, 0.8],
-        "validity_index": [1.0]
+        "dbcv": [1.0]
     }
     configs_E = generate_configs_from_candidates(cand_umap_E, cand_hdbscan_E, DEFAULT_WEIGHTS)
     scenarios.append(("E", configs_E, 4))
@@ -503,7 +506,7 @@ def generate_educated_weight_configs(n_configs=None, random_seed=42):
         else:
             sampled = random.sample(config_list, sample_n)
         final_configs.extend(sampled)
-        print(f"Scenario {scenario_name}: sampled {len(sampled)} configurations out of {len(config_list)} available.")
+        # print(f"Scenario {scenario_name}: sampled {len(sampled)} configurations out of {len(config_list)} available.")
 
     # Remove duplicates based on a canonical representation.
     seen = set()
@@ -515,7 +518,7 @@ def generate_educated_weight_configs(n_configs=None, random_seed=42):
             seen.add(canon)
             unique_configs.append(cfg)
 
-    print(f"Total unique configurations: {len(unique_configs)}")
+    # print(f"Total unique configurations: {len(unique_configs)}")
 
     # If n_configs is specified, randomly sample that many unique configurations.
     if n_configs is not None and len(unique_configs) > n_configs:

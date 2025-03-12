@@ -622,14 +622,16 @@ def save_optimization_log_plot(trial_logs, optim_dict, output_folder=".",
                                plot_filename="optimization_log_plot.png"):
     """
     Generate and save a plot showing the evolution of normalized UMAP parameters and metric contributions
-    across trials, using parameter ranges and metric keys extracted directly from optim_dict.
+    across trials. This function now creates a separate subplot for detailed HDBSCAN metric components,
+    if they are present in both the optim_dict and the trial logs.
 
     Parameters:
       trial_logs: either a list/dictionary of trial logs or a path to a JSON file containing them.
       optim_dict (dict): The optimization dictionary, e.g. optim_dict_default.
          It must contain:
            - 'param': {'umap': {parameter_name: { 'low': value, 'high': value, ... }, ...}}
-           - 'metrics': {'umap': {metric_name: { ... }, ...}}
+           - 'metrics': {'umap': {metric_name: { ... }, ...},
+                         'hdbscan': {metric_name: { ... }, ...} } (optional)
       output_folder (str or Path): Folder where the plot image will be saved.
       plot_filename (str): Name of the output plot file.
 
@@ -647,12 +649,15 @@ def save_optimization_log_plot(trial_logs, optim_dict, output_folder=".",
             optim_param_ranges[param] = (details["low"], details["high"])
 
     # Extract UMAP metric keys from optim_dict['metrics']['umap'].
-    metric_keys = list(optim_dict.get("metrics", {}).get("umap", {}).keys())
+    umap_metric_keys = list(optim_dict.get("metrics", {}).get("umap", {}).keys())
+    # Extract HDBSCAN metric keys, if present.
+    hdbscan_metric_keys = list(optim_dict.get("metrics", {}).get("hdbscan", {}).keys())
 
     trial_numbers = []
     composite_scores = []
     normalized_params = {param: [] for param in optim_param_ranges.keys()}
-    detailed_components = {metric: [] for metric in metric_keys}
+    detailed_umap_components = {metric: [] for metric in umap_metric_keys}
+    detailed_hdbscan_components = {metric: [] for metric in hdbscan_metric_keys}
 
     # Process each trial log.
     for log in trial_logs:
@@ -660,7 +665,7 @@ def save_optimization_log_plot(trial_logs, optim_dict, output_folder=".",
         composite_scores.append(log.get("composite_score"))
         umap_params = log.get("umap_params", {})
 
-        # Normalize each parameter using its defined range.
+        # Normalize each UMAP parameter using its defined range.
         for param, (low, high) in optim_param_ranges.items():
             if param in umap_params:
                 val = umap_params[param]
@@ -669,13 +674,23 @@ def save_optimization_log_plot(trial_logs, optim_dict, output_folder=".",
             else:
                 normalized_params[param].append(np.nan)
 
-        # Get detailed metric components from the trial log (if available).
-        dcomp = log.get("detailed_umap_components", {})
-        for metric in metric_keys:
-            detailed_components[metric].append(dcomp.get(metric, np.nan))
+        # Get detailed UMAP metric components.
+        dcomp_umap = log.get("detailed_umap_components", {})
+        for metric in umap_metric_keys:
+            detailed_umap_components[metric].append(dcomp_umap.get(metric, np.nan))
 
-    # Create the plot.
-    fig, (ax_params, ax_metrics) = plt.subplots(2, 1, figsize=(12, 10), sharex=True)
+        # Get detailed HDBSCAN metric components, if available.
+        dcomp_hdbscan = log.get("detailed_hdbscan_components", {})
+        for metric in hdbscan_metric_keys:
+            detailed_hdbscan_components[metric].append(dcomp_hdbscan.get(metric, np.nan))
+
+    # Determine number of subplots.
+    if hdbscan_metric_keys:
+        n_subplots = 3
+        fig, (ax_params, ax_umap, ax_hdbscan) = plt.subplots(3, 1, figsize=(12, 12), sharex=True)
+    else:
+        n_subplots = 2
+        fig, (ax_params, ax_umap) = plt.subplots(2, 1, figsize=(12, 10), sharex=True)
 
     # Plot normalized UMAP parameters.
     for param, norm_vals in normalized_params.items():
@@ -685,16 +700,27 @@ def save_optimization_log_plot(trial_logs, optim_dict, output_folder=".",
     ax_params.legend()
     ax_params.grid(True)
 
-    # Plot composite score (black) and detailed UMAP metric components.
-    ax_metrics.plot(trial_numbers, composite_scores, marker='o', linestyle='-',
-                    linewidth=2, color='black', label="Composite Score")
-    for metric, comp_vals in detailed_components.items():
-        ax_metrics.plot(trial_numbers, comp_vals, marker='o', linestyle='--', label=f"{metric} component")
-    ax_metrics.set_xlabel("Trial Number")
-    ax_metrics.set_ylabel("Metric Contribution")
-    ax_metrics.set_title("Evolution of Composite Score and UMAP Metric Components")
-    ax_metrics.legend()
-    ax_metrics.grid(True)
+    # Plot composite score and detailed UMAP metric components.
+    ax_umap.plot(trial_numbers, composite_scores, marker='o', linestyle='-', linewidth=2,
+                 color='black', label="Composite Score")
+    for metric, comp_vals in detailed_umap_components.items():
+        ax_umap.plot(trial_numbers, comp_vals, marker='o', linestyle='--', label=f"UMAP: {metric}")
+    ax_umap.set_ylabel("UMAP Metric Contribution")
+    ax_umap.set_title("Composite Score & UMAP Metric Components")
+    ax_umap.legend()
+    ax_umap.grid(True)
+
+    # If HDBSCAN metric components are present, plot them in a separate subplot.
+    if hdbscan_metric_keys:
+        for metric, comp_vals in detailed_hdbscan_components.items():
+            ax_hdbscan.plot(trial_numbers, comp_vals, marker='o', linestyle='--', label=f"HDBSCAN: {metric}")
+        ax_hdbscan.set_xlabel("Trial Number")
+        ax_hdbscan.set_ylabel("HDBSCAN Metric Contribution")
+        ax_hdbscan.set_title("HDBSCAN Metric Components")
+        ax_hdbscan.legend()
+        ax_hdbscan.grid(True)
+    else:
+        ax_umap.set_xlabel("Trial Number")
 
     plt.tight_layout()
 
