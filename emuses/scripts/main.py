@@ -43,7 +43,7 @@ def add_input_dataset_optional_arguments(parser):
                         help='List of columns for inputs in the scores file')
     parser.add_argument('--input_index_column', default=None, type=int,
                         help='Index column for the spreadsheet input dataset')
-    parser.add_argument('--columns_as_features', action='store_true',
+    parser.add_argument('--columns_are_features', action='store_true',
                         help='Columns are features in the spreadsheet input dataset')
     parser.add_argument('--bids_filters', nargs='+', default=None,
                         help='BIDS filters for the input dataset')

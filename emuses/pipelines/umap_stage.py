@@ -135,6 +135,14 @@ class UMAPStage(PipelineStage):
             np.save(self.test_embeddings_path, self.test_embeddings)
             logger.info(f"Test embeddings saved at: {self.test_embeddings_path}")
 
+
+        if 'train_labelled_matrix' in context:
+            context['train_labelled_embeddings'] = self.trained_umap.transform(context['train_labelled_matrix'])
+            logger.info("Transformed labelled training data using trained UMAP model.")
+        if 'test_labelled_matrix' in context:
+            context['test_labelled_embeddings'] = self.trained_umap.transform(context['test_labelled_matrix'])
+            logger.info("Transformed labelled test data using trained UMAP model.")
+
         # Update context with UMAP and clustering outputs.
         # Use keys that downstream stages (e.g., HeatmapStage) expect.
         context.update({

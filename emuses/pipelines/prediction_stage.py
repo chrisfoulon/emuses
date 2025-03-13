@@ -5,6 +5,8 @@ from bcblib.tools.general_utils import save_json
 
 from emuses.pipelines.pipeline_stage import PipelineStage
 from emuses.tools.kernel_regression_utils import evaluate_ensemble_on_test
+from emuses.tools.stats_utils import train_and_test_model_per_label
+
 
 class PredictionStage(PipelineStage):
     def __init__(self, config):
@@ -16,11 +18,21 @@ class PredictionStage(PipelineStage):
 
         args = self.config.args
 
-        # Retrieve training and test splits from context.
-        train_embeddings = context.get('embeddings')
-        test_embeddings = context.get('test_embeddings')
-        train_labels = context.get('train_labels')
-        test_labels = context.get('test_labels')
+        if 'train_labelled_embeddings' in context and 'test_labelled_embeddings' in context \
+                and 'train_labelled_scores' in context and 'test_labelled_scores' in context:
+            train_embeddings = context['train_labelled_embeddings']
+            train_labels = context['train_labelled_scores']
+            test_embeddings = context['test_labelled_embeddings']
+            test_labels = context['test_labelled_scores']
+            logger.info(
+                "Using labelled dataset split for prediction: training on labelled training data and testing on "
+                "labelled test data.")
+        else:
+            # Fallback: use the default splits from unsupervised data splitting.
+            train_embeddings = context.get('embeddings')
+            test_embeddings = context.get('test_embeddings')
+            train_labels = context.get('train_labels')
+            test_labels = context.get('test_labels')
 
         if train_embeddings is None or test_embeddings is None:
             raise ValueError("Both training and test embeddings are required for prediction.")
@@ -29,7 +41,6 @@ class PredictionStage(PipelineStage):
 
         # Optional: Run legacy prediction if requested.
         if getattr(args, 'run_old_prediction', False):
-            from emuses.tools.stats_utils import train_and_test_model_per_label
             train_and_test_model_per_label(
                 train_embeddings=train_embeddings,
                 train_labels=train_labels,
