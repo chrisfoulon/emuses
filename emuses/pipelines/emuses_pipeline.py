@@ -116,10 +116,13 @@ class EMUSESPipeline:
             self.logger.info("Processed, filtered, and split labelled dataset.")
         else:
             # Classic mode remains unchanged.
-            self.input_matrix, self.dataset_type, self.output_format_info, _ = self.process_dataset(
+            self.input_matrix, self.dataset_type, self.output_format_info, scores = self.process_dataset(
                 self.args.input_dataset, is_labelled=False
             )
-            self.load_and_process_scores(expected_length=self.input_matrix.shape[0])
+            if scores is not None:
+                self.scores = scores
+            else:
+                self.load_and_process_scores(expected_length=self.input_matrix.shape[0])
             train_features, test_features, train_labels, test_labels = train_test_split(
                 self.input_matrix,
                 self.scores,

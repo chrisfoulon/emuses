@@ -151,10 +151,10 @@ def compute_eigen_spread(embeddings, normalized=True):
     # For anisotropy, we use the ratio of smallest to largest eigenvalue.
     anisotropy_ratio = eigenvalues[-1] / eigenvalues[0] if eigenvalues[0] > 0 else 0.0
 
-    return total_spread, anisotropy_ratio
+    return anisotropy_ratio
 
 
-def compute_density_variability(embeddings, n_neighbors=None, normalized=True, alpha=3.0, beta=1.0):
+def compute_density_variability(embeddings, n_neighbors=None, normalized=True):
     """
     Compute the density variability of an embedding.
 
