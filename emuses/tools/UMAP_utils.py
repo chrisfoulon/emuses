@@ -17,7 +17,7 @@ import optuna.visualization as ov
 
 from emuses.tools.clustering_utils import evaluate_clustering_metrics, inner_optimize_hdbscan
 from emuses.tools.optim_utils import calculate_composite_score, suggest_parameters, calculate_score, auto_n_neighbors, \
-    are_parameters_fixed
+    are_parameters_fixed, compute_detailed_components
 from emuses.tools.visualisation import plot_embeddings, plot_clustering_interactive_with_hover, \
     save_optimization_log_plot
 
@@ -305,6 +305,7 @@ def compute_entropy_range_mean(
 
 metric_functions = {
     "spread": compute_spread,
+    "eigen_spread": compute_eigen_spread,
     "density_variability": lambda emb: compute_density_variability(emb, n_neighbors=10),
     "entropy": lambda emb: compute_entropy_range_mean(emb),
     "mean_distance": lambda emb: np.mean(pairwise_distances(emb)),
@@ -371,8 +372,10 @@ def train_and_save_umap_optim_with_nested_clustering(
     output_plot_folder = output_folder / "plots"
     output_plot_folder.mkdir(parents=True, exist_ok=True)
 
-    # Define path for the best UMAP model file.
+    # Define paths for saving the best model, embeddings, and input matrix.
     best_model_path = output_folder / (f"{pref}_best_umap_model.joblib" if pref else "best_umap_model.joblib")
+    best_embeddings_path = output_folder / (f"{pref}_embeddings.npy" if pref else "embeddings.npy")
+    input_matrix_path = output_folder / (f"{pref}_input_matrix.npy" if pref else "input_matrix.npy")
 
     # Extract parameter dictionaries for UMAP and HDBSCAN.
     umap_params_dict = optim_dict["param"]["umap"]
@@ -405,9 +408,12 @@ def train_and_save_umap_optim_with_nested_clustering(
             print(f"New best model saved (trial {trial.number} with score {trial.value}) at {best_model_path}")
 
     def outer_objective(trial):
-        # Suggest parameters for UMAP (and HDBSCAN).
+        nonlocal best_score_so_far, best_clusterer, best_labels
+
+        # Suggest parameters for UMAP and HDBSCAN.
         params_all = suggest_parameters(trial, optim_dict)
         umap_params = params_all["umap"]
+
         print(f"Trial {trial.number}: Suggested UMAP parameters: {umap_params}")
 
         # Train UMAP with the suggested parameters.
@@ -420,7 +426,7 @@ def train_and_save_umap_optim_with_nested_clustering(
         print(f"Trial {trial.number}: UMAP metrics: {umap_metrics}")
 
         # Inner optimization: optimize HDBSCAN for this UMAP embedding.
-        (best_hdbscan_params, best_hdbscan_score, best_clusterer, best_labels,
+        (best_hdbscan_params, best_hdbscan_score, best_clusterer_trial, best_labels_trial,
          best_hdbscan_metrics) = inner_optimize_hdbscan(embeddings, optim_dict, n_inner_trials=n_inner_trials)
         print(f"Trial {trial.number}: Best HDBSCAN parameters: {best_hdbscan_params}")
         print(f"Trial {trial.number}: Best HDBSCAN score: {best_hdbscan_score}")
@@ -428,7 +434,7 @@ def train_and_save_umap_optim_with_nested_clustering(
         # Generate an interactive clustering plot for the inner-loop best clustering.
         interactive_plot_path = output_plot_folder / f"interactive_{trial.number}.html"
         fig = plot_clustering_interactive_with_hover(
-            embeddings, best_labels,
+            embeddings, best_labels_trial,
             output_path=interactive_plot_path,
             show_plot=False,
             return_plot=True
@@ -444,56 +450,23 @@ def train_and_save_umap_optim_with_nested_clustering(
         composite_score = calculate_composite_score(combined_metrics, optim_dict["metrics"])
         print(f"Trial {trial.number}: Composite score: {composite_score}")
 
-        # Log detailed UMAP metric values.
+        # Log detailed UMAP metric contributions.
         detailed_umap = {}
-        for metric, config in optim_dict["metrics"]["umap"].items():
-            value = umap_metrics.get(metric)
-            target = config.get("target")
-            if target is not None:
-                if "epsilon" in config:
-                    component = config["weight"] * max(0, 1 - abs(value - target) / config["epsilon"])
-                elif "min_penalty" in config:
-                    max_dev = max(target, 1 - target)
-                    normalized_diff = abs(value - target) / max_dev if max_dev > 0 else 0
-                    penalty = config["min_penalty"] + (1 - config["min_penalty"]) * (1 - normalized_diff)
-                    component = config["weight"] * value * penalty
-                else:
-                    component = config["weight"] * value
-            else:
-                component = config["weight"] * value
-            detailed_umap[metric] = component
+        # Compute detailed metric contributions for UMAP and HDBSCAN.
+        detailed_umap = compute_detailed_components(optim_dict["metrics"]["umap"], umap_metrics)
         trial.set_user_attr("detailed_umap_components", detailed_umap)
 
-        # --- New: Compute detailed HDBSCAN metric contributions ---
-        detailed_hdbscan = {}
-        # Loop over the HDBSCAN metrics defined in the optimization dictionary.
-        for metric, config in optim_dict["metrics"]["hdbscan"].items():
-            value = best_hdbscan_metrics.get(metric)
-            target = config.get("target")
-            if target is not None:
-                if "epsilon" in config:
-                    component = config["weight"] * max(0, 1 - abs(value - target) / config["epsilon"])
-                elif "min_penalty" in config:
-                    max_dev = max(target, 1 - target)
-                    normalized_diff = abs(value - target) / max_dev if max_dev > 0 else 0
-                    penalty = config["min_penalty"] + (1 - config["min_penalty"]) * (1 - normalized_diff)
-                    component = config["weight"] * value * penalty
-                else:
-                    component = config["weight"] * value
-            else:
-                component = config["weight"] * value
-            detailed_hdbscan[metric] = component
+        detailed_hdbscan = compute_detailed_components(optim_dict["metrics"]["hdbscan"], best_hdbscan_metrics)
         trial.set_user_attr("detailed_hdbscan_components", detailed_hdbscan)
-        # --- End new HDBSCAN logging ---
 
-        # Log the rest of the trial attributes.
+        # Set trial user attributes.
         trial.set_user_attr("umap_params", umap_params)
         trial.set_user_attr("umap_metrics", umap_metrics)
         trial.set_user_attr("hdbscan_metrics", best_hdbscan_metrics)
         trial.set_user_attr("composite_score", composite_score)
         trial.set_user_attr("hdbscan_best_params", best_hdbscan_params)
-        trial.set_user_attr("hdbscan_best_clusterer", best_clusterer)
-        trial.set_user_attr("hdbscan_best_labels", best_labels)
+        trial.set_user_attr("hdbscan_best_clusterer", best_clusterer_trial)
+        trial.set_user_attr("hdbscan_best_labels", best_labels_trial)
 
         # Append trial log information.
         trial_info = {
@@ -508,12 +481,22 @@ def train_and_save_umap_optim_with_nested_clustering(
             "interactive_plot": interactive_plot_path.as_posix()
         }
         trial_logs.append(trial_info)
+
+        # Save best model immediately if a new best composite score is found.
+        if composite_score > best_score_so_far:
+            best_score_so_far = composite_score
+            best_clusterer = best_clusterer_trial
+            best_labels = best_labels_trial
+            dump(umap_model, best_model_path)
+            np.save(best_embeddings_path, embeddings)
+            print(f"New best UMAP model saved at {best_model_path} (Trial {trial.number}, Score: {best_score_so_far})")
+
         return composite_score
 
-    # Create the study with the callback.
+    # Run the outer optimization.
     outer_study = optuna.create_study(direction="maximize")
     print("Starting outer (UMAP) optimization...")
-    outer_study.optimize(outer_objective, n_trials=n_trials, callbacks=[save_best_model_callback])
+    outer_study.optimize(outer_objective, n_trials=n_trials)
     print("Outer optimization completed.")
 
     # Retrieve best trial information.
@@ -547,10 +530,10 @@ def train_and_save_umap_optim_with_nested_clustering(
     save_json(log_path_best, best_trial_info)
     print(f"Best trial info saved at: {log_path_best}")
 
-    # Retrain the best UMAP model on the full input data.
-    best_umap_model = umap.UMAP(**best_umap_params, **kwargs)
-    best_embeddings = best_umap_model.fit_transform(input_matrix)
-    print("Trained UMAP model with best parameters.")
+    # Load the best UMAP model and embeddings that were saved during optimization.
+    print("Loading best UMAP model and embeddings from saved files.")
+    best_umap_model = load(best_model_path)
+    best_embeddings = np.load(best_embeddings_path)
 
     # Retrieve the best HDBSCAN results from the best trial.
     best_clusterer = best_outer_trial.user_attrs["hdbscan_best_clusterer"]
@@ -568,23 +551,21 @@ def train_and_save_umap_optim_with_nested_clustering(
     )
     print(f"Interactive clustering plot saved at: {best_clustering_plot_path}")
 
-    # Define file paths for final outputs.
+    # Define final file paths.
     prefix = f"{pref}_" if pref else ""
-    umap_model_path = output_folder / f"{prefix}umap_model.joblib"
-    embeddings_path = output_folder / f"{prefix}embeddings.npy"
-    input_matrix_path = output_folder / f"{prefix}input_matrix.npy"
+    umap_model_path_final = output_folder / f"{prefix}umap_model.joblib"
     cluster_model_path = output_folder / f"{prefix}hdbscan_model.joblib"
     cluster_labels_path = output_folder / f"{prefix}cluster_labels.npy"
 
-    # Save the final UMAP model, embeddings, input matrix, and clustering results.
-    dump(best_umap_model, umap_model_path)
-    np.save(embeddings_path, best_embeddings)
+    # Save the final outputs.
+    dump(best_umap_model, umap_model_path_final)
+    np.save(umap_model_path_final.parent / f"{prefix}embeddings.npy", best_embeddings)
     np.save(input_matrix_path, input_matrix)
     dump(best_clusterer, cluster_model_path)
     np.save(cluster_labels_path, best_labels)
 
-    print(f"UMAP model saved at: {umap_model_path}")
-    print(f"Embeddings saved at: {embeddings_path}")
+    print(f"UMAP model saved at: {umap_model_path_final}")
+    print(f"Embeddings saved at: {umap_model_path_final.parent / f'{prefix}embeddings.npy'}")
     print(f"Input matrix saved at: {input_matrix_path}")
     print(f"HDBSCAN model saved at: {cluster_model_path}")
     print(f"Cluster labels saved at: {cluster_labels_path}")
@@ -609,8 +590,8 @@ def train_and_save_umap_optim_with_nested_clustering(
     return (
         best_umap_model,
         best_embeddings,
-        umap_model_path,
-        embeddings_path,
+        umap_model_path_final,
+        umap_model_path_final.parent / f"{prefix}embeddings.npy",
         best_clusterer,
         best_labels,
         cluster_model_path,

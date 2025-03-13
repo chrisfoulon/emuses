@@ -26,6 +26,14 @@ def add_input_dataset_argument(parser):
     parser.add_argument('input_dataset', help='Input dataset of images (jpg), NIfTI, or MNIST')
 
 
+def add_label_dataset_argument(parser):
+    """
+    Adds an optional argument for specifying a separate labelled dataset.
+    """
+    parser.add_argument('--label_dataset',
+                        help='Path to a separate labelled dataset (e.g., folder containing NIfTI files)')
+
+
 def add_input_dataset_optional_arguments(parser):
     """
     Adds optional arguments related to the input dataset to the parser.
@@ -73,6 +81,8 @@ def add_scores_arguments(parser):
     parser.add_argument('--scores_normalization', '-snorm', default='none',
                         choices=['none', 'zscore', 'min-max', 'zero-max'],
                         help='Normalization method for scores data.')
+    parser.add_argument('--filter_labelled_by_scores', action='store_true',
+                        help='If set, filter the labelled dataset to only keep files referenced in the scores file.')
 
 
 def add_umap_arguments(parser):
@@ -128,6 +138,7 @@ def main():
     # Add optional arguments
     add_input_dataset_optional_arguments(full_parser)
     add_scores_arguments(full_parser)
+    add_label_dataset_argument(full_parser)
     add_umap_arguments(full_parser)
     add_clustering_arguments(full_parser)
     add_smoothing_arguments(full_parser)

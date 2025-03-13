@@ -158,15 +158,16 @@ class HeatmapStage(PipelineStage):
         if 'train_labelled_embeddings' in context and 'train_labelled_scores' in context:
             embeddings = context['train_labelled_embeddings']
             train_labels = context['train_labelled_scores']
+            train_features = context.get('train_labelled_matrix')
             logger.info("Using labelled training data for heatmap analysis.")
         else:
             # Fallback: use the unsupervised splits (if no separate labelled dataset was provided)
             embeddings = context.get('embeddings')
             train_labels = context.get('train_labels')
+            train_features = context.get('train_features')
 
         clusterer = context.get('clusterer')  # might be None
         cluster_labels = context.get('cluster_labels')  # might be None
-        train_features = context.get('train_features')
         dataset_type = context.get('dataset_type', 'image')
 
         if train_features is None:

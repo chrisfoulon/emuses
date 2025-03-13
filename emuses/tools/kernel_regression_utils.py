@@ -75,12 +75,13 @@ class KernelRegressor(BaseEstimator, RegressorMixin):
         X = np.asarray(X)
         predictions = []
         for x in X:
-            # Compute Euclidean distances from x to each training sample.
             distances = np.linalg.norm(self.X_train - x, axis=1)
-            # Compute Gaussian kernel weights.
             weights = np.exp(-0.5 * (distances / self.sigma) ** 2)
-            # Compute weighted average.
-            prediction = np.sum(weights * self.y_train) / np.sum(weights)
+            weight_sum = np.sum(weights)
+            if weight_sum == 0:
+                prediction = 0  # Fallback value; adjust as needed
+            else:
+                prediction = np.sum(weights * self.y_train) / weight_sum
             predictions.append(prediction)
         return np.array(predictions)
 
@@ -145,7 +146,11 @@ class KernelLogisticRegressor(BaseEstimator, ClassifierMixin):
         for x in X:
             distances = np.linalg.norm(self.X_train - x, axis=1)
             weights = np.exp(-0.5 * (distances / self.sigma) ** 2)
-            proba = np.sum(weights * self.y_train) / np.sum(weights)
+            weight_sum = np.sum(weights)
+            if weight_sum == 0:
+                proba = 0.0  # or another fallback value
+            else:
+                proba = np.sum(weights * self.y_train) / weight_sum
             probas.append(proba)
         return np.array(probas)
 

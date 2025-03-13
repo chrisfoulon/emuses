@@ -409,15 +409,24 @@ def prepare_input_matrix(paths_list, dataset_type):
         raise ValueError(f"Unsupported dataset type: {dataset_type}")
 
 
-def prepare_scores(scores, embeddings_shape):
-    """Prepare and validate the scores."""
+def prepare_scores(scores, match_length=None):
+    """Prepare and validate the scores.
+
+    Converts scores to float and reshapes to (-1, 1) if necessary.
+    If match_length is provided, checks that scores has at least that many rows.
+    If there are more rows than match_length, only the first match_length observations are kept.
+    """
     scores = np.vectorize(float)(scores)
     print(f"Scores shape: {scores.shape}")
-    print(f"Embeddings shape: {embeddings_shape}")
     if scores.ndim == 1:
         scores = scores.reshape(-1, 1)
-    if scores.shape[0] != embeddings_shape[0]:
-        raise ValueError("Scores length must match the number of embeddings")
+    if match_length is not None:
+        if scores.shape[0] < match_length:
+            raise ValueError("Scores length is less than the expected match length")
+        elif scores.shape[0] > match_length:
+            print(
+                f"Warning: More scores ({scores.shape[0]}) than expected ({match_length}). Filtering to first {match_length} observations.")
+            scores = scores[:match_length, :]
     return scores
 
 

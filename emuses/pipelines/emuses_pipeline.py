@@ -28,7 +28,7 @@ class EMUSESPipeline:
         self.args = args
         self.output_folder = self.config.output_folder
 
-        # In classic mode these come from the main dataset;
+        # In classic mode, these come from the main dataset;
         # in label_dataset mode, the labelled dataset is processed separately.
         self.input_matrix = None
         self.scores = None
@@ -69,23 +69,36 @@ class EMUSESPipeline:
         This method handles both modes:
          • Classic mode: Process the main dataset (fully labelled) and split it.
          • Label_dataset mode: Process the unlabelled dataset for UMAP training (no split)
-           and process the separate labelled dataset (with scores coming from a separate scores file),
+           and process the separate labelled dataset, filtering it by the scores file if requested,
            then split that labelled dataset into train and test parts.
         """
         # Check if label_dataset mode is active.
         if getattr(self.args, 'label_dataset', None):
             self.logger.info("Labelled dataset mode activated.")
             # Process the main (unlabelled) dataset for UMAP/clustering.
-            self.input_matrix, self.dataset_type, self.output_format_info, _ = self.process_main_dataset()
-            # Process the separate labelled dataset (we use the same processing as for spreadsheets, etc.)
-            self.labelled_input_matrix, _, _, _ = self.process_labelled_dataset()
+            self.input_matrix, self.dataset_type, self.output_format_info, _ = self.process_dataset(
+                self.args.input_dataset, is_labelled=False
+            )
+            # If filtering is requested, load the scores first.
+            if getattr(self.args, 'filter_labelled_by_scores', False):
+                self.load_and_process_scores(expected_length=None)
+
+                # Then process the labelled dataset with filtering inside process_dataset.
+                self.labelled_input_matrix, _, _, _ = self.process_dataset(
+                    self.args.label_dataset, is_labelled=True
+                )
+            else:
+                # Otherwise, process the labelled dataset normally and then load scores.
+                self.labelled_input_matrix, _, _, _ = self.process_dataset(
+                    self.args.label_dataset, is_labelled=True
+                )
+                self.load_and_process_scores(expected_length=self.labelled_input_matrix.shape[0])
+
             self.logger.info(f"Main dataset type: {self.dataset_type}")
-            # Now load scores from the scores file using the shape of the labelled dataset.
-            self.load_and_process_scores(labelled=True)
-            # Split the labelled dataset (and its scores) using --test_size.
+            # Now split the labelled dataset (and its scores).
             train_mat, test_mat, train_scores, test_scores = train_test_split(
                 self.labelled_input_matrix,
-                self.scores,  # self.scores was set using the labelled dataset shape.
+                self.scores,
                 test_size=self.args.test_size,
                 random_state=42
             )
@@ -96,14 +109,17 @@ class EMUSESPipeline:
                 'test_labelled_matrix': test_mat,
                 'train_labelled_scores': train_scores,
                 'test_labelled_scores': test_scores,
-                'train_labels': train_scores,
+                'train_labels': train_scores,  # alias for downstream compatibility
                 'test_labels': test_scores,
+                'train_features': self.input_matrix,
             })
-            self.logger.info("Processed and split labelled dataset.")
+            self.logger.info("Processed, filtered, and split labelled dataset.")
         else:
-            # Classic mode: Process the main dataset (which is fully labelled) and split it.
-            self.input_matrix, self.dataset_type, self.output_format_info, _ = self.process_main_dataset()
-            self.load_and_process_scores(labelled=False)
+            # Classic mode remains unchanged.
+            self.input_matrix, self.dataset_type, self.output_format_info, _ = self.process_dataset(
+                self.args.input_dataset, is_labelled=False
+            )
+            self.load_and_process_scores(expected_length=self.input_matrix.shape[0])
             train_features, test_features, train_labels, test_labels = train_test_split(
                 self.input_matrix,
                 self.scores,
@@ -118,114 +134,111 @@ class EMUSESPipeline:
             })
             self.logger.info("Processed and split main dataset in classic mode.")
 
-    def process_main_dataset(self):
+    def process_dataset(self, dataset_identifier, is_labelled=False):
         """
-        Process the main dataset (args.input_dataset) and return a tuple:
-        (input_matrix, dataset_type, output_format_info, scores)
-        In classic mode, the dataset is expected to be fully labelled.
-        In label_dataset mode, this dataset is used as unlabelled data for UMAP training.
+        Process a dataset (given by dataset_identifier) into an input matrix.
+        This function supports all datatypes (images, NIfTI, spreadsheet, etc.) handled in classic mode.
+        If is_labelled is True, we ignore any embedded scores (because scores will be loaded from a separate file).
+        Returns a tuple: (input_matrix, dataset_type, output_format_info, scores)
+        For non-mnist types, scores is always None.
         """
         args = self.args
-        if str(args.input_dataset).lower() == 'mnist':
-            self.dataset_type = 'mnist'
+        # Handle special cases: 'mnist' and 'input_matrix'
+        if str(dataset_identifier).lower() == 'mnist':
+            dataset_type = 'mnist'
             self.paths_list = None
-            mnist_features_normalized, mnist_labels = load_and_preprocess_digits_dataset()
-            input_matrix = mnist_features_normalized
-            scores = mnist_labels
-            if mnist_features_normalized[0].shape == (64,):
-                output_format_info = (8, 8)
-            else:
-                output_format_info = mnist_features_normalized[0].shape
-            return input_matrix, self.dataset_type, output_format_info, scores
-        elif str(args.input_dataset).lower() == 'input_matrix':
-            self.dataset_type = 'input_matrix'
+            features, labels = load_and_preprocess_digits_dataset()
+            input_matrix = features
+            # Only in classic mode (not labelled) do we return the labels
+            scores = labels if not is_labelled else None
+            output_format_info = (8, 8) if features[0].shape == (64,) else features[0].shape
+            return input_matrix, dataset_type, output_format_info, scores
+        elif str(dataset_identifier).lower() == 'input_matrix':
+            dataset_type = 'input_matrix'
             self.paths_list = None
-            input_matrix = np.load(args.input_dataset)
+            input_matrix = np.load(dataset_identifier)
             output_format_info = args.output_format_info
-            return input_matrix, self.dataset_type, output_format_info, None
+            return input_matrix, dataset_type, output_format_info, None
+
+        # Otherwise, treat dataset_identifier as a file or folder.
+        dataset_path = Path(dataset_identifier).resolve()
+        if not dataset_path.exists():
+            raise ValueError(f"Dataset {dataset_path} is not a valid path")
+        # Check for BIDS dataset
+        if is_bids_dataset(dataset_path):
+            paths_list = handle_bids_dataset(dataset_path, args.bids_filters, verbose=True)
+            dataset_type = 'nifti'
         else:
-            args.input_dataset = Path(args.input_dataset).resolve()
-            if not args.input_dataset.exists():
-                raise ValueError(f"Input dataset {args.input_dataset} is not a valid path")
-            if not is_bids_dataset(args.input_dataset):
-                if args.input_dataset.is_file():
-                    self.dataset_type = detect_dataset_type([args.input_dataset])
-                else:
-                    self.paths_list = parse_file_list_argument(
-                        args.input_dataset,
-                        recursive_file_search=args.recursive_input_file_search,
-                        file_types=args.input_file_types,
-                        arg_separator=args.arg_separator
-                    )
-                    self.dataset_type = detect_dataset_type(self.paths_list)
+            if dataset_path.is_file():
+                dataset_type = detect_dataset_type([dataset_path])
+                paths_list = None
             else:
-                self.paths_list = handle_bids_dataset(args.input_dataset, args.bids_filters, verbose=True)
-                self.dataset_type = 'nifti'
-
-            if self.dataset_type == 'image':
-                min_res = find_min_resolution(self.paths_list)
-                input_matrix = process_images(self.paths_list, min_res)
-                output_format_info = min_res
-            elif self.dataset_type == 'nifti':
-                input_matrix = nifti_dataset_to_matrix(self.paths_list)
-                output_format_info = load_nifti(self.paths_list[0]).affine
-            elif self.dataset_type in ['spreadsheet', 'tabular']:
-                # For spreadsheets, we assume the file contains all the data.
-                inputs_df = spreadsheet_to_input_df(
-                    args.input_dataset,
-                    header=args.input_header,
-                    index_col=args.input_index_column,
-                    filter_columns_list=args.inputs_columns,
-                    filter_rows_list=None,
-                    columns_are_features=args.columns_are_features
+                paths_list = parse_file_list_argument(
+                    dataset_path,
+                    recursive_file_search=args.recursive_input_file_search,
+                    file_types=args.input_file_types,
+                    arg_separator=args.arg_separator
                 )
-                if args.input_normalization and args.input_normalization.lower() != 'none':
-                    self.logger.info(f"Normalizing input dataframe with method={args.input_normalization}")
-                    before_shape = inputs_df.shape
-                    inputs_df = normalize_dataframe(inputs_df, method=args.input_normalization)
-                    after_shape = inputs_df.shape
-                    if after_shape != before_shape:
-                        self.logger.warning(
-                            f"Input DataFrame shape changed after normalization (unexpected). "
-                            f"Shape changed from {before_shape} to {after_shape}."
-                        )
-                input_matrix = inputs_df.values
-                output_format_info = list(inputs_df.columns)
-            else:
-                raise ValueError(f"Unsupported dataset type: {self.dataset_type}")
-            return input_matrix, self.dataset_type, output_format_info, None
+                dataset_type = detect_dataset_type(paths_list)
 
-    def process_labelled_dataset(self):
-        """
-        Process the separate labelled dataset (args.label_dataset) into an input matrix.
-        In this mode the dataset is assumed to be a spreadsheet that already contains scores,
-        but we ignore the scores here (they will come from a separate scores file).
-        We return (input_matrix, dataset_type, output_format_info, None).
-        """
-        args = self.args
-        label_dataset_path = Path(args.label_dataset).resolve()
-        if not label_dataset_path.exists():
-            raise ValueError(f"Labelled dataset {label_dataset_path} is not a valid path")
-        if label_dataset_path.suffix in ['.csv', '.xlsx', '.xls']:
-            labelled_df = spreadsheet_to_input_df(
-                label_dataset_path,
+        if dataset_type in ['image', 'nifti'] and is_labelled and getattr(args, 'filter_labelled_by_scores', False):
+            # Assume that valid_ids is derived from the scores file.
+            # For example, if the scores file's index contains the valid identifiers.
+            valid_ids = set(self.context['scores_indices'].astype(str))
+            original_count = len(paths_list)
+            filtered_paths = []
+            for p in paths_list:
+                # Find all valid IDs that appear as substrings in the file's stem.
+                matches = [vid for vid in valid_ids if vid in Path(p).stem]
+                if len(matches) == 1:
+                    filtered_paths.append(p)
+                elif len(matches) > 1:
+                    self.logger.warning(f"File {p} has multiple valid ID matches: {matches}. Skipping file.")
+                # If no matches, the file is not included.
+            paths_list = filtered_paths
+            self.logger.info(
+                f"Filtered labelled dataset: {len(paths_list)} of {original_count} files kept based on scores file.")
+
+        # Process according to dataset type.
+        if dataset_type == 'image':
+            min_res = find_min_resolution(paths_list)
+            input_matrix = process_images(paths_list, min_res)
+            output_format_info = min_res
+        elif dataset_type == 'nifti':
+            input_matrix = nifti_dataset_to_matrix(paths_list)
+            first_image = load_nifti(paths_list[0])
+            output_shape = first_image.shape
+            output_affine = first_image.affine
+            output_format_info = (output_shape, output_affine)
+        elif dataset_type in ['spreadsheet', 'tabular']:
+            inputs_df = spreadsheet_to_input_df(
+                dataset_path,
                 header=args.input_header,
                 index_col=args.input_index_column,
                 filter_columns_list=args.inputs_columns,
+                filter_rows_list=None,
                 columns_are_features=args.columns_are_features
             )
-            # Here we assume that the labelled dataset already has its scores in the last column,
-            # but because the scores are loaded separately from --scores, we ignore them here.
-            input_matrix = labelled_df.values[:, :]  # keep all columns (features only)
-            output_format_info = list(labelled_df.columns)
-            return input_matrix, 'spreadsheet', output_format_info, None
+            if args.input_normalization and args.input_normalization.lower() != 'none':
+                self.logger.info(f"Normalizing dataset with method={args.input_normalization}")
+                before_shape = inputs_df.shape
+                inputs_df = normalize_dataframe(inputs_df, method=args.input_normalization)
+                after_shape = inputs_df.shape
+                if after_shape != before_shape:
+                    self.logger.warning(
+                        f"DataFrame shape changed after normalization: from {before_shape} to {after_shape}."
+                    )
+            input_matrix = inputs_df.values
+            output_format_info = list(inputs_df.columns)
         else:
-            raise NotImplementedError("Labelled dataset type not implemented yet.")
+            raise ValueError(f"Unsupported dataset type: {dataset_type}")
+        # For non-mnist data, we always return scores as None (scores are loaded from a separate file)
+        return input_matrix, dataset_type, output_format_info, None
 
-    def load_and_process_scores(self, labelled=False):
+    def load_and_process_scores(self, expected_length=None):
         """
         Load scores from a separate scores file.
-        If labelled is True, use the shape of the labelled dataset; otherwise, use the main dataset.
+        If expected_length is provided, validate that the scores array has that many observations.
         (Scores are always provided via a spreadsheet.)
         """
         args = self.args
@@ -247,12 +260,9 @@ class EMUSESPipeline:
                     self.logger.warning(
                         f"Scores DataFrame shape changed after normalization: from {before_shape} to {after_shape}."
                     )
-            # In label_dataset mode, associate scores with the labelled dataset.
-            if labelled and self.labelled_input_matrix is not None:
-                self.scores = prepare_scores(scores_df.values, self.labelled_input_matrix.shape)
-            else:
-                self.scores = prepare_scores(scores_df.values, self.input_matrix.shape)
+            self.scores = prepare_scores(scores_df.values, match_length=expected_length)
             self.context['scores'] = self.scores
+            self.context['scores_indices'] = scores_df.index
 
     def split_dataset(self):
         """

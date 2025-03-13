@@ -177,3 +177,39 @@ def calculate_score(metrics, metrics_config):
         composite_score += component
     return composite_score
 
+
+def compute_detailed_components(metrics_config, computed_metrics):
+    """
+    Compute detailed metric contributions from a configuration dictionary and computed metric values.
+
+    Parameters:
+        metrics_config (dict): Dictionary of metric configurations (each containing keys like 'weight', and optionally 'target', 'epsilon', or 'min_penalty').
+        computed_metrics (dict): Dictionary of computed metric values.
+
+    Returns:
+        dict: Detailed contributions for each metric.
+    """
+    detailed = {}
+    for metric, config in metrics_config.items():
+        # Get the computed value, defaulting to 0 if missing.
+        value = computed_metrics.get(metric)
+        if value is None:
+            print(f"Warning: Metric '{metric}' is missing; defaulting its value to 0.")
+            value = 0
+        target = config.get("target")
+        if target is not None:
+            if "epsilon" in config:
+                component = config["weight"] * max(0, 1 - abs(value - target) / config["epsilon"])
+            elif "min_penalty" in config:
+                max_dev = max(target, 1 - target)
+                normalized_diff = abs(value - target) / max_dev if max_dev > 0 else 0
+                penalty = config["min_penalty"] + (1 - config["min_penalty"]) * (1 - normalized_diff)
+                component = config["weight"] * value * penalty
+            else:
+                component = config["weight"] * value
+        else:
+            component = config["weight"] * value
+        detailed[metric] = component
+    return detailed
+
+
