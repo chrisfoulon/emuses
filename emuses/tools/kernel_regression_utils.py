@@ -1,10 +1,14 @@
 # kernel_regression.py
+from copy import deepcopy
 from pathlib import Path
 
+import hdbscan
 import pandas as pd
 from joblib import dump
+from scipy.spatial import ConvexHull
 from scipy.stats import normaltest
 import numpy as np
+import matplotlib
 from matplotlib import pyplot as plt
 from sklearn.base import BaseEstimator, RegressorMixin, ClassifierMixin
 from sklearn.model_selection import KFold
@@ -15,6 +19,10 @@ from emuses.tools.output_utils import save_statistical_maps
 from emuses.tools.stats_utils import input_matrix_stat_map
 from sklearn.metrics import accuracy_score, confusion_matrix, roc_auc_score, f1_score, precision_score, \
     recall_score
+from scipy.spatial import cKDTree
+
+
+matplotlib.use("Agg")
 
 
 class KernelRegressor(BaseEstimator, RegressorMixin):
@@ -181,9 +189,6 @@ def nested_cv_kernel_regression(X, y, sigma_values, n_outer=5, n_inner=5, classi
     The best sigma is then used to train a model on the full outer training fold, and this process is repeated
     for each outer fold. The ensemble of outer models can then be used to make predictions.
 
-    If return_performance is True, the function also computes performance measures on the outer test folds
-    (using only unseen data) and returns these along with the trained models.
-
     Parameters
     ----------
     X : array-like of shape (n_samples, n_features)
@@ -203,14 +208,17 @@ def nested_cv_kernel_regression(X, y, sigma_values, n_outer=5, n_inner=5, classi
     -------
     outer_models : list
         List of models trained on each outer fold with the best sigma determined from the inner CV.
-    performance_results : list (if return_performance is True)
+    performance_results : list
         A list of dictionaries, one per outer fold, with performance measures.
         For classification: accuracy and roc_auc (if available).
         For regression: r2, mse, mae, normalized_mse_% and normalized_mae_%.
+    unseen_preds_dict : dict
+        A dictionary mapping each outer fold index to a tuple (X_test_outer, y_pred_outer) representing the unseen predictions.
     """
     outer_kf = KFold(n_splits=n_outer, shuffle=True)
     outer_models = []
     performance_results = []
+    unseen_preds_dict = {}
     fold_index = 0
 
     for train_index, test_index in outer_kf.split(X):
@@ -282,8 +290,12 @@ def nested_cv_kernel_regression(X, y, sigma_values, n_outer=5, n_inner=5, classi
                 'normalized_mse_%': normalized_mse,
                 'normalized_mae_%': normalized_mae
             })
+        unseen_preds_dict[fold_index] = (X_test_outer, y_pred_outer)
         fold_index += 1
-    return outer_models, performance_results
+
+    return outer_models, performance_results, unseen_preds_dict
+
+
 
 
 def ensemble_predict(models, X):
@@ -394,115 +406,140 @@ def evaluate_ensemble_on_test(models, X_test, y_test, classification=False):
 
 
 def run_kernel_heatmap_analysis(
-        embeddings,
-        scores_vectors_dict,
-        input_matrix,
-        output_folder,
-        grid_size=100,
-        sigma_range=None,
-        threshold=0.5,
-        uncertainty_penalty=0.5,
-        input_type='image',
-        classification=False,
-        cluster_labels=None,
-        effect_size_test='mann-whitney',
-        highlight_points=True,
-        show_plots=False,
-        generate_plots=False,
-        output_format_info=None,
+    embeddings,
+    scores_vectors_dict,
+    input_matrix,
+    output_folder,
+    grid_size=100,
+    sigma_range=None,
+    threshold=0.5,
+    uncertainty_penalty=0.5,
+    input_type='image',
+    classification=False,
+    cluster_labels=None,
+    effect_size_test='mann-whitney',
+    highlight_points=True,
+    show_plots=False,
+    generate_plots=False,
+    output_format_info=None,
+    full_embeddings=None,
+    clusterer=None,
+    cluster_predict_method="kdtree"
 ):
     """
-    Generate a kernel regression–based heatmap of predicted outcomes.
+    Generate a kernel regression–based heatmap of predicted outcomes on a 2D latent space.
 
-    For each score tag in `scores_vectors_dict`, the function:
-      1. Uses nested cross‑validation to train an ensemble of kernel regressors:
-         (if `classification` is True, uses a kernel logistic regressor; otherwise, uses a kernel regressor).
-      2. Saves the resulting models in a subfolder "prediction_models/kernel_regression" within the output folder.
-      3. Computes predictions (i.e. estimated probabilities for classification or continuous outcomes for regression)
-         at each point on a grid spanning the latent space.
-      4. Computes the standard deviation of predictions across the ensemble.
-      5. Forms a combined heatmap by subtracting (uncertainty_penalty × std) from the mean prediction.
-      6. Optionally computes effect size maps for high-confidence points.
-         For continuous targets, the threshold is determined dynamically using a normality test on the training predictions:
-           - If the predictions are normally distributed (p > 0.05), the threshold is set at mean + 2*std.
-           - Otherwise, the 95th percentile is used.
-         (For classification the provided threshold is used.)
-      7. Additionally, computes uncertainty measures (mean and std of the ensemble’s prediction standard deviations) on the grid.
-      8. Returns both the heatmap dictionary and the CV performance results from the nested CV.
+    For each score tag in `scores_vectors_dict`, this function:
+      1. Performs nested cross-validation to train an ensemble of kernel regressors (or logistic regressors if classification=True).
+      2. Uses the ensemble to predict on a grid spanning the latent space, forming a heatmap of ensemble mean predictions and an uncertainty map.
+      3. Combines the mean and uncertainty into a single map: combined_heatmap = mean - (uncertainty_penalty * std).
+      4. Determines a dynamic threshold for “high-confidence” predictions:
+         - For regression (classification=False), a normality test is used to choose either mean+2*std or the 95th percentile.
+         - For classification, the provided threshold is used.
+         - Optionally, if use_unseen_threshold is True and unseen predictions are available from nested CV, use them.
+      5. Optionally computes effect-size maps for each cluster (if at least 3 high-confidence points exist in that cluster).
+      6. If a fitted clusterer is provided, the function assigns cluster labels to grid points using one of several methods (kdtree, approximate, or fit_predict).
+         The final cluster-specific plot overlays:
+            - The background combined heatmap,
+            - All embeddings as scatter points (if in label_dataset mode, the union of full_embeddings and embeddings),
+            - The high-confidence (significant) training points for that cluster in lime with a black border,
+            - And the boundary of the significant zone (convex hull).
+      7. Returns a dictionary of heatmap data for each score tag and a list of nested CV performance results.
 
     Parameters
     ----------
-    embeddings : np.ndarray
-        A 2D array of shape (n_samples, 2) representing the latent space coordinates.
+    embeddings : np.ndarray of shape (n_samples, 2)
+        The 2D embeddings used for training/prediction (for classic mode or the labelled dataset in label_dataset mode).
     scores_vectors_dict : dict
-        Dictionary mapping each score tag (str) to a target score vector (binary or continuous) for each sample.
+        Mapping from each score tag (string) to a 1D target vector (binary or continuous) corresponding to each row in embeddings.
     input_matrix : np.ndarray
-        The original input data matrix used for effect size analysis; each row corresponds to a sample.
+        The original high-dimensional input data (each row corresponds to a sample), used for effect-size analysis.
     output_folder : str or Path
-        Path to the directory where output heatmaps, effect size maps, and plots will be saved.
+        Directory where outputs (models, plots, performance metrics, etc.) will be saved.
     grid_size : int, default=100
-        The resolution of the grid for heatmap prediction; the grid will be grid_size x grid_size.
+        Number of grid points along each dimension of the latent space.
     sigma_range : array-like, optional
-        Range of sigma values to use for kernel regression. If None, defaults to np.linspace(0.01, 0.2, num=8).
+        Candidate sigma values for kernel regression. If None, defaults to np.linspace(0.01, 0.2, num=8).
     threshold : float, default=0.5
-        Threshold to determine high-confidence predictions; only used for classification.
+        Threshold for classification tasks to define high-confidence predictions (ignored for regression).
     uncertainty_penalty : float, default=0.5
-        Multiplier to penalize regions with high ensemble prediction uncertainty.
-    input_type : str, default='image'
-        The type of input data used for effect size analysis (e.g., 'image', 'nifti', 'spreadsheet').
+        Multiplier for penalizing regions with high uncertainty in the ensemble predictions.
+    input_type : {'image', 'nifti', 'spreadsheet'}, default='image'
+        Type of the input data, used for saving effect-size maps.
     classification : bool, default=False
-        If True, uses a kernel logistic regressor; otherwise, uses a kernel regressor.
+        Whether to perform classification (kernel logistic regression) or regression (kernel regression).
     cluster_labels : np.ndarray, optional
-        Array of cluster labels corresponding to the embeddings; used to compute effect size maps for each cluster.
+        Cluster labels for each row in embeddings. If provided, effect-size maps and cluster-specific plots are computed.
     effect_size_test : str, default='mann-whitney'
-        The statistical test to use for computing effect size maps.
+        The statistical test to compute effect sizes; passed to input_matrix_stat_map.
     highlight_points : bool, default=True
-        If True, the original embedding points will be highlighted on the heatmap plots.
+        If True, scatter plot the embeddings on top of the heatmap in the main figure.
     show_plots : bool, default=False
-        If True, displays the heatmap plots interactively.
+        If True, call plt.show() to display plots interactively.
     generate_plots : bool, default=False
-        If True, generates and saves plots of the combined heatmap and effect size maps.
+        If True, generate and save plot images.
     output_format_info : any, optional
-        Additional info required for formatting the output (e.g., affine matrix, target shape, or column names).
+        Extra information needed for formatting and saving effect-size maps (e.g., image shape or affine).
+    full_embeddings : np.ndarray of shape (n_full, 2), optional
+        In label_dataset mode, the unlabelled UMAP embeddings (used for grid definition and to display all points).
+        In classic mode, if not provided, embeddings is used.
+    clusterer : object, optional
+        A fitted HDBSCAN object with prediction_data=True, so that its approximate_predict method can be used on new data.
 
     Returns
     -------
     heatmap_dict : dict
-        Dictionary mapping each score tag to a dictionary with keys:
-          'mean_heatmap': np.ndarray (grid_size x grid_size)
-          'std_heatmap': np.ndarray (grid_size x grid_size)
-          'combined_heatmap': np.ndarray (grid_size x grid_size)
-          'grid_x': np.ndarray
-          'grid_y': np.ndarray
-          'models': list of CV-trained models
-          'cv_performance': list of performance dictionaries from outer CV folds
-          'effect_size': dict mapping cluster labels to effect size maps
-          'plot': matplotlib Figure or None
-          'grid_mean_uncertainty': float, mean uncertainty over grid predictions
-          'grid_std_uncertainty': float, standard deviation of grid uncertainties
+        A dictionary mapping each score tag to a sub-dictionary containing:
+            - 'mean_heatmap': 2D array (grid_size x grid_size) of ensemble mean predictions.
+            - 'std_heatmap': 2D array (grid_size x grid_size) of ensemble standard deviations.
+            - 'combined_heatmap': 2D array (grid_size x grid_size) computed as mean - uncertainty_penalty * std.
+            - 'grid_x': 1D array of x-coordinates of the grid.
+            - 'grid_y': 1D array of y-coordinates of the grid.
+            - 'models': List of trained models from nested cross-validation.
+            - 'cv_performance': List of performance dictionaries from the outer CV folds.
+            - 'effect_size': Dictionary mapping each cluster label to its effect-size map.
+            - 'plot': The main matplotlib Figure object of the combined heatmap (or None).
+            - 'grid_mean_uncertainty': Float, mean uncertainty over the grid.
+            - 'grid_std_uncertainty': Float, standard deviation of uncertainty over the grid.
     cv_performance_all : list
-        Aggregated list of performance results across all score tags.
+        A list of dictionaries with CV performance results aggregated across all score tags.
+        :param cluster_predict_method:
     """
+    # Default sigma range if not provided.
     if sigma_range is None:
         sigma_range = np.linspace(0.01, 0.2, num=8)
 
+    # Ensure output folder
     output_folder = Path(output_folder)
     output_folder.mkdir(parents=True, exist_ok=True)
 
-    # Create grid over latent space (assumes 2D embeddings)
-    min_coords = embeddings.min(axis=0)
-    max_coords = embeddings.max(axis=0)
+    # Use combined embeddings for grid creation.
+    if full_embeddings is not None and embeddings is not None:
+        combined_embeddings = np.concatenate([full_embeddings, embeddings], axis=0)
+    else:
+        combined_embeddings = full_embeddings if full_embeddings is not None else embeddings
+
+    min_coords = combined_embeddings.min(axis=0)
+    max_coords = combined_embeddings.max(axis=0)
     grid_x = np.linspace(min_coords[0], max_coords[0], grid_size)
     grid_y = np.linspace(min_coords[1], max_coords[1], grid_size)
     grid_points = np.array(np.meshgrid(grid_x, grid_y)).T.reshape(-1, 2)
+
+    # Determine which embeddings to plot: use the union in label_dataset mode.
+    if full_embeddings is not None and embeddings is not None and not np.array_equal(full_embeddings, embeddings):
+        plot_embeddings = np.concatenate([full_embeddings, embeddings], axis=0)
+    else:
+        # Otherwise just one or the other is available
+        plot_embeddings = full_embeddings if full_embeddings is not None else embeddings
 
     heatmap_dict = {}
     cv_performance_all = []
 
     for score_tag, y in scores_vectors_dict.items():
         print(f"Processing score tag: {score_tag}...")
-        # Run nested CV to get models and their performance on unseen outer folds.
-        models, cv_perf = nested_cv_kernel_regression(
+
+        # Call nested CV and obtain unseen predictions.
+        models, cv_perf, unseen_preds_dict = nested_cv_kernel_regression(
             embeddings, y, sigma_values=sigma_range, n_outer=5, n_inner=5, classification=classification
         )
         for perf in cv_perf:
@@ -510,7 +547,7 @@ def run_kernel_heatmap_analysis(
         cv_performance_all.extend(cv_perf)
         print(f"Trained {len(models)} models for score tag '{score_tag}'.")
 
-        # Save kernel regression models in prediction_models/kernel_regression subfolder.
+        # Save ensemble models.
         pred_models_folder = output_folder / "prediction_models" / "kernel_regression"
         pred_models_folder.mkdir(parents=True, exist_ok=True)
         for i, model in enumerate(models):
@@ -518,7 +555,7 @@ def run_kernel_heatmap_analysis(
             dump(model, model_filename)
             print(f"Saved kernel regression model for fold {i} at {model_filename}")
 
-        # Ensemble predict on the grid.
+        # Ensemble predict on grid.
         mean_pred, std_pred = ensemble_predict(models, grid_points)
         mean_heatmap = mean_pred.reshape(grid_size, grid_size)
         std_heatmap = std_pred.reshape(grid_size, grid_size)
@@ -526,59 +563,82 @@ def run_kernel_heatmap_analysis(
         # Compute a combined heatmap.
         combined_heatmap = mean_heatmap - uncertainty_penalty * std_heatmap
 
-        # Optionally, generate a plot.
+        # Generate main heatmap plot if requested.
         plot_obj = None
         if generate_plots:
             plt.figure(figsize=(8, 6))
-            plt.imshow(combined_heatmap.T, origin='lower',
-                       extent=(min_coords[0], max_coords[0], min_coords[1], max_coords[1]),
-                       cmap='viridis', aspect='auto')
+            # Display the combined heatmap
+            plt.imshow(
+                combined_heatmap.T,
+                origin='lower',
+                extent=(min_coords[0], max_coords[0], min_coords[1], max_coords[1]),
+                cmap='viridis',
+                aspect='auto'
+            )
             plt.colorbar(label='Combined Confidence')
             plt.title(f'Kernel Regression Combined Heatmap for Score {score_tag}')
             if highlight_points:
-                plt.scatter(embeddings[:, 0], embeddings[:, 1], color='red', s=10, alpha=0.5)
-            if show_plots:
-                plt.show()
+                # Plot all embeddings in red (the union if label_dataset mode).
+                plt.scatter(
+                    plot_embeddings[:, 0],
+                    plot_embeddings[:, 1],
+                    color='red', s=10, alpha=0.5,
+                    label='All embeddings'
+                )
+            plt.savefig(output_folder / f'kernel_heatmap_{score_tag}.png')
+            print(f"Saved combined heatmap for score '{score_tag}'")
             plot_obj = plt.gcf()
-            out_path = output_folder / f'kernel_heatmap_{score_tag}.png'
-            plt.savefig(out_path)
-            print(f"Saved combined heatmap for score '{score_tag}' at {out_path}")
             plt.close()
 
-        # Compute ensemble predictions on the training embeddings for thresholding.
-        train_pred_mean, _ = ensemble_predict(models, embeddings)
-
-        # Determine dynamic threshold for continuous targets using a normality test.
+        # Compute dynamic threshold.
+        # Use unseen predictions if available: aggregate predictions from all outer folds.
+        all_unseen_preds = np.concatenate([pred for (_, pred) in unseen_preds_dict.values()])
         if not classification:
-            stat_val, pvalue = normaltest(train_pred_mean)
+            # For regression: normality test to pick dynamic threshold
+            stat_val, pvalue = normaltest(all_unseen_preds)
             if pvalue > 0.05:
-                dynamic_threshold = np.mean(train_pred_mean) + 2 * np.std(train_pred_mean)
+                dynamic_threshold = np.mean(all_unseen_preds) + 2 * np.std(all_unseen_preds)
             else:
-                dynamic_threshold = np.percentile(train_pred_mean, 95)
+                dynamic_threshold = np.percentile(all_unseen_preds, 95)
             print(f"Dynamic threshold for high-confidence points: {dynamic_threshold:.3f} (normality p={pvalue:.3f})")
         else:
             dynamic_threshold = threshold
 
-        high_pred_indices = np.where(train_pred_mean > dynamic_threshold)[0]
+        # In label_dataset mode, if full_embeddings is provided and is different from embeddings,
+        # use the union (combined_embeddings) for ensemble prediction.
+        if full_embeddings is not None and not np.array_equal(full_embeddings, embeddings):
+            full_pred, _ = ensemble_predict(models, combined_embeddings)
+        else:
+            full_pred, _ = ensemble_predict(models, embeddings)
+
+        high_pred_indices = np.where(full_pred > dynamic_threshold)[0]
         if len(high_pred_indices) < 3:
             print(f"Not enough high-confidence points for score tag '{score_tag}' (n={len(high_pred_indices)}); "
                   f"skipping effect size maps.")
             effect_size_maps = {}
         else:
-            high_clusters = cluster_labels[high_pred_indices] if cluster_labels is not None else None
-            if high_clusters is not None:
+            # If cluster labels are provided, we can do effect-size maps and highlight clusters
+            if cluster_labels is not None:
+                high_clusters = cluster_labels[high_pred_indices]
                 unique_clusters = np.unique(high_clusters)
             else:
                 unique_clusters = []
+
+            print("###############DEBUG################")
+            print(f"Unique clusters: {unique_clusters}")
+            print("###############END DEBUG################")
+
             effect_size_maps = {}
             for cluster in unique_clusters:
                 if cluster == -1:
                     continue
-                cluster_high_indices = high_pred_indices[high_clusters == cluster]
+                cluster_mask = (cluster_labels[high_pred_indices] == cluster)
+                cluster_high_indices = high_pred_indices[cluster_mask]
                 if len(cluster_high_indices) < 3:
                     print(f"Cluster {cluster} for score tag '{score_tag}' has fewer than 3 "
                           f"high-confidence points; skipping.")
                     continue
+
                 print(f"Computing effect size map for cluster {cluster} and score tag '{score_tag}'...")
                 _, _, effect_size_map = input_matrix_stat_map(
                     input_matrix, cluster_high_indices, test_name=effect_size_test, n_cores=-1
@@ -596,10 +656,121 @@ def run_kernel_heatmap_analysis(
                 )
                 print(f"Effect size map for cluster {cluster} saved.")
 
-        # Compute uncertainty measures on the grid predictions.
-        grid_mean_uncertainty = np.mean(std_pred)
-        grid_std_uncertainty = np.std(std_pred)
+                # Plot an overlay heatmap with all points and highlight the cluster's significant points in green.
+                plt.figure(figsize=(8, 6))
+                # Display the combined heatmap as the background.
+                plt.imshow(
+                    combined_heatmap.T,
+                    origin='lower',
+                    extent=(min_coords[0], max_coords[0], min_coords[1], max_coords[1]),
+                    cmap='viridis',
+                    aspect='auto'
+                )
+                plt.colorbar(label='Combined Confidence')
+                # Plot all embeddings (e.g., in red)
+                plt.scatter(
+                    plot_embeddings[:, 0],
+                    plot_embeddings[:, 1],
+                    color='red', s=10, alpha=0.5,
+                    label='All embeddings'
+                )
+                # Plot only the significant points for the current cluster (in green)
+                cluster_points = combined_embeddings[high_pred_indices][cluster_mask]
+                plt.scatter(
+                    cluster_points[:, 0],
+                    cluster_points[:, 1],
+                    facecolors='lime', edgecolors='k', s=30, alpha=1.0,
+                    label='Cluster points'
+                )
+                plt.title(f"Heatmap Overlay with Cluster {cluster} for score '{score_tag}'")
+                plt.legend()
+                overlay_path = output_folder / f"kernel_heatmap_{score_tag}_cluster_{cluster}_overlay.png"
+                plt.savefig(overlay_path)
+                print(f"Saved overlay heatmap for score '{score_tag}' cluster '{cluster}' at {overlay_path}")
+                plt.close()
 
+                # Cluster-specific plot using the selected method.
+                if cluster_predict_method == "fit_predict":
+                    if clusterer is None:
+                        raise ValueError("clusterer must be provided for fit_predict method.")
+                    clusterer_copy = deepcopy(clusterer)
+                    # Use combined_embeddings for re-clustering on the union.
+                    combined_for_clustering = np.concatenate([combined_embeddings, grid_points], axis=0)
+                    combined_labels = clusterer_copy.fit_predict(combined_for_clustering)
+                    grid_pred = combined_labels[combined_embeddings.shape[0]:]
+                elif cluster_predict_method == "approximate":
+                    try:
+                        grid_pred, _ = hdbscan.approximate_predict(clusterer, grid_points)
+                    except Exception as e:
+                        print(f"approximate_predict failed: {e}. Falling back to KDTree assignment.")
+                        tree = cKDTree(combined_embeddings)
+                        dist, idx = tree.query(grid_points, k=1)
+                        grid_pred = cluster_labels[idx]
+                elif cluster_predict_method == "kdtree":
+                    tree = cKDTree(combined_embeddings)
+                    dist, idx = tree.query(grid_points, k=1)
+                    grid_pred = cluster_labels[idx]
+                else:
+                    raise ValueError(f"Unknown cluster_predict_method: {cluster_predict_method}")
+
+                # Mark grid points that exceed threshold and belong to this cluster
+                grid_mask = (grid_pred == cluster) & (combined_heatmap.flatten() > dynamic_threshold)
+                grid_significant_points = grid_points[grid_mask]
+
+                if len(grid_significant_points) >= 3 and generate_plots:
+                    plt.figure(figsize=(8, 6))
+                    # Display the combined heatmap as background.
+                    plt.imshow(
+                        combined_heatmap.T,
+                        origin='lower',
+                        extent=(min_coords[0], max_coords[0], min_coords[1], max_coords[1]),
+                        cmap='viridis',
+                        aspect='auto'
+                    )
+                    plt.colorbar(label='Combined Confidence')
+                    # Plot the union of embeddings (both full and labelled) in red.
+                    plt.scatter(
+                        plot_embeddings[:, 0],
+                        plot_embeddings[:, 1],
+                        color='red', s=10, alpha=0.5,
+                        label='All embeddings'
+                    )
+                    # Plot the high-confidence training points for this cluster (from embeddings).
+                    train_sig_mask = (cluster_labels[high_pred_indices] == cluster)
+                    # Use combined_embeddings for the training points as well.
+                    train_significant_points = combined_embeddings[high_pred_indices][train_sig_mask]
+                    plt.scatter(
+                        train_significant_points[:, 0],
+                        train_significant_points[:, 1],
+                        facecolors='lime', edgecolors='k', s=30, alpha=1.0,
+                        label='Significant points'
+                    )
+                    # Compute convex hull on the grid significant points.
+                    try:
+                        hull = ConvexHull(grid_significant_points)
+                        hull_points = grid_significant_points[hull.vertices]
+                        hull_points = np.concatenate([hull_points, hull_points[:1]], axis=0)
+                        plt.plot(
+                            hull_points[:, 0],
+                            hull_points[:, 1],
+                            'w--', lw=3,
+                            label='Significant Zone Boundary'
+                        )
+                    except Exception as e:
+                        print(f"Could not compute convex hull for cluster {cluster} on grid: {e}")
+
+                    plt.title(f'Significant Zone for Score {score_tag} - Cluster {cluster}')
+                    plt.legend()
+                    cluster_out_path = output_folder / f'kernel_heatmap_{score_tag}_cluster_{cluster}_significant_zone.png'
+                    plt.savefig(cluster_out_path)
+                    print(f"Saved significant zone plot for score '{score_tag}' cluster '{cluster}' at {cluster_out_path}")
+                    plt.close()
+
+        # Gather uncertainty stats over the grid
+        grid_mean_uncertainty = float(np.mean(std_pred))
+        grid_std_uncertainty = float(np.std(std_pred))
+
+        # Save final results for this score tag
         heatmap_dict[score_tag] = {
             'mean_heatmap': mean_heatmap,
             'std_heatmap': std_heatmap,
@@ -614,7 +785,7 @@ def run_kernel_heatmap_analysis(
             'grid_std_uncertainty': grid_std_uncertainty
         }
 
-    # Save aggregated CV performance metrics across score tags.
+    # Save aggregated CV performance
     all_perf_df = pd.DataFrame(cv_performance_all)
     perf_path = output_folder / "cv_performance_metrics.csv"
     all_perf_df.to_csv(perf_path, index=False)

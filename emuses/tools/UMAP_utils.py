@@ -822,7 +822,7 @@ def load_umap_model(base_path, prefix='', model_name='umap_model', joblib_versio
     Parameters:
     -----------
     base_path : Path or str
-        The directory where UMAP models are saved.
+        The directory or file where the UMAP model is saved.
     prefix : str
         Prefix for the UMAP model filename.
     model_name : str
@@ -839,9 +839,18 @@ def load_umap_model(base_path, prefix='', model_name='umap_model', joblib_versio
     """
     base_path = Path(base_path)
 
-    # If no joblib_version is provided, use the current local version
+    # If base_path is a file, attempt to load it directly.
+    if base_path.is_file():
+        try:
+            loaded_umap = joblib.load(base_path)
+            print(f"Successfully loaded UMAP model from file: {base_path}")
+            return loaded_umap, base_path
+        except Exception as e:
+            print(f"Failed to load UMAP model from file: {base_path}, due to: {e}")
+
+    # Otherwise, treat base_path as a directory.
     current_joblib_version = joblib.__version__
-    if joblib_version is None or not joblib_version:
+    if not joblib_version:
         joblib_version = current_joblib_version
 
     if prefix:
@@ -862,16 +871,10 @@ def load_umap_model(base_path, prefix='', model_name='umap_model', joblib_versio
     else:
         print(f"No model found at: {filepath}")
 
-    # If the exact file didn't load, try all other files in the directory that match the pattern:
-    # Pattern: {prefix_}model_name_joblib{someversion}.joblib or with the prefix if provided.
     pattern = f"{prefix}_{model_name}_joblib*.joblib" if prefix else f"{model_name}_joblib*.joblib"
     candidate_files = list(base_path.glob(pattern))
-
-    # Sort candidates to try a deterministic order (optional)
     candidate_files.sort()
-
     for candidate in candidate_files:
-        # Skip the one we already tried
         if candidate == filepath:
             continue
         if is_umap_file(candidate):

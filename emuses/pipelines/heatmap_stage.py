@@ -127,19 +127,17 @@
 #         # Store plots and representative data in context for later use (e.g., in Streamlit)
 #         context['heatmap_plots'] = plots
 #
-
 # pipelines/heatmap_stage.py
 import numpy as np
 import logging
 from pathlib import Path
 import pandas as pd
+import hdbscan
 
 from emuses.pipelines.pipeline_stage import PipelineStage
-from emuses.tools.stats_utils import fwhm_to_sigma  # if needed for conversion
-from emuses.tools.kernel_regression_utils import run_kernel_heatmap_analysis, ensemble_predict
-from emuses.tools.visualisation import plot_clustering_interactive_with_hover, plot_clustering
-from sklearn.metrics import accuracy_score, confusion_matrix, roc_auc_score, f1_score, precision_score, recall_score
-from sklearn.metrics import r2_score, mean_squared_error, mean_absolute_error
+from emuses.tools.stats_utils import fwhm_to_sigma
+from emuses.tools.kernel_regression_utils import run_kernel_heatmap_analysis, ensemble_predict, nested_cv_kernel_regression
+from emuses.tools.visualisation import plot_clustering_interactive_with_hover
 
 
 class HeatmapStage(PipelineStage):
@@ -153,27 +151,42 @@ class HeatmapStage(PipelineStage):
 
         args = self.config.args
 
-        # Get required data from context
-        # --- New: Use labelled training data for heatmap analysis if available ---
+        # Use labelled data if available
         if 'train_labelled_embeddings' in context and 'train_labelled_scores' in context:
-            embeddings = context['train_labelled_embeddings']
+            embeddings_labelled = context['train_labelled_embeddings']
             train_labels = context['train_labelled_scores']
-            train_features = context.get('train_labelled_matrix')
             logger.info("Using labelled training data for heatmap analysis.")
+            combined_input_matrix = np.concatenate([context.get('train_features'),
+                                                    context.get('train_labelled_matrix')],
+                                                   axis=0)
         else:
-            # Fallback: use the unsupervised splits (if no separate labelled dataset was provided)
-            embeddings = context.get('embeddings')
+            embeddings_labelled = context.get('embeddings')
             train_labels = context.get('train_labels')
-            train_features = context.get('train_features')
+            combined_input_matrix = context.get('train_features')
 
-        clusterer = context.get('clusterer')  # might be None
-        cluster_labels = context.get('cluster_labels')  # might be None
+
+        # In label_dataset mode, also get the full UMAP training embeddings
+        full_embeddings = None
+        clusterer = context['clusterer']
+        if 'train_labelled_embeddings' in context and 'embeddings' in context:
+            full_embeddings = context['embeddings']
+            # Compute clustering on the labelled embeddings if not already done
+            if 'clusterer_labelled' not in context:
+                # context['cluster_labels_labelled'] = clusterer.fit_predict(embeddings_labelled)
+                combined = np.concatenate([full_embeddings, embeddings_labelled], axis=0)
+                context['cluster_labels_labelled'] = clusterer.fit_predict(combined)
+
+                context['clusterer_labelled'] = clusterer
+            cluster_labels = context.get('cluster_labels_labelled')
+        else:
+            cluster_labels = context.get('cluster_labels')
+
         dataset_type = context.get('dataset_type', 'image')
 
-        if train_features is None:
-            raise ValueError("Train features are required for heatmap analysis.")
+        if combined_input_matrix is None:
+            raise ValueError("Input matrix is required for heatmap analysis.")
 
-        # Prepare the scores vectors dictionary
+        # Prepare scores vectors dictionary
         if getattr(args, 'classification', False):
             unique_labels = np.unique(train_labels)
             scores_vectors_dict = {
@@ -198,66 +211,82 @@ class HeatmapStage(PipelineStage):
             if not isinstance(sigma, (list, np.ndarray)):
                 sigma = np.array([sigma])
 
-        # Optionally, if fwhm is provided, convert it.
         fwhm = self.config.heatmap_params.get('fwhm', None)
-        if fwhm is not None and sigma is None:
+        if sigma is None and fwhm is not None:
             sigma = fwhm_to_sigma(fwhm)
             logger.info(f"Converted FWHM {fwhm} to sigma {sigma}")
+        elif sigma is None and fwhm is None:
+            sigma = None
+            logger.info("No sigma or FWHM provided; proceeding without smoothing.")
 
-        # Decide whether to display plots.
         show_plots = getattr(args, 'show_plots', False)
         context['show_plots'] = show_plots
         generate_plots = True
 
-        # --- Interactive Clustering Plot Section ---
+        # Interactive clustering plot: display both full and labelled embeddings if available
         if getattr(args, 'interactive_plot', False):
             interactive_folder = Path(self.config.output_folder) / "interactive_plots"
             interactive_folder.mkdir(exist_ok=True)
-            if getattr(args, 'classification', False):
-                interactive_path = interactive_folder / "interactive_clustering_classification.html"
+            if full_embeddings is not None:
+                interactive_path = interactive_folder / "interactive_clustering_labelled_full.html"
+                # Combine full embeddings (displayed in blue) and labelled ones (displayed in red)
+                combined_embeddings = np.concatenate([full_embeddings, embeddings_labelled], axis=0)
+                combined_labels = np.concatenate([np.full(full_embeddings.shape[0], -2), train_labels], axis=0)
                 fig = plot_clustering_interactive_with_hover(
-                    embeddings, train_labels,
+                    combined_embeddings, combined_labels,
                     output_path=interactive_path,
                     show_plot=False,
                     return_plot=True
                 )
-                logger.info(f"Interactive clustering plot (classification) saved at: {interactive_path}")
+                logger.info(f"Interactive clustering plot for labelled & full embeddings saved at: {interactive_path}")
                 context['interactive_clustering_plot'] = fig
             else:
-                interactive_plots = {}
-                for key, score_vec in scores_vectors_dict.items():
-                    interactive_path = interactive_folder / f"interactive_clustering_{key}.html"
+                if getattr(args, 'classification', False):
+                    interactive_path = interactive_folder / "interactive_clustering_classification.html"
                     fig = plot_clustering_interactive_with_hover(
-                        embeddings, score_vec,
+                        embeddings_labelled, train_labels,
                         output_path=interactive_path,
                         show_plot=False,
                         return_plot=True
                     )
-                    logger.info(f"Interactive clustering plot for score {key} saved at: {interactive_path}")
-                    interactive_plots[key] = fig
-                context['interactive_clustering_plots'] = interactive_plots
+                    logger.info(f"Interactive clustering plot (classification) saved at: {interactive_path}")
+                    context['interactive_clustering_plot'] = fig
+                else:
+                    interactive_plots = {}
+                    for key, score_vec in scores_vectors_dict.items():
+                        interactive_path = interactive_folder / f"interactive_clustering_{key}.html"
+                        fig = plot_clustering_interactive_with_hover(
+                            embeddings_labelled, score_vec,
+                            output_path=interactive_path,
+                            show_plot=False,
+                            return_plot=True
+                        )
+                        logger.info(f"Interactive clustering plot for score {key} saved at: {interactive_path}")
+                        interactive_plots[key] = fig
+                    context['interactive_clustering_plots'] = interactive_plots
 
-        # Run the kernel regression–based heatmap analysis.
+        # Run kernel regression heatmap analysis—pass full_embeddings for grid and visualization
         heatmap_dict, cv_performance_all = run_kernel_heatmap_analysis(
-            embeddings=embeddings,
+            embeddings=embeddings_labelled,  # Used for training/prediction
             scores_vectors_dict=scores_vectors_dict,
-            input_matrix=train_features,
+            input_matrix=combined_input_matrix,
             output_folder=self.config.output_folder,
             grid_size=100,
             sigma_range=sigma,
             threshold=0.5,
             uncertainty_penalty=0.5,
-            input_type=context['dataset_type'],
+            input_type=dataset_type,
             classification=getattr(args, 'classification', False),
             cluster_labels=cluster_labels,
             effect_size_test='mann-whitney',
             highlight_points=True,
             show_plots=show_plots,
             generate_plots=generate_plots,
-            output_format_info=self.output_format_info
+            output_format_info=self.output_format_info,
+            full_embeddings=full_embeddings,
+            clusterer=clusterer
         )
         logger.info("Kernel regression heatmap analysis completed.")
 
-        # Store heatmap results in the context.
         context['heatmap_plots'] = heatmap_dict
         context['cv_performance_all'] = cv_performance_all

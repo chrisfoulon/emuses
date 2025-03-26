@@ -50,7 +50,11 @@ def save_statistical_maps(
 
             # Generate the plot once
             display = plot_stat_map(nifti_img, title=f'Effect Size Map for Cluster {cluster}')
-            fig = display.figure
+            # fig = list(display.axes.values())[0].figure
+            # try:
+            #     fig = display.figure
+            # except AttributeError:
+            #     fig = display.axial_map.get_figure()
 
             if save_output:
                 # Save the NIfTI file
@@ -58,14 +62,16 @@ def save_statistical_maps(
                 nib.save(nifti_img, nifti_filename)
                 # Save the plot as PNG
                 png_filename = output_folder / f"{filename_prefix}_cluster_{cluster}.png"
-                fig.savefig(png_filename)
+                display.savefig(png_filename)
+                # fig.savefig(png_filename)
                 print(f"Saved NIfTI image and plot for cluster {cluster}.")
 
-            if generate_plots:
-                plots[cluster] = fig
-
-            # Close the figure to free memory
-            plt.close(fig)
+            # if generate_plots:
+            #
+            #     plots[cluster] = fig
+            #
+            # # Close the figure to free memory
+            # plt.close(fig)
 
         elif input_type == 'image' or input_type == 'mnist':
             # For images, output_format_info is the output shape

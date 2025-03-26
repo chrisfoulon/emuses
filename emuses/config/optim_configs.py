@@ -8,8 +8,8 @@ import random
 optim_dict_default = {
     'param': {
         'umap': {
-            'min_dist': {'name': 'min_dist', 'low': 0.01, 'high': 0.5},
-            'n_neighbors': {'name': 'n_neighbors', 'low': 5, 'high': 50, 'step': 5},
+            'min_dist': {'name': 'min_dist', 'low': 0.0, 'high': 0.5},
+            'n_neighbors': {'name': 'n_neighbors', 'low': 5, 'high': 45, 'step': 10},
             'n_components': {'value': 2},
             'metric': {'name': 'metric', 'choices': ['euclidean']}
         },
@@ -57,6 +57,111 @@ optim_dict_default = {
     }
 }
 
+
+optim_dict_hard = {
+    'param': {
+        'umap': {
+            'min_dist': {'name': 'min_dist', 'low': 0.01, 'high': 0.5},
+            'n_neighbors': {'name': 'n_neighbors', 'low': 5, 'high': 45, 'step': 20},
+            'n_components': {'value': 2},
+            'metric': {'name': 'metric', 'choices': ['euclidean']}
+        },
+        'hdbscan': {
+            'min_cluster_size': {'name': 'min_cluster_size', 'low': 5, 'high': 50},
+            'min_samples': {'name': 'min_samples', 'low': 1, 'high': 10}
+        }
+    },
+    'metrics': {
+        'umap': {
+            # 'spread': {
+            #     'weight': 1.0,
+            #     'target': 0.3,
+            #     "epsilon": 0.2
+            # },
+            'eigen_spread': {
+                'weight': 1.0,
+            },
+            'density_variability': {
+                'weight': 1.0,
+                'target': 0.4,
+                "epsilon": 0.2
+            },
+            'entropy': {
+                'weight': 3,       # Increase the weight on entropy to drive down uniformity.
+                'target': 0.6,       # Target lower entropy to encourage well-defined subregions.
+                "epsilon": 0.3
+            }
+        },
+        'hdbscan': {
+            'cluster_persistence': {
+                'weight': 2,       # Seems to maintain a stable (and reasonable) number of clusters.
+            },
+            'noise_ratio': {
+                'weight': 1.0,
+                'target': 0.9,       # Ensuring a low noise level (e.g., 10% noise).
+                "epsilon": 0.05
+            },
+            'dbcv': {
+                'weight': 1.0,       # High weight to ensure clusters are compact and well separated.
+                'target': 1,
+                'epsilon': 0.5       # Because 0.5 normalized is 0 in the raw DBCV score
+            }
+        }
+    }
+}
+
+
+optim_dict_range = {
+    'param': {
+        'umap': {
+            'min_dist': {'name': 'min_dist', 'low': 0.01, 'high': 0.25},
+            'n_neighbors': {'name': 'n_neighbors', 'low': 2, 'high': 25},
+            'n_components': {'value': 2},
+            'metric': {'name': 'metric', 'choices': ['euclidean']}
+        },
+        'hdbscan': {
+            'min_cluster_size': {'name': 'min_cluster_size', 'low': 10, 'high': 100},
+            'min_samples': {'name': 'min_samples', 'low': 1, 'high': 20}
+        }
+    },
+    'metrics': {
+        'umap': {
+            # 'spread': {
+            #     'weight': 1.0,
+            #     'target': 0.3,
+            #     "epsilon": 0.2
+            # },
+            'eigen_spread': {
+                'weight': 1.0,
+            },
+            'density_variability': {
+                'weight': 1.0,
+                'target': 0.4,
+                "epsilon": 0.2
+            },
+            'entropy': {
+                'weight': 3,       # Increase the weight on entropy to drive down uniformity.
+                'target': 0.6,       # Target lower entropy to encourage well-defined subregions.
+                "epsilon": 0.3
+            }
+        },
+        'hdbscan': {
+            'cluster_persistence': {
+                'weight': 2,       # Seems to maintain a stable (and reasonable) number of clusters.
+            },
+            'noise_ratio': {
+                'weight': 1.0,
+                'target': 0.9,       # Ensuring a low noise level (e.g., 10% noise).
+                "epsilon": 0.05
+            },
+            'dbcv': {
+                'weight': 1.0,       # High weight to ensure clusters are compact and well separated.
+                'target': 0.75,
+                'epsilon': 0.25       # Because 0.5 normalized is 0 in the raw DBCV score
+            }
+        }
+    }
+}
 
 
 optim_dict_test = {

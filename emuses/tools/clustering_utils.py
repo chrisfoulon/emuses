@@ -172,7 +172,7 @@ def inner_optimize_hdbscan(embeddings, optim_dict, n_inner_trials=20):
     best_hdbscan_params = best_params.get("hdbscan", best_params)
 
     # Re-train best HDBSCAN model using the best parameters.
-    best_clusterer = hdbscan.HDBSCAN(**best_hdbscan_params)
+    best_clusterer = hdbscan.HDBSCAN(prediction_data=True, **best_hdbscan_params)
     best_labels = best_clusterer.fit_predict(embeddings)
     best_metrics = evaluate_clustering_metrics(best_clusterer, embeddings)
     return best_params, best_score, best_clusterer, best_labels, best_metrics
@@ -333,16 +333,28 @@ def load_hdbscan_model(base_path, prefix='', model_name='hdbscan_model', joblib_
     filepath (Path): Path of the loaded or next available filename.
     """
     base_path = Path(base_path)
+
+    # If base_path is a file, attempt to load it directly.
+    if base_path.is_file():
+        try:
+            loaded_hdbscan = joblib.load(base_path)
+            print(f"Successfully loaded HDBSCAN model from file: {base_path}")
+            return loaded_hdbscan, base_path
+        except Exception as e:
+            print(f"Failed to load HDBSCAN model from file: {base_path}, due to: {e}")
+
+    # If no joblib_version is provided, use the current system joblib version.
     if joblib_version is None or not joblib_version:
         joblib_version = joblib.__version__
     current_joblib_version = joblib.__version__
+
     if prefix:
         filename_pattern = f"{prefix}_{model_name}_joblib{joblib_version}.joblib"
     else:
         filename_pattern = f"{model_name}_joblib{joblib_version}.joblib"
     filepath = base_path / filename_pattern
 
-    # Try to load the file with the given filename convention
+    # Try to load the file with the given filename convention.
     if filepath.exists() and is_hdbscan_file(filepath):
         try:
             loaded_hdbscan = joblib.load(filepath)
