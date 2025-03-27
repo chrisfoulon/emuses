@@ -131,8 +131,19 @@ def main():
     parser = argparse.ArgumentParser(description='EMUSES pipeline')
     subparsers = parser.add_subparsers(dest='command', required=True)
 
+    # Create a common parser for parallelization options.
+    common_parallel = argparse.ArgumentParser(add_help=False)
+    parallel_group = common_parallel.add_mutually_exclusive_group()
+    parallel_group.add_argument('--umap_jobs', type=int,
+                                help='Number of parallel jobs for outer (UMAP) optimization. '
+                                     'If set, inner optimization runs sequentially.')
+    parallel_group.add_argument('--hdbscan_jobs', type=int,
+                                help='Number of parallel jobs for inner (HDBSCAN) optimization. '
+                                     'If set, outer optimization runs sequentially.')
+
     # Subparser for the 'full' command
-    full_parser = subparsers.add_parser('full', help='Run the full pipeline')
+    full_parser = subparsers.add_parser('full', parents=[common_parallel], help='Run the full pipeline')
+
     add_output_folder_argument(full_parser)  # Positional argument
     add_input_dataset_argument(full_parser)  # Positional argument
     # Add optional arguments

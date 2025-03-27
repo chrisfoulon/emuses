@@ -82,6 +82,8 @@ class UMAPStage(PipelineStage):
                     n_trials=getattr(args, 'umap_trials', 50),
                     n_inner_trials=getattr(args, 'hdbscan_trials', 20),
                     pref=args.prefix,
+                    n_jobs=args.umap_jobs if args.umap_jobs is not None else 1,
+                    inner_n_jobs=args.hdbscan_jobs if args.hdbscan_jobs is not None else 1,
                     random_state=getattr(args, 'random_state', None)
                 )
             self.embeddings = embeddings

@@ -434,15 +434,15 @@ def run_kernel_heatmap_analysis(
       2. Uses the ensemble to predict on a grid spanning the latent space, forming a heatmap of ensemble mean predictions and an uncertainty map.
       3. Combines the mean and uncertainty into a single map: combined_heatmap = mean - (uncertainty_penalty * std).
       4. Determines a dynamic threshold for “high-confidence” predictions:
-         - For regression (classification=False), a normality test is used to choose either mean+2*std or the 95th percentile.
+         - For regression (classification=False), a normality test is used to choose either mean+2*std or the 95th percentile.v
          - For classification, the provided threshold is used.
-         - Optionally, if use_unseen_threshold is True and unseen predictions are available from nested CV, use them.
-      5. Optionally computes effect-size maps for each cluster (if at least 3 high-confidence points exist in that cluster).
+         - In regression mode, an additional dynamic low threshold is computed (using mean-2*std or the 5th percentile) to identify clusters with deficit values.
+      5. Optionally computes effect-size maps for each cluster (if at least 3 high- or low-confidence points exist in that cluster).
       6. If a fitted clusterer is provided, the function assigns cluster labels to grid points using one of several methods (kdtree, approximate, or fit_predict).
          The final cluster-specific plot overlays:
             - The background combined heatmap,
             - All embeddings as scatter points (if in label_dataset mode, the union of full_embeddings and embeddings),
-            - The high-confidence (significant) training points for that cluster in lime with a black border,
+            - The high-confidence (significant) training points for that cluster in lime (or low-confidence in cyan) with a black border,
             - And the boundary of the significant zone (convex hull).
       7. Returns a dictionary of heatmap data for each score tag and a list of nested CV performance results.
 
@@ -485,6 +485,8 @@ def run_kernel_heatmap_analysis(
         In classic mode, if not provided, embeddings is used.
     clusterer : object, optional
         A fitted HDBSCAN object with prediction_data=True, so that its approximate_predict method can be used on new data.
+    cluster_predict_method : str, default="kdtree"
+        Method to use for assigning cluster labels to new grid points.
 
     Returns
     -------
@@ -497,19 +499,18 @@ def run_kernel_heatmap_analysis(
             - 'grid_y': 1D array of y-coordinates of the grid.
             - 'models': List of trained models from nested cross-validation.
             - 'cv_performance': List of performance dictionaries from the outer CV folds.
-            - 'effect_size': Dictionary mapping each cluster label to its effect-size map.
+            - 'effect_size': Dictionary mapping 'high' and 'low' to effect-size maps for each cluster.
             - 'plot': The main matplotlib Figure object of the combined heatmap (or None).
             - 'grid_mean_uncertainty': Float, mean uncertainty over the grid.
             - 'grid_std_uncertainty': Float, standard deviation of uncertainty over the grid.
     cv_performance_all : list
         A list of dictionaries with CV performance results aggregated across all score tags.
-        :param cluster_predict_method:
     """
     # Default sigma range if not provided.
     if sigma_range is None:
         sigma_range = np.linspace(0.01, 0.2, num=8)
 
-    # Ensure output folder
+    # Ensure output folder exists.
     output_folder = Path(output_folder)
     output_folder.mkdir(parents=True, exist_ok=True)
 
@@ -527,10 +528,9 @@ def run_kernel_heatmap_analysis(
 
     # Determine which embeddings to plot: use the union in label_dataset mode.
     if full_embeddings is not None and embeddings is not None and not np.array_equal(full_embeddings, embeddings):
-        plot_embeddings = np.concatenate([full_embeddings, embeddings], axis=0)
+        plot_embeddings_array = np.concatenate([full_embeddings, embeddings], axis=0)
     else:
-        # Otherwise just one or the other is available
-        plot_embeddings = full_embeddings if full_embeddings is not None else embeddings
+        plot_embeddings_array = full_embeddings if full_embeddings is not None else embeddings
 
     heatmap_dict = {}
     cv_performance_all = []
@@ -580,8 +580,8 @@ def run_kernel_heatmap_analysis(
             if highlight_points:
                 # Plot all embeddings in red (the union if label_dataset mode).
                 plt.scatter(
-                    plot_embeddings[:, 0],
-                    plot_embeddings[:, 1],
+                    plot_embeddings_array[:, 0],
+                    plot_embeddings_array[:, 1],
                     color='red', s=10, alpha=0.5,
                     label='All embeddings'
                 )
@@ -590,73 +590,76 @@ def run_kernel_heatmap_analysis(
             plot_obj = plt.gcf()
             plt.close()
 
-        # Compute dynamic threshold.
-        # Use unseen predictions if available: aggregate predictions from all outer folds.
+        # Compute dynamic thresholds.
         all_unseen_preds = np.concatenate([pred for (_, pred) in unseen_preds_dict.values()])
         if not classification:
             # For regression: normality test to pick dynamic threshold
             stat_val, pvalue = normaltest(all_unseen_preds)
             if pvalue > 0.05:
-                dynamic_threshold = np.mean(all_unseen_preds) + 2 * np.std(all_unseen_preds)
+                dynamic_threshold_high = np.mean(all_unseen_preds) + 2 * np.std(all_unseen_preds)
+                dynamic_threshold_low = np.mean(all_unseen_preds) - 2 * np.std(all_unseen_preds)
             else:
-                dynamic_threshold = np.percentile(all_unseen_preds, 95)
-            print(f"Dynamic threshold for high-confidence points: {dynamic_threshold:.3f} (normality p={pvalue:.3f})")
+                dynamic_threshold_high = np.percentile(all_unseen_preds, 95)
+                dynamic_threshold_low = np.percentile(all_unseen_preds, 5)
+            print(f"Dynamic thresholds for regression: high = {dynamic_threshold_high:.3f}, low = {dynamic_threshold_low:.3f} (normality p={pvalue:.3f})")
         else:
-            dynamic_threshold = threshold
+            dynamic_threshold_high = threshold
+            dynamic_threshold_low = None
 
-        # In label_dataset mode, if full_embeddings is provided and is different from embeddings,
-        # use the union (combined_embeddings) for ensemble prediction.
+        # Use combined embeddings for full prediction if available.
         if full_embeddings is not None and not np.array_equal(full_embeddings, embeddings):
             full_pred, _ = ensemble_predict(models, combined_embeddings)
         else:
             full_pred, _ = ensemble_predict(models, embeddings)
 
-        high_pred_indices = np.where(full_pred > dynamic_threshold)[0]
+        # Identify high and low prediction indices.
+        high_pred_indices = np.where(full_pred > dynamic_threshold_high)[0]
+        if dynamic_threshold_low is not None:
+            low_pred_indices = np.where(full_pred < dynamic_threshold_low)[0]
+        else:
+            low_pred_indices = np.array([])
+
+        # Process high-confidence points.
+        effect_size_maps_high = {}
         if len(high_pred_indices) < 3:
-            print(f"Not enough high-confidence points for score tag '{score_tag}' (n={len(high_pred_indices)}); "
-                  f"skipping effect size maps.")
-            effect_size_maps = {}
+            print(f"Not enough high-confidence points for score tag '{score_tag}' (n={len(high_pred_indices)}); skipping high effect size maps.")
         else:
             # If cluster labels are provided, we can do effect-size maps and highlight clusters
             if cluster_labels is not None:
                 high_clusters = cluster_labels[high_pred_indices]
-                unique_clusters = np.unique(high_clusters)
+                unique_high_clusters = np.unique(high_clusters)
             else:
-                unique_clusters = []
-
+                unique_high_clusters = []
             print("###############DEBUG################")
-            print(f"Unique clusters: {unique_clusters}")
+            print(f"Unique high clusters: {unique_high_clusters}")
             print("###############END DEBUG################")
-
-            effect_size_maps = {}
-            for cluster in unique_clusters:
+            for cluster in unique_high_clusters:
                 if cluster == -1:
                     continue
                 cluster_mask = (cluster_labels[high_pred_indices] == cluster)
                 cluster_high_indices = high_pred_indices[cluster_mask]
                 if len(cluster_high_indices) < 3:
-                    print(f"Cluster {cluster} for score tag '{score_tag}' has fewer than 3 "
-                          f"high-confidence points; skipping.")
+                    print(f"Cluster {cluster} for score tag '{score_tag}' has fewer than 3 high-confidence points; skipping.")
                     continue
 
-                print(f"Computing effect size map for cluster {cluster} and score tag '{score_tag}'...")
+                print(f"Computing effect size map for high cluster {cluster} and score tag '{score_tag}'...")
                 _, _, effect_size_map = input_matrix_stat_map(
                     input_matrix, cluster_high_indices, test_name=effect_size_test, n_cores=-1
                 )
-                effect_size_maps[cluster] = effect_size_map
+                effect_size_maps_high[cluster] = effect_size_map
                 stat_maps_to_save = {cluster: effect_size_map}
                 save_statistical_maps(
                     stat_maps=stat_maps_to_save,
                     output_folder=output_folder,
                     input_type=input_type,
                     output_format_info=output_format_info,
-                    filename_prefix=f'effect_size_map_{score_tag}_cluster_{cluster}',
+                    filename_prefix=f'effect_size_map_{score_tag}_cluster_{cluster}_high',
                     save_output=True,
                     generate_plots=generate_plots
                 )
-                print(f"Effect size map for cluster {cluster} saved.")
+                print(f"Effect size map for high cluster {cluster} saved.")
 
-                # Plot an overlay heatmap with all points and highlight the cluster's significant points in green.
+                # Plot overlay for high cluster.
                 plt.figure(figsize=(8, 6))
                 # Display the combined heatmap as the background.
                 plt.imshow(
@@ -669,8 +672,8 @@ def run_kernel_heatmap_analysis(
                 plt.colorbar(label='Combined Confidence')
                 # Plot all embeddings (e.g., in red)
                 plt.scatter(
-                    plot_embeddings[:, 0],
-                    plot_embeddings[:, 1],
+                    plot_embeddings_array[:, 0],
+                    plot_embeddings_array[:, 1],
                     color='red', s=10, alpha=0.5,
                     label='All embeddings'
                 )
@@ -680,13 +683,13 @@ def run_kernel_heatmap_analysis(
                     cluster_points[:, 0],
                     cluster_points[:, 1],
                     facecolors='lime', edgecolors='k', s=30, alpha=1.0,
-                    label='Cluster points'
+                    label='High cluster points'
                 )
-                plt.title(f"Heatmap Overlay with Cluster {cluster} for score '{score_tag}'")
+                plt.title(f"Heatmap Overlay with High Cluster {cluster} for score '{score_tag}'")
                 plt.legend()
-                overlay_path = output_folder / f"kernel_heatmap_{score_tag}_cluster_{cluster}_overlay.png"
+                overlay_path = output_folder / f"kernel_heatmap_{score_tag}_cluster_{cluster}_high_overlay.png"
                 plt.savefig(overlay_path)
-                print(f"Saved overlay heatmap for score '{score_tag}' cluster '{cluster}' at {overlay_path}")
+                print(f"Saved high overlay heatmap for score '{score_tag}' cluster '{cluster}' at {overlay_path}")
                 plt.close()
 
                 # Cluster-specific plot using the selected method.
@@ -713,8 +716,7 @@ def run_kernel_heatmap_analysis(
                 else:
                     raise ValueError(f"Unknown cluster_predict_method: {cluster_predict_method}")
 
-                # Mark grid points that exceed threshold and belong to this cluster
-                grid_mask = (grid_pred == cluster) & (combined_heatmap.flatten() > dynamic_threshold)
+                grid_mask = (grid_pred == cluster) & (combined_heatmap.flatten() > dynamic_threshold_high)
                 grid_significant_points = grid_points[grid_mask]
 
                 if len(grid_significant_points) >= 3 and generate_plots:
@@ -730,8 +732,8 @@ def run_kernel_heatmap_analysis(
                     plt.colorbar(label='Combined Confidence')
                     # Plot the union of embeddings (both full and labelled) in red.
                     plt.scatter(
-                        plot_embeddings[:, 0],
-                        plot_embeddings[:, 1],
+                        plot_embeddings_array[:, 0],
+                        plot_embeddings_array[:, 1],
                         color='red', s=10, alpha=0.5,
                         label='All embeddings'
                     )
@@ -766,11 +768,80 @@ def run_kernel_heatmap_analysis(
                     print(f"Saved significant zone plot for score '{score_tag}' cluster '{cluster}' at {cluster_out_path}")
                     plt.close()
 
-        # Gather uncertainty stats over the grid
+        # === Low-confidence branch (only for regression mode) ===
+        effect_size_maps_low = {}
+        if not classification:
+            if len(low_pred_indices) < 3:
+                print(f"Not enough low-confidence points for score tag '{score_tag}' (n={len(low_pred_indices)}); skipping low effect size maps.")
+            else:
+                if cluster_labels is not None:
+                    low_clusters = cluster_labels[low_pred_indices]
+                    unique_low_clusters = np.unique(low_clusters)
+                else:
+                    unique_low_clusters = []
+                print("###############DEBUG################")
+                print(f"Unique low clusters: {unique_low_clusters}")
+                print("###############END DEBUG################")
+                for cluster in unique_low_clusters:
+                    if cluster == -1:
+                        continue
+                    cluster_mask = (cluster_labels[low_pred_indices] == cluster)
+                    cluster_low_indices = low_pred_indices[cluster_mask]
+                    if len(cluster_low_indices) < 3:
+                        print(f"Cluster {cluster} for score tag '{score_tag}' has fewer than 3 low-confidence points; skipping.")
+                        continue
+                    print(f"Computing effect size map for low cluster {cluster} and score tag '{score_tag}'...")
+                    _, _, effect_size_map_low = input_matrix_stat_map(
+                        input_matrix, cluster_low_indices, test_name=effect_size_test, n_cores=-1
+                    )
+                    effect_size_maps_low[cluster] = effect_size_map_low
+                    stat_maps_to_save_low = {cluster: effect_size_map_low}
+                    save_statistical_maps(
+                        stat_maps=stat_maps_to_save_low,
+                        output_folder=output_folder,
+                        input_type=input_type,
+                        output_format_info=output_format_info,
+                        filename_prefix=f'effect_size_map_{score_tag}_cluster_{cluster}_low',
+                        save_output=True,
+                        generate_plots=generate_plots
+                    )
+                    print(f"Effect size map for low cluster {cluster} saved.")
+
+                    # Plot overlay for low cluster.
+                    plt.figure(figsize=(8, 6))
+                    plt.imshow(
+                        combined_heatmap.T,
+                        origin='lower',
+                        extent=(min_coords[0], max_coords[0], min_coords[1], max_coords[1]),
+                        cmap='viridis',
+                        aspect='auto'
+                    )
+                    plt.colorbar(label='Combined Confidence')
+                    plt.scatter(
+                        plot_embeddings_array[:, 0],
+                        plot_embeddings_array[:, 1],
+                        color='red', s=10, alpha=0.5,
+                        label='All embeddings'
+                    )
+                    cluster_points_low = combined_embeddings[low_pred_indices][cluster_mask]
+                    plt.scatter(
+                        cluster_points_low[:, 0],
+                        cluster_points_low[:, 1],
+                        facecolors='cyan', edgecolors='k', s=30, alpha=1.0,
+                        label='Low cluster points'
+                    )
+                    plt.title(f"Heatmap Overlay with Low Cluster {cluster} for score '{score_tag}'")
+                    plt.legend()
+                    overlay_path_low = output_folder / f"kernel_heatmap_{score_tag}_cluster_{cluster}_low_overlay.png"
+                    plt.savefig(overlay_path_low)
+                    print(f"Saved low overlay heatmap for score '{score_tag}' cluster '{cluster}' at {overlay_path_low}")
+                    plt.close()
+
+        # Gather uncertainty stats over the grid.
         grid_mean_uncertainty = float(np.mean(std_pred))
         grid_std_uncertainty = float(np.std(std_pred))
 
-        # Save final results for this score tag
+        # Save final results for this score tag.
         heatmap_dict[score_tag] = {
             'mean_heatmap': mean_heatmap,
             'std_heatmap': std_heatmap,
@@ -779,13 +850,16 @@ def run_kernel_heatmap_analysis(
             'grid_y': grid_y,
             'models': models,
             'cv_performance': cv_perf,
-            'effect_size': effect_size_maps,
+            'effect_size': {
+                'high': effect_size_maps_high,
+                'low': effect_size_maps_low
+            },
             'plot': plot_obj,
             'grid_mean_uncertainty': grid_mean_uncertainty,
             'grid_std_uncertainty': grid_std_uncertainty
         }
 
-    # Save aggregated CV performance
+    # Save aggregated CV performance.
     all_perf_df = pd.DataFrame(cv_performance_all)
     perf_path = output_folder / "cv_performance_metrics.csv"
     all_perf_df.to_csv(perf_path, index=False)

@@ -126,7 +126,7 @@ def evaluate_clustering_metrics(clusterer, embeddings, metrics_config=None):
 # --- Inner (HDBSCAN) Optimization Using optim_dict --- #
 ###########################################################
 
-def inner_optimize_hdbscan(embeddings, optim_dict, n_inner_trials=20):
+def inner_optimize_hdbscan(embeddings, optim_dict, n_inner_trials=20, n_jobs=1):
     """
     For a given UMAP embedding, optimize HDBSCAN parameters.
 
@@ -135,6 +135,7 @@ def inner_optimize_hdbscan(embeddings, optim_dict, n_inner_trials=20):
       optim_dict: dict, the full optimization dictionary. Expected to have:
                   optim_dict["param"]["hdbscan"] and optim_dict["metrics"]["hdbscan"].
       n_inner_trials: int, number of inner trials.
+      n_jobs (int): Number of parallel jobs to run.
 
     Returns:
       best_params, best_score, best_clusterer, best_labels, best_metrics
@@ -160,7 +161,7 @@ def inner_optimize_hdbscan(embeddings, optim_dict, n_inner_trials=20):
         return score
 
     inner_study = optuna.create_study(direction="maximize")
-    inner_study.optimize(inner_objective, n_trials=n_inner_trials)
+    inner_study.optimize(inner_objective, n_trials=n_inner_trials, n_jobs=n_jobs)
 
     best_params = inner_study.best_params
     best_score = inner_study.best_value

@@ -133,10 +133,12 @@ optim_dict_range = {
             # },
             'eigen_spread': {
                 'weight': 1.0,
+                'target': 0.4,
+                "epsilon": 0.15
             },
             'density_variability': {
                 'weight': 1.0,
-                'target': 0.4,
+                'target': 0.5,
                 "epsilon": 0.2
             },
             'entropy': {
@@ -148,6 +150,8 @@ optim_dict_range = {
         'hdbscan': {
             'cluster_persistence': {
                 'weight': 2,       # Seems to maintain a stable (and reasonable) number of clusters.
+                'target': 0.5,
+                "epsilon": 0.3
             },
             'noise_ratio': {
                 'weight': 1.0,

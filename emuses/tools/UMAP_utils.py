@@ -321,6 +321,9 @@ def train_and_save_umap_optim_with_nested_clustering(
         n_trials=50,
         n_inner_trials=20,
         pref=None,
+        n_jobs=4,
+        parallel_mode="umap",  # "umap" or "hdbscan"
+        inner_n_jobs=4,
         **kwargs
 ):
     """
@@ -349,6 +352,13 @@ def train_and_save_umap_optim_with_nested_clustering(
           Number of inner (HDBSCAN) trials per UMAP trial.
       pref : str, optional
           Prefix for saved files.
+      n_jobs : int, default=4
+            Number of parallel jobs for Optuna.
+      parallel_mode : str, default="umap"
+            Whether to parallelize the outer optimization ("umap") or inner optimization ("hdbscan").
+      inner_n_jobs : int, default=4
+            Number of parallel jobs for inner optimization
+
       **kwargs :
           Additional parameters for UMAP.
 
@@ -392,6 +402,8 @@ def train_and_save_umap_optim_with_nested_clustering(
     # List to store trial log information.
     trial_logs = []
     best_score_so_far = -float("inf")
+    best_clusterer = None
+    best_labels = None
 
     def save_best_model_callback(study, trial):
         nonlocal best_score_so_far
@@ -426,8 +438,15 @@ def train_and_save_umap_optim_with_nested_clustering(
         print(f"Trial {trial.number}: UMAP metrics: {umap_metrics}")
 
         # Inner optimization: optimize HDBSCAN for this UMAP embedding.
-        (best_hdbscan_params, best_hdbscan_score, best_clusterer_trial, best_labels_trial,
-         best_hdbscan_metrics) = inner_optimize_hdbscan(embeddings, optim_dict, n_inner_trials=n_inner_trials)
+        # Inner optimization: optimize HDBSCAN for this UMAP embedding.
+        if parallel_mode == "hdbscan":
+            (best_hdbscan_params, best_hdbscan_score, best_clusterer_trial, best_labels_trial,
+             best_hdbscan_metrics) = inner_optimize_hdbscan(embeddings, optim_dict, n_inner_trials=n_inner_trials,
+                                                            n_jobs=inner_n_jobs)
+        else:
+            (best_hdbscan_params, best_hdbscan_score, best_clusterer_trial, best_labels_trial,
+             best_hdbscan_metrics) = inner_optimize_hdbscan(embeddings, optim_dict, n_inner_trials=n_inner_trials)
+
         print(f"Trial {trial.number}: Best HDBSCAN parameters: {best_hdbscan_params}")
         print(f"Trial {trial.number}: Best HDBSCAN score: {best_hdbscan_score}")
 
@@ -451,22 +470,19 @@ def train_and_save_umap_optim_with_nested_clustering(
         print(f"Trial {trial.number}: Composite score: {composite_score}")
 
         # Log detailed UMAP metric contributions.
-        detailed_umap = {}
-        # Compute detailed metric contributions for UMAP and HDBSCAN.
         detailed_umap = compute_detailed_components(optim_dict["metrics"]["umap"], umap_metrics)
         trial.set_user_attr("detailed_umap_components", detailed_umap)
 
         detailed_hdbscan = compute_detailed_components(optim_dict["metrics"]["hdbscan"], best_hdbscan_metrics)
         trial.set_user_attr("detailed_hdbscan_components", detailed_hdbscan)
 
-        # Set trial user attributes.
+        # Set trial user attributes for UMAP parameters and metrics (only JSON serializable data)
         trial.set_user_attr("umap_params", umap_params)
         trial.set_user_attr("umap_metrics", umap_metrics)
         trial.set_user_attr("hdbscan_metrics", best_hdbscan_metrics)
         trial.set_user_attr("composite_score", composite_score)
         trial.set_user_attr("hdbscan_best_params", best_hdbscan_params)
-        trial.set_user_attr("hdbscan_best_clusterer", best_clusterer_trial)
-        trial.set_user_attr("hdbscan_best_labels", best_labels_trial)
+        # Do not store the raw HDBSCAN model or labels (non-serializable objects)
 
         # Append trial log information.
         trial_info = {
@@ -493,28 +509,40 @@ def train_and_save_umap_optim_with_nested_clustering(
 
         return composite_score
 
-    # Run the outer optimization.
-    outer_study = optuna.create_study(direction="maximize")
+    # Set up Optuna storage in the output directory.
+    storage_path = output_folder / "optuna_study.db"
+    storage_url = f"sqlite:///{storage_path.resolve()}"
+
+    # Run the outer optimization using the storage backend for parallelization.
+    outer_study = optuna.create_study(
+        direction="maximize",
+        storage=storage_url,
+        study_name="umap_nested_optimization",
+        load_if_exists=True
+    )
     print("Starting outer (UMAP) optimization...")
-    outer_study.optimize(outer_objective, n_trials=n_trials)
+    if parallel_mode == "umap":
+        outer_study.optimize(outer_objective, n_trials=n_trials, n_jobs=n_jobs)
+    else:
+        outer_study.optimize(outer_objective, n_trials=n_trials, n_jobs=1)
     print("Outer optimization completed.")
 
     # Retrieve best trial information.
     best_outer_trial = outer_study.best_trial
     best_umap_params = best_outer_trial.user_attrs["umap_params"]
     best_composite_score = outer_study.best_value
-    best_hdbscan_params = best_outer_trial.user_attrs["hdbscan_best_params"]
-
+    # Instead of retrieving the clusterer and labels from the trial (which were not stored),
+    # we use the global best_clusterer and best_labels variables.
     print(f"Best composite score: {best_composite_score}")
     print(f"Best UMAP parameters: {best_umap_params}")
-    print(f"Best HDBSCAN parameters (from best trial): {best_hdbscan_params}")
+    print(f"Best HDBSCAN parameters (from best trial): {best_outer_trial.user_attrs.get('hdbscan_best_params', 'N/A')}")
 
     # Save best trial info to a JSON file.
     best_trial_info = {
         "trial_number": best_outer_trial.number,
         "param": {
             "umap": best_umap_params,
-            "hdbscan": best_hdbscan_params,
+            "hdbscan": best_outer_trial.user_attrs.get("hdbscan_best_params", None)
         },
         "composite_score": best_composite_score,
         "metrics": {
@@ -535,9 +563,7 @@ def train_and_save_umap_optim_with_nested_clustering(
     best_umap_model = load(best_model_path)
     best_embeddings = np.load(best_embeddings_path)
 
-    # Retrieve the best HDBSCAN results from the best trial.
-    best_clusterer = best_outer_trial.user_attrs["hdbscan_best_clusterer"]
-    best_labels = best_outer_trial.user_attrs["hdbscan_best_labels"]
+    # Use the global best_clusterer and best_labels as determined during optimization.
     print("Retrieved best HDBSCAN results from outer optimization.")
 
     # Save an interactive clustering plot for the best trial.
