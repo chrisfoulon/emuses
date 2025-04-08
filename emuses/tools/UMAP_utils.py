@@ -42,7 +42,7 @@ def evaluate_embedding_statistics(embeddings, metrics_config):
     computed_metrics = {}
     for metric_name in metrics_config.keys():
         if metric_name in metric_functions:
-            computed_metrics[metric_name] = metric_functions[metric_name](embeddings)
+            computed_metrics[metric_name] = float(metric_functions[metric_name](embeddings))
         else:
             print(f"Warning: No computation function defined for metric '{metric_name}'.")
     return computed_metrics
@@ -579,19 +579,17 @@ def train_and_save_umap_optim_with_nested_clustering(
 
     # Define final file paths.
     prefix = f"{pref}_" if pref else ""
-    umap_model_path_final = output_folder / f"{prefix}umap_model.joblib"
     cluster_model_path = output_folder / f"{prefix}hdbscan_model.joblib"
     cluster_labels_path = output_folder / f"{prefix}cluster_labels.npy"
 
     # Save the final outputs.
-    dump(best_umap_model, umap_model_path_final)
-    np.save(umap_model_path_final.parent / f"{prefix}embeddings.npy", best_embeddings)
+    np.save(best_model_path.parent / f"{prefix}embeddings.npy", best_embeddings)
     np.save(input_matrix_path, input_matrix)
     dump(best_clusterer, cluster_model_path)
     np.save(cluster_labels_path, best_labels)
 
-    print(f"UMAP model saved at: {umap_model_path_final}")
-    print(f"Embeddings saved at: {umap_model_path_final.parent / f'{prefix}embeddings.npy'}")
+    print(f"UMAP model saved at: {best_model_path}")
+    print(f"Embeddings saved at: {best_model_path.parent / f'{prefix}embeddings.npy'}")
     print(f"Input matrix saved at: {input_matrix_path}")
     print(f"HDBSCAN model saved at: {cluster_model_path}")
     print(f"Cluster labels saved at: {cluster_labels_path}")
@@ -616,8 +614,8 @@ def train_and_save_umap_optim_with_nested_clustering(
     return (
         best_umap_model,
         best_embeddings,
-        umap_model_path_final,
-        umap_model_path_final.parent / f"{prefix}embeddings.npy",
+        best_model_path,
+        best_model_path.parent / f"{prefix}embeddings.npy",
         best_clusterer,
         best_labels,
         cluster_model_path,

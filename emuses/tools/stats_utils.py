@@ -218,6 +218,14 @@ def train_model(train_coords, train_scores, test_coords, test_scores, score_name
 
     if categorical:
         # --- Classification branch ---
+        # Filter out test observations that have missing scores.
+        mask = ~np.isnan(test_scores)
+        num_removed = len(test_scores) - np.sum(mask)
+        if num_removed > 0:
+            print(f"Warning: {num_removed} test observations removed for score {score_name} because they have no value.")
+        test_coords = test_coords[mask]
+        test_scores = test_scores[mask]
+
         k = nb_fold
         permutation_metrics = []
         for perm in range(num_permutations):
@@ -281,6 +289,13 @@ def train_model(train_coords, train_scores, test_coords, test_scores, score_name
             print(f"Training regression model for target column {t}...")
             y_train_t = train_scores[:, t]
             y_test_t = test_scores[:, t]
+            # Filter out test observations with missing target values.
+            mask = ~np.isnan(y_test_t)
+            num_removed = len(y_test_t) - np.sum(mask)
+            if num_removed > 0:
+                print(f"Warning: {num_removed} test observations removed for target column {t} in score {score_name} because they have no value.")
+            y_test_t = y_test_t[mask]
+            test_coords_filtered = test_coords[mask]
 
             k = nb_fold
             permutation_metrics = []
@@ -345,10 +360,10 @@ def train_model(train_coords, train_scores, test_coords, test_scores, score_name
             best_models = best_permutation['models']
 
             # Ensemble predictions for target t:
-            pred_example = best_models[0].predict(test_coords)
+            pred_example = best_models[0].predict(test_coords_filtered)
             test_predictions_t = np.zeros_like(pred_example)
             for model in best_models:
-                test_predictions_t += model.predict(test_coords)
+                test_predictions_t += model.predict(test_coords_filtered)
             test_predictions_t /= len(best_models)
 
             # Compute evaluation metrics for target t

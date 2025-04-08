@@ -26,7 +26,7 @@ optim_dict_default = {
             #     "epsilon": 0.2
             # },
             'eigen_spread': {
-                'weight': 1.0,
+                'weight': 2.0,
             },
             'density_variability': {
                 'weight': 1.0,
@@ -34,7 +34,7 @@ optim_dict_default = {
                 "epsilon": 0.2
             },
             'entropy': {
-                'weight': 3,       # Increase the weight on entropy to drive down uniformity.
+                'weight': 3.0,       # Increase the weight on entropy to drive down uniformity.
                 'target': 0.6,       # Target lower entropy to encourage well-defined subregions.
                 "epsilon": 0.25
             }
@@ -79,7 +79,7 @@ optim_dict_hard = {
             #     "epsilon": 0.2
             # },
             'eigen_spread': {
-                'weight': 1.0,
+                'weight': 2.0,
             },
             'density_variability': {
                 'weight': 1.0,
@@ -132,9 +132,9 @@ optim_dict_range = {
             #     "epsilon": 0.2
             # },
             'eigen_spread': {
-                'weight': 1.0,
+                'weight': 2.0,
                 'target': 0.4,
-                "epsilon": 0.15
+                "epsilon": 0.3
             },
             'density_variability': {
                 'weight': 1.0,
@@ -142,7 +142,7 @@ optim_dict_range = {
                 "epsilon": 0.2
             },
             'entropy': {
-                'weight': 3,       # Increase the weight on entropy to drive down uniformity.
+                'weight': 2.0,       # Increase the weight on entropy to drive down uniformity.
                 'target': 0.6,       # Target lower entropy to encourage well-defined subregions.
                 "epsilon": 0.3
             }
@@ -262,17 +262,19 @@ optim_dict_mnist = {
 }
 
 
+
+
 optim_dict_hcp = {
-    'param': {
-        'umap': {
-            'min_dist': {'name': 'min_dist', 'value': 0.3628075254313345},
-            'n_neighbors': {'name': 'n_neighbors', 'value': 10},
-            'n_components': {'name': 'n_components', 'value': 2},
-            'metric': {'name': 'metric', 'choices': ['euclidean']}
+    "param": {
+        "umap": {
+            "min_dist": 0.02998297837572888,
+            "n_neighbors": 3,
+            "n_components": 2,
+            "metric": "euclidean"
         },
-        'hdbscan': {
-            'min_cluster_size': {'name': 'min_cluster_size', 'value': 49},
-            'min_samples': {'name': 'min_samples', 'value': 10}
+        "hdbscan": {
+            "min_cluster_size": 11,
+            "min_samples": 2
         }
     },
     'metrics': {

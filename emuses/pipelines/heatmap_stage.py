@@ -172,7 +172,7 @@ class HeatmapStage(PipelineStage):
             full_embeddings = context['embeddings']
             # Compute clustering on the labelled embeddings if not already done
             if 'clusterer_labelled' not in context:
-                # context['cluster_labels_labelled'] = clusterer.fit_predict(embeddings_labelled)
+                # Compute clustering on the combined embeddings of full and labelled data
                 combined = np.concatenate([full_embeddings, embeddings_labelled], axis=0)
                 context['cluster_labels_labelled'] = clusterer.fit_predict(combined)
 
@@ -223,17 +223,17 @@ class HeatmapStage(PipelineStage):
         context['show_plots'] = show_plots
         generate_plots = True
 
-        # Interactive clustering plot: display both full and labelled embeddings if available
+        # Interactive clustering plot: display clustering labels (rather than data labels)
         if getattr(args, 'interactive_plot', False):
             interactive_folder = Path(self.config.output_folder) / "interactive_plots"
             interactive_folder.mkdir(exist_ok=True)
             if full_embeddings is not None:
                 interactive_path = interactive_folder / "interactive_clustering_labelled_full.html"
-                # Combine full embeddings (displayed in blue) and labelled ones (displayed in red)
+                # Combine full embeddings (unlabelled) and labelled embeddings
                 combined_embeddings = np.concatenate([full_embeddings, embeddings_labelled], axis=0)
-                combined_labels = np.concatenate([np.full(full_embeddings.shape[0], -2), train_labels], axis=0)
+                # combined_cluster_labels = np.concatenate([np.full(full_embeddings.shape[0], -2), cluster_labels], axis=0)
                 fig = plot_clustering_interactive_with_hover(
-                    combined_embeddings, combined_labels,
+                    combined_embeddings, cluster_labels,
                     output_path=interactive_path,
                     show_plot=False,
                     return_plot=True
@@ -244,7 +244,7 @@ class HeatmapStage(PipelineStage):
                 if getattr(args, 'classification', False):
                     interactive_path = interactive_folder / "interactive_clustering_classification.html"
                     fig = plot_clustering_interactive_with_hover(
-                        embeddings_labelled, train_labels,
+                        embeddings_labelled, cluster_labels,
                         output_path=interactive_path,
                         show_plot=False,
                         return_plot=True

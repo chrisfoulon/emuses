@@ -269,6 +269,10 @@ def spreadsheet_to_input_df(file_path, header=None, index_col=None, filter_colum
     else:
         df = pd.read_excel(file_path, header=header, index_col=index_col)
 
+    # Transpose the DataFrame if columns_are_features is True
+    if not columns_are_features:
+        df = df.transpose()
+
     # Filter columns if a list is provided
     if filter_columns_list is not None:
         df = df[filter_columns_list]
@@ -276,10 +280,6 @@ def spreadsheet_to_input_df(file_path, header=None, index_col=None, filter_colum
     # Filter rows if a list is provided
     if filter_rows_list is not None:
         df = df.loc[filter_rows_list]
-
-    # Transpose the DataFrame if columns_are_features is True
-    if not columns_are_features:
-        df = df.transpose()
 
     # Remove constant columns
     constant_columns = df.columns[df.nunique() <= 1].tolist()
@@ -425,7 +425,8 @@ def prepare_scores(scores, match_length=None):
             raise ValueError("Scores length is less than the expected match length")
         elif scores.shape[0] > match_length:
             print(
-                f"Warning: More scores ({scores.shape[0]}) than expected ({match_length}). Filtering to first {match_length} observations.")
+                f"Warning: More scores ({scores.shape[0]}) than expected ({match_length}). "
+                f"Filtering to first {match_length} observations.")
             scores = scores[:match_length, :]
     return scores
 

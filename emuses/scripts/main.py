@@ -144,6 +144,8 @@ def main():
     # Subparser for the 'full' command
     full_parser = subparsers.add_parser('full', parents=[common_parallel], help='Run the full pipeline')
 
+
+
     add_output_folder_argument(full_parser)  # Positional argument
     add_input_dataset_argument(full_parser)  # Positional argument
     # Add optional arguments
@@ -190,6 +192,12 @@ def main():
     add_input_dataset_optional_arguments(prediction_parser)
     add_scores_arguments(prediction_parser)
     add_umap_arguments(prediction_parser)
+
+
+    # add run_old_prediction argument
+    full_parser.add_argument('--run_old_prediction', action='store_true',
+                                    help='Run the old prediction pipeline')
+
 
     # Parse the command-line arguments
     args = parser.parse_args()
