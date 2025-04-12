@@ -21,7 +21,6 @@ from sklearn.metrics import accuracy_score, confusion_matrix, roc_auc_score, f1_
     recall_score
 from scipy.spatial import cKDTree
 
-
 matplotlib.use("Agg")
 
 
@@ -182,12 +181,13 @@ class KernelLogisticRegressor(BaseEstimator, ClassifierMixin):
 
 
 def nested_cv_kernel_regression(X, y, sigma_values, n_outer=5, n_inner=5,
+                                  n_passes=3, convergence_tol=1e-3,
                                   classification=False, bootstrap_threshold=100,
                                   n_bootstrap=50):
     """
-    Perform nested cross-validation to select the best kernel bandwidth (sigma)
-    for kernel regression (or classification). If the outer training set has fewer
-    than bootstrap_threshold samples, bootstrapping is used in the inner loop.
+    Perform nested cross-validation with multi-pass iterative refinement to select the best kernel
+    bandwidth (sigma) for kernel regression (or classification). If the outer training set has fewer
+    than bootstrap_threshold samples, bootstrapping is used for inner CV.
 
     Parameters
     ----------
@@ -196,147 +196,142 @@ def nested_cv_kernel_regression(X, y, sigma_values, n_outer=5, n_inner=5,
     y : array-like of shape (n_samples,)
         Target values.
     sigma_values : list of float
-        Candidate sigma (bandwidth) values.
+        Initial candidate sigma (bandwidth) values.
     n_outer : int, default=5
         Number of outer CV folds.
     n_inner : int, default=5
         Number of inner CV folds (used when len(y_train_outer) >= bootstrap_threshold).
+    n_passes : int, default=3
+        Number of iterative passes to refine the sigma candidate range.
+    convergence_tol : float, default=1e-3
+        Convergence tolerance for the best sigma between passes.
     classification : bool, default=False
         Whether to use KernelLogisticRegressor (if True) or KernelRegressor.
     bootstrap_threshold : int, default=100
-        If the number of outer training samples is below this, use bootstrapping.
+        If the number of outer training samples is below this threshold, bootstrapping is used.
     n_bootstrap : int, default=50
-        Number of bootstrap iterations for the inner loop when bootstrapping.
+        Number of bootstrap iterations for inner CV when bootstrapping.
 
     Returns
     -------
     outer_models : list
         Models trained on each outer fold with the best sigma from inner tuning.
     performance_results : list
-        A list of dictionaries with performance measures.
+        A list of dictionaries with performance measures for each outer fold.
     unseen_preds_dict : dict
         A dictionary mapping each outer fold index to (X_test_outer, y_pred_outer).
+    sigma_values_list : list
+        List of the best sigma values selected for each outer fold.
     """
     outer_kf = KFold(n_splits=n_outer, shuffle=True)
     outer_models = []
     performance_results = []
     unseen_preds_dict = {}
+    sigma_values_list = []  # To store the best sigma for each outer fold
     fold_index = 0
 
     for train_index, test_index in outer_kf.split(X):
         X_train_outer, X_test_outer = X[train_index], X[test_index]
         y_train_outer, y_test_outer = y[train_index], y[test_index]
 
-        # If training set is small, use bootstrapping for inner hyperparameter tuning.
-        if len(y_train_outer) < bootstrap_threshold:
-            print(f"Using bootstrapping for inner CV due to small training set size: {len(y_train_outer)} samples.")
-            best_sigma = None
-            best_score = -np.inf
-            for sigma in sigma_values:
-                bootstrap_scores = []
-                for _ in range(n_bootstrap):
-                    # Draw a bootstrap sample (with replacement)
-                    boot_idx = np.random.choice(len(y_train_outer), size=len(y_train_outer), replace=True)
-                    X_train_boot = X_train_outer[boot_idx]
-                    y_train_boot = y_train_outer[boot_idx]
-                    # Out-of-bag (OOB) indices: those not selected
-                    oob_idx = np.setdiff1d(np.arange(len(y_train_outer)), np.unique(boot_idx))
-                    # Skip if no OOB sample (rare but possible)
-                    if len(oob_idx) == 0:
-                        continue
-                    X_val_boot = X_train_outer[oob_idx]
-                    y_val_boot = y_train_outer[oob_idx]
-                    if classification:
-                        model = KernelLogisticRegressor(sigma=sigma)
-                        model.fit(X_train_boot, y_train_boot)
-                        y_pred_boot = model.predict(X_val_boot)
-                        score = accuracy_score(y_val_boot, y_pred_boot)
-                    else:
-                        model = KernelRegressor(sigma=sigma)
-                        model.fit(X_train_boot, y_train_boot)
-                        y_pred_boot = model.predict(X_val_boot)
-                        score = r2_score(y_val_boot, y_pred_boot)
-                    bootstrap_scores.append(score)
-                if bootstrap_scores:
-                    avg_score = np.mean(bootstrap_scores)
-                    if avg_score > best_score:
-                        best_score = avg_score
-                        best_sigma = sigma
-        else:
-            # Use standard KFold inner CV if enough samples.
-            m_inner_adj = n_inner
-            if len(y_train_outer) < 100:
-                m_inner_adj = len(y_train_outer) - 1
-            inner_kf = KFold(n_splits=m_inner_adj, shuffle=True)
-            best_sigma = None
-            best_score = -np.inf
-            for sigma in sigma_values:
-                inner_scores = []
-                for inner_train_idx, inner_val_idx in inner_kf.split(X_train_outer):
-                    X_train_inner = X_train_outer[inner_train_idx]
-                    X_val_inner = X_train_outer[inner_val_idx]
-                    y_train_inner = y_train_outer[inner_train_idx]
-                    y_val_inner = y_train_outer[inner_val_idx]
-                    if classification:
-                        model = KernelLogisticRegressor(sigma=sigma)
-                        model.fit(X_train_inner, y_train_inner)
-                        y_pred_inner = model.predict(X_val_inner)
-                        score = accuracy_score(y_val_inner, y_pred_inner)
-                    else:
-                        model = KernelRegressor(sigma=sigma)
-                        model.fit(X_train_inner, y_train_inner)
-                        y_pred_inner = model.predict(X_val_inner)
-                        score = r2_score(y_val_inner, y_pred_inner)
-                    inner_scores.append(score)
-                avg_score = np.mean(inner_scores)
-                if avg_score > best_score:
-                    best_score = avg_score
-                    best_sigma = sigma
+        # Set the candidate sigma range from the initial sigma_values.
+        current_range = [min(sigma_values), max(sigma_values)]
+        best_sigma_current = None
 
-        # Train final model on full outer training set with selected sigma.
+        # Iterative passes to narrow down the candidate range.
+        for pass_num in range(n_passes):
+            candidate_sigmas = np.linspace(current_range[0], current_range[1], num=len(sigma_values))
+            candidate_results = {}  # Will map each candidate sigma to its average score
+
+            if len(y_train_outer) < bootstrap_threshold:
+                # Use bootstrapping if training set is small.
+                for sigma in candidate_sigmas:
+                    bootstrap_scores = []
+                    for _ in range(n_bootstrap):
+                        boot_idx = np.random.choice(len(y_train_outer), size=len(y_train_outer), replace=True)
+                        X_train_boot = X_train_outer[boot_idx]
+                        y_train_boot = y_train_outer[boot_idx]
+                        # Out-of-bag indices:
+                        oob_idx = np.setdiff1d(np.arange(len(y_train_outer)), np.unique(boot_idx))
+                        if len(oob_idx) == 0:
+                            continue
+                        X_val_boot = X_train_outer[oob_idx]
+                        y_val_boot = y_train_outer[oob_idx]
+                        if classification:
+                            model = KernelLogisticRegressor(sigma=sigma)
+                            model.fit(X_train_boot, y_train_boot)
+                            y_pred = model.predict(X_val_boot)
+                            score = accuracy_score(y_val_boot, y_pred)
+                        else:
+                            model = KernelRegressor(sigma=sigma)
+                            model.fit(X_train_boot, y_train_boot)
+                            y_pred = model.predict(X_val_boot)
+                            score = r2_score(y_val_boot, y_pred)
+                        bootstrap_scores.append(score)
+                    if bootstrap_scores:
+                        candidate_results[sigma] = np.mean(bootstrap_scores)
+            else:
+                # Use standard inner CV if sufficient samples.
+                inner_kf = KFold(n_splits=n_inner, shuffle=True)
+                for sigma in candidate_sigmas:
+                    inner_scores = []
+                    for inner_train_idx, inner_val_idx in inner_kf.split(X_train_outer):
+                        X_train_inner = X_train_outer[inner_train_idx]
+                        X_val_inner = X_train_outer[inner_val_idx]
+                        y_train_inner = y_train_outer[inner_train_idx]
+                        y_val_inner = y_train_outer[inner_val_idx]
+                        if classification:
+                            model = KernelLogisticRegressor(sigma=sigma)
+                            model.fit(X_train_inner, y_train_inner)
+                            y_pred = model.predict(X_val_inner)
+                            score = accuracy_score(y_val_inner, y_pred)
+                        else:
+                            model = KernelRegressor(sigma=sigma)
+                            model.fit(X_train_inner, y_train_inner)
+                            y_pred = model.predict(X_val_inner)
+                            score = r2_score(y_val_inner, y_pred)
+                        inner_scores.append(score)
+                    candidate_results[sigma] = np.mean(inner_scores)
+
+            # Select the candidate sigma with the highest score.
+            best_sigma_pass = max(candidate_results, key=lambda s: candidate_results[s])
+            print(f"Fold {fold_index} Pass {pass_num}: Best sigma = {best_sigma_pass:.4f} with average score = {candidate_results[best_sigma_pass]:.4f}")
+
+            if best_sigma_current is not None and abs(best_sigma_pass - best_sigma_current) < convergence_tol:
+                best_sigma_current = best_sigma_pass
+                break  # Convergence achieved.
+            best_sigma_current = best_sigma_pass
+            # Narrow the candidate range around the best candidate.
+            current_range_width = current_range[1] - current_range[0]
+            new_lower = max(current_range[0], best_sigma_current - 0.25 * current_range_width)
+            new_upper = min(current_range[1], best_sigma_current + 0.25 * current_range_width)
+            current_range = [new_lower, new_upper]
+
+        sigma_values_list.append(best_sigma_current)
+
+        # Train the final model on the full outer training set using the selected sigma.
         if classification:
-            final_model = KernelLogisticRegressor(sigma=best_sigma)
+            final_model = KernelLogisticRegressor(sigma=best_sigma_current)
         else:
-            final_model = KernelRegressor(sigma=best_sigma)
+            final_model = KernelRegressor(sigma=best_sigma_current)
         final_model.fit(X_train_outer, y_train_outer)
         outer_models.append(final_model)
 
-        # Evaluate performance on outer test set.
+        # Evaluate performance on the outer test set.
         if classification:
             y_pred_outer = final_model.predict(X_test_outer)
-            acc = accuracy_score(y_test_outer, y_pred_outer)
-            try:
-                proba = final_model.predict_proba(X_test_outer)
-                roc_auc = roc_auc_score(y_test_outer, proba)
-            except Exception as e:
-                roc_auc = None
-            performance_results.append({
-                'fold': fold_index,
-                'accuracy': acc,
-                'roc_auc': roc_auc
-            })
+            score = accuracy_score(y_test_outer, y_pred_outer)
+            performance_results.append({'fold': fold_index, 'accuracy': score})
         else:
             y_pred_outer = final_model.predict(X_test_outer)
             r2 = r2_score(y_test_outer, y_pred_outer)
             mse = mean_squared_error(y_test_outer, y_pred_outer)
             mae = mean_absolute_error(y_test_outer, y_pred_outer)
-            target_range = np.max(y_train_outer) - np.min(y_train_outer)
-            normalized_mse = (mse / (target_range ** 2)) * 100 if target_range != 0 else mse
-            normalized_mae = (mae / target_range) * 100 if target_range != 0 else mae
-            performance_results.append({
-                'fold': fold_index,
-                'r2': r2,
-                'mse': mse,
-                'mae': mae,
-                'normalized_mse_%': normalized_mse,
-                'normalized_mae_%': normalized_mae
-            })
+            performance_results.append({'fold': fold_index, 'r2': r2, 'mse': mse, 'mae': mae})
         unseen_preds_dict[fold_index] = (X_test_outer, y_pred_outer)
         fold_index += 1
 
-    return outer_models, performance_results, unseen_preds_dict
-
-
+    return outer_models, performance_results, unseen_preds_dict, sigma_values_list
 
 
 def ensemble_predict(models, X):
@@ -598,9 +593,10 @@ def run_kernel_heatmap_analysis(
         # --------------------------------------------------------------------
 
         # Call nested CV and obtain unseen predictions using filtered training data.
-        models, cv_perf, unseen_preds_dict = nested_cv_kernel_regression(
+        models, cv_perf, unseen_preds_dict, _ = nested_cv_kernel_regression(
             embeddings_filtered, y_filtered, sigma_values=sigma_range, n_outer=5, n_inner=5, classification=classification
         )
+
         for perf in cv_perf:
             perf['score_tag'] = score_tag
         cv_performance_all.extend(cv_perf)

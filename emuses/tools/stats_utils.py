@@ -3,17 +3,18 @@ import os
 import pickle
 from pathlib import Path
 
+import GPy
 import matplotlib
 from bcblib.tools.arrays_utils import separate_clusters_and_extract_coords, find_centroid_and_check
 from narwhals.selectors import categorical
-from scipy.stats import mannwhitneyu, ttest_ind, mode
+from scipy.stats import mannwhitneyu, ttest_ind, mode, entropy
 from sklearn.linear_model import LinearRegression
 from tqdm import tqdm
 import numpy as np
 import pandas as pd
 from sklearn.ensemble import RandomForestRegressor, RandomForestClassifier
 from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score, confusion_matrix, accuracy_score, \
-    pairwise_distances
+    pairwise_distances, f1_score, precision_score, recall_score
 from sklearn.model_selection import KFold, GridSearchCV
 import matplotlib.pyplot as plt
 import seaborn as sns
@@ -137,7 +138,7 @@ def input_matrix_stat_map(input_matrix, indices, test_name='mann-whitney', n_cor
 
     return stat_map, pval_map, effect_size_map
 
-
+# TODO UNUSED FOR NOW
 def create_cluster_representative_maps(array, discrete_embeddings, input_matrix, original_shape,
                                        test_name='mann-whitney'):
     """
@@ -516,7 +517,7 @@ def train_and_test_model_per_label(train_embeddings, train_labels, test_embeddin
                     categorical=False, num_permutations=100, nb_fold=5, show_plot=show_plot)
         print("Regression model trained and results saved.")
 
-
+# TODO UNUSED FOR NOW (except for the Kriging model)
 def estimate_memory_size(n_points, dtype_size=8):
     """
     Estimate the memory size of the covariance matrix.
@@ -530,7 +531,7 @@ def estimate_memory_size(n_points, dtype_size=8):
     """
     return n_points ** 2 * dtype_size
 
-
+# TODO UNUSED FOR NOW (except for the Kriging model)
 def partition_dataset(coordinates, scores, max_batch_size):
     """
     Partition the dataset into smaller batches.
@@ -550,7 +551,7 @@ def partition_dataset(coordinates, scores, max_batch_size):
         batches.append((coord_batch, score_batch))
     return batches
 
-
+# TODO UNUSED FOR NOW
 def train_model_kriging(training_df, test_df, score_name, output_folder):
     os.makedirs(output_folder, exist_ok=True)
 
@@ -722,7 +723,7 @@ def train_model_kriging(training_df, test_df, score_name, output_folder):
     plt.savefig(os.path.join(output_folder, f'{score_name}_correlation_plot.png'))
     plt.show()
 
-
+# TODO UNUSED FOR NOW (except for the xgboost model)
 def augment_data(embeddings, augmentation_factor=3):
     min = np.min(embeddings, axis=0)
     max = np.max(embeddings, axis=0)
@@ -736,6 +737,8 @@ def augment_data(embeddings, augmentation_factor=3):
             augmented_embeddings.append(augmented_embedding)
     return np.array(augmented_embeddings)
 
+
+# TODO UNUSED FOR NOW
 def train_model_xgboost_with_fold_grid_search(training_df, test_df, score_name, output_folder, augmentation_factor=1):
     os.makedirs(output_folder, exist_ok=True)
 
@@ -921,7 +924,7 @@ def compute_distance_vector(embeddings, coord):
     return np.linalg.norm(embeddings - coord, axis=1)
 
 
-def compute_gaussian_filter(embeddings, coord, sigma=1.0):
+def compute_gwd_for_point(embeddings, coord, sigma):
     """
     Compute the Gaussian filter values for the distances between the given coordinates and the input embeddings.
 
@@ -939,6 +942,68 @@ def compute_gaussian_filter(embeddings, coord, sigma=1.0):
     distances = np.linalg.norm(embeddings - coord, axis=1)
     gaussian_values = np.exp(-0.5 * (distances / sigma) ** 2)
     return gaussian_values
+
+
+def compute_all_gwd(embeddings, sigma):
+    """
+    Compute the Gaussian weighted distance vectors for all points in the embedding.
+
+    Parameters:
+        embeddings (np.ndarray): Array of shape (n_samples, n_features)
+        sigma (float): The Gaussian kernel bandwidth.
+
+    Returns:
+        np.ndarray: A matrix of shape (n_samples, n_samples) where row i is the GWD vector for point i.
+    """
+    n = embeddings.shape[0]
+    gwd_matrix = np.zeros((n, n))
+    for i in range(n):
+        gwd_matrix[i, :] = compute_gwd_for_point(embeddings, embeddings[i:i+1], sigma)
+    return gwd_matrix
+
+
+def compute_gwd_summary(embeddings, sigma, mode="basic"):
+    """
+    Compute summary statistics from Gaussian weighted distances (GWD) for each point in embeddings.
+
+    Parameters:
+        embeddings (np.ndarray): Array of shape (n_samples, n_features)
+        sigma (float): Gaussian kernel bandwidth.
+        mode (str): Which summary statistics to compute. Options are:
+            "basic"     - returns effective number of neighbors (ESS) and weighted standard deviation.
+            "extended"  - returns ESS, weighted mean distance, and weighted standard deviation.
+            "full"      - returns ESS, weighted mean, weighted standard deviation, and optionally median distance.
+
+    Returns:
+        np.ndarray: Feature matrix of shape (n_samples, n_features_summary) depending on mode.
+    """
+    gwd_matrix = compute_all_gwd(embeddings, sigma)
+    # Effective number of neighbors
+    ess = (gwd_matrix.sum(axis=1) ** 2) / (np.square(gwd_matrix).sum(axis=1) + 1e-8)
+
+    n_points = embeddings.shape[0]
+    weighted_means = np.zeros(n_points)
+    weighted_vars = np.zeros(n_points)
+    medians = np.zeros(n_points)
+    for i in range(n_points):
+        distances = np.linalg.norm(embeddings - embeddings[i:i + 1], axis=1)
+        weights = gwd_matrix[i, :]
+        weighted_mean = np.sum(weights * distances) / (np.sum(weights) + 1e-8)
+        weighted_means[i] = weighted_mean
+        weighted_vars[i] = np.sum(weights * (distances - weighted_mean) ** 2) / (np.sum(weights) + 1e-8)
+        medians[i] = np.median(distances)
+    weighted_std = np.sqrt(weighted_vars)
+
+    if mode == "basic":
+        summary_features = np.column_stack((ess, weighted_std))
+    elif mode == "extended":
+        summary_features = np.column_stack((ess, weighted_means, weighted_std))
+    elif mode == "full":
+        summary_features = np.column_stack((ess, weighted_means, weighted_std, medians))
+    else:
+        raise ValueError(f"Mode {mode} is not supported. Choose 'basic', 'extended', or 'full'.")
+
+    return summary_features
 
 
 def compute_sigma_median(embeddings, sample_size=None):
@@ -983,3 +1048,541 @@ def compute_sigma_median(embeddings, sample_size=None):
     # Compute and return the median distance.
     median_dist = np.median(distances)
     return median_dist
+
+
+def train_predictive_model_gpy(combined_features, target, output_folder, mode='regression',
+                               cv_folds=5, random_state=42, n_restarts_optimizer=5,
+                               sparse_threshold=None, num_inducing=10000):
+    """
+    Train a Gaussian Process predictive model using GPy with cross-validation.
+    Optionally use the sparse version when the number of training points exceeds
+    a given threshold.
+
+    Parameters
+    ----------
+    combined_features : np.ndarray, shape (n_samples, n_features)
+        The final feature matrix (e.g., UMAP embeddings concatenated with GWD summary features).
+    target : np.ndarray, shape (n_samples,) or (n_samples, 1)
+        For regression, continuous targets; for classification, discrete labels.
+    output_folder : str or Path
+        Directory in which to save diagnostic plots.
+    mode : {'regression', 'classification'}, default='regression'
+        Type of task.
+    cv_folds : int, default=5
+        Number of CV folds.
+    random_state : int, default=42
+        Random state for reproducibility.
+    n_restarts_optimizer : int, default=5
+        Number of restarts for hyperparameter optimization.
+    sparse_threshold : int or None, default=None
+        If not None and the training set size is above this value, the sparse version is used.
+    num_inducing : int, default=100
+        Number of inducing points to use if using the sparse method.
+
+    Returns
+    -------
+    results : dict
+        A dictionary containing:
+            - 'final_model': The GP model fitted to all data.
+            - 'cv_metrics': List of performance metrics per fold.
+            - 'cv_predictions': List of predictions (and uncertainty estimates) for each CV fold.
+            - 'full_predictions': Predictions (and uncertainty) for the full training set by the final model.
+            - 'mode': The mode used.
+    """
+    # Ensure output folder exists.
+    output_folder = os.path.abspath(output_folder)
+    if not os.path.exists(output_folder):
+        os.makedirs(output_folder)
+
+    # We'll use KFold to partition the data.
+    cv = KFold(n_splits=cv_folds, shuffle=True, random_state=random_state)
+
+    cv_metrics = []
+    cv_predictions = []
+    fold = 0
+
+    # For reproducibility, set seed for inducing point selection if using sparse models.
+    np.random.seed(random_state)
+
+    # Loop over CV folds.
+    for train_idx, val_idx in cv.split(combined_features):
+        X_train = combined_features[train_idx]
+        X_val = combined_features[val_idx]
+        # For GPy, targets should be 2D for regression.
+        if mode == 'regression':
+            y_train = target[train_idx].reshape(-1, 1)
+            y_val = target[val_idx].reshape(-1, 1)
+        else:
+            y_train = target[train_idx]
+            y_val = target[val_idx]
+
+        # Choose model type based on training set size and the sparse_threshold.
+        if (sparse_threshold is not None) and (X_train.shape[0] > sparse_threshold):
+            # Use the sparse version with num_inducing points.
+            if mode == 'regression':
+                # Select inducing inputs randomly from X_train.
+                inducing = X_train[np.random.choice(np.arange(X_train.shape[0]), size=num_inducing, replace=False)]
+                model = GPy.models.SparseGPRegression(X_train, y_train, kernel=GPy.kern.RBF(input_dim=X_train.shape[1]),
+                                                      Z=inducing)
+            else:
+                inducing = X_train[np.random.choice(np.arange(X_train.shape[0]), size=num_inducing, replace=False)]
+                model = GPy.models.SparseGPClassification(X_train, y_train.reshape(-1, 1),
+                                                          kernel=GPy.kern.RBF(input_dim=X_train.shape[1]),
+                                                          Z=inducing)
+        else:
+            # Use the full GP model.
+            if mode == 'regression':
+                model = GPy.models.GPRegression(X_train, y_train, kernel=GPy.kern.RBF(input_dim=X_train.shape[1]))
+            else:
+                model = GPy.models.GPClassification(X_train, y_train.reshape(-1, 1),
+                                                    kernel=GPy.kern.RBF(input_dim=X_train.shape[1]))
+
+        # Optimize the model hyperparameters.
+        model.optimize_restarts(num_restarts=n_restarts_optimizer, verbose=False)
+
+        # Get predictions for the validation fold.
+        if mode == 'regression':
+            y_pred_mean, y_pred_var = model.predict(X_val)
+            y_pred_std = np.sqrt(y_pred_var)
+            fold_metrics = {
+                'r2': r2_score(y_val, y_pred_mean),
+                'mse': mean_squared_error(y_val, y_pred_mean),
+                'mae': mean_absolute_error(y_val, y_pred_mean)
+            }
+            fold_pred = {'predictions': y_pred_mean.flatten(), 'uncertainty': y_pred_std.flatten()}
+        else:
+            # For classification, get probability predictions.
+            # GPy’s GPClassification uses a Laplace approximation so that model.predict(X)
+            # returns the probability for the positive class.
+            y_pred_prob, _ = model.predict(X_val)
+            y_pred = (y_pred_prob >= 0.5).astype(int)
+            fold_metrics = {
+                'accuracy': accuracy_score(y_val, y_pred),
+                'f1': f1_score(y_val, y_pred, average='weighted'),
+                'precision': precision_score(y_val, y_pred, average='weighted', zero_division=0),
+                'recall': recall_score(y_val, y_pred, average='weighted')
+            }
+            # Uncertainty can be computed as the entropy of the predicted probability vector.
+            uncertainties = np.array([entropy([p, 1 - p], base=2) for p in y_pred_prob.flatten()])
+            fold_pred = {'predictions': y_pred.flatten(), 'probabilities': y_pred_prob.flatten(),
+                         'uncertainty': uncertainties}
+
+        cv_metrics.append(fold_metrics)
+        cv_predictions.append(fold_pred)
+        print(f"Fold {fold} {mode} metrics: {fold_metrics}")
+        fold += 1
+
+    # Train the final model on the full dataset.
+    if mode == 'regression':
+        y_full = target.reshape(-1, 1)
+    else:
+        y_full = target.reshape(-1, 1)
+
+    if (sparse_threshold is not None) and (combined_features.shape[0] > sparse_threshold):
+        inducing = combined_features[
+            np.random.choice(np.arange(combined_features.shape[0]), size=num_inducing, replace=False)]
+        if mode == 'regression':
+            final_model = GPy.models.SparseGPRegression(combined_features, y_full,
+                                                        kernel=GPy.kern.RBF(input_dim=combined_features.shape[1]),
+                                                        Z=inducing)
+        else:
+            final_model = GPy.models.SparseGPClassification(combined_features, y_full,
+                                                            kernel=GPy.kern.RBF(input_dim=combined_features.shape[1]),
+                                                            Z=inducing)
+    else:
+        if mode == 'regression':
+            final_model = GPy.models.GPRegression(combined_features, y_full,
+                                                  kernel=GPy.kern.RBF(input_dim=combined_features.shape[1]))
+        else:
+            final_model = GPy.models.GPClassification(combined_features, y_full,
+                                                      kernel=GPy.kern.RBF(input_dim=combined_features.shape[1]))
+
+    final_model.optimize_restarts(num_restarts=n_restarts_optimizer, verbose=False)
+
+    # Get predictions on the full dataset.
+    if mode == 'regression':
+        full_mean, full_var = final_model.predict(combined_features)
+        full_std = np.sqrt(full_var)
+        full_predictions = {'predictions': full_mean.flatten(), 'uncertainty': full_std.flatten()}
+    else:
+        full_prob, _ = final_model.predict(combined_features)
+        full_pred = (full_prob >= 0.5).astype(int)
+        full_uncertainty = np.array([entropy([p, 1 - p], base=2) for p in full_prob.flatten()])
+        full_predictions = {'predictions': full_pred.flatten(), 'probabilities': full_prob.flatten(),
+                            'uncertainty': full_uncertainty}
+
+    # Save a diagnostic plot (e.g., predicted vs. actual for regression; histogram of uncertainty for classification)
+    plt.figure()
+    if mode == 'regression':
+        plt.errorbar(np.arange(len(full_predictions['predictions'])), full_predictions['predictions'],
+                     yerr=full_predictions['uncertainty'], fmt='o', alpha=0.5)
+        plt.title("Final GP Regression Model Predictions with Uncertainty")
+    else:
+        plt.hist(full_predictions['uncertainty'], bins=30)
+        plt.title("Histogram of Prediction Uncertainty (Entropy) - GP Classification")
+    diag_path = os.path.join(output_folder, f"final_model_diagnostics_{mode}.png")
+    plt.savefig(diag_path)
+    plt.close()
+    print(f"Final diagnostic plot saved to: {diag_path}")
+
+    results = {
+        'final_model': final_model,
+        'cv_metrics': cv_metrics,
+        'cv_predictions': cv_predictions,
+        'full_predictions': full_predictions,
+        'mode': mode
+    }
+
+    return results
+
+
+def train_predictive_model_gpy(X, y, is_classification=False, sparse_threshold=500):
+    """
+    Train a predictive model using GPy.
+
+    When the dataset is larger than `sparse_threshold`, the sparse
+    version of the model is used.
+
+    Parameters:
+        X (np.ndarray): Input feature matrix.
+        y (np.ndarray): Target vector (for regression, it should be (n, 1); for classification, binary values).
+        is_classification (bool): Whether to perform classification.
+        sparse_threshold (int): If the number of data points exceeds this threshold, use the sparse version.
+
+    Returns:
+        model: A trained GPy model.
+    """
+    import GPy
+    # Choose the kernel (here we use a standard RBF kernel; you can customize this)
+    kernel = GPy.kern.RBF(input_dim=X.shape[1], ARD=True)
+
+    if not is_classification:
+        # Regression case.
+        if X.shape[0] > sparse_threshold:
+            print("Training a sparse GP regression model...")
+            model = GPy.models.SparseGPRegression(X, y, kernel=kernel)
+        else:
+            print("Training a standard GP regression model...")
+            model = GPy.models.GPRegression(X, y, kernel=kernel)
+    else:
+        # Classification case.
+        # Ensure y is of shape (n, 1) and contains binary values {0,1}.
+        y = y.reshape(-1, 1)
+        if X.shape[0] > sparse_threshold:
+            print("Training a sparse GP classification model...")
+            model = GPy.models.SparseGPClassification(X, y, kernel=kernel)
+        else:
+            print("Training a standard GP classification model...")
+            model = GPy.models.GPClassification(X, y, kernel=kernel)
+
+    # Optimize the model
+    model.optimize(messages=True, max_iters=1000)
+    return model
+
+
+def new_pipeline_test(embeddings, combined_input_matrix, scores_vectors_dict, output_folder,
+                      grid_size=100, dataset_type='image', cluster_labels=None, full_embeddings=None,
+                      test_embeddings=None, test_labels=None, sparse_threshold=500):
+    """
+    Placeholder pipeline function to test the new modular functions.
+
+    This function:
+      1. Extracts the VOI_vector from scores_vectors_dict.
+      2. Runs robust nested CV (with iterative passes to narrow the sigma candidates)
+         on the UMAP embeddings and VOI_vector to obtain candidate sigma values.
+      3. Aggregates these candidate sigma values (using the median) as final_sigma.
+      4. Uses final_sigma to compute the full GWD matrix and summary features.
+      5. Forms combined_features by concatenating UMAP embeddings with GWD summaries.
+      6. Creates a grid over the latent space.
+      7. Evaluates performance (either on a held-out test set or via aggregated CV metrics).
+      8. Computes and saves a Pearson correlation heatmap.
+      9. Trains a predictive model using GPy (either regression or classification) on
+         the combined_features and VOI_vector.
+     10. Reports OOD performance from the GP model.
+
+    Parameters:
+        embeddings (np.ndarray): UMAP embeddings for the labelled (training) data.
+        combined_input_matrix (np.ndarray): The original high-dimensional input.
+        scores_vectors_dict (dict): Dictionary mapping VOI score tags to target vectors.
+        output_folder (str or Path): Directory to save outputs.
+        grid_size (int): Grid resolution for heatmap generation.
+        dataset_type (str): Type of input data ('image', etc.).
+        cluster_labels (np.ndarray): Optional cluster labels.
+        full_embeddings (np.ndarray): Full UMAP embeddings (if available).
+        test_embeddings (np.ndarray, optional): Test set UMAP embeddings.
+        test_labels (np.ndarray, optional): Test set labels (possibly multi-dimensional).
+        sparse_threshold (int): Threshold to switch to the sparse GP model version.
+
+    Returns:
+        dict: A dictionary containing outputs including the GWD matrix, summaries, combined features,
+              grid coordinates, a heatmap dictionary, CV performance, final_sigma, test performance,
+              and GP predictive model details.
+    """
+    import os
+    from matplotlib import pyplot as plt
+    import numpy as np
+    from sklearn.metrics import r2_score, mean_squared_error, mean_absolute_error
+    # Import functions from elsewhere in the codebase.
+    from emuses.tools.kernel_regression_utils import nested_cv_kernel_regression, ensemble_predict
+    from emuses.tools.correlation_maps_utils import calculate_correlation_grid
+    # Assume these functions are defined or imported:
+    #   compute_all_gwd, compute_gwd_summary
+
+    # STEP 1: Extract VOI_vector from scores_vectors_dict.
+    if len(scores_vectors_dict) == 0:
+        raise ValueError("scores_vectors_dict is empty; cannot extract VOI_vector.")
+    elif len(scores_vectors_dict) == 1:
+        key = next(iter(scores_vectors_dict))
+        VOI_vector = np.array(scores_vectors_dict[key])
+    else:
+        key = sorted(scores_vectors_dict.keys())[0]
+        VOI_vector = np.array(scores_vectors_dict[key])
+    print("Using VOI_vector from key:", key)
+
+    # For normalization.
+    global_range = np.max(VOI_vector) - np.min(VOI_vector)
+
+    # STEP 2: Run robust nested CV to obtain candidate sigma values.
+    sigma_candidates = np.linspace(0.001, 0.5, num=50)
+    outer_models, cv_perf, unseen_preds, sigma_values_list = nested_cv_kernel_regression(
+        X=embeddings,
+        y=VOI_vector,
+        sigma_values=sigma_candidates,
+        n_outer=5,
+        n_inner=5,
+        n_passes=5,  # iterative passes to refine candidate range
+        convergence_tol=1e-3,  # tolerance for convergence
+        classification=False
+    )
+    final_sigma = float(np.median(sigma_values_list))
+    print("Final sigma selected for GWD calculation:", final_sigma)
+
+    # STEP 3: Compute the full GWD matrix.
+    print("Computing GWD matrix using final_sigma...")
+    gwd_matrix = compute_all_gwd(embeddings, final_sigma)
+
+    # STEP 4: Compute GWD summary features.
+    print("Computing GWD summary features...")
+    gwd_summaries = compute_gwd_summary(embeddings, final_sigma, mode="basic")
+    print("GWD summaries shape:", gwd_summaries.shape)
+
+    # STEP 5: Form combined feature matrix.
+    combined_features = np.hstack((embeddings, gwd_summaries))
+    print("Combined features shape (UMAP + GWD summary):", combined_features.shape)
+
+    # Plot a histogram of the first summary feature.
+    plt.figure()
+    plt.hist(gwd_summaries[:, 0], bins=30)
+    plt.title("Histogram of Effective Number of Neighbors (ESS)")
+    plt.savefig(os.path.join(output_folder, "ess_histogram.png"))
+    plt.close()
+
+    # STEP 6: Create grid over the latent space.
+    min_coords = np.min(embeddings, axis=0)
+    max_coords = np.max(embeddings, axis=0)
+    grid_x = np.linspace(min_coords[0], max_coords[0], grid_size)
+    grid_y = np.linspace(min_coords[1], max_coords[1], grid_size)
+
+    # STEP 7: Evaluate performance.
+    test_performance = None
+    if (test_embeddings is not None) and (test_labels is not None):
+        if test_labels.ndim > 1:
+            try:
+                col_index = int(key.split('_')[1])
+            except Exception:
+                col_index = 0
+            test_labels = test_labels[:, col_index]
+        mean_pred, std_pred = ensemble_predict(outer_models, test_embeddings)
+        r2 = r2_score(test_labels, mean_pred)
+        mse = mean_squared_error(test_labels, mean_pred)
+        mae = mean_absolute_error(test_labels, mean_pred)
+        normalized_mse = (mse / (global_range ** 2)) * 100 if global_range != 0 else mse
+        normalized_mae = (mae / global_range) * 100 if global_range != 0 else mae
+        test_performance = {'r2': r2, 'mse': mse, 'mae': mae,
+                            'normalized_mse_%': normalized_mse, 'normalized_mae_%': normalized_mae}
+        print("Held-out Test Performance:", test_performance)
+    else:
+        if cv_perf and len(cv_perf) > 0:
+            r2_vals = [perf.get('r2') for perf in cv_perf if 'r2' in perf]
+            mse_vals = [perf.get('mse') for perf in cv_perf if 'mse' in perf]
+            mae_vals = [perf.get('mae') for perf in cv_perf if 'mae' in perf]
+            avg_r2 = np.mean(r2_vals) if r2_vals else None
+            avg_mse = np.mean(mse_vals) if mse_vals else None
+            avg_mae = np.mean(mae_vals) if mae_vals else None
+            normalized_mse = (avg_mse / (
+                        global_range ** 2)) * 100 if global_range != 0 and avg_mse is not None else avg_mse
+            normalized_mae = (avg_mae / global_range) * 100 if global_range != 0 and avg_mae is not None else avg_mae
+            test_performance = {'avg_r2_cv': avg_r2, 'avg_mse_cv': avg_mse, 'avg_mae_cv': avg_mae,
+                                'normalized_mse_cv_%': normalized_mse, 'normalized_mae_cv_%': normalized_mae}
+            print("Aggregated CV Performance:", test_performance)
+        else:
+            print("No validation performance available from CV.")
+
+    # STEP 8: Compute Pearson correlation heatmap.
+    correlation_heatmap, corr_grid_x, corr_grid_y = calculate_correlation_grid(
+        embeddings=embeddings,
+        train_labels=VOI_vector,
+        grid_size=grid_size,
+        sigma=final_sigma,
+        correlation_method='pearson'
+    )
+
+    # Save the correlation heatmap.
+    plt.figure()
+    plt.imshow(correlation_heatmap, extent=(corr_grid_x.min(), corr_grid_x.max(),
+                                            corr_grid_y.min(), corr_grid_y.max()),
+               aspect='auto', origin='lower')
+    plt.colorbar(label='Pearson Correlation')
+    plt.title('Correlation Heatmap')
+    plt.xlabel('UMAP X')
+    plt.ylabel('UMAP Y')
+    plt.savefig(os.path.join(output_folder, "correlation_heatmap.png"))
+    plt.close()
+
+    heatmap_dict = {
+        'prediction_heatmap': None,
+        'uncertainty_heatmap': None,
+        'correlation_heatmap': {
+            'heatmap': correlation_heatmap,
+            'grid_x': corr_grid_x,
+            'grid_y': corr_grid_y
+        }
+    }
+
+    cv_performance_all = cv_perf if cv_perf else []
+
+    # Display a summary.
+    print("===== New Pipeline Test Summary =====")
+    print(f"Final sigma for GWD: {final_sigma:.4f}")
+    print("GWD matrix shape:", gwd_matrix.shape)
+    print("GWD summaries shape:", gwd_summaries.shape)
+    print("Combined features shape:", combined_features.shape)
+    print("Grid X shape:", grid_x.shape, "Grid Y shape:", grid_y.shape)
+    if test_performance:
+        print("Performance metrics:")
+        for metric, value in test_performance.items():
+            print(f"  {metric}: {value:.4f}")
+    else:
+        print("No performance metrics evaluated.")
+    print("===== End of Summary =====")
+
+    # === STEP 9: Train predictive GP models with different feature sets ===
+    import os
+    import json
+    from matplotlib import pyplot as plt
+    from sklearn.decomposition import PCA
+    from sklearn.metrics import r2_score, mean_squared_error, mean_absolute_error
+
+    # Define a function that computes a GWD matrix for the test set.
+    # This computes a Gaussian weighted distance from each test sample to each train sample.
+    def compute_all_gwd_test(test_embeddings, train_embeddings, sigma):
+        from scipy.spatial.distance import cdist
+        dists = cdist(test_embeddings, train_embeddings, metric='euclidean')
+        return np.exp(-0.5 * (dists / sigma) ** 2)
+
+    # Prepare training feature subsets.
+    # (Assume: `embeddings` are your training UMAP embeddings, and `gwd_summaries` have been computed already.)
+    features_4 = combined_features  # [embeddings (2) + GWD summaries (2)]
+    features_3 = np.hstack((embeddings, gwd_summaries[:, :1]))  # [embeddings (2) + first summary (1)]
+    features_2 = embeddings  # only embeddings
+    features_gwd = gwd_summaries  # only GWD summaries
+
+    # Fifth experiment: Use the full GWD matrix.
+    # Each training sample’s GWD vector is its corresponding row in the gwd_matrix.
+    # Note: gwd_matrix is (n_train, n_train); if n_train is large, you may consider further dimensionality reduction.
+    full_gwd_vectors = gwd_matrix
+
+    # Now, apply PCA to the full GWD vectors and choose enough components to explain at least 80% of the variance.
+    pca = PCA(n_components=0.8,
+              svd_solver='full')  # n_components as float selects the number of components needed for 80% var.
+    pca_gwd_features = pca.fit_transform(full_gwd_vectors)
+    print("PCA on full GWD vectors selected components:", pca.n_components_)
+
+    # Put the feature sets into a dictionary.
+    feature_sets = {
+        "GP_4features": (features_4, "Combined Features (Embeddings + GWD summaries)"),
+        "GP_3features": (features_3, "Embeddings + First GWD summary"),
+        "GP_2features": (features_2, "Embeddings only"),
+        "GP_GWDonly": (features_gwd, "GWD summaries only"),
+        "GP_PCA_GWD": (pca_gwd_features, f"PCA on Full GWD vectors [{pca.n_components_} components]")
+    }
+
+    # Next, create the corresponding test feature sets.
+    test_feature_sets = {}
+    if test_embeddings is not None and test_labels is not None:
+        # First, compute test GWD summaries for the test set.
+        test_gwd_summaries = compute_gwd_summary(test_embeddings, final_sigma, mode="basic")
+        test_features_4 = np.hstack((test_embeddings, test_gwd_summaries))
+        test_features_3 = np.hstack((test_embeddings, test_gwd_summaries[:, :1]))
+        test_features_2 = test_embeddings
+        test_features_gwd = test_gwd_summaries
+
+        # For the PCA on full GWD vectors experiment:
+        # We must compute the full GWD vectors for each test sample relative to the training embeddings.
+        test_full_gwd_vectors = compute_all_gwd_test(test_embeddings, embeddings, final_sigma)
+        # Then project them using the PCA fitted on training full GWD vectors.
+        test_pca_gwd_features = pca.transform(test_full_gwd_vectors)
+
+        test_feature_sets = {
+            "GP_4features": test_features_4,
+            "GP_3features": test_features_3,
+            "GP_2features": test_features_2,
+            "GP_GWDonly": test_features_gwd,
+            "GP_PCA_GWD": test_pca_gwd_features
+        }
+    else:
+        print("Test embeddings/labels not provided; skipping test set evaluation for GP models.")
+
+    # Train a GP model on each feature set and evaluate test performance.
+    gp_performance_all = {}
+
+    for fs_key, (train_fs, desc) in feature_sets.items():
+        print(f"\n=== Training GP model using {desc} ===")
+        # Train GP model using your provided GPy-based function.
+        gp_model = train_predictive_model_gpy(
+            X=train_fs,
+            y=VOI_vector.reshape(-1, 1),
+            is_classification=False,
+            sparse_threshold=sparse_threshold
+        )
+        print(f"{fs_key}: GP Model trained.")
+
+        # If test features are available, predict and compute performance.
+        if test_feature_sets and fs_key in test_feature_sets:
+            test_fs = test_feature_sets[fs_key]
+            # For GPy, the predict method returns (mean, variance).
+            gp_mean, gp_variance = gp_model.predict(test_fs)
+            gp_predictions = gp_mean.ravel()
+            gp_std = np.sqrt(gp_variance.ravel())
+
+            # Compute metrics.
+            gp_r2 = r2_score(test_labels, gp_predictions)
+            gp_mse = mean_squared_error(test_labels, gp_predictions)
+            gp_mae = mean_absolute_error(test_labels, gp_predictions)
+            gp_perf = {'gp_r2': gp_r2, 'gp_mse': gp_mse, 'gp_mae': gp_mae}
+            gp_performance_all[fs_key] = gp_perf
+            print(f"{fs_key} Test Performance: {gp_perf}")
+        else:
+            print(f"{fs_key}: No test features provided; skipping performance evaluation.")
+
+    # Optionally, save the performance results.
+    output_perf_path = os.path.join(output_folder, "gp_performance_summary.json")
+    with open(output_perf_path, "w") as f:
+        json.dump(gp_performance_all, f, indent=4)
+    print("Saved GP performance summary to", output_perf_path)
+
+    # Finally, add the GP performance results to the outputs of the pipeline.
+    final_results = {
+        'gwd_matrix': gwd_matrix,
+        'gwd_summaries': gwd_summaries,
+        'combined_features': combined_features,
+        'grid_x': grid_x,
+        'grid_y': grid_y,
+        'heatmap_dict': heatmap_dict,
+        'cv_performance': cv_perf if cv_perf is not None else [],
+        'final_sigma': final_sigma,
+        'test_performance': test_performance,
+        'gp_performance': gp_performance_all
+    }
+
+    return final_results

@@ -2,7 +2,7 @@ from pathlib import Path
 
 import numpy as np
 from scipy.stats import pointbiserialr, pearsonr, spearmanr
-from emuses.tools.stats_utils import compute_gaussian_filter, compute_sigma_median
+from emuses.tools.stats_utils import compute_gwd_for_point, compute_sigma_median
 
 from emuses.tools.stats_utils import input_matrix_stat_map
 from emuses.tools.output_utils import save_statistical_maps
@@ -52,7 +52,7 @@ def calculate_correlation_grid(embeddings, train_labels, grid_size, sigma=0.5, c
         for s in sigma:
             temp_correlation_matrix = np.zeros((grid_size, grid_size))
             dist_vectors = np.array(
-                [compute_gaussian_filter(embeddings, coord.reshape(1, -1), sigma=s) for coord in grid_points])
+                [compute_gwd_for_point(embeddings, coord.reshape(1, -1), sigma=s) for coord in grid_points])
             for idx, coord in enumerate(grid_points):
                 dist_vector = dist_vectors[idx]
                 if np.all(dist_vector == dist_vector[0]):  # Check if dist_vector is constant
@@ -64,7 +64,7 @@ def calculate_correlation_grid(embeddings, train_labels, grid_size, sigma=0.5, c
         correlation_matrix /= len(sigma)
     else:  # Single sigma approach
         dist_vectors = np.array(
-            [compute_gaussian_filter(embeddings, coord.reshape(1, -1), sigma=sigma) for coord in grid_points])
+            [compute_gwd_for_point(embeddings, coord.reshape(1, -1), sigma=sigma) for coord in grid_points])
         for idx, coord in enumerate(grid_points):
             dist_vector = dist_vectors[idx]
             if np.all(np.isclose(dist_vector, 0)) or np.all(np.isclose(train_labels, 0)):
@@ -109,7 +109,7 @@ def calculate_correlation(embeddings, train_labels, sigma=0.5, correlation_metho
         for s in sigma:
             temp_correlations = np.zeros(embeddings.shape[0])
             for idx, embedding in enumerate(embeddings):
-                dist_vector = compute_gaussian_filter(embeddings, embedding.reshape(1, -1), sigma=s)
+                dist_vector = compute_gwd_for_point(embeddings, embedding.reshape(1, -1), sigma=s)
                 if np.all(dist_vector == dist_vector[0]):  # Check if dist_vector is constant
                     correlation = 0
                 else:
@@ -119,7 +119,7 @@ def calculate_correlation(embeddings, train_labels, sigma=0.5, correlation_metho
         correlations /= len(sigma)
     else:  # Single sigma approach
         for idx, embedding in enumerate(embeddings):
-            dist_vector = compute_gaussian_filter(embeddings, embedding.reshape(1, -1), sigma)
+            dist_vector = compute_gwd_for_point(embeddings, embedding.reshape(1, -1), sigma)
             if np.all(dist_vector == dist_vector[0]):  # Check if dist_vector is constant
                 correlation = 0
             else:
