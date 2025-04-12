@@ -18,6 +18,9 @@ class PredictionStage(PipelineStage):
 
         args = self.config.args
 
+        print("WE ARE DEBUGGING RIGHT NOW")
+        exit()
+
         if 'train_labelled_embeddings' in context and 'test_labelled_embeddings' in context \
                 and 'train_labelled_scores' in context and 'test_labelled_scores' in context:
             train_embeddings = context['train_labelled_embeddings']

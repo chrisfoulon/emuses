@@ -266,27 +266,50 @@ class HeatmapStage(PipelineStage):
                     context['interactive_clustering_plots'] = interactive_plots
 
         # Run kernel regression heatmap analysis—pass full_embeddings for grid and visualization
-        heatmap_dict, cv_performance_all = run_kernel_heatmap_analysis(
-            embeddings=embeddings_labelled,  # Used for training/prediction
+        # heatmap_dict, cv_performance_all = run_kernel_heatmap_analysis(
+        #     embeddings=embeddings_labelled,  # Used for training/prediction
+        #     scores_vectors_dict=scores_vectors_dict,
+        #     input_matrix=combined_input_matrix,
+        #     output_folder=self.config.output_folder,
+        #     grid_size=100,
+        #     sigma_range=sigma,
+        #     threshold=0.5,
+        #     uncertainty_penalty=0.5,
+        #     input_type=dataset_type,
+        #     classification=getattr(args, 'classification', False),
+        #     cluster_labels=cluster_labels,
+        #     effect_size_test='mann-whitney',
+        #     highlight_points=True,
+        #     show_plots=show_plots,
+        #     generate_plots=generate_plots,
+        #     output_format_info=self.output_format_info,
+        #     full_embeddings=full_embeddings,
+        #     clusterer=clusterer
+        # )
+        #
+        # logger.info("Kernel regression heatmap analysis completed.")
+        #
+        # context['heatmap_plots'] = heatmap_dict
+        # context['cv_performance_all'] = cv_performance_all
+
+        from emuses.tools.stats_utils import new_pipeline_test
+
+        # Assuming the following variables are available in context:
+        # embeddings_labelled, combined_input_matrix, scores_vectors_dict, sigma, dataset_type, cluster_labels, full_embeddings
+
+        # Call new_pipeline_test as in your heatmap stage:
+        results = new_pipeline_test(
+            embeddings=embeddings_labelled,
+            combined_input_matrix=combined_input_matrix,
             scores_vectors_dict=scores_vectors_dict,
-            input_matrix=combined_input_matrix,
             output_folder=self.config.output_folder,
             grid_size=100,
-            sigma_range=sigma,
-            threshold=0.5,
-            uncertainty_penalty=0.5,
-            input_type=dataset_type,
-            classification=getattr(args, 'classification', False),
+            dataset_type=dataset_type,
             cluster_labels=cluster_labels,
-            effect_size_test='mann-whitney',
-            highlight_points=True,
-            show_plots=show_plots,
-            generate_plots=generate_plots,
-            output_format_info=self.output_format_info,
             full_embeddings=full_embeddings,
-            clusterer=clusterer
+            test_embeddings=context.get('test_embeddings'),
+            test_labels=context.get('test_labels'),
         )
-        logger.info("Kernel regression heatmap analysis completed.")
 
-        context['heatmap_plots'] = heatmap_dict
-        context['cv_performance_all'] = cv_performance_all
+        # Now you can access:
+        # results['heatmap_dict'], results['cv_performance'], etc.

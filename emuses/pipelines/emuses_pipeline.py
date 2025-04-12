@@ -67,56 +67,30 @@ class EMUSESPipeline:
 
     def format_args(self):
         """
-        This method handles both modes:
-         • Classic mode: Process the main dataset (fully labelled) and split it.
-         • Label_dataset mode: Process the unlabelled dataset for UMAP training (no split)
-           and process the separate labelled dataset, filtering it by the scores file if requested,
-           then split that labelled dataset into train and test parts.
+        Process the dataset based on the mode and update context.
+        For label_dataset mode:
+          - Process both the main (unlabelled) dataset for UMAP/clustering and the separate labelled dataset.
+        For classic mode:
+          - Process the main (fully labelled) dataset.
+        Then, call split_dataset() to perform the splitting, save the files, and update the context.
         """
-        # Check if label_dataset mode is active.
         if getattr(self.args, 'label_dataset', None):
             self.logger.info("Labelled dataset mode activated.")
-            # Process the main (unlabelled) dataset for UMAP/clustering.
             self.input_matrix, self.dataset_type, self.output_format_info, _ = self.process_dataset(
                 self.args.input_dataset, is_labelled=False
             )
-            # If filtering is requested, load the scores first.
             if getattr(self.args, 'filter_labelled_by_scores', False):
                 self.load_and_process_scores(expected_length=None)
-
-                # Then process the labelled dataset with filtering inside process_dataset.
                 self.labelled_input_matrix, _, _, _ = self.process_dataset(
                     self.args.label_dataset, is_labelled=True
                 )
             else:
-                # Otherwise, process the labelled dataset normally and then load scores.
                 self.labelled_input_matrix, _, _, _ = self.process_dataset(
                     self.args.label_dataset, is_labelled=True
                 )
                 self.load_and_process_scores(expected_length=self.labelled_input_matrix.shape[0])
-
             self.logger.info(f"Main dataset type: {self.dataset_type}")
-            # Now split the labelled dataset (and its scores).
-            train_mat, test_mat, train_scores, test_scores = train_test_split(
-                self.labelled_input_matrix,
-                self.scores,
-                test_size=self.args.test_size,
-                random_state=42
-            )
-            # Update context with the split labelled data.
-            # Also alias these keys to 'train_labels' and 'test_labels' so downstream stages work as before.
-            self.context.update({
-                'train_labelled_matrix': train_mat,
-                'test_labelled_matrix': test_mat,
-                'train_labelled_scores': train_scores,
-                'test_labelled_scores': test_scores,
-                'train_labels': train_scores,  # alias for downstream compatibility
-                'test_labels': test_scores,
-                'train_features': self.input_matrix,
-            })
-            self.logger.info("Processed, filtered, and split labelled dataset.")
         else:
-            # Classic mode remains unchanged.
             self.input_matrix, self.dataset_type, self.output_format_info, scores = self.process_dataset(
                 self.args.input_dataset, is_labelled=False
             )
@@ -124,19 +98,9 @@ class EMUSESPipeline:
                 self.scores = scores
             else:
                 self.load_and_process_scores(expected_length=self.input_matrix.shape[0])
-            train_features, test_features, train_labels, test_labels = train_test_split(
-                self.input_matrix,
-                self.scores,
-                test_size=self.args.test_size,
-                random_state=42
-            )
-            self.context.update({
-                'train_features': train_features,
-                'test_features': test_features,
-                'train_labels': train_labels,
-                'test_labels': test_labels,
-            })
-            self.logger.info("Processed and split main dataset in classic mode.")
+        # After processing the datasets, perform the splitting:
+        self.split_dataset()
+
 
     def process_dataset(self, dataset_identifier, is_labelled=False):
         """
@@ -313,41 +277,83 @@ class EMUSESPipeline:
 
     def split_dataset(self):
         """
-        In classic mode, split the main dataset into training and test sets.
-        In label_dataset mode, splitting is handled in format_args() so this function does nothing.
-        """
-        if getattr(self.args, 'label_dataset', None):
-            return
+        Splits the dataset and updates self.context with train and test sets,
+        handling the special case when test_size is set to 0.
 
+        In label_dataset mode:
+          - Process the labelled dataset (and its scores) and split it if test_size > 0.
+          - If test_size==0, use the entire labelled dataset for training.
+          - Save the splits (if any) in the 'split_dataset' folder.
+          - Update context with keys 'train_labelled_matrix', 'test_labelled_matrix',
+            'train_labelled_scores', 'test_labelled_scores' and aliases 'train_labels' and 'test_labels'.
+          - Also update 'train_features' using the main (unlabelled) dataset.
+
+        In classic mode:
+          - Splits self.input_matrix and self.scores if test_size > 0.
+          - If test_size==0, use the entire input data as the training set.
+          - Saves the splits and updates context with 'train_features', 'test_features', 'train_labels', and 'test_labels'.
+        """
         args = self.args
-        test_size = getattr(args, 'test_size', 0.0)
-        if test_size > 0.0:
-            self.logger.info(f"Splitting the main dataset with test size of {test_size}")
-            train_features, test_features, train_labels, test_labels = train_test_split(
-                self.input_matrix,
-                self.scores if self.scores is not None else None,
-                test_size=test_size,
-                random_state=42
-            )
-            split_folder = self.output_folder / "split_dataset"
-            split_folder.mkdir(parents=True, exist_ok=True)
+        test_size = getattr(args, 'test_size', 0.2)
+        split_folder = self.output_folder / "split_dataset"
+        split_folder.mkdir(parents=True, exist_ok=True)
+
+        if getattr(args, 'label_dataset', None):
+            self.logger.info("Splitting labelled dataset (label_dataset mode).")
+            # Assume self.labelled_input_matrix and self.scores are already available.
+            if test_size == 0:
+                # Use the entire labelled dataset for training.
+                train_mat = self.labelled_input_matrix
+                train_scores = self.scores
+                test_mat = None
+                test_scores = None
+            else:
+                train_mat, test_mat, train_scores, test_scores = train_test_split(
+                    self.labelled_input_matrix,
+                    self.scores,
+                    test_size=test_size,
+                    random_state=42
+                )
+                np.save(split_folder / "test_labelled_matrix.npy", test_mat)
+                np.save(split_folder / "test_labelled_scores.npy", test_scores)
+            np.save(split_folder / "train_labelled_matrix.npy", train_mat)
+            np.save(split_folder / "train_labelled_scores.npy", train_scores)
+            self.context.update({
+                'train_labelled_matrix': train_mat,
+                'test_labelled_matrix': test_mat,
+                'train_labelled_scores': train_scores,
+                'test_labelled_scores': test_scores,
+                'train_labels': train_scores,  # alias for downstream compatibility
+                'test_labels': test_scores,
+                'train_features': self.input_matrix,  # unlabelled data used for UMAP/clustering
+            })
+            self.logger.info("Labelled dataset split and context updated for label_dataset mode.")
+        else:
+            self.logger.info("Splitting main dataset (classic mode).")
+            if test_size == 0:
+                # Use entire input for training.
+                train_features = self.input_matrix
+                train_labels = self.scores
+                test_features = None
+                test_labels = None
+            else:
+                train_features, test_features, train_labels, test_labels = train_test_split(
+                    self.input_matrix,
+                    self.scores,
+                    test_size=test_size,
+                    random_state=42
+                )
+                np.save(split_folder / "test_features.npy", test_features)
+                np.save(split_folder / "test_labels.npy", test_labels)
             np.save(split_folder / "train_features.npy", train_features)
-            np.save(split_folder / "test_features.npy", test_features)
             np.save(split_folder / "train_labels.npy", train_labels)
-            np.save(split_folder / "test_labels.npy", test_labels)
             self.context.update({
                 'train_features': train_features,
                 'test_features': test_features,
                 'train_labels': train_labels,
                 'test_labels': test_labels,
             })
-        else:
-            self.context.update({
-                'train_features': self.input_matrix,
-                'train_labels': self.scores,
-                'test_features': None,
-                'test_labels': None,
-            })
+            self.logger.info("Main dataset split and context updated for classic mode.")
 
     def add_stage(self, stage):
         self.stages.append(stage)

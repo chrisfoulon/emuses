@@ -33,6 +33,7 @@ setup(
         'pykrige',
         'narwhals',
         'xgboost',
-        'kaleido'
+        'kaleido',
+        'gpy'
     ],
 )

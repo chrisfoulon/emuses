@@ -154,7 +154,7 @@ class UMAPStage(PipelineStage):
                 preset_max=self.max_embeddings
             )
             logger.info("Transformed and rescaled labelled training data using trained UMAP model.")
-        if 'test_labelled_matrix' in context:
+        if 'test_labelled_matrix' in context and context['test_labelled_matrix'] is not None:
             test_labelled_emb = self.trained_umap.transform(context['test_labelled_matrix'])
             context['test_labelled_embeddings'] = rescale_embedding(
                 test_labelled_emb,
