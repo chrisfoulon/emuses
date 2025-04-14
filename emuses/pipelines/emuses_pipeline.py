@@ -224,12 +224,23 @@ class EMUSESPipeline:
             if args.input_normalization and args.input_normalization.lower() != 'none':
                 self.logger.info(f"Normalizing dataset with method={args.input_normalization}")
                 before_shape = inputs_df.shape
-                inputs_df = normalize_dataframe(inputs_df, method=args.input_normalization)
+
+                # Compute scaling factors for the training dataset or apply precomputed ones
+                if not is_labelled:
+                    inputs_df, scaling_factors = normalize_dataframe(inputs_df, method=args.input_normalization)
+                    self.context['input_scaling_factors'] = scaling_factors
+                else:
+                    scaling_factors = self.context.get('input_scaling_factors', None)
+                    if scaling_factors is None:
+                        raise ValueError("Scaling factors are missing for labelled dataset normalization.")
+                    inputs_df, _ = normalize_dataframe(inputs_df, method=args.input_normalization, scaling_factors=scaling_factors)
+
                 after_shape = inputs_df.shape
                 if after_shape != before_shape:
                     self.logger.warning(
                         f"DataFrame shape changed after normalization: from {before_shape} to {after_shape}."
                     )
+
             input_matrix = inputs_df.values
             output_format_info = list(inputs_df.columns)
         else:
