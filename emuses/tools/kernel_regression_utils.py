@@ -929,3 +929,57 @@ def run_kernel_heatmap_analysis(
     print(f"Saved aggregated CV performance metrics to {perf_path}")
 
     return heatmap_dict, cv_performance_all
+
+
+def optimize_gp_model(model, max_iter=300, verbose=True):
+    """
+    Optimizes GP model parameters with improved numerical stability.
+    
+    Parameters:
+    -----------
+    model : GPy.models.GPRegression
+        The GP model to optimize.
+    max_iter : int
+        Maximum number of iterations for optimization.
+    verbose : bool
+        Whether to print optimization progress.
+        
+    Returns:
+    --------
+    model : GPy.models.GPRegression
+        The optimized GP model.
+    """
+    # Set optimization parameters for better stability
+    model.Gaussian_noise.variance.constrain_bounded(1e-6, 1.0, warning=False)
+    
+    # For numerical stability in the optimization
+    try:
+        # Use L-BFGS-B optimizer with careful parameterization
+        model.optimize(optimizer='lbfgs', 
+                       max_iters=max_iter, 
+                       messages=verbose,
+                       ipython_notebook=False)
+    except Exception as e:
+        if verbose:
+            print(f"First optimization attempt failed: {e}")
+        try:
+            # Try with a more robust but slower optimizer
+            model.optimize(optimizer='scg', 
+                           max_iters=max_iter,
+                           messages=verbose,
+                           ipython_notebook=False)
+        except Exception as e:
+            if verbose:
+                print(f"Second optimization attempt failed: {e}")
+            # Add small jitter to diagonal of the kernel matrix for numerical stability
+            model.kern.add_jitter(1e-8)
+            try:
+                model.optimize_restarts(num_restarts=5, 
+                                       optimizer='lbfgs',
+                                       max_iters=max_iter//2,
+                                       verbose=verbose)
+            except:
+                if verbose:
+                    print("All optimization attempts failed. Using current model parameters.")
+    
+    return model

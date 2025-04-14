@@ -15,8 +15,8 @@ from bids import BIDSLayout
 
 from emuses.tools.data_preproc import find_min_resolution
 
-
 from sklearn.datasets import fetch_openml, load_digits
+from sklearn.preprocessing import RobustScaler, StandardScaler
 
 
 def load_and_preprocess_digits_dataset(dataset='digits'):
@@ -462,6 +462,7 @@ def handle_bids_dataset(folder_path, filters=None, verbose=True):
 
     except Exception as e:
         raise argparse.ArgumentTypeError(f"Error handling BIDS dataset: {e}")
+    
 
 def is_bids_dataset(folder_path):
     """

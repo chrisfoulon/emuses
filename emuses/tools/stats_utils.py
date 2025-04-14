@@ -1466,17 +1466,17 @@ def new_pipeline_test(embeddings, combined_input_matrix, scores_vectors_dict, ou
         print("No performance metrics evaluated.")
     print("===== End of Summary =====")
 
-    # === STEP 9: Train predictive GP models with different feature sets ===
+    # === STEP 9: Train predictive GP models with different feature sets using nested CV ===
     import os
     import json
     from matplotlib import pyplot as plt
     from sklearn.decomposition import PCA
     from sklearn.metrics import r2_score, mean_squared_error, mean_absolute_error
+    from scipy.spatial.distance import cdist
 
     # Define a function that computes a GWD matrix for the test set.
     # This computes a Gaussian weighted distance from each test sample to each train sample.
     def compute_all_gwd_test(test_embeddings, train_embeddings, sigma):
-        from scipy.spatial.distance import cdist
         dists = cdist(test_embeddings, train_embeddings, metric='euclidean')
         return np.exp(-0.5 * (dists / sigma) ** 2)
 
@@ -1488,7 +1488,7 @@ def new_pipeline_test(embeddings, combined_input_matrix, scores_vectors_dict, ou
     features_gwd = gwd_summaries  # only GWD summaries
 
     # Fifth experiment: Use the full GWD matrix.
-    # Each training sample’s GWD vector is its corresponding row in the gwd_matrix.
+    # Each training sample's GWD vector is its corresponding row in the gwd_matrix.
     # Note: gwd_matrix is (n_train, n_train); if n_train is large, you may consider further dimensionality reduction.
     full_gwd_vectors = gwd_matrix
 
@@ -1507,6 +1507,14 @@ def new_pipeline_test(embeddings, combined_input_matrix, scores_vectors_dict, ou
         "GP_PCA_GWD": (pca_gwd_features, f"PCA on Full GWD vectors [{pca.n_components_} components]")
     }
 
+    # Define kernel choices and noise variance range for nested CV
+    kernel_choices = ["RBF", "Matern52"]
+    noise_var_range = [0.001, 0.01, 0.1, 1.0]
+
+    # Train GP models with nested CV on each feature set
+    gp_models_cv = {}
+    gp_performance_all = {}
+    
     # Next, create the corresponding test feature sets.
     test_feature_sets = {}
     if test_embeddings is not None and test_labels is not None:
@@ -1533,37 +1541,79 @@ def new_pipeline_test(embeddings, combined_input_matrix, scores_vectors_dict, ou
     else:
         print("Test embeddings/labels not provided; skipping test set evaluation for GP models.")
 
-    # Train a GP model on each feature set and evaluate test performance.
-    gp_performance_all = {}
-
     for fs_key, (train_fs, desc) in feature_sets.items():
         print(f"\n=== Training GP model using {desc} ===")
-        # Train GP model using your provided GPy-based function.
-        gp_model = train_predictive_model_gpy(
+        
+        # Use nested CV to train and evaluate GP models
+        outer_models, cv_perf, unseen_preds, best_params = nested_cv_gp_regression(
             X=train_fs,
-            y=VOI_vector.reshape(-1, 1),
-            is_classification=False,
-            sparse_threshold=sparse_threshold
+            y=VOI_vector,
+            n_outer=5,
+            n_inner=3,
+            random_state=42,
+            sparse_threshold=sparse_threshold,
+            kernel_choices=kernel_choices,
+            noise_var_range=noise_var_range,
+            ARD=True
         )
+        
+        # Store the models and performance results
+        gp_models_cv[fs_key] = {
+            'models': outer_models,
+            'cv_performance': cv_perf,
+            'best_params': best_params
+        }
+        
         print(f"{fs_key}: GP Model trained.")
 
-        # If test features are available, predict and compute performance.
+        # If test features are available, predict using all outer fold models and ensemble
         if test_feature_sets and fs_key in test_feature_sets:
             test_fs = test_feature_sets[fs_key]
-            # For GPy, the predict method returns (mean, variance).
-            gp_mean, gp_variance = gp_model.predict(test_fs)
-            gp_predictions = gp_mean.ravel()
-            gp_std = np.sqrt(gp_variance.ravel())
+            
+            # Make predictions with each model in the ensemble
+            ensemble_means = []
+            ensemble_variances = []
+            
+            for model in outer_models:
+                mean, var = model.predict(test_fs)
+                ensemble_means.append(mean.ravel())
+                ensemble_variances.append(var.ravel())
+            
+            # Average predictions from all models in the ensemble
+            gp_predictions = np.mean(ensemble_means, axis=0)
+            
+            # For uncertainty, we need to combine both the variance within each model
+            # and the variance between model predictions
+            within_var = np.mean(ensemble_variances, axis=0)
+            between_var = np.var(ensemble_means, axis=0)
+            total_var = within_var + between_var
+            gp_std = np.sqrt(total_var)
 
-            # Compute metrics.
+            # Compute metrics
             gp_r2 = r2_score(test_labels, gp_predictions)
             gp_mse = mean_squared_error(test_labels, gp_predictions)
             gp_mae = mean_absolute_error(test_labels, gp_predictions)
-            gp_perf = {'gp_r2': gp_r2, 'gp_mse': gp_mse, 'gp_mae': gp_mae}
+            gp_perf = {
+                'gp_r2': gp_r2, 
+                'gp_mse': gp_mse, 
+                'gp_mae': gp_mae,
+                'avg_cv_r2': np.mean([p['r2'] for p in cv_perf]),
+                'best_kernel_types': [p['kernel_type'] for p in best_params],
+                'best_noise_vars': [p['noise_var'] for p in best_params]
+            }
             gp_performance_all[fs_key] = gp_perf
             print(f"{fs_key} Test Performance: {gp_perf}")
         else:
-            print(f"{fs_key}: No test features provided; skipping performance evaluation.")
+            # If no test set, report the average cross-validation performance
+            avg_cv_perf = {
+                'avg_cv_r2': np.mean([p['r2'] for p in cv_perf]),
+                'avg_cv_mse': np.mean([p['mse'] for p in cv_perf]),
+                'avg_cv_mae': np.mean([p['mae'] for p in cv_perf]),
+                'best_kernel_types': [p['kernel_type'] for p in best_params],
+                'best_noise_vars': [p['noise_var'] for p in best_params]
+            }
+            gp_performance_all[fs_key] = avg_cv_perf
+            print(f"{fs_key}: No test features provided; reporting CV performance: {avg_cv_perf}")
 
     # Optionally, save the performance results.
     output_perf_path = os.path.join(output_folder, "gp_performance_summary.json")
@@ -1582,7 +1632,293 @@ def new_pipeline_test(embeddings, combined_input_matrix, scores_vectors_dict, ou
         'cv_performance': cv_perf if cv_perf is not None else [],
         'final_sigma': final_sigma,
         'test_performance': test_performance,
-        'gp_performance': gp_performance_all
+        'gp_performance': gp_performance_all,
+        'gp_models': gp_models_cv
     }
 
     return final_results
+
+
+def nested_cv_gp_regression(X, y, n_outer=5, n_inner=3, random_state=42, sparse_threshold=500,
+                         kernel_choices=None, noise_var_range=None, ARD=True, num_inducing=None,
+                         n_refinement_steps=2, refinement_factor=0.5, convergence_tol=1e-3,
+                         max_iter=100, optimization_restarts=1):
+    """
+    Performs nested cross-validation for Gaussian Process Regression to optimize hyperparameters.
+    Uses an iterative refinement approach to narrow down the best noise variance range.
+    
+    Parameters:
+        X (np.ndarray): Input features of shape (n_samples, n_features)
+        y (np.ndarray): Target values of shape (n_samples,) or (n_samples, 1)
+        n_outer (int): Number of folds for outer CV (model assessment)
+        n_inner (int): Number of folds for inner CV (hyperparameter tuning)
+        random_state (int): Random seed for reproducibility
+        sparse_threshold (int): If n_samples > sparse_threshold, use SparseGPR
+        kernel_choices (list): List of kernel types to try. If None, uses RBF only
+        noise_var_range (list): Initial range of noise variance values to try
+        ARD (bool): Whether to use Automatic Relevance Determination
+        num_inducing (int): Number of inducing points for sparse GP. If None, uses min(500, n_samples/2)
+        n_refinement_steps (int): Number of refinement iterations for noise variance
+        refinement_factor (float): Factor to narrow the range at each refinement step
+        convergence_tol (float): Stop refinement early if improvement is less than this
+        max_iter (int): Maximum number of iterations for optimization
+        optimization_restarts (int): Number of optimization restarts
+        
+    Returns:
+        outer_models (list): List of trained GP models from each outer fold
+        cv_perf (list): List of performance metrics for each outer fold
+        unseen_preds (list): List of predictions on unseen data for each outer fold
+        best_params_list (list): List of best hyperparameters from each outer fold
+    """
+    import GPy
+    from sklearn.model_selection import KFold
+    from sklearn.metrics import r2_score, mean_squared_error, mean_absolute_error
+    import time
+    
+    print(f"Starting nested CV GPR with {n_outer} outer folds, {n_inner} inner folds")
+    start_time = time.time()
+    
+    # Ensure y is the right shape (n_samples, 1) for GPy
+    if y.ndim == 1:
+        y = y.reshape(-1, 1)
+    
+    # Set default kernel choices if none provided
+    if kernel_choices is None:
+        kernel_choices = ["RBF"]
+    
+    # Set default noise variance range if none provided
+    if noise_var_range is None:
+        noise_var_range = np.logspace(-3, 0, 6)  # Reduced number of points: 6 points from 0.001 to 1.0
+    
+    # Set number of inducing points for sparse GP
+    if num_inducing is None:
+        num_inducing = min(200, X.shape[0] // 3)  # Reduced number of inducing points
+    
+    # Create the outer and inner CV splitters
+    outer_cv = KFold(n_splits=n_outer, shuffle=True, random_state=random_state)
+    
+    # Initialize lists to store results
+    outer_models = []
+    cv_perf = []
+    unseen_preds = []
+    best_params_list = []
+    
+    # Start outer CV loop
+    for outer_fold, (outer_train_idx, outer_test_idx) in enumerate(outer_cv.split(X)):
+        fold_start_time = time.time()
+        print(f"\nOuter Fold {outer_fold+1}/{n_outer}")
+        X_train_outer, X_test_outer = X[outer_train_idx], X[outer_test_idx]
+        y_train_outer, y_test_outer = y[outer_train_idx], y[outer_test_idx]
+        
+        # Inner CV splitter with different random state to ensure different splits
+        inner_cv = KFold(n_splits=n_inner, shuffle=True, random_state=random_state+1)
+        
+        # Track best model and parameters for this outer fold
+        best_r2 = -np.inf
+        best_kernel_type = None
+        best_noise_var = None
+        best_inner_models = []
+        
+        # Try different kernel types
+        for kernel_type in kernel_choices:
+            kernel_start_time = time.time()
+            print(f"  Testing kernel: {kernel_type}")
+            
+            # Current noise variance range for this kernel
+            current_noise_range = np.array(noise_var_range)
+            prev_best_r2 = -np.inf
+            best_noise_from_prev_step = None
+            
+            # Iterative refinement of noise variance range
+            for refinement_step in range(n_refinement_steps):
+                step_start_time = time.time()
+                print(f"  Refinement step {refinement_step+1}/{n_refinement_steps}")
+                print(f"  Testing noise variance range: [{min(current_noise_range):.6f}, {max(current_noise_range):.6f}]")
+                
+                # Track best noise variance for this refinement step
+                step_best_r2 = -np.inf
+                step_best_noise = None
+                
+                # Try each noise variance in current range
+                for noise_idx, noise_var in enumerate(current_noise_range):
+                    noise_start_time = time.time()
+                    print(f"    Testing noise {noise_idx+1}/{len(current_noise_range)}: {noise_var:.6f}")
+                    
+                    # Initialize list to store inner fold models and performance
+                    inner_r2_scores = []
+                    inner_models = []
+                    
+                    # Start inner CV loop
+                    for inner_fold, (inner_train_idx, inner_val_idx) in enumerate(inner_cv.split(X_train_outer)):
+                        fold_start = time.time()
+                        X_train_inner, X_val_inner = X_train_outer[inner_train_idx], X_train_outer[inner_val_idx]
+                        y_train_inner, y_val_inner = y_train_outer[inner_train_idx], y_train_outer[inner_val_idx]
+                        
+                        # Create kernel based on type
+                        if kernel_type == "RBF":
+                            kernel = GPy.kern.RBF(input_dim=X.shape[1], ARD=ARD)
+                        elif kernel_type == "Matern52":
+                            kernel = GPy.kern.Matern52(input_dim=X.shape[1], ARD=ARD)
+                        else:
+                            raise ValueError(f"Unsupported kernel type: {kernel_type}")
+                        
+                        # Create sparse or regular GP model based on threshold
+                        if X_train_inner.shape[0] > sparse_threshold:
+                            # Randomly select inducing points
+                            induce_idx = np.random.choice(X_train_inner.shape[0], size=num_inducing, replace=False)
+                            Z = X_train_inner[induce_idx]
+                            model = GPy.models.SparseGPRegression(X_train_inner, y_train_inner, kernel=kernel, Z=Z)
+                        else:
+                            model = GPy.models.GPRegression(X_train_inner, y_train_inner, kernel=kernel)
+                        
+                        # Set noise variance constraint
+                        model.Gaussian_noise.variance = noise_var
+                        model.Gaussian_noise.fix()  # Fix noise during optimization
+                        
+                        # Optimize model with timeout
+                        try:
+                            opt_start = time.time()
+                            print(f"      Inner fold {inner_fold+1}/{n_inner}: Starting optimization...")
+                            model.optimize(messages=False, max_iters=max_iter, optimizer='lbfgs')
+                            print(f"      Inner fold {inner_fold+1}/{n_inner}: Optimization complete in {time.time()-opt_start:.2f}s")
+                        except Exception as e:
+                            print(f"      Warning: Optimization failed with noise={noise_var:.6f}. Error: {e}")
+                            continue
+                        
+                        # Evaluate on validation set
+                        mean_pred, _ = model.predict(X_val_inner)
+                        r2 = r2_score(y_val_inner, mean_pred)
+                        inner_r2_scores.append(r2)
+                        inner_models.append(model)
+                        print(f"      Inner fold {inner_fold+1}/{n_inner}: R²={r2:.4f}, Time: {time.time()-fold_start:.2f}s")
+                    
+                    # Calculate mean R² from inner CV
+                    if inner_r2_scores:
+                        mean_inner_r2 = np.mean(inner_r2_scores)
+                        print(f"    Noise: {noise_var:.6f}, Mean R²: {mean_inner_r2:.4f}, Time: {time.time()-noise_start_time:.2f}s")
+                        
+                        # Update best noise for this refinement step
+                        if mean_inner_r2 > step_best_r2:
+                            step_best_r2 = mean_inner_r2
+                            step_best_noise = noise_var
+                            
+                        # Update global best if this is better
+                        if mean_inner_r2 > best_r2:
+                            best_r2 = mean_inner_r2
+                            best_kernel_type = kernel_type
+                            best_noise_var = noise_var
+                            best_inner_models = inner_models
+                
+                # Check for convergence
+                improvement = step_best_r2 - prev_best_r2
+                print(f"  Step {refinement_step+1} complete - Best noise: {step_best_noise:.6f}, R²: {step_best_r2:.4f}")
+                print(f"  Improvement: {improvement:.6f}, Time: {time.time()-step_start_time:.2f}s")
+                
+                if improvement < convergence_tol and refinement_step > 0:
+                    print(f"  Refinement converged (improvement < {convergence_tol})")
+                    break
+                
+                # Update for next iteration
+                prev_best_r2 = step_best_r2
+                best_noise_from_prev_step = step_best_noise
+                
+                # Refine noise variance range around the best value
+                if best_noise_from_prev_step is not None and refinement_step < n_refinement_steps - 1:
+                    # Calculate range boundaries as a percentage around best value
+                    range_width = max(current_noise_range) - min(current_noise_range)
+                    new_width = range_width * refinement_factor
+                    
+                    # For log-spaced noise values, use multiplicative factors
+                    if min(current_noise_range) > 0:  # Ensure we're not working with negative or zero values
+                        low = max(1e-6, best_noise_from_prev_step / np.sqrt(1/refinement_factor))
+                        high = best_noise_from_prev_step * np.sqrt(1/refinement_factor)
+                        # Create new range, more densely sampled around the best value
+                        current_noise_range = np.linspace(low, high, 5)  # Reduced to 5 points
+                    else:
+                        # Fallback to linear spacing
+                        low = max(0, best_noise_from_prev_step - new_width/2)
+                        high = best_noise_from_prev_step + new_width/2
+                        current_noise_range = np.linspace(low, high, 5)  # Reduced to 5 points
+            
+            print(f"  Kernel {kernel_type} evaluation complete in {time.time()-kernel_start_time:.2f}s")
+        
+        # If no valid models were found, use simple defaults
+        if best_kernel_type is None:
+            print("  Warning: No valid models found in inner CV. Using default parameters.")
+            best_kernel_type = "RBF"
+            best_noise_var = 0.1
+        
+        # Train the final model for this outer fold using the best parameters
+        print(f"  Outer fold - Final best kernel: {best_kernel_type}, Best noise: {best_noise_var:.6f}")
+        
+        # Create the best kernel
+        if best_kernel_type == "RBF":
+            best_kernel = GPy.kern.RBF(input_dim=X.shape[1], ARD=ARD)
+        elif best_kernel_type == "Matern52":
+            best_kernel = GPy.kern.Matern52(input_dim=X.shape[1], ARD=ARD)
+        
+        # Train final model for this outer fold
+        final_model_start = time.time()
+        try:
+            if X_train_outer.shape[0] > sparse_threshold:
+                induce_idx = np.random.choice(X_train_outer.shape[0], size=num_inducing, replace=False)
+                Z = X_train_outer[induce_idx]
+                final_model = GPy.models.SparseGPRegression(X_train_outer, y_train_outer, kernel=best_kernel, Z=Z)
+            else:
+                final_model = GPy.models.GPRegression(X_train_outer, y_train_outer, kernel=best_kernel)
+            
+            # Set and fix the best noise variance
+            final_model.Gaussian_noise.variance = best_noise_var
+            final_model.Gaussian_noise.fix()
+            
+            # Optimize the final model
+            print("  Training final model for outer fold...")
+            final_model.optimize(messages=True, max_iters=max_iter*2, optimizer='lbfgs')
+            print(f"  Final model training complete in {time.time()-final_model_start:.2f}s")
+        except Exception as e:
+            print(f"  Warning: Final model training failed. Error: {e}")
+            # Use the best inner model as a fallback
+            if best_inner_models:
+                print("  Using best inner model as fallback")
+                final_model = best_inner_models[0]
+            else:
+                # Create a simple default model
+                if X_train_outer.shape[0] > sparse_threshold:
+                    induce_idx = np.random.choice(X_train_outer.shape[0], size=num_inducing, replace=False)
+                    Z = X_train_outer[induce_idx]
+                    final_model = GPy.models.SparseGPRegression(X_train_outer, y_train_outer, 
+                                                               kernel=GPy.kern.RBF(input_dim=X.shape[1], ARD=False), Z=Z)
+                else:
+                    final_model = GPy.models.GPRegression(X_train_outer, y_train_outer, 
+                                                         kernel=GPy.kern.RBF(input_dim=X.shape[1], ARD=False))
+                final_model.Gaussian_noise.variance = 0.1
+        
+        # Evaluate on the outer test set
+        eval_start = time.time()
+        mean_pred, var_pred = final_model.predict(X_test_outer)
+        r2 = r2_score(y_test_outer, mean_pred)
+        mse = mean_squared_error(y_test_outer, mean_pred)
+        mae = mean_absolute_error(y_test_outer, mean_pred)
+        print(f"  Test set evaluation complete in {time.time()-eval_start:.2f}s")
+        
+        # Store results
+        outer_models.append(final_model)
+        cv_perf.append({
+            'r2': r2,
+            'mse': mse,
+            'mae': mae,
+            'kernel_type': best_kernel_type,
+            'noise_var': best_noise_var
+        })
+        unseen_preds.append((mean_pred, np.sqrt(var_pred), X_test_outer, y_test_outer, outer_test_idx))
+        best_params_list.append({
+            'kernel_type': best_kernel_type,
+            'noise_var': best_noise_var
+        })
+        
+        print(f"  Outer fold test performance - R²: {r2:.4f}, MSE: {mse:.4f}, MAE: {mae:.4f}")
+        print(f"  Outer fold {outer_fold+1} complete in {time.time()-fold_start_time:.2f}s")
+    
+    total_time = time.time() - start_time
+    print(f"Nested CV GPR complete in {total_time:.2f}s ({total_time/60:.2f}min)")
+    return outer_models, cv_perf, unseen_preds, best_params_list
