@@ -1,25 +1,30 @@
-from multiprocessing import Pool, cpu_count
 import os
+import time
+import json
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
 import pickle
+import optuna
+from multiprocessing import Pool, cpu_count
 from pathlib import Path
-
-import GPy
-import matplotlib
 from bcblib.tools.arrays_utils import separate_clusters_and_extract_coords, find_centroid_and_check
 from narwhals.selectors import categorical
 from scipy.stats import mannwhitneyu, ttest_ind, mode, entropy
 from sklearn.linear_model import LinearRegression
 from tqdm import tqdm
-import numpy as np
-import pandas as pd
-from sklearn.ensemble import RandomForestRegressor, RandomForestClassifier
-from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score, confusion_matrix, accuracy_score, \
-    pairwise_distances, f1_score, precision_score, recall_score
-from sklearn.model_selection import KFold, GridSearchCV
-import matplotlib.pyplot as plt
-import seaborn as sns
+from sklearn.ensemble import RandomForestRegressor, RandomForestClassifier, GradientBoostingRegressor
+from sklearn.gaussian_process import GaussianProcessRegressor
+from sklearn.gaussian_process.kernels import RBF, Matern, WhiteKernel, RationalQuadratic
+from sklearn.metrics import (mean_squared_error, mean_absolute_error, r2_score, confusion_matrix, 
+                            accuracy_score, pairwise_distances, f1_score, precision_score, 
+                            recall_score)
+from sklearn.model_selection import KFold, GridSearchCV, cross_val_score
 from pykrige.rk import Krige
+from joblib import dump, Parallel, delayed
+import GPy
 import xgboost as xgb
+import seaborn as sns
 
 
 def fwhm_to_sigma(fwhm):
@@ -1107,7 +1112,7 @@ def train_predictive_model_gpy(combined_features, target, output_folder, mode='r
     # Loop over CV folds.
     for train_idx, val_idx in cv.split(combined_features):
         X_train = combined_features[train_idx]
-        X_val = combined_features[val_idx]
+        X_val = combined_features[train_idx]
         # For GPy, targets should be 2D for regression.
         if mode == 'regression':
             y_train = target[train_idx].reshape(-1, 1)
@@ -1282,23 +1287,23 @@ def train_predictive_model_gpy(X, y, is_classification=False, sparse_threshold=5
 
 def new_pipeline_test(embeddings, combined_input_matrix, scores_vectors_dict, output_folder,
                       grid_size=100, dataset_type='image', cluster_labels=None, full_embeddings=None,
-                      test_embeddings=None, test_labels=None, sparse_threshold=500):
+                      test_embeddings=None, test_labels=None, sparse_threshold=500,
+                      run_parallel=True, n_jobs=-1, optuna_trials=50, model_selection=None):
     """
-    Placeholder pipeline function to test the new modular functions.
+    Enhanced pipeline function with robust model selection and parallel training.
 
     This function:
       1. Extracts the VOI_vector from scores_vectors_dict.
-      2. Runs robust nested CV (with iterative passes to narrow the sigma candidates)
-         on the UMAP embeddings and VOI_vector to obtain candidate sigma values.
-      3. Aggregates these candidate sigma values (using the median) as final_sigma.
+      2. Runs robust nested CV with Optuna optimization to determine optimal kernel and sigma
+         for Kernel Regression on the UMAP embeddings and VOI_vector.
+      3. Aggregates candidate sigma values to obtain a robust final_sigma.
       4. Uses final_sigma to compute the full GWD matrix and summary features.
       5. Forms combined_features by concatenating UMAP embeddings with GWD summaries.
-      6. Creates a grid over the latent space.
-      7. Evaluates performance (either on a held-out test set or via aggregated CV metrics).
-      8. Computes and saves a Pearson correlation heatmap.
-      9. Trains a predictive model using GPy (either regression or classification) on
-         the combined_features and VOI_vector.
-     10. Reports OOD performance from the GP model.
+      6. Creates multiple feature sets for evaluation.
+      7. Uses Optuna to optimize hyperparameters for multiple model types across feature sets.
+      8. Trains models in parallel when possible.
+      9. Evaluates performance on test set or via cross-validation.
+      10. Aggregates and compares results across models and feature sets.
 
     Parameters:
         embeddings (np.ndarray): UMAP embeddings for the labelled (training) data.
@@ -1312,21 +1317,40 @@ def new_pipeline_test(embeddings, combined_input_matrix, scores_vectors_dict, ou
         test_embeddings (np.ndarray, optional): Test set UMAP embeddings.
         test_labels (np.ndarray, optional): Test set labels (possibly multi-dimensional).
         sparse_threshold (int): Threshold to switch to the sparse GP model version.
+        run_parallel (bool): Whether to train models in parallel.
+        n_jobs (int): Number of processes for parallel execution (-1 for all cores).
+        optuna_trials (int): Number of trials for Optuna optimization per model/feature set.
+        model_selection (list): Model types to try. If None, uses ['gp', 'rf', 'gb', 'kr', 'xgb'].
 
     Returns:
         dict: A dictionary containing outputs including the GWD matrix, summaries, combined features,
               grid coordinates, a heatmap dictionary, CV performance, final_sigma, test performance,
-              and GP predictive model details.
+              and model comparison results.
     """
     import os
     from matplotlib import pyplot as plt
     import numpy as np
+    import optuna
     from sklearn.metrics import r2_score, mean_squared_error, mean_absolute_error
-    # Import functions from elsewhere in the codebase.
-    from emuses.tools.kernel_regression_utils import nested_cv_kernel_regression, ensemble_predict
+    from sklearn.model_selection import KFold
+    import time
+    import joblib
+    from joblib import Parallel, delayed
+    import json
+    
+    # Import functions from elsewhere in the codebase
+    from emuses.tools.kernel_regression_utils import KernelRegressor, nested_cv_kernel_regression, ensemble_predict
     from emuses.tools.correlation_maps_utils import calculate_correlation_grid
-    # Assume these functions are defined or imported:
-    #   compute_all_gwd, compute_gwd_summary
+    
+    # Set default model selection if not provided
+    if model_selection is None:
+        model_selection = ['gp', 'rf', 'gb', 'kr', 'xgb']
+    
+    # Create output folder if it doesn't exist
+    os.makedirs(output_folder, exist_ok=True)
+    
+    print("========== Starting Enhanced EMUSES Pipeline ==========")
+    start_time = time.time()
 
     # STEP 1: Extract VOI_vector from scores_vectors_dict.
     if len(scores_vectors_dict) == 0:
@@ -1339,86 +1363,391 @@ def new_pipeline_test(embeddings, combined_input_matrix, scores_vectors_dict, ou
         VOI_vector = np.array(scores_vectors_dict[key])
     print("Using VOI_vector from key:", key)
 
-    # For normalization.
+    # For normalization
     global_range = np.max(VOI_vector) - np.min(VOI_vector)
-
-    # STEP 2: Run robust nested CV to obtain candidate sigma values.
-    sigma_candidates = np.linspace(0.001, 0.5, num=50)
+    
+    # STEP 2: Use Optuna to find optimal kernel and sigma with nested CV
+    print("Starting Optuna optimization to find robust sigma for GWD calculation...")
+    
+    # Define the objective function for Optuna
+    def objective(trial):
+        # Define nested cross-validation structure
+        n_outer = 5
+        n_inner = 3
+        
+        # Initialize list to store best sigma values from each outer fold
+        sigma_values = []
+        r2_scores = []
+        
+        # Outer cross-validation loop
+        outer_cv = KFold(n_splits=n_outer, shuffle=True, random_state=42)
+        
+        for train_idx, test_idx in outer_cv.split(embeddings):
+            X_train_outer, X_test_outer = embeddings[train_idx], embeddings[test_idx]
+            y_train_outer, y_test_outer = VOI_vector[train_idx], VOI_vector[test_idx]
+            
+            # Inner cross-validation loop to find best sigma for this outer fold
+            best_r2 = -np.inf
+            best_sigma = None
+            
+            # Suggest hyperparameters to try
+            kernel_type = trial.suggest_categorical('kernel', ['gaussian', 'epanechnikov', 'triangular'])
+            # Ensure we sample a wide range of potential sigma values
+            sigma = trial.suggest_float('sigma', 0.001, 1.0, log=True)
+            
+            # Inner cross-validation
+            inner_cv = KFold(n_splits=n_inner, shuffle=True, random_state=42)
+            inner_scores = []
+            
+            for inner_train_idx, inner_val_idx in inner_cv.split(X_train_outer):
+                X_train_inner = X_train_outer[inner_train_idx]
+                X_val_inner = X_train_outer[inner_val_idx]
+                y_train_inner = y_train_outer[inner_train_idx]
+                y_val_inner = y_train_outer[inner_val_idx]
+                
+                # Train KR model with these hyperparameters
+                kr_model = KernelRegressor(kernel=kernel_type, sigma=sigma)
+                kr_model.fit(X_train_inner, y_train_inner)
+                
+                # Evaluate on validation set
+                y_val_pred = kr_model.predict(X_val_inner)
+                inner_score = r2_score(y_val_inner, y_val_pred)
+                inner_scores.append(inner_score)
+            
+            # Average inner CV score for this hyperparameter set
+            avg_inner_score = np.mean(inner_scores)
+            
+            if avg_inner_score > best_r2:
+                best_r2 = avg_inner_score
+                best_sigma = sigma
+            
+            # Store the best sigma from this outer fold
+            sigma_values.append(best_sigma)
+            
+            # Also evaluate the best model on the outer test fold
+            kr_model = KernelRegressor(kernel=kernel_type, sigma=best_sigma)
+            kr_model.fit(X_train_outer, y_train_outer)
+            y_test_pred = kr_model.predict(X_test_outer)
+            outer_r2 = r2_score(y_test_outer, y_test_pred)
+            r2_scores.append(outer_r2)
+        
+        # Return the average R2 score across all outer folds
+        return np.mean(r2_scores)
+    
+    # Create Optuna study
+    study = optuna.create_study(direction='maximize')
+    
+    # Run Optuna optimization with defined number of trials
+    print(f"Running Optuna optimization with {optuna_trials} trials...")
+    start_time_optuna = time.time()
+    study.optimize(objective, n_trials=optuna_trials)
+    optimization_time = time.time() - start_time_optuna
+    print(f"Optuna optimization completed in {optimization_time:.1f} seconds")
+    
+    # Get best parameters
+    best_params = study.best_params
+    print(f"Best kernel type: {best_params['kernel']}")
+    print(f"Best sigma: {best_params['sigma']:.5f}")
+    
+    # Run final nested CV with best parameters to get robust estimate of sigma
+    print(f"Running nested CV with best parameters to get final sigma...")
+    
+    # Use the existing nested_cv_kernel_regression function with a narrow range around best sigma
+    sigma_values = np.linspace(best_params['sigma'] * 0.5, best_params['sigma'] * 1.5, num=20)
+    
+    # Import the kernel_regression_utils to get access to nested_cv_kernel_regression
+    from emuses.tools.kernel_regression_utils import nested_cv_kernel_regression
+    
+    # Call nested_cv_kernel_regression without the kernel parameter since it's not expected
     outer_models, cv_perf, unseen_preds, sigma_values_list = nested_cv_kernel_regression(
         X=embeddings,
         y=VOI_vector,
-        sigma_values=sigma_candidates,
+        sigma_values=sigma_values,
         n_outer=5,
-        n_inner=5,
-        n_passes=5,  # iterative passes to refine candidate range
-        convergence_tol=1e-3,  # tolerance for convergence
+        n_inner=3,
+        n_passes=3,  # Reduced number of passes since we already have a good sigma range
+        convergence_tol=1e-3,
         classification=False
     )
+    
+    # Calculate final sigma using a robust approach
+    # We use median instead of mean for better robustness to outliers
     final_sigma = float(np.median(sigma_values_list))
-    print("Final sigma selected for GWD calculation:", final_sigma)
+    print(f"Final sigma selected for GWD calculation: {final_sigma:.5f}")
+    
+    # Create a plot of the sigma values distribution
+    plt.figure(figsize=(8, 5))
+    plt.hist(sigma_values_list, bins=15)
+    plt.axvline(final_sigma, color='red', linestyle='--', label=f'Final σ: {final_sigma:.5f}')
+    plt.title('Distribution of Optimal Sigma Values Across Folds')
+    plt.xlabel('Sigma Value')
+    plt.ylabel('Frequency')
+    plt.legend()
+    plt.savefig(os.path.join(output_folder, 'sigma_distribution.png'))
+    plt.close()
 
-    # STEP 3: Compute the full GWD matrix.
+    # STEP 3: Compute the full GWD matrix
     print("Computing GWD matrix using final_sigma...")
     gwd_matrix = compute_all_gwd(embeddings, final_sigma)
 
-    # STEP 4: Compute GWD summary features.
+    # STEP 4: Compute GWD summary features
     print("Computing GWD summary features...")
     gwd_summaries = compute_gwd_summary(embeddings, final_sigma, mode="basic")
-    print("GWD summaries shape:", gwd_summaries.shape)
+    print(f"GWD summaries shape: {gwd_summaries.shape}")
 
-    # STEP 5: Form combined feature matrix.
-    combined_features = np.hstack((embeddings, gwd_summaries))
-    print("Combined features shape (UMAP + GWD summary):", combined_features.shape)
+    # STEP 5: Create multiple feature sets for evaluation
+    print("Creating multiple feature sets for model evaluation...")
+    
+    # Prepare training feature subsets
+    features_4 = np.hstack((embeddings, gwd_summaries))  # [embeddings (2) + GWD summaries (2)]
+    features_3 = np.hstack((embeddings, gwd_summaries[:, :1]))  # [embeddings (2) + first summary (1)]
+    features_2 = embeddings  # only embeddings
+    features_gwd = gwd_summaries  # only GWD summaries
 
-    # Plot a histogram of the first summary feature.
-    plt.figure()
-    plt.hist(gwd_summaries[:, 0], bins=30)
-    plt.title("Histogram of Effective Number of Neighbors (ESS)")
-    plt.savefig(os.path.join(output_folder, "ess_histogram.png"))
-    plt.close()
+    # Use PCA to reduce dimensionality of the full GWD matrix
+    print("Applying PCA to full GWD matrix...")
+    from sklearn.decomposition import PCA
+    pca = PCA(n_components=0.8, svd_solver='full')  # Select components for 80% variance
+    pca_gwd_features = pca.fit_transform(gwd_matrix)
+    print(f"PCA on full GWD vectors selected {pca.n_components_} components")
 
-    # STEP 6: Create grid over the latent space.
-    min_coords = np.min(embeddings, axis=0)
-    max_coords = np.max(embeddings, axis=0)
-    grid_x = np.linspace(min_coords[0], max_coords[0], grid_size)
-    grid_y = np.linspace(min_coords[1], max_coords[1], grid_size)
+    # Store all feature sets in a dictionary
+    feature_sets = {
+        "combined_features": (features_4, "Combined Features (Embeddings + GWD summaries)"),
+        "embeddings_with_ess": (features_3, "Embeddings + First GWD summary (ESS)"),
+        "embeddings_only": (features_2, "Embeddings only"),
+        "gwd_summaries_only": (features_gwd, "GWD summaries only"),
+        "pca_gwd": (pca_gwd_features, f"PCA on Full GWD matrix [{pca.n_components_} components]")
+    }
+    
+    # Create test feature sets if test data is available
+    test_feature_sets = {}
+    if test_embeddings is not None and test_labels is not None:
+        print("Creating test feature sets...")
+        # Compute test GWD summaries
+        test_gwd_summaries = compute_gwd_summary(test_embeddings, final_sigma, mode="basic")
+        test_features_4 = np.hstack((test_embeddings, test_gwd_summaries))
+        test_features_3 = np.hstack((test_embeddings, test_gwd_summaries[:, :1]))
+        test_features_2 = test_embeddings
+        test_features_gwd = test_gwd_summaries
 
-    # STEP 7: Evaluate performance.
-    test_performance = None
-    if (test_embeddings is not None) and (test_labels is not None):
-        if test_labels.ndim > 1:
-            try:
-                col_index = int(key.split('_')[1])
-            except Exception:
-                col_index = 0
-            test_labels = test_labels[:, col_index]
-        mean_pred, std_pred = ensemble_predict(outer_models, test_embeddings)
-        r2 = r2_score(test_labels, mean_pred)
-        mse = mean_squared_error(test_labels, mean_pred)
-        mae = mean_absolute_error(test_labels, mean_pred)
-        normalized_mse = (mse / (global_range ** 2)) * 100 if global_range != 0 else mse
-        normalized_mae = (mae / global_range) * 100 if global_range != 0 else mae
-        test_performance = {'r2': r2, 'mse': mse, 'mae': mae,
-                            'normalized_mse_%': normalized_mse, 'normalized_mae_%': normalized_mae}
-        print("Held-out Test Performance:", test_performance)
-    else:
-        if cv_perf and len(cv_perf) > 0:
-            r2_vals = [perf.get('r2') for perf in cv_perf if 'r2' in perf]
-            mse_vals = [perf.get('mse') for perf in cv_perf if 'mse' in perf]
-            mae_vals = [perf.get('mae') for perf in cv_perf if 'mae' in perf]
-            avg_r2 = np.mean(r2_vals) if r2_vals else None
-            avg_mse = np.mean(mse_vals) if mse_vals else None
-            avg_mae = np.mean(mae_vals) if mae_vals else None
-            normalized_mse = (avg_mse / (
-                        global_range ** 2)) * 100 if global_range != 0 and avg_mse is not None else avg_mse
-            normalized_mae = (avg_mae / global_range) * 100 if global_range != 0 and avg_mae is not None else avg_mae
-            test_performance = {'avg_r2_cv': avg_r2, 'avg_mse_cv': avg_mse, 'avg_mae_cv': avg_mae,
-                                'normalized_mse_cv_%': normalized_mse, 'normalized_mae_cv_%': normalized_mae}
-            print("Aggregated CV Performance:", test_performance)
+        # Compute full GWD for test data
+        test_full_gwd = compute_all_gwd_test(test_embeddings, embeddings, final_sigma)
+        # Transform with PCA fitted on training GWD
+        test_pca_gwd_features = pca.transform(test_full_gwd)
+
+        test_feature_sets = {
+            "combined_features": test_features_4,
+            "embeddings_with_ess": test_features_3,
+            "embeddings_only": test_features_2,
+            "gwd_summaries_only": test_features_gwd,
+            "pca_gwd": test_pca_gwd_features
+        }
+    
+    # STEP 6: Run parallel model optimization and training using Optuna
+    print("\n===== Starting Parallel Model Optimization and Training =====")
+    
+    # Create a directory for model outputs
+    models_dir = os.path.join(output_folder, "models")
+    os.makedirs(models_dir, exist_ok=True)
+    
+    # Define function to optimize and train a single model on a feature set
+    def optimize_train_model(feature_set_name, X_train, y_train, X_test=None, y_test=None):
+        print(f"Starting optimization for {feature_set_name}...")
+        feature_set_dir = os.path.join(models_dir, feature_set_name)
+        os.makedirs(feature_set_dir, exist_ok=True)
+        
+        # Use the optuna_model_selection function to find the best model
+        results = optuna_model_selection(
+            X=X_train,
+            y=y_train,
+            n_trials=optuna_trials,
+            n_jobs=1,  # Use 1 job here because we parallelize at a higher level
+            output_folder=feature_set_dir,
+            feature_set_name=feature_set_name,
+            metric='r2',
+            n_splits=5,
+            random_state=42,
+            models=model_selection
+        )
+        
+        # If test data is available, evaluate on it
+        if X_test is not None and y_test is not None:
+            # Get predictions from the best model
+            y_pred = results['best_model'].predict(X_test)
+            
+            # Calculate test metrics
+            test_r2 = r2_score(y_test, y_pred)
+            test_mse = mean_squared_error(y_test, y_pred)
+            test_mae = mean_absolute_error(y_test, y_pred)
+            
+            # Store test results
+            test_results = {
+                'test_r2': test_r2,
+                'test_mse': test_mse,
+                'test_mae': test_mae,
+                'normalized_mse': (test_mse / (global_range ** 2)) * 100 if global_range != 0 else test_mse,
+                'normalized_mae': (test_mae / global_range) * 100 if global_range != 0 else test_mae
+            }
+            
+            # Add test results to the overall results
+            results.update({'test_metrics': test_results})
+            
+            # Create scatter plot of actual vs predicted values
+            plt.figure(figsize=(10, 8))
+            plt.scatter(y_test, y_pred, alpha=0.6)
+            plt.plot([min(y_test), max(y_test)], [min(y_test), max(y_test)], 'r--')
+            plt.xlabel('Actual Values')
+            plt.ylabel('Predicted Values')
+            plt.title(f'{feature_set_name} - {results["best_model_name"]}\nTest R²: {test_r2:.4f}')
+            plt.savefig(os.path.join(feature_set_dir, f'test_predictions_{results["best_model_name"]}.png'))
+            plt.close()
+        
+        # Save final results
+        results_file = os.path.join(feature_set_dir, 'optimization_results.json')
+        with open(results_file, 'w') as f:
+            # Convert non-serializable objects to strings
+            serializable_results = {k: (str(v) if not isinstance(v, (str, int, float, bool, list, dict)) else v) 
+                                   for k, v in results.items() if k != 'best_model'}
+            json.dump(serializable_results, f, indent=2)
+        
+        # Save the best model
+        model_file = os.path.join(feature_set_dir, f'best_model_{results["best_model_name"]}.joblib')
+        joblib.dump(results['best_model'], model_file)
+        
+        return feature_set_name, results
+    
+    # Prepare tasks for parallel execution
+    parallel_tasks = []
+    for fs_name, (fs_data, fs_desc) in feature_sets.items():
+        if test_feature_sets and fs_name in test_feature_sets:
+            # If test data is available
+            test_fs_data = test_feature_sets[fs_name]
+            if isinstance(test_labels, dict):
+                # If test_labels is a dictionary, use the same key as training
+                test_y = test_labels[key] if key in test_labels else None
+            else:
+                test_y = test_labels
+            task = (fs_name, fs_data, VOI_vector, test_fs_data, test_y)
         else:
-            print("No validation performance available from CV.")
-
-    # STEP 8: Compute Pearson correlation heatmap.
+            # If no test data
+            task = (fs_name, fs_data, VOI_vector, None, None)
+        parallel_tasks.append(task)
+    
+    # Execute tasks in parallel or sequentially
+    all_results = {}
+    if run_parallel and n_jobs != 1:
+        print(f"Running optimization in parallel with {n_jobs} jobs...")
+        results = Parallel(n_jobs=n_jobs)(
+            delayed(optimize_train_model)(fs_name, X, y, X_test, y_test) 
+            for fs_name, X, y, X_test, y_test in parallel_tasks
+        )
+        all_results = dict(results)
+    else:
+        print("Running optimization sequentially...")
+        for fs_name, X, y, X_test, y_test in parallel_tasks:
+            fs_name, result = optimize_train_model(fs_name, X, y, X_test, y_test)
+            all_results[fs_name] = result
+    
+    # STEP 7: Summarize and compare model performances
+    print("\n===== Model Performance Summary =====")
+    summary = {}
+    
+    # Create summary dataframes
+    import pandas as pd
+    summary_rows = []
+    
+    for fs_name, result in all_results.items():
+        fs_desc = feature_sets[fs_name][1]
+        best_model = result['best_model_name']
+        cv_r2 = result['r2']
+        
+        # Get test metrics if available
+        test_metrics = result.get('test_metrics', {})
+        test_r2 = test_metrics.get('test_r2', 'N/A')
+        
+        # Add to summary rows
+        row = {
+            'Feature Set': fs_name,
+            'Description': fs_desc,
+            'Best Model': best_model,
+            'CV R²': cv_r2,
+            'Test R²': test_r2
+        }
+        summary_rows.append(row)
+        
+        # Add to summary dictionary
+        summary[fs_name] = {
+            'description': fs_desc,
+            'best_model': best_model,
+            'cv_r2': cv_r2,
+            'test_metrics': test_metrics
+        }
+    
+    # Create and save summary dataframe
+    summary_df = pd.DataFrame(summary_rows)
+    summary_df.sort_values(by='Test R²' if 'Test R²' in summary_df.columns and any(x != 'N/A' for x in summary_df['Test R²']) else 'CV R²', 
+                          ascending=False, inplace=True)
+    summary_df.to_csv(os.path.join(output_folder, 'model_performance_summary.csv'), index=False)
+    
+    # Print summary
+    print("\nModel Performance Summary (sorted by performance):")
+    print(summary_df)
+    
+    # Find best overall model and feature set
+    if test_feature_sets:
+        # Use test R² if available
+        best_fs = max(summary.items(), key=lambda x: x[1]['test_metrics'].get('test_r2', -float('inf')) 
+                      if x[1]['test_metrics'] else -float('inf'))[0]
+    else:
+        # Use CV R² otherwise
+        best_fs = max(summary.items(), key=lambda x: x[1]['cv_r2'])[0]
+    
+    best_model_name = summary[best_fs]['best_model']
+    print(f"\nBest overall combination: {best_fs} with {best_model_name}")
+    print(f"Description: {summary[best_fs]['description']}")
+    
+    if test_feature_sets:
+        test_metrics = summary[best_fs]['test_metrics']
+        print(f"Test R²: {test_metrics['test_r2']:.4f}")
+        print(f"Test MSE: {test_metrics['test_mse']:.4f}")
+        print(f"Test MAE: {test_metrics['test_mae']:.4f}")
+        print(f"Normalized MSE: {test_metrics['normalized_mse']:.2f}%")
+        print(f"Normalized MAE: {test_metrics['normalized_mae']:.2f}%")
+    
+    # Create a bar chart comparing R² across feature sets
+    plt.figure(figsize=(12, 6))
+    if test_feature_sets and any('test_metrics' in result and result['test_metrics'] for result in all_results.values()):
+        # Compare test R² if available
+        bars = plt.bar(
+            [feature_sets[fs_name][1] for fs_name in summary_df['Feature Set']],
+            [summary[fs_name]['test_metrics']['test_r2'] if summary[fs_name]['test_metrics'] else 0 
+             for fs_name in summary_df['Feature Set']]
+        )
+        plt.title('Test R² Comparison Across Feature Sets')
+        plt.ylabel('Test R²')
+    else:
+        # Compare CV R² otherwise
+        bars = plt.bar(
+            [feature_sets[fs_name][1] for fs_name in summary_df['Feature Set']],
+            [summary[fs_name]['cv_r2'] for fs_name in summary_df['Feature Set']]
+        )
+        plt.title('Cross-Validation R² Comparison Across Feature Sets')
+        plt.ylabel('CV R²')
+    
+    # Add model names as text on the bars
+    for i, bar in enumerate(bars):
+        fs_name = summary_df['Feature Set'].iloc[i]
+        plt.text(i, bar.get_height() + 0.01, summary[fs_name]['best_model'], 
+                ha='center', va='bottom', rotation=0, fontsize=8)
+    
+    plt.xticks(rotation=45, ha='right')
+    plt.tight_layout()
+    plt.savefig(os.path.join(output_folder, 'feature_set_comparison.png'))
+    plt.close()
+    
+    # STEP 8: Compute correlation heatmap
+    print("\nComputing correlation heatmap...")
     correlation_heatmap, corr_grid_x, corr_grid_y = calculate_correlation_grid(
         embeddings=embeddings,
         train_labels=VOI_vector,
@@ -1427,498 +1756,586 @@ def new_pipeline_test(embeddings, combined_input_matrix, scores_vectors_dict, ou
         correlation_method='pearson'
     )
 
-    # Save the correlation heatmap.
-    plt.figure()
+    # Save the correlation heatmap
+    plt.figure(figsize=(10, 8))
     plt.imshow(correlation_heatmap, extent=(corr_grid_x.min(), corr_grid_x.max(),
                                             corr_grid_y.min(), corr_grid_y.max()),
-               aspect='auto', origin='lower')
+               aspect='auto', origin='lower', cmap='coolwarm')
     plt.colorbar(label='Pearson Correlation')
     plt.title('Correlation Heatmap')
-    plt.xlabel('UMAP X')
-    plt.ylabel('UMAP Y')
+    plt.xlabel('UMAP Dimension 1')
+    plt.ylabel('UMAP Dimension 2')
     plt.savefig(os.path.join(output_folder, "correlation_heatmap.png"))
     plt.close()
 
-    heatmap_dict = {
-        'prediction_heatmap': None,
-        'uncertainty_heatmap': None,
+    # STEP 9: Prepare and return final results
+    total_time = time.time() - start_time
+    print(f"\n===== Pipeline completed in {total_time:.1f} seconds ({total_time/60:.1f} minutes) =====")
+    
+    final_results = {
+        'gwd_matrix': gwd_matrix,
+        'gwd_summaries': gwd_summaries,
+        'combined_features': features_4,
+        'feature_sets': {name: data for name, (data, _) in feature_sets.items()},
+        'pca_components': pca.n_components_,
+        'pca_explained_variance': pca.explained_variance_ratio_.sum(),
         'correlation_heatmap': {
             'heatmap': correlation_heatmap,
             'grid_x': corr_grid_x,
             'grid_y': corr_grid_y
-        }
-    }
-
-    cv_performance_all = cv_perf if cv_perf else []
-
-    # Display a summary.
-    print("===== New Pipeline Test Summary =====")
-    print(f"Final sigma for GWD: {final_sigma:.4f}")
-    print("GWD matrix shape:", gwd_matrix.shape)
-    print("GWD summaries shape:", gwd_summaries.shape)
-    print("Combined features shape:", combined_features.shape)
-    print("Grid X shape:", grid_x.shape, "Grid Y shape:", grid_y.shape)
-    if test_performance:
-        print("Performance metrics:")
-        for metric, value in test_performance.items():
-            print(f"  {metric}: {value:.4f}")
-    else:
-        print("No performance metrics evaluated.")
-    print("===== End of Summary =====")
-
-    # === STEP 9: Train predictive GP models with different feature sets using nested CV ===
-    import os
-    import json
-    from matplotlib import pyplot as plt
-    from sklearn.decomposition import PCA
-    from sklearn.metrics import r2_score, mean_squared_error, mean_absolute_error
-    from scipy.spatial.distance import cdist
-
-    # Define a function that computes a GWD matrix for the test set.
-    # This computes a Gaussian weighted distance from each test sample to each train sample.
-    def compute_all_gwd_test(test_embeddings, train_embeddings, sigma):
-        dists = cdist(test_embeddings, train_embeddings, metric='euclidean')
-        return np.exp(-0.5 * (dists / sigma) ** 2)
-
-    # Prepare training feature subsets.
-    # (Assume: `embeddings` are your training UMAP embeddings, and `gwd_summaries` have been computed already.)
-    features_4 = combined_features  # [embeddings (2) + GWD summaries (2)]
-    features_3 = np.hstack((embeddings, gwd_summaries[:, :1]))  # [embeddings (2) + first summary (1)]
-    features_2 = embeddings  # only embeddings
-    features_gwd = gwd_summaries  # only GWD summaries
-
-    # Fifth experiment: Use the full GWD matrix.
-    # Each training sample's GWD vector is its corresponding row in the gwd_matrix.
-    # Note: gwd_matrix is (n_train, n_train); if n_train is large, you may consider further dimensionality reduction.
-    full_gwd_vectors = gwd_matrix
-
-    # Now, apply PCA to the full GWD vectors and choose enough components to explain at least 80% of the variance.
-    pca = PCA(n_components=0.8,
-              svd_solver='full')  # n_components as float selects the number of components needed for 80% var.
-    pca_gwd_features = pca.fit_transform(full_gwd_vectors)
-    print("PCA on full GWD vectors selected components:", pca.n_components_)
-
-    # Put the feature sets into a dictionary.
-    feature_sets = {
-        "GP_4features": (features_4, "Combined Features (Embeddings + GWD summaries)"),
-        "GP_3features": (features_3, "Embeddings + First GWD summary"),
-        "GP_2features": (features_2, "Embeddings only"),
-        "GP_GWDonly": (features_gwd, "GWD summaries only"),
-        "GP_PCA_GWD": (pca_gwd_features, f"PCA on Full GWD vectors [{pca.n_components_} components]")
-    }
-
-    # Define kernel choices and noise variance range for nested CV
-    kernel_choices = ["RBF", "Matern52"]
-    noise_var_range = [0.001, 0.01, 0.1, 1.0]
-
-    # Train GP models with nested CV on each feature set
-    gp_models_cv = {}
-    gp_performance_all = {}
-    
-    # Next, create the corresponding test feature sets.
-    test_feature_sets = {}
-    if test_embeddings is not None and test_labels is not None:
-        # First, compute test GWD summaries for the test set.
-        test_gwd_summaries = compute_gwd_summary(test_embeddings, final_sigma, mode="basic")
-        test_features_4 = np.hstack((test_embeddings, test_gwd_summaries))
-        test_features_3 = np.hstack((test_embeddings, test_gwd_summaries[:, :1]))
-        test_features_2 = test_embeddings
-        test_features_gwd = test_gwd_summaries
-
-        # For the PCA on full GWD vectors experiment:
-        # We must compute the full GWD vectors for each test sample relative to the training embeddings.
-        test_full_gwd_vectors = compute_all_gwd_test(test_embeddings, embeddings, final_sigma)
-        # Then project them using the PCA fitted on training full GWD vectors.
-        test_pca_gwd_features = pca.transform(test_full_gwd_vectors)
-
-        test_feature_sets = {
-            "GP_4features": test_features_4,
-            "GP_3features": test_features_3,
-            "GP_2features": test_features_2,
-            "GP_GWDonly": test_features_gwd,
-            "GP_PCA_GWD": test_pca_gwd_features
-        }
-    else:
-        print("Test embeddings/labels not provided; skipping test set evaluation for GP models.")
-
-    for fs_key, (train_fs, desc) in feature_sets.items():
-        print(f"\n=== Training GP model using {desc} ===")
-        
-        # Use nested CV to train and evaluate GP models
-        outer_models, cv_perf, unseen_preds, best_params = nested_cv_gp_regression(
-            X=train_fs,
-            y=VOI_vector,
-            n_outer=5,
-            n_inner=3,
-            random_state=42,
-            sparse_threshold=sparse_threshold,
-            kernel_choices=kernel_choices,
-            noise_var_range=noise_var_range,
-            ARD=True
-        )
-        
-        # Store the models and performance results
-        gp_models_cv[fs_key] = {
-            'models': outer_models,
-            'cv_performance': cv_perf,
-            'best_params': best_params
-        }
-        
-        print(f"{fs_key}: GP Model trained.")
-
-        # If test features are available, predict using all outer fold models and ensemble
-        if test_feature_sets and fs_key in test_feature_sets:
-            test_fs = test_feature_sets[fs_key]
-            
-            # Make predictions with each model in the ensemble
-            ensemble_means = []
-            ensemble_variances = []
-            
-            for model in outer_models:
-                mean, var = model.predict(test_fs)
-                ensemble_means.append(mean.ravel())
-                ensemble_variances.append(var.ravel())
-            
-            # Average predictions from all models in the ensemble
-            gp_predictions = np.mean(ensemble_means, axis=0)
-            
-            # For uncertainty, we need to combine both the variance within each model
-            # and the variance between model predictions
-            within_var = np.mean(ensemble_variances, axis=0)
-            between_var = np.var(ensemble_means, axis=0)
-            total_var = within_var + between_var
-            gp_std = np.sqrt(total_var)
-
-            # Compute metrics
-            gp_r2 = r2_score(test_labels, gp_predictions)
-            gp_mse = mean_squared_error(test_labels, gp_predictions)
-            gp_mae = mean_absolute_error(test_labels, gp_predictions)
-            gp_perf = {
-                'gp_r2': gp_r2, 
-                'gp_mse': gp_mse, 
-                'gp_mae': gp_mae,
-                'avg_cv_r2': np.mean([p['r2'] for p in cv_perf]),
-                'best_kernel_types': [p['kernel_type'] for p in best_params],
-                'best_noise_vars': [p['noise_var'] for p in best_params]
-            }
-            gp_performance_all[fs_key] = gp_perf
-            print(f"{fs_key} Test Performance: {gp_perf}")
-        else:
-            # If no test set, report the average cross-validation performance
-            avg_cv_perf = {
-                'avg_cv_r2': np.mean([p['r2'] for p in cv_perf]),
-                'avg_cv_mse': np.mean([p['mse'] for p in cv_perf]),
-                'avg_cv_mae': np.mean([p['mae'] for p in cv_perf]),
-                'best_kernel_types': [p['kernel_type'] for p in best_params],
-                'best_noise_vars': [p['noise_var'] for p in best_params]
-            }
-            gp_performance_all[fs_key] = avg_cv_perf
-            print(f"{fs_key}: No test features provided; reporting CV performance: {avg_cv_perf}")
-
-    # Optionally, save the performance results.
-    output_perf_path = os.path.join(output_folder, "gp_performance_summary.json")
-    with open(output_perf_path, "w") as f:
-        json.dump(gp_performance_all, f, indent=4)
-    print("Saved GP performance summary to", output_perf_path)
-
-    # Finally, add the GP performance results to the outputs of the pipeline.
-    final_results = {
-        'gwd_matrix': gwd_matrix,
-        'gwd_summaries': gwd_summaries,
-        'combined_features': combined_features,
-        'grid_x': grid_x,
-        'grid_y': grid_y,
-        'heatmap_dict': heatmap_dict,
-        'cv_performance': cv_perf if cv_perf is not None else [],
+        },
         'final_sigma': final_sigma,
-        'test_performance': test_performance,
-        'gp_performance': gp_performance_all,
-        'gp_models': gp_models_cv
+        'model_results': summary,
+        'best_feature_set': best_fs,
+        'best_model': best_model_name,
+        'pipeline_time': total_time
     }
-
+    
+    # Save final results summary
+    with open(os.path.join(output_folder, 'pipeline_results_summary.json'), 'w') as f:
+        # Convert non-serializable objects to strings
+        serializable_results = {
+            k: (str(v) if not isinstance(v, (str, int, float, bool, list, dict)) else v)
+            for k, v in final_results.items() 
+            if k not in ['gwd_matrix', 'gwd_summaries', 'combined_features', 'feature_sets', 
+                         'correlation_heatmap']
+        }
+        json.dump(serializable_results, f, indent=2)
+    
     return final_results
 
 
-def nested_cv_gp_regression(X, y, n_outer=5, n_inner=3, random_state=42, sparse_threshold=500,
-                         kernel_choices=None, noise_var_range=None, ARD=True, num_inducing=None,
-                         n_refinement_steps=2, refinement_factor=0.5, convergence_tol=1e-3,
-                         max_iter=100, optimization_restarts=1):
+def compute_all_gwd_test(test_embeddings, train_embeddings, sigma):
     """
-    Performs nested cross-validation for Gaussian Process Regression to optimize hyperparameters.
-    Uses an iterative refinement approach to narrow down the best noise variance range.
+    Compute the Gaussian weighted distances between test embeddings and training embeddings.
     
     Parameters:
-        X (np.ndarray): Input features of shape (n_samples, n_features)
-        y (np.ndarray): Target values of shape (n_samples,) or (n_samples, 1)
-        n_outer (int): Number of folds for outer CV (model assessment)
-        n_inner (int): Number of folds for inner CV (hyperparameter tuning)
-        random_state (int): Random seed for reproducibility
-        sparse_threshold (int): If n_samples > sparse_threshold, use SparseGPR
-        kernel_choices (list): List of kernel types to try. If None, uses RBF only
-        noise_var_range (list): Initial range of noise variance values to try
-        ARD (bool): Whether to use Automatic Relevance Determination
-        num_inducing (int): Number of inducing points for sparse GP. If None, uses min(500, n_samples/2)
-        n_refinement_steps (int): Number of refinement iterations for noise variance
-        refinement_factor (float): Factor to narrow the range at each refinement step
-        convergence_tol (float): Stop refinement early if improvement is less than this
-        max_iter (int): Maximum number of iterations for optimization
-        optimization_restarts (int): Number of optimization restarts
+        test_embeddings (np.ndarray): Array of shape (n_test, n_features)
+        train_embeddings (np.ndarray): Array of shape (n_train, n_features)
+        sigma (float): The Gaussian kernel bandwidth
         
     Returns:
-        outer_models (list): List of trained GP models from each outer fold
-        cv_perf (list): List of performance metrics for each outer fold
-        unseen_preds (list): List of predictions on unseen data for each outer fold
-        best_params_list (list): List of best hyperparameters from each outer fold
+        np.ndarray: Matrix of shape (n_test, n_train) with GWD values
     """
-    import GPy
-    from sklearn.model_selection import KFold
-    from sklearn.metrics import r2_score, mean_squared_error, mean_absolute_error
+    from scipy.spatial.distance import cdist
+    
+    # Compute pairwise distances between test and training embeddings
+    distances = cdist(test_embeddings, train_embeddings, metric='euclidean')
+    
+    # Apply Gaussian kernel
+    gwd = np.exp(-0.5 * (distances / sigma) ** 2)
+    
+    return gwd
+
+
+def optuna_model_selection(X, y, n_trials=50, n_jobs=1, output_folder=None, feature_set_name="features", metric='r2', n_splits=5, random_state=42, models=None):
+    """
+    Use Optuna to find the best model and hyperparameters for a given feature set.
+    
+    Parameters:
+        X (np.ndarray): Feature matrix
+        y (np.ndarray): Target vector
+        n_trials (int): Number of Optuna trials
+        n_jobs (int): Number of parallel jobs
+        output_folder (str): Folder to save results
+        feature_set_name (str): Name of the feature set (for logging)
+        metric (str): Metric to optimize ('r2', 'mse', 'mae')
+        n_splits (int): Number of cross-validation splits
+        random_state (int): Random seed
+        models (list): List of models to try. Options: 'gp', 'rf', 'gb', 'kr', 'xgb', 'lgb', 'et', 'svr'
+                      If None, uses ['gp', 'rf', 'gb', 'kr', 'xgb']
+    
+    Returns:
+        dict: Results dictionary containing best model, scores, and parameters
+    """
+    import numpy as np
+    import optuna
     import time
+    from sklearn.model_selection import cross_val_score, KFold
+    from sklearn.metrics import make_scorer, r2_score, mean_squared_error, mean_absolute_error
+    import matplotlib.pyplot as plt
+    import os
+    import joblib
     
-    print(f"Starting nested CV GPR with {n_outer} outer folds, {n_inner} inner folds")
-    start_time = time.time()
+    # Set default models if not provided
+    if models is None:
+        models = ['gp', 'rf', 'gb', 'kr', 'xgb']
     
-    # Ensure y is the right shape (n_samples, 1) for GPy
-    if y.ndim == 1:
-        y = y.reshape(-1, 1)
+    # Set up output folder
+    if output_folder:
+        os.makedirs(output_folder, exist_ok=True)
     
-    # Set default kernel choices if none provided
-    if kernel_choices is None:
-        kernel_choices = ["RBF"]
+    # Define metric
+    if metric == 'r2':
+        scorer = make_scorer(r2_score)
+        direction = 'maximize'
+    elif metric == 'mse':
+        scorer = make_scorer(mean_squared_error, greater_is_better=False)
+        direction = 'minimize'
+    elif metric == 'mae':
+        scorer = make_scorer(mean_absolute_error, greater_is_better=False)
+        direction = 'minimize'
+    else:
+        raise ValueError(f"Unknown metric: {metric}")
     
-    # Set default noise variance range if none provided
-    if noise_var_range is None:
-        noise_var_range = np.logspace(-3, 0, 6)  # Reduced number of points: 6 points from 0.001 to 1.0
+    # Define cross-validation
+    cv = KFold(n_splits=n_splits, shuffle=True, random_state=random_state)
     
-    # Set number of inducing points for sparse GP
-    if num_inducing is None:
-        num_inducing = min(200, X.shape[0] // 3)  # Reduced number of inducing points
-    
-    # Create the outer and inner CV splitters
-    outer_cv = KFold(n_splits=n_outer, shuffle=True, random_state=random_state)
-    
-    # Initialize lists to store results
-    outer_models = []
-    cv_perf = []
-    unseen_preds = []
-    best_params_list = []
-    
-    # Start outer CV loop
-    for outer_fold, (outer_train_idx, outer_test_idx) in enumerate(outer_cv.split(X)):
-        fold_start_time = time.time()
-        print(f"\nOuter Fold {outer_fold+1}/{n_outer}")
-        X_train_outer, X_test_outer = X[outer_train_idx], X[outer_test_idx]
-        y_train_outer, y_test_outer = y[outer_train_idx], y[outer_test_idx]
+    # Define objective function
+    def objective(trial):
+        # Select model type
+        model_type = trial.suggest_categorical('model_type', models)
         
-        # Inner CV splitter with different random state to ensure different splits
-        inner_cv = KFold(n_splits=n_inner, shuffle=True, random_state=random_state+1)
-        
-        # Track best model and parameters for this outer fold
-        best_r2 = -np.inf
-        best_kernel_type = None
-        best_noise_var = None
-        best_inner_models = []
-        
-        # Try different kernel types
-        for kernel_type in kernel_choices:
-            kernel_start_time = time.time()
-            print(f"  Testing kernel: {kernel_type}")
+        # Set model-specific hyperparameters
+        if model_type == 'gp':
+            # Gaussian Process
+            from sklearn.gaussian_process import GaussianProcessRegressor
+            from sklearn.gaussian_process.kernels import RBF, WhiteKernel, ConstantKernel, Matern, ExpSineSquared
             
-            # Current noise variance range for this kernel
-            current_noise_range = np.array(noise_var_range)
-            prev_best_r2 = -np.inf
-            best_noise_from_prev_step = None
+            # Instead of using suggest_categorical, use a fixed option first and
+            # set other parameters based on this fixed choice
+            kernel_option = trial.suggest_categorical('kernel_option', ['rbf', 'matern'])
             
-            # Iterative refinement of noise variance range
-            for refinement_step in range(n_refinement_steps):
-                step_start_time = time.time()
-                print(f"  Refinement step {refinement_step+1}/{n_refinement_steps}")
-                print(f"  Testing noise variance range: [{min(current_noise_range):.6f}, {max(current_noise_range):.6f}]")
-                
-                # Track best noise variance for this refinement step
-                step_best_r2 = -np.inf
-                step_best_noise = None
-                
-                # Try each noise variance in current range
-                for noise_idx, noise_var in enumerate(current_noise_range):
-                    noise_start_time = time.time()
-                    print(f"    Testing noise {noise_idx+1}/{len(current_noise_range)}: {noise_var:.6f}")
-                    
-                    # Initialize list to store inner fold models and performance
-                    inner_r2_scores = []
-                    inner_models = []
-                    
-                    # Start inner CV loop
-                    for inner_fold, (inner_train_idx, inner_val_idx) in enumerate(inner_cv.split(X_train_outer)):
-                        fold_start = time.time()
-                        X_train_inner, X_val_inner = X_train_outer[inner_train_idx], X_train_outer[inner_val_idx]
-                        y_train_inner, y_val_inner = y_train_outer[inner_train_idx], y_train_outer[inner_val_idx]
-                        
-                        # Create kernel based on type
-                        if kernel_type == "RBF":
-                            kernel = GPy.kern.RBF(input_dim=X.shape[1], ARD=ARD)
-                        elif kernel_type == "Matern52":
-                            kernel = GPy.kern.Matern52(input_dim=X.shape[1], ARD=ARD)
-                        else:
-                            raise ValueError(f"Unsupported kernel type: {kernel_type}")
-                        
-                        # Create sparse or regular GP model based on threshold
-                        if X_train_inner.shape[0] > sparse_threshold:
-                            # Randomly select inducing points
-                            induce_idx = np.random.choice(X_train_inner.shape[0], size=num_inducing, replace=False)
-                            Z = X_train_inner[induce_idx]
-                            model = GPy.models.SparseGPRegression(X_train_inner, y_train_inner, kernel=kernel, Z=Z)
-                        else:
-                            model = GPy.models.GPRegression(X_train_inner, y_train_inner, kernel=kernel)
-                        
-                        # Set noise variance constraint
-                        model.Gaussian_noise.variance = noise_var
-                        model.Gaussian_noise.fix()  # Fix noise during optimization
-                        
-                        # Optimize model with timeout
-                        try:
-                            opt_start = time.time()
-                            print(f"      Inner fold {inner_fold+1}/{n_inner}: Starting optimization...")
-                            model.optimize(messages=False, max_iters=max_iter, optimizer='lbfgs')
-                            print(f"      Inner fold {inner_fold+1}/{n_inner}: Optimization complete in {time.time()-opt_start:.2f}s")
-                        except Exception as e:
-                            print(f"      Warning: Optimization failed with noise={noise_var:.6f}. Error: {e}")
-                            continue
-                        
-                        # Evaluate on validation set
-                        mean_pred, _ = model.predict(X_val_inner)
-                        r2 = r2_score(y_val_inner, mean_pred)
-                        inner_r2_scores.append(r2)
-                        inner_models.append(model)
-                        print(f"      Inner fold {inner_fold+1}/{n_inner}: R²={r2:.4f}, Time: {time.time()-fold_start:.2f}s")
-                    
-                    # Calculate mean R² from inner CV
-                    if inner_r2_scores:
-                        mean_inner_r2 = np.mean(inner_r2_scores)
-                        print(f"    Noise: {noise_var:.6f}, Mean R²: {mean_inner_r2:.4f}, Time: {time.time()-noise_start_time:.2f}s")
-                        
-                        # Update best noise for this refinement step
-                        if mean_inner_r2 > step_best_r2:
-                            step_best_r2 = mean_inner_r2
-                            step_best_noise = noise_var
-                            
-                        # Update global best if this is better
-                        if mean_inner_r2 > best_r2:
-                            best_r2 = mean_inner_r2
-                            best_kernel_type = kernel_type
-                            best_noise_var = noise_var
-                            best_inner_models = inner_models
-                
-                # Check for convergence
-                improvement = step_best_r2 - prev_best_r2
-                print(f"  Step {refinement_step+1} complete - Best noise: {step_best_noise:.6f}, R²: {step_best_r2:.4f}")
-                print(f"  Improvement: {improvement:.6f}, Time: {time.time()-step_start_time:.2f}s")
-                
-                if improvement < convergence_tol and refinement_step > 0:
-                    print(f"  Refinement converged (improvement < {convergence_tol})")
-                    break
-                
-                # Update for next iteration
-                prev_best_r2 = step_best_r2
-                best_noise_from_prev_step = step_best_noise
-                
-                # Refine noise variance range around the best value
-                if best_noise_from_prev_step is not None and refinement_step < n_refinement_steps - 1:
-                    # Calculate range boundaries as a percentage around best value
-                    range_width = max(current_noise_range) - min(current_noise_range)
-                    new_width = range_width * refinement_factor
-                    
-                    # For log-spaced noise values, use multiplicative factors
-                    if min(current_noise_range) > 0:  # Ensure we're not working with negative or zero values
-                        low = max(1e-6, best_noise_from_prev_step / np.sqrt(1/refinement_factor))
-                        high = best_noise_from_prev_step * np.sqrt(1/refinement_factor)
-                        # Create new range, more densely sampled around the best value
-                        current_noise_range = np.linspace(low, high, 5)  # Reduced to 5 points
-                    else:
-                        # Fallback to linear spacing
-                        low = max(0, best_noise_from_prev_step - new_width/2)
-                        high = best_noise_from_prev_step + new_width/2
-                        current_noise_range = np.linspace(low, high, 5)  # Reduced to 5 points
+            if kernel_option == 'rbf':
+                length_scale = trial.suggest_float('length_scale', 0.01, 10.0, log=True)
+                kernel = RBF(length_scale=length_scale)
+            else:  # matern
+                length_scale = trial.suggest_float('length_scale', 0.01, 10.0, log=True)
+                nu = trial.suggest_float('nu', 0.5, 2.5)
+                kernel = Matern(length_scale=length_scale, nu=nu)
             
-            print(f"  Kernel {kernel_type} evaluation complete in {time.time()-kernel_start_time:.2f}s")
+            # Add constant kernel
+            use_constant = trial.suggest_categorical('use_constant', [True, False])
+            if use_constant:
+                constant_value = trial.suggest_float('constant_value', 0.1, 10.0, log=True)
+                kernel = ConstantKernel(constant_value) * kernel
+            
+            # Add white kernel for noise
+            use_white = trial.suggest_categorical('use_white', [True, False])
+            if use_white:
+                noise_level = trial.suggest_float('noise_level', 1e-10, 1.0, log=True)
+                kernel += WhiteKernel(noise_level=noise_level)
+            
+            # Check if we need a sparse GP
+            if X.shape[0] > 500:  # For larger datasets, use sparse GP
+                alpha = trial.suggest_float('alpha', 1e-10, 1.0, log=True)
+                model = GaussianProcessRegressor(kernel=kernel, alpha=alpha, random_state=random_state)
+            else:
+                alpha = trial.suggest_float('alpha', 1e-10, 1.0, log=True)
+                model = GaussianProcessRegressor(kernel=kernel, alpha=alpha, random_state=random_state)
         
-        # If no valid models were found, use simple defaults
-        if best_kernel_type is None:
-            print("  Warning: No valid models found in inner CV. Using default parameters.")
-            best_kernel_type = "RBF"
-            best_noise_var = 0.1
+        elif model_type == 'rf':
+            # Random Forest
+            from sklearn.ensemble import RandomForestRegressor
+            
+            n_estimators = trial.suggest_int('n_estimators', 50, 300)
+            max_depth = trial.suggest_int('max_depth', 3, 20)
+            min_samples_split = trial.suggest_int('min_samples_split', 2, 20)
+            min_samples_leaf = trial.suggest_int('min_samples_leaf', 1, 10)
+            max_features = trial.suggest_categorical('max_features', ['sqrt', 'log2', None])
+            
+            model = RandomForestRegressor(
+                n_estimators=n_estimators,
+                max_depth=max_depth,
+                min_samples_split=min_samples_split,
+                min_samples_leaf=min_samples_leaf,
+                max_features=max_features,
+                random_state=random_state,
+                n_jobs=1  # We're already parallelizing at a higher level
+            )
         
-        # Train the final model for this outer fold using the best parameters
-        print(f"  Outer fold - Final best kernel: {best_kernel_type}, Best noise: {best_noise_var:.6f}")
+        elif model_type == 'gb':
+            # Gradient Boosting
+            from sklearn.ensemble import GradientBoostingRegressor
+            
+            n_estimators = trial.suggest_int('n_estimators', 50, 300)
+            learning_rate = trial.suggest_float('learning_rate', 0.01, 0.3, log=True)
+            max_depth = trial.suggest_int('max_depth', 3, 10)
+            min_samples_split = trial.suggest_int('min_samples_split', 2, 20)
+            min_samples_leaf = trial.suggest_int('min_samples_leaf', 1, 10)
+            subsample = trial.suggest_float('subsample', 0.5, 1.0)
+            
+            model = GradientBoostingRegressor(
+                n_estimators=n_estimators,
+                learning_rate=learning_rate,
+                max_depth=max_depth,
+                min_samples_split=min_samples_split,
+                min_samples_leaf=min_samples_leaf,
+                subsample=subsample,
+                random_state=random_state
+            )
         
-        # Create the best kernel
-        if best_kernel_type == "RBF":
-            best_kernel = GPy.kern.RBF(input_dim=X.shape[1], ARD=ARD)
-        elif best_kernel_type == "Matern52":
-            best_kernel = GPy.kern.Matern52(input_dim=X.shape[1], ARD=ARD)
+        elif model_type == 'kr':
+            # Kernel Regression (custom implementation)
+            from emuses.tools.kernel_regression_utils import KernelRegressor
+            
+            kernel_type = trial.suggest_categorical('kernel_type', ['gaussian', 'epanechnikov', 'triangular'])
+            sigma = trial.suggest_float('sigma', 0.01, 2.0, log=True)
+            
+            model = KernelRegressor(kernel=kernel_type, sigma=sigma)
         
-        # Train final model for this outer fold
-        final_model_start = time.time()
+        elif model_type == 'xgb':
+            # XGBoost
+            try:
+                import xgboost as xgb
+                
+                n_estimators = trial.suggest_int('n_estimators', 50, 300)
+                learning_rate = trial.suggest_float('learning_rate', 0.01, 0.3, log=True)
+                max_depth = trial.suggest_int('max_depth', 3, 10)
+                min_child_weight = trial.suggest_int('min_child_weight', 1, 10)
+                subsample = trial.suggest_float('subsample', 0.5, 1.0)
+                colsample_bytree = trial.suggest_float('colsample_bytree', 0.5, 1.0)
+                
+                model = xgb.XGBRegressor(
+                    n_estimators=n_estimators,
+                    learning_rate=learning_rate,
+                    max_depth=max_depth,
+                    min_child_weight=min_child_weight,
+                    subsample=subsample,
+                    colsample_bytree=colsample_bytree,
+                    random_state=random_state,
+                    n_jobs=1  # We're already parallelizing at a higher level
+                )
+            except ImportError:
+                print("XGBoost not installed, skipping XGBoost model")
+                return float('-inf') if direction == 'maximize' else float('inf')
+        
+        elif model_type == 'lgb':
+            # LightGBM
+            try:
+                import lightgbm as lgb
+                
+                n_estimators = trial.suggest_int('n_estimators', 50, 300)
+                learning_rate = trial.suggest_float('learning_rate', 0.01, 0.3, log=True)
+                max_depth = trial.suggest_int('max_depth', 3, 10)
+                num_leaves = trial.suggest_int('num_leaves', 10, 100)
+                min_child_samples = trial.suggest_int('min_child_samples', 5, 50)
+                subsample = trial.suggest_float('subsample', 0.5, 1.0)
+                
+                model = lgb.LGBMRegressor(
+                    n_estimators=n_estimators,
+                    learning_rate=learning_rate,
+                    max_depth=max_depth,
+                    num_leaves=num_leaves,
+                    min_child_samples=min_child_samples,
+                    subsample=subsample,
+                    random_state=random_state,
+                    n_jobs=1  # We're already parallelizing at a higher level
+                )
+            except ImportError:
+                print("LightGBM not installed, skipping LightGBM model")
+                return float('-inf') if direction == 'maximize' else float('inf')
+        
+        elif model_type == 'et':
+            # Extra Trees
+            from sklearn.ensemble import ExtraTreesRegressor
+            
+            n_estimators = trial.suggest_int('n_estimators', 50, 300)
+            max_depth = trial.suggest_int('max_depth', 3, 20)
+            min_samples_split = trial.suggest_int('min_samples_split', 2, 20)
+            min_samples_leaf = trial.suggest_int('min_samples_leaf', 1, 10)
+            max_features = trial.suggest_categorical('max_features', ['sqrt', 'log2', None])
+            
+            model = ExtraTreesRegressor(
+                n_estimators=n_estimators,
+                max_depth=max_depth,
+                min_samples_split=min_samples_split,
+                min_samples_leaf=min_samples_leaf,
+                max_features=max_features,
+                random_state=random_state,
+                n_jobs=1  # We're already parallelizing at a higher level
+            )
+        
+        elif model_type == 'svr':
+            # Support Vector Regression
+            from sklearn.svm import SVR
+            
+            kernel = trial.suggest_categorical('kernel', ['linear', 'poly', 'rbf', 'sigmoid'])
+            C = trial.suggest_float('C', 0.1, 100.0, log=True)
+            epsilon = trial.suggest_float('epsilon', 0.01, 1.0, log=True)
+            
+            if kernel in ['poly', 'rbf', 'sigmoid']:
+                gamma = trial.suggest_categorical('gamma', ['scale', 'auto'])
+                model = SVR(kernel=kernel, C=C, epsilon=epsilon, gamma=gamma)
+            else:
+                model = SVR(kernel=kernel, C=C, epsilon=epsilon)
+        
+        else:
+            raise ValueError(f"Unknown model type: {model_type}")
+        
+        # Calculate cross-validation score
         try:
-            if X_train_outer.shape[0] > sparse_threshold:
-                induce_idx = np.random.choice(X_train_outer.shape[0], size=num_inducing, replace=False)
-                Z = X_train_outer[induce_idx]
-                final_model = GPy.models.SparseGPRegression(X_train_outer, y_train_outer, kernel=best_kernel, Z=Z)
-            else:
-                final_model = GPy.models.GPRegression(X_train_outer, y_train_outer, kernel=best_kernel)
+            scores = cross_val_score(model, X, y, cv=cv, scoring=scorer, n_jobs=1)
             
-            # Set and fix the best noise variance
-            final_model.Gaussian_noise.variance = best_noise_var
-            final_model.Gaussian_noise.fix()
-            
-            # Optimize the final model
-            print("  Training final model for outer fold...")
-            final_model.optimize(messages=True, max_iters=max_iter*2, optimizer='lbfgs')
-            print(f"  Final model training complete in {time.time()-final_model_start:.2f}s")
+            if metric == 'r2':
+                return np.mean(scores)
+            else:  # MSE or MAE (lower is better)
+                return -np.mean(scores)  # Negate because Optuna minimizes by default
         except Exception as e:
-            print(f"  Warning: Final model training failed. Error: {e}")
-            # Use the best inner model as a fallback
-            if best_inner_models:
-                print("  Using best inner model as fallback")
-                final_model = best_inner_models[0]
-            else:
-                # Create a simple default model
-                if X_train_outer.shape[0] > sparse_threshold:
-                    induce_idx = np.random.choice(X_train_outer.shape[0], size=num_inducing, replace=False)
-                    Z = X_train_outer[induce_idx]
-                    final_model = GPy.models.SparseGPRegression(X_train_outer, y_train_outer, 
-                                                               kernel=GPy.kern.RBF(input_dim=X.shape[1], ARD=False), Z=Z)
-                else:
-                    final_model = GPy.models.GPRegression(X_train_outer, y_train_outer, 
-                                                         kernel=GPy.kern.RBF(input_dim=X.shape[1], ARD=False))
-                final_model.Gaussian_noise.variance = 0.1
-        
-        # Evaluate on the outer test set
-        eval_start = time.time()
-        mean_pred, var_pred = final_model.predict(X_test_outer)
-        r2 = r2_score(y_test_outer, mean_pred)
-        mse = mean_squared_error(y_test_outer, mean_pred)
-        mae = mean_absolute_error(y_test_outer, mean_pred)
-        print(f"  Test set evaluation complete in {time.time()-eval_start:.2f}s")
-        
-        # Store results
-        outer_models.append(final_model)
-        cv_perf.append({
-            'r2': r2,
-            'mse': mse,
-            'mae': mae,
-            'kernel_type': best_kernel_type,
-            'noise_var': best_noise_var
-        })
-        unseen_preds.append((mean_pred, np.sqrt(var_pred), X_test_outer, y_test_outer, outer_test_idx))
-        best_params_list.append({
-            'kernel_type': best_kernel_type,
-            'noise_var': best_noise_var
-        })
-        
-        print(f"  Outer fold test performance - R²: {r2:.4f}, MSE: {mse:.4f}, MAE: {mae:.4f}")
-        print(f"  Outer fold {outer_fold+1} complete in {time.time()-fold_start_time:.2f}s")
+            print(f"Error in CV: {e}")
+            return float('-inf') if direction == 'maximize' else float('inf')
     
-    total_time = time.time() - start_time
-    print(f"Nested CV GPR complete in {total_time:.2f}s ({total_time/60:.2f}min)")
-    return outer_models, cv_perf, unseen_preds, best_params_list
+    # Create study with pruner
+    pruner = optuna.pruners.MedianPruner(n_startup_trials=10, n_warmup_steps=5)
+    study = optuna.create_study(direction=direction, pruner=pruner)
+    
+    # Run optimization
+    start_time = time.time()
+    study.optimize(objective, n_trials=n_trials, n_jobs=n_jobs)
+    optimization_time = time.time() - start_time
+    
+    # Get best parameters and model
+    best_params = study.best_params
+    best_model_type = best_params['model_type']
+    
+    # Train the best model on all data
+    print(f"\nBest model for {feature_set_name}: {best_model_type}")
+    print(f"Best parameters: {best_params}")
+    
+    # Recreate and train the best model
+    if best_model_type == 'gp':
+        from sklearn.gaussian_process import GaussianProcessRegressor
+        from sklearn.gaussian_process.kernels import RBF, WhiteKernel, ConstantKernel, Matern
+        
+        # Set up kernel
+        if best_params['kernel_option'] == 'rbf':
+            kernel = RBF(length_scale=best_params['length_scale'])
+        else:  # matern
+            kernel = Matern(length_scale=best_params['length_scale'], nu=best_params['nu'])
+        
+        # Add constant kernel if used
+        if best_params.get('use_constant', False):
+            kernel = ConstantKernel(best_params['constant_value']) * kernel
+        
+        # Add white kernel if used
+        if best_params.get('use_white', False):
+            kernel += WhiteKernel(noise_level=best_params['noise_level'])
+        
+        alpha = best_params['alpha']
+        best_model = GaussianProcessRegressor(kernel=kernel, alpha=alpha, random_state=random_state)
+    
+    elif best_model_type == 'rf':
+        from sklearn.ensemble import RandomForestRegressor
+        
+        best_model = RandomForestRegressor(
+            n_estimators=best_params['n_estimators'],
+            max_depth=best_params['max_depth'],
+            min_samples_split=best_params['min_samples_split'],
+            min_samples_leaf=best_params['min_samples_leaf'],
+            max_features=best_params['max_features'],
+            random_state=random_state,
+            n_jobs=n_jobs
+        )
+    
+    elif best_model_type == 'gb':
+        from sklearn.ensemble import GradientBoostingRegressor
+        
+        best_model = GradientBoostingRegressor(
+            n_estimators=best_params['n_estimators'],
+            learning_rate=best_params['learning_rate'],
+            max_depth=best_params['max_depth'],
+            min_samples_split=best_params['min_samples_split'],
+            min_samples_leaf=best_params['min_samples_leaf'],
+            subsample=best_params['subsample'],
+            random_state=random_state
+        )
+    
+    elif best_model_type == 'kr':
+        from emuses.tools.kernel_regression_utils import KernelRegressor
+        
+        best_model = KernelRegressor(
+            kernel=best_params['kernel_type'],
+            sigma=best_params['sigma']
+        )
+    
+    elif best_model_type == 'xgb':
+        import xgboost as xgb
+        
+        best_model = xgb.XGBRegressor(
+            n_estimators=best_params['n_estimators'],
+            learning_rate=best_params['learning_rate'],
+            max_depth=best_params['max_depth'],
+            min_child_weight=best_params['min_child_weight'],
+            subsample=best_params['subsample'],
+            colsample_bytree=best_params['colsample_bytree'],
+            random_state=random_state,
+            n_jobs=n_jobs
+        )
+    
+    elif best_model_type == 'lgb':
+        import lightgbm as lgb
+        
+        best_model = lgb.LGBMRegressor(
+            n_estimators=best_params['n_estimators'],
+            learning_rate=best_params['learning_rate'],
+            max_depth=best_params['max_depth'],
+            num_leaves=best_params['num_leaves'],
+            min_child_samples=best_params['min_child_samples'],
+            subsample=best_params['subsample'],
+            random_state=random_state,
+            n_jobs=n_jobs
+        )
+    
+    elif best_model_type == 'et':
+        from sklearn.ensemble import ExtraTreesRegressor
+        
+        best_model = ExtraTreesRegressor(
+            n_estimators=best_params['n_estimators'],
+            max_depth=best_params['max_depth'],
+            min_samples_split=best_params['min_samples_split'],
+            min_samples_leaf=best_params['min_samples_leaf'],
+            max_features=best_params['max_features'],
+            random_state=random_state,
+            n_jobs=n_jobs
+        )
+    
+    elif best_model_type == 'svr':
+        from sklearn.svm import SVR
+        
+        if 'gamma' in best_params:
+            best_model = SVR(
+                kernel=best_params['kernel'],
+                C=best_params['C'],
+                epsilon=best_params['epsilon'],
+                gamma=best_params['gamma']
+            )
+        else:
+            best_model = SVR(
+                kernel=best_params['kernel'],
+                C=best_params['C'],
+                epsilon=best_params['epsilon']
+            )
+    
+    # Train the best model on all data
+    best_model.fit(X, y)
+    
+    # Create cross-validation visualization
+    if output_folder:
+        # Plot optimization history
+        plt.figure(figsize=(10, 6))
+        optuna.visualization.matplotlib.plot_optimization_history(study)
+        plt.title(f'Optimization History for {feature_set_name}')
+        plt.tight_layout()
+        plt.savefig(os.path.join(output_folder, f'optimization_history_{best_model_type}.png'))
+        plt.close()
+        
+        # Plot parameter importances
+        plt.figure(figsize=(10, 6))
+        try:
+            optuna.visualization.matplotlib.plot_param_importances(study)
+            plt.title(f'Parameter Importances for {feature_set_name}')
+            plt.tight_layout()
+            plt.savefig(os.path.join(output_folder, f'param_importances_{best_model_type}.png'))
+        except Exception as e:
+            print(f"Error plotting parameter importances: {e}")
+        plt.close()
+        
+        # Plot model comparison if multiple models were tried
+        if len(models) > 1:
+            model_scores = {}
+            for trial in study.trials:
+                model_type = trial.params.get('model_type')
+                score = trial.value
+                if model_type not in model_scores:
+                    model_scores[model_type] = []
+                model_scores[model_type].append(score)
+            
+            plt.figure(figsize=(10, 6))
+            box_data = [model_scores[model] for model in model_scores.keys() if model_scores[model]]
+            plt.boxplot(box_data, labels=[model for model in model_scores.keys() if model_scores[model]])
+            plt.title(f'Model Comparison for {feature_set_name}')
+            plt.ylabel('Score (higher is better)' if direction == 'maximize' else 'Score (lower is better)')
+            plt.xticks(rotation=45)
+            plt.tight_layout()
+            plt.savefig(os.path.join(output_folder, 'model_comparison.png'))
+            plt.close()
+    
+    # Get cross-validation score for the best model
+    cv_scores = cross_val_score(best_model, X, y, cv=cv, scoring=scorer, n_jobs=n_jobs)
+    
+    if metric == 'r2':
+        final_score = np.mean(cv_scores)
+    else:  # MSE or MAE
+        final_score = -np.mean(cv_scores)
+    
+    print(f"Final {metric} score: {final_score}")
+    print(f"Optimization time: {optimization_time:.2f} seconds")
+    
+    # Prepare results dictionary
+    results = {
+        'best_model': best_model,
+        'best_model_name': best_model_type,
+        'best_params': best_params,
+        'cv_scores': cv_scores.tolist(),
+        'r2': np.mean(cv_scores) if metric == 'r2' else None,
+        'mse': -np.mean(cv_scores) if metric == 'mse' else None,
+        'mae': -np.mean(cv_scores) if metric == 'mae' else None,
+        'optimization_time': optimization_time,
+        'feature_set': feature_set_name
+    }
+    
+    return results
+
+
+def compute_all_gwd(embeddings, sigma):
+    """
+    Compute the Gaussian weighted distances between all embeddings.
+    
+    Parameters:
+        embeddings (np.ndarray): Array of shape (n_samples, n_features)
+        sigma (float): The Gaussian kernel bandwidth
+        
+    Returns:
+        np.ndarray: Matrix of shape (n_samples, n_samples) with GWD values
+    """
+    from scipy.spatial.distance import pdist, squareform
+    
+    n_samples = embeddings.shape[0]
+    
+    # Compute pairwise distances
+    distances = squareform(pdist(embeddings, metric='euclidean'))
+    
+    # Apply Gaussian kernel
+    gwd = np.exp(-0.5 * (distances / sigma) ** 2)
+    
+    return gwd
+
+
+def compute_gwd_summary(embeddings, sigma, mode="basic"):
+    """
+    Compute summary features from the Gaussian weighted distances matrix.
+    
+    Parameters:
+        embeddings (np.ndarray): Array of shape (n_samples, n_features)
+        sigma (float): The Gaussian kernel bandwidth
+        mode (str): Type of summary to compute ('basic', 'extended')
+        
+    Returns:
+        np.ndarray: Matrix of shape (n_samples, n_summary_features) with summary features
+    """
+    import numpy as np
+    
+    # Compute the full GWD matrix
+    gwd_matrix = compute_all_gwd(embeddings, sigma)
+    
+    # Basic summaries (always included)
+    ess = np.sum(gwd_matrix, axis=1)  # Effective sample size
+    entropy = -np.sum(gwd_matrix * np.log(gwd_matrix + 1e-10), axis=1)  # Entropy
+    
+    if mode == "basic":
+        # Return only the basic summaries
+        return np.column_stack((ess, entropy))
+    
+    elif mode == "extended":
+        # Additional summary features
+        mean_dist = np.mean(gwd_matrix, axis=1)  # Mean GWD
+        median_dist = np.median(gwd_matrix, axis=1)  # Median GWD
+        max_dist = np.max(gwd_matrix, axis=1)  # Max GWD
+        min_dist = np.min(gwd_matrix, axis=1)  # Min GWD (excluding self)
+        std_dist = np.std(gwd_matrix, axis=1)  # Standard deviation of GWD
+        
+        # Combine all summaries
+        return np.column_stack((ess, entropy, mean_dist, median_dist, max_dist, min_dist, std_dist))
+    
+    else:
+        raise ValueError(f"Unknown mode: {ode}")

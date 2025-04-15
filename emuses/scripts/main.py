@@ -57,7 +57,7 @@ def add_input_dataset_optional_arguments(parser):
                         help='BIDS filters for the input dataset')
     # Add normalization argument for input data
     parser.add_argument('--input_normalization', '-inorm', default='none',
-                        choices=['none', 'zscore', 'min-max', 'zero-max'],
+                        choices=['none', 'zscore', 'min-max', 'zero-max', 'robust'],
                         help='Normalization method for input data.')
 
 
@@ -122,6 +122,22 @@ def add_smoothing_arguments(parser):
                                  help='Full width at half maximum value for the smoothing')
 
 
+# Parser arguments related to model optimization and parallelization
+def add_enhanced_pipeline_arguments(parser):
+    """
+    Adds optional arguments related to the enhanced pipeline with Optuna optimization.
+    """
+    parser.add_argument('--use_enhanced_pipeline', action='store_true',
+                      help='Use the enhanced pipeline with Optuna optimization for model selection')
+    parser.add_argument('--optuna_trials', type=int, default=50,
+                      help='Number of trials for Optuna optimization per model/feature set')
+    parser.add_argument('--parallel_models', action='store_true',
+                      help='Train models in parallel across different feature sets')
+    parser.add_argument('--n_jobs', type=int, default=-1,
+                      help='Number of parallel jobs for model training (-1 uses all cores)')
+    parser.add_argument('--model_selection', nargs='+', default=None,
+                      help='List of models to try. Options: gp, rf, gb, kr, xgb, lgb, et, svr')
+
 def main():
     # Configure logging
     logging.basicConfig(level=logging.INFO)
@@ -144,8 +160,6 @@ def main():
     # Subparser for the 'full' command
     full_parser = subparsers.add_parser('full', parents=[common_parallel], help='Run the full pipeline')
 
-
-
     add_output_folder_argument(full_parser)  # Positional argument
     add_input_dataset_argument(full_parser)  # Positional argument
     # Add optional arguments
@@ -155,6 +169,7 @@ def main():
     add_umap_arguments(full_parser)
     add_clustering_arguments(full_parser)
     add_smoothing_arguments(full_parser)
+    add_enhanced_pipeline_arguments(full_parser)  # Add enhanced pipeline arguments
 
     # Subparser for the 'umap' command
     umap_parser = subparsers.add_parser('umap', help='Train the UMAP and get the embeddings')
@@ -192,12 +207,11 @@ def main():
     add_input_dataset_optional_arguments(prediction_parser)
     add_scores_arguments(prediction_parser)
     add_umap_arguments(prediction_parser)
-
+    add_enhanced_pipeline_arguments(prediction_parser)  # Add enhanced pipeline arguments
 
     # add run_old_prediction argument
     full_parser.add_argument('--run_old_prediction', action='store_true',
-                                    help='Run the old prediction pipeline')
-
+                            help='Run the old prediction pipeline')
 
     # Parse the command-line arguments
     args = parser.parse_args()

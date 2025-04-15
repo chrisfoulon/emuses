@@ -1,27 +1,38 @@
 # kernel_regression.py
 from copy import deepcopy
 from pathlib import Path
-
-import hdbscan
-import pandas as pd
-from joblib import dump
-from scipy.spatial import ConvexHull
-from scipy.stats import normaltest
 import numpy as np
+import pandas as pd
 import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
 from matplotlib import pyplot as plt
+
+# SciPy imports
+from scipy.spatial import ConvexHull, cKDTree
+from scipy.stats import normaltest
+from scipy.spatial.distance import cdist
+
+# Scikit-learn imports
 from sklearn.base import BaseEstimator, RegressorMixin, ClassifierMixin
 from sklearn.model_selection import KFold
-from sklearn.metrics import (accuracy_score, roc_auc_score, r2_score, mean_squared_error,
-                             mean_absolute_error)
+from sklearn.metrics import (accuracy_score, roc_auc_score, r2_score, mean_squared_error, 
+                            mean_absolute_error, confusion_matrix, f1_score, precision_score, 
+                            recall_score, pairwise_distances)
+from sklearn.decomposition import PCA
 
+# EMUSES imports
 from emuses.tools.output_utils import save_statistical_maps
 from emuses.tools.stats_utils import input_matrix_stat_map
-from sklearn.metrics import accuracy_score, confusion_matrix, roc_auc_score, f1_score, precision_score, \
-    recall_score
-from scipy.spatial import cKDTree
+from emuses.tools.correlation_maps_utils import calculate_correlation_grid
 
-matplotlib.use("Agg")
+# Other imports
+import hdbscan
+from joblib import dump, Parallel, delayed
+import GPy
+import os
+import json
+import time
 
 
 class KernelRegressor(BaseEstimator, RegressorMixin):
@@ -40,10 +51,13 @@ class KernelRegressor(BaseEstimator, RegressorMixin):
     ----------
     sigma : float, default=1.0
         The bandwidth parameter for the Gaussian kernel. A lower sigma makes the kernel more local.
+    kernel : str, default='gaussian'
+        The type of kernel to use. Currently only 'gaussian' is supported.
     """
 
-    def __init__(self, sigma=1.0):
+    def __init__(self, sigma=1.0, kernel='gaussian'):
         self.sigma = sigma
+        self.kernel = kernel
 
     def fit(self, X, y):
         """
@@ -83,7 +97,12 @@ class KernelRegressor(BaseEstimator, RegressorMixin):
         predictions = []
         for x in X:
             distances = np.linalg.norm(self.X_train - x, axis=1)
-            weights = np.exp(-0.5 * (distances / self.sigma) ** 2)
+            # Apply the appropriate kernel function based on self.kernel
+            if self.kernel == 'gaussian' or self.kernel is None:
+                weights = np.exp(-0.5 * (distances / self.sigma) ** 2)
+            else:
+                # Default to Gaussian kernel if unknown kernel type is specified
+                weights = np.exp(-0.5 * (distances / self.sigma) ** 2)
             weight_sum = np.sum(weights)
             if weight_sum == 0:
                 prediction = 0  # Fallback value; adjust as needed
