@@ -11,20 +11,31 @@ from pathlib import Path
 from bcblib.tools.arrays_utils import separate_clusters_and_extract_coords, find_centroid_and_check
 from narwhals.selectors import categorical
 from scipy.stats import mannwhitneyu, ttest_ind, mode, entropy
+from scipy.spatial.distance import pdist, squareform, cdist
 from sklearn.linear_model import LinearRegression
 from tqdm import tqdm
-from sklearn.ensemble import RandomForestRegressor, RandomForestClassifier, GradientBoostingRegressor
+from sklearn.ensemble import RandomForestRegressor, RandomForestClassifier, GradientBoostingRegressor, ExtraTreesRegressor
 from sklearn.gaussian_process import GaussianProcessRegressor
-from sklearn.gaussian_process.kernels import RBF, Matern, WhiteKernel, RationalQuadratic
+from sklearn.gaussian_process.kernels import RBF, Matern, WhiteKernel, RationalQuadratic, ConstantKernel, ExpSineSquared
 from sklearn.metrics import (mean_squared_error, mean_absolute_error, r2_score, confusion_matrix, 
                             accuracy_score, pairwise_distances, f1_score, precision_score, 
                             recall_score)
 from sklearn.model_selection import KFold, GridSearchCV, cross_val_score
+from sklearn.decomposition import PCA
+from sklearn.svm import SVR
 from pykrige.rk import Krige
 from joblib import dump, Parallel, delayed
 import GPy
 import xgboost as xgb
 import seaborn as sns
+try:
+    import lightgbm as lgb
+except ImportError:
+    lgb = None
+
+# Import modules from emuses package that are used in multiple functions
+from emuses.tools.kernel_regression_utils import KernelRegressor, nested_cv_kernel_regression, ensemble_predict
+from emuses.tools.correlation_maps_utils import calculate_correlation_grid
 
 
 def fwhm_to_sigma(fwhm):
@@ -2338,4 +2349,4 @@ def compute_gwd_summary(embeddings, sigma, mode="basic"):
         return np.column_stack((ess, entropy, mean_dist, median_dist, max_dist, min_dist, std_dist))
     
     else:
-        raise ValueError(f"Unknown mode: {ode}")
+        raise ValueError(f"Unknown mode: {mode}")
