@@ -33,9 +33,9 @@ try:
 except ImportError:
     lgb = None
 
-# Import modules from emuses package that are used in multiple functions
-from emuses.tools.kernel_regression_utils import KernelRegressor, nested_cv_kernel_regression, ensemble_predict
-from emuses.tools.correlation_maps_utils import calculate_correlation_grid
+# Remove the circular imports - these will be imported within the functions that need them
+# from emuses.tools.kernel_regression_utils import KernelRegressor, nested_cv_kernel_regression, ensemble_predict
+# from emuses.tools.correlation_maps_utils import calculate_correlation_grid
 
 
 def fwhm_to_sigma(fwhm):
@@ -388,7 +388,7 @@ def train_model(train_coords, train_scores, test_coords, test_scores, score_name
             mae_test = mean_absolute_error(y_test_t, test_predictions_t)
             min_score_t = np.min(y_train_t)
             max_score_t = np.max(y_train_t)
-            range_of_values_t = max_score_t - min_score_t if max_score_t != min_score_t else 1
+            range_of_values_t = max_score_t - min_score_t if max_score_t != max_score_t else 1
             mae_max_test = (mae_test / max_score_t) * 100 if max_score_t != 0 else 0
             normalized_mse_test = (mse_test / (range_of_values_t ** 2)) * 100
             r2_test = r2_score(y_test_t, test_predictions_t)
@@ -1535,14 +1535,14 @@ def new_pipeline_test(embeddings, combined_input_matrix, scores_vectors_dict, ou
     test_feature_sets = {}
     if test_embeddings is not None and test_labels is not None:
         print("Creating test feature sets...")
-        # Compute test GWD summaries
-        test_gwd_summaries = compute_gwd_summary(test_embeddings, final_sigma, mode="basic")
+        # Compute test GWD summaries using the training data as reference
+        test_gwd_summaries = compute_gwd_summary_test(test_embeddings, embeddings, final_sigma, mode="basic")
         test_features_4 = np.hstack((test_embeddings, test_gwd_summaries))
         test_features_3 = np.hstack((test_embeddings, test_gwd_summaries[:, :1]))
         test_features_2 = test_embeddings
         test_features_gwd = test_gwd_summaries
 
-        # Compute full GWD for test data
+        # For PCA features, use compute_all_gwd_test to get GWD relative to training data
         test_full_gwd = compute_all_gwd_test(test_embeddings, embeddings, final_sigma)
         # Transform with PCA fitted on training GWD
         test_pca_gwd_features = pca.transform(test_full_gwd)
@@ -2324,7 +2324,6 @@ def compute_gwd_summary(embeddings, sigma, mode="basic"):
     Returns:
         np.ndarray: Matrix of shape (n_samples, n_summary_features) with summary features
     """
-    import numpy as np
     
     # Compute the full GWD matrix
     gwd_matrix = compute_all_gwd(embeddings, sigma)
@@ -2350,3 +2349,62 @@ def compute_gwd_summary(embeddings, sigma, mode="basic"):
     
     else:
         raise ValueError(f"Unknown mode: {mode}")
+
+
+def compute_gwd_summary_test(test_embeddings, train_embeddings, sigma, mode="basic"):
+    """
+    Compute summary statistics from Gaussian weighted distances (GWD) for test points 
+    relative to the training points. This ensures test features are computed in the same
+    way they would be used in a production setting.
+
+    Parameters:
+        test_embeddings (np.ndarray): Array of shape (n_test, n_features)
+        train_embeddings (np.ndarray): Array of shape (n_train, n_features)
+        sigma (float): Gaussian kernel bandwidth
+        mode (str): Which summary statistics to compute. Options are:
+            "basic"     - returns effective number of neighbors (ESS) and entropy
+            "extended"  - returns ESS, entropy, and additional statistics
+
+    Returns:
+        np.ndarray: Feature matrix of shape (n_test, n_features_summary) depending on mode
+    """
+    # Compute GWD matrix between test and training embeddings
+    gwd_matrix = compute_all_gwd_test(test_embeddings, train_embeddings, sigma)
+    
+    # Compute effective sample size (ESS)
+    ess = (gwd_matrix.sum(axis=1) ** 2) / (np.square(gwd_matrix).sum(axis=1) + 1e-8)
+    
+    # Compute entropy
+    entropy = -np.sum(gwd_matrix * np.log(gwd_matrix + 1e-10), axis=1)
+    
+    if mode == "basic":
+        return np.column_stack((ess, entropy))
+    elif mode == "extended":
+        # Additional summary features
+        n_test = test_embeddings.shape[0]
+        weighted_means = np.zeros(n_test)
+        weighted_vars = np.zeros(n_test)
+        medians = np.zeros(n_test)
+        
+        for i in range(n_test):
+            # Compute distances between this test point and all training points
+            distances = np.linalg.norm(train_embeddings - test_embeddings[i:i+1], axis=1)
+            weights = gwd_matrix[i, :]
+            
+            # Compute weighted mean
+            weighted_mean = np.sum(weights * distances) / (np.sum(weights) + 1e-8)
+            weighted_means[i] = weighted_mean
+            
+            # Compute weighted variance
+            weighted_vars[i] = np.sum(weights * (distances - weighted_mean) ** 2) / (np.sum(weights) + 1e-8)
+            
+            # Compute median
+            medians[i] = np.median(distances)
+        
+        # Compute weighted standard deviation
+        weighted_std = np.sqrt(weighted_vars)
+        
+        # Stack all features
+        return np.column_stack((ess, entropy, weighted_means, weighted_std, medians))
+    else:
+        raise ValueError(f"Mode {mode} is not supported. Choose 'basic' or 'extended'.")

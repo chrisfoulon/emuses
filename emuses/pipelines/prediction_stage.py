@@ -6,8 +6,17 @@ import pandas as pd
 from pathlib import Path
 
 from emuses.pipelines.pipeline_stage import PipelineStage
-from emuses.tools.stats_utils import train_and_test_model_per_label, optuna_model_selection
+from emuses.tools.stats_utils import compute_gwd_summary_test, train_and_test_model_per_label, optuna_model_selection
 from emuses.tools.stats_utils import compute_gwd_summary
+from sklearn.metrics import r2_score, mean_squared_error, mean_absolute_error
+from sklearn.model_selection import cross_val_score
+from sklearn.kernel_ridge import KernelRidge
+
+from bcblib.tools.general_utils import save_json
+
+import concurrent.futures
+from joblib import dump
+
 
 class PredictionStage(PipelineStage):
     """
@@ -24,15 +33,21 @@ class PredictionStage(PipelineStage):
         args = self.config.args
 
         # Extract embeddings and labels from context
-        if 'train_labelled_embeddings' in context and 'test_labelled_embeddings' in context \
-                and 'train_labelled_scores' in context and 'test_labelled_scores' in context:
+        if 'train_labelled_embeddings' in context and context['train_labelled_embeddings'] is not None:
+            # Use the UMAP-transformed labeled data when in label_dataset mode
             train_embeddings = context['train_labelled_embeddings']
             train_labels = context['train_labelled_scores']
-            test_embeddings = context['test_labelled_embeddings']
-            test_labels = context['test_labelled_scores']
+            
+            if 'test_labelled_embeddings' in context and context['test_labelled_embeddings'] is not None:
+                test_embeddings = context['test_labelled_embeddings']
+                test_labels = context['test_labelled_scores']
+            else:
+                # If no specific test embeddings, fall back to test set
+                test_embeddings = context.get('test_embeddings')
+                test_labels = context.get('test_labels')
+                
             logger.info(
-                "Using labelled dataset split for prediction: training on labelled training data and testing on "
-                "labelled test data.")
+                "Using labeled dataset embeddings for prediction: training on UMAP-transformed labeled training data")
         else:
             # Fallback: use the default splits from unsupervised data splitting.
             train_embeddings = context.get('embeddings')
@@ -40,10 +55,10 @@ class PredictionStage(PipelineStage):
             train_labels = context.get('train_labels')
             test_labels = context.get('test_labels')
 
-        if train_embeddings is None or test_embeddings is None:
-            raise ValueError("Both training and test embeddings are required for prediction.")
-        if train_labels is None or test_labels is None:
-            raise ValueError("Both training and test labels are required for prediction.")
+        if train_embeddings is None:
+            raise ValueError("Training embeddings are required for prediction.")
+        if train_labels is None:
+            raise ValueError("Training labels are required for prediction.")
 
         # Determine if we use enhanced pipeline with Optuna
         use_enhanced_pipeline = getattr(args, 'use_enhanced_pipeline', False)
@@ -70,17 +85,31 @@ class PredictionStage(PipelineStage):
             # Compute GWD features for train and test sets
             logger.info("Computing GWD features for enhanced predictions...")
             train_gwd_features = compute_gwd_summary(train_embeddings, sigma, mode="extended")
-            test_gwd_features = compute_gwd_summary(test_embeddings, sigma, mode="extended")
             
-            # Create multiple feature sets to try
-            feature_sets = {
-                "embeddings_only": (train_embeddings, test_embeddings),
-                "gwd_only": (train_gwd_features, test_gwd_features),
-                "combined": (
-                    np.hstack((train_embeddings, train_gwd_features)), 
-                    np.hstack((test_embeddings, test_gwd_features))
-                )
-            }
+            # Only compute test GWD features if we have test embeddings
+            if test_embeddings is not None:
+                # Use the fixed function for test GWD features that references training data
+                test_gwd_features = compute_gwd_summary_test(test_embeddings, train_embeddings, sigma, mode="extended")
+                
+                # Create multiple feature sets to try
+                feature_sets = {
+                    "embeddings_only": (train_embeddings, test_embeddings),
+                    "gwd_only": (train_gwd_features, test_gwd_features),
+                    "combined": (
+                        np.hstack((train_embeddings, train_gwd_features)), 
+                        np.hstack((test_embeddings, test_gwd_features))
+                    )
+                }
+            else:
+                # Create feature sets without test data
+                feature_sets = {
+                    "embeddings_only": (train_embeddings, None),
+                    "gwd_only": (train_gwd_features, None),
+                    "combined": (
+                        np.hstack((train_embeddings, train_gwd_features)), 
+                        None
+                    )
+                }
             
             # Determine if we're training models per label in parallel or sequentially
             results_list = []
@@ -93,7 +122,7 @@ class PredictionStage(PipelineStage):
             # Handle case where labels might be 1D array
             if train_labels_array.ndim == 1:
                 train_labels_array = train_labels_array.reshape(-1, 1)
-            if test_labels_array.ndim == 1:
+            if test_labels_array is not None and test_labels_array.ndim == 1:
                 test_labels_array = test_labels_array.reshape(-1, 1)
             
             # Get column names if available, otherwise use generic names
@@ -106,7 +135,7 @@ class PredictionStage(PipelineStage):
             for label_idx in range(train_labels_array.shape[1]):
                 label_name = column_names[label_idx]
                 y_train = train_labels_array[:, label_idx]
-                y_test = test_labels_array[:, label_idx]
+                y_test = test_labels_array[:, label_idx] if test_labels_array is not None else None
                 
                 logger.info(f"Training models for label: {label_name}")
                 
@@ -134,29 +163,35 @@ class PredictionStage(PipelineStage):
                             models=model_selection
                         )
                         
-                        # Get the best model and evaluate on test set
+                        # Get the best model and evaluate on test set if available
                         best_model = results['best_model']
-                        y_pred = best_model.predict(X_test)
+                        if X_test is not None and y_test is not None:
+                            y_pred = best_model.predict(X_test)
+                            
+                            # Calculate metrics
+                            r2 = r2_score(y_test, y_pred)
+                            mse = mean_squared_error(y_test, y_pred)
+                            mae = mean_absolute_error(y_test, y_pred)
+                            
+                            results.update({
+                                'test_r2': r2,
+                                'test_mse': mse,
+                                'test_mae': mae,
+                                'y_pred': y_pred,
+                                'y_test': y_test,
+                            })
+                        else:
+                            # No test data available, use validation metrics instead
+                            results.update({
+                                'test_r2': results.get('val_r2', 0),
+                                'test_mse': results.get('val_mse', 0),
+                                'test_mae': results.get('val_mae', 0),
+                            })
                         
-                        # Calculate metrics
-                        from sklearn.metrics import r2_score, mean_squared_error, mean_absolute_error
-                        r2 = r2_score(y_test, y_pred)
-                        mse = mean_squared_error(y_test, y_pred)
-                        mae = mean_absolute_error(y_test, y_pred)
-                        
-                        results.update({
-                            'test_r2': r2,
-                            'test_mse': mse,
-                            'test_mae': mae,
-                            'y_pred': y_pred,
-                            'y_test': y_test,
-                            'label_name': label_name
-                        })
-                        
+                        results['label_name'] = label_name
                         return results
                     
                     # Use multiprocessing to train models in parallel across feature sets
-                    import concurrent.futures
                     with concurrent.futures.ProcessPoolExecutor(max_workers=min(n_jobs, len(feature_sets))) as executor:
                         future_to_feature = {
                             executor.submit(train_feature_set, feature_name, features): feature_name
@@ -212,15 +247,21 @@ class PredictionStage(PipelineStage):
                             models=model_selection
                         )
                         
-                        # Get the best model and evaluate on test set
+                        # Get the best model and evaluate on test set if available
                         best_model = results['best_model']
-                        y_pred = best_model.predict(X_test)
                         
-                        # Calculate metrics
-                        from sklearn.metrics import r2_score, mean_squared_error, mean_absolute_error
-                        r2 = r2_score(y_test, y_pred)
-                        mse = mean_squared_error(y_test, y_pred)
-                        mae = mean_absolute_error(y_test, y_pred)
+                        if X_test is not None and y_test is not None:
+                            y_pred = best_model.predict(X_test)
+                            
+                            # Calculate metrics
+                            r2 = r2_score(y_test, y_pred)
+                            mse = mean_squared_error(y_test, y_pred)
+                            mae = mean_absolute_error(y_test, y_pred)
+                        else:
+                            # No test data available, use validation metrics instead
+                            r2 = results.get('val_r2', 0)
+                            mse = results.get('val_mse', 0)
+                            mae = results.get('val_mae', 0)
                         
                         if r2 > best_r2:
                             best_r2 = r2
@@ -244,17 +285,67 @@ class PredictionStage(PipelineStage):
             # Use original pipeline
             logger.info("Using original prediction pipeline")
             
-            # Train and test a prediction model for each score
-            results_list = train_and_test_model_per_label(
-                train_embeddings=train_embeddings,
-                train_labels=train_labels,
-                test_embeddings=test_embeddings,
-                test_labels=test_labels,
-                output_folder=output_folder,
-                categorical=getattr(args, 'classification', False),
-                show_plot=getattr(args, 'show_plots', False),
-                n_jobs=n_jobs  # Pass the n_jobs parameter to control parallelism
-            )
+            # Check if we have test data
+            if test_embeddings is not None and test_labels is not None:
+                # Train and test a prediction model for each score
+                results_list = train_and_test_model_per_label(
+                    train_embeddings=train_embeddings,
+                    train_labels=train_labels,
+                    test_embeddings=test_embeddings,
+                    test_labels=test_labels,
+                    output_folder=output_folder,
+                    categorical=getattr(args, 'classification', False),
+                    show_plot=getattr(args, 'show_plots', False),
+                    n_jobs=n_jobs  # Pass the n_jobs parameter to control parallelism
+                )
+            else:
+                # No test data, use cross-validation only
+                
+                # Basic cross-validation with KernelRidge
+                results_list = []
+                
+                logger.info("No test data available, using cross-validation only")
+                
+                # Convert train_labels to numpy array if needed
+                train_labels_array = train_labels.values if hasattr(train_labels, 'values') else train_labels
+                
+                # Handle case where labels might be 1D array
+                if train_labels_array.ndim == 1:
+                    train_labels_array = train_labels_array.reshape(-1, 1)
+                
+                # Get column names if available, otherwise use generic names
+                if hasattr(train_labels, 'columns'):
+                    column_names = train_labels.columns
+                else:
+                    column_names = [f"Target_{i}" for i in range(train_labels_array.shape[1])]
+                
+                # For each target variable
+                for label_idx in range(train_labels_array.shape[1]):
+                    label_name = column_names[label_idx]
+                    y_train = train_labels_array[:, label_idx]
+                    
+                    logger.info(f"Cross-validating model for label: {label_name}")
+                    
+                    # Simple KernelRidge regression with cross-validation
+                    model = KernelRidge(alpha=0.1, kernel='rbf')
+                    cv_scores = cross_val_score(model, train_embeddings, y_train, cv=5, scoring='r2')
+                    
+                    # Train final model on all data
+                    model.fit(train_embeddings, y_train)
+                    
+                    # Save model
+                    label_output_folder = output_folder / label_name
+                    label_output_folder.mkdir(parents=True, exist_ok=True)
+                    dump(model, label_output_folder / 'final_model.joblib')
+                    
+                    # Add to results list
+                    results_list.append({
+                        'label_name': label_name,
+                        'best_feature_set': 'embeddings_only',
+                        'best_model': 'KernelRidge',
+                        'test_r2': cv_scores.mean(),  # Use mean CV score
+                        'model_params': {'alpha': 0.1, 'kernel': 'rbf'}
+                    })
 
         # Save results in a CSV and in a json file for easy parsing
         performance_df = pd.DataFrame(results_list)
@@ -269,8 +360,3 @@ class PredictionStage(PipelineStage):
         save_json(perf_json_file, results_list)
 
         return context
-        
-def save_json(filepath, data):
-    """Helper function to save data as JSON file."""
-    with open(filepath, 'w') as f:
-        json.dump(data, f, indent=2, default=lambda x: str(x) if isinstance(x, (np.ndarray, pd.Series)) else x)

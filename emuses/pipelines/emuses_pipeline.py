@@ -121,6 +121,29 @@ class EMUSESPipeline:
             scores = labels if not is_labelled else None
             output_format_info = (8, 8) if features[0].shape == (64,) else features[0].shape
             return input_matrix, dataset_type, output_format_info, scores
+        elif str(dataset_identifier).lower() == 'digits_label_dataset':
+            dataset_type = 'digits'
+            self.paths_list = None
+            
+            # For unlabeled dataset used for UMAP/clustering
+            if not is_labelled:
+                features, labels, labeled_indices = load_and_preprocess_digits_dataset('digits_label_dataset')
+                input_matrix = features
+                scores = labels  # Include labels for the full dataset in non-labeled mode
+                print(f"DEBUG: Processed full digits dataset for UMAP with shape {input_matrix.shape}")
+                print(f"DEBUG: Generated labeled subset indices with {len(labeled_indices)} samples")
+            # For labeled dataset used for predictive models
+            else:
+                features, labels, labeled_indices = load_and_preprocess_digits_dataset('digits_label_dataset')
+                input_matrix = features[labeled_indices]
+                scores = labels[labeled_indices]
+                # Store labeled indices in context for potential later use
+                self.context['labeled_indices'] = labeled_indices
+                print(f"DEBUG: Processed labeled digits subset with shape {input_matrix.shape}")
+                print(f"DEBUG: Scores shape: {scores.shape if scores is not None else None}")
+            
+            output_format_info = (8, 8) if features[0].shape == (64,) else features[0].shape
+            return input_matrix, dataset_type, output_format_info, scores
         elif str(dataset_identifier).lower() == 'input_matrix':
             dataset_type = 'input_matrix'
             self.paths_list = None
