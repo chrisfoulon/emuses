@@ -33,12 +33,14 @@ class UMAPStage(PipelineStage):
     def run(self, context, progress_queue=None):
         logger = logging.getLogger(__name__)
         logger.info("Running UMAP Stage")
-        args = self.config.args
-        train_features = context.get('train_features')
-        test_features = context.get('test_features')
+        
+        # Use new naming convention only
+        train_features = context.get('embedding_train_features')
+        test_features = context.get('embedding_test_features')
+        train_indices = context.get('embedding_train_indices')  # May be None
 
         # Determine file paths based on output folder and prefix
-        prefix = args.prefix if args.prefix else ""
+        prefix = self.config.prefix if hasattr(self.config, 'prefix') else ""
         umap_model_file = self.config.output_folder / f"{prefix}best_umap_model.joblib"
         embeddings_file = self.config.output_folder / f"{prefix}embeddings.npy"
         cluster_model_file = self.config.output_folder / f"{prefix}hdbscan_model.joblib"
@@ -79,12 +81,12 @@ class UMAPStage(PipelineStage):
                     input_matrix=train_features,
                     output_folder=self.config.output_folder,
                     optim_dict=optim_dict,
-                    n_trials=getattr(args, 'umap_trials', 50),
-                    n_inner_trials=getattr(args, 'hdbscan_trials', 20),
-                    pref=args.prefix,
-                    n_jobs=args.umap_jobs if args.umap_jobs is not None else 1,
-                    inner_n_jobs=args.hdbscan_jobs if args.hdbscan_jobs is not None else 1,
-                    random_state=getattr(args, 'random_state', None)
+                    n_trials=getattr(self.config, 'umap_trials', 50),
+                    n_inner_trials=getattr(self.config, 'hdbscan_trials', 20),
+                    pref=self.config.prefix,
+                    n_jobs=self.config.umap_jobs if self.config.umap_jobs is not None else 1,
+                    inner_n_jobs=self.config.hdbscan_jobs if self.config.hdbscan_jobs is not None else 1,
+                    random_state=getattr(self.config, 'random_state', None)
                 )
             self.embeddings = embeddings
             logger.info(f"UMAP model saved at: {umap_path} and embeddings saved at: {embeddings_path}")
@@ -102,15 +104,15 @@ class UMAPStage(PipelineStage):
             logger.info(f"Cluster labels saved at: {cluster_labels_path}")
 
         # Check if a pre-saved clustering result should be loaded.
-        if getattr(args, 'load_clusterer', None):
-            self.cluster_model_path = Path(args.load_clusterer).resolve()
+        if getattr(self.config, 'load_clusterer', None):
+            self.cluster_model_path = Path(self.config.load_clusterer).resolve()
             try:
                 self.best_clusterer, _ = load_hdbscan_model(self.cluster_model_path)
                 logger.info(f"Loaded pre-trained clusterer from: {self.cluster_model_path}")
             except Exception as e:
                 logger.error(f"Failed to load clusterer from {self.cluster_model_path}: {e}")
-        if getattr(args, 'load_cluster_labels', None):
-            self.cluster_labels_path = Path(args.load_cluster_labels).resolve()
+        if getattr(self.config, 'load_cluster_labels', None):
+            self.cluster_labels_path = Path(self.config.load_cluster_labels).resolve()
             try:
                 self.cluster_labels = np.load(self.cluster_labels_path)
                 logger.info(f"Loaded pre-trained cluster labels from: {self.cluster_labels_path}")
@@ -118,9 +120,9 @@ class UMAPStage(PipelineStage):
                 logger.error(f"Failed to load cluster labels from {self.cluster_labels_path}: {e}")
 
         # Load precomputed embeddings if provided.
-        if getattr(args, 'load_embeddings', None):
-            self.embeddings = np.load(args.load_embeddings)
-            logger.info(f"Loaded precomputed embeddings from: {args.load_embeddings}")
+        if getattr(self.config, 'load_embeddings', None):
+            self.embeddings = np.load(self.config.load_embeddings)
+            logger.info(f"Loaded precomputed embeddings from: {self.config.load_embeddings}")
         else:
             self.embeddings = self.trained_umap.transform(train_features)
 
@@ -146,33 +148,47 @@ class UMAPStage(PipelineStage):
             np.save(self.test_embeddings_path, self.test_embeddings)
             logger.info(f"Test embeddings saved at: {self.test_embeddings_path}")
 
-        if 'train_labelled_matrix' in context:
-            train_labelled_emb = self.trained_umap.transform(context['train_labelled_matrix'])
-            context['train_labelled_embeddings'] = rescale_embedding(
-                train_labelled_emb,
-                preset_min=self.min_embeddings,
-                preset_max=self.max_embeddings
-            )
-            logger.info("Transformed and rescaled labelled training data using trained UMAP model.")
-        if 'test_labelled_matrix' in context and context['test_labelled_matrix'] is not None:
-            test_labelled_emb = self.trained_umap.transform(context['test_labelled_matrix'])
-            context['test_labelled_embeddings'] = rescale_embedding(
-                test_labelled_emb,
-                preset_min=self.min_embeddings,
-                preset_max=self.max_embeddings
-            )
-            logger.info("Transformed and rescaled labelled test data using trained UMAP model.")
+        # Process labeled data for prediction if available
+        prediction_train_features = context.get('prediction_train_features')
+        prediction_test_features = context.get('prediction_test_features')
 
-        # Update context with UMAP and clustering outputs.
-        # Use keys that downstream stages (e.g., HeatmapStage) expect.
+        # Transform prediction data through UMAP
+        if prediction_train_features is not None:
+            prediction_train_coords = self.trained_umap.transform(prediction_train_features)
+            prediction_train_coords = rescale_embedding(
+                prediction_train_coords,
+                preset_min=self.min_embeddings,
+                preset_max=self.max_embeddings
+            )
+            logger.info("Transformed and rescaled prediction training data using the UMAP model.")
+            context['prediction_train_coords'] = prediction_train_coords
+            
+        if prediction_test_features is not None:
+            prediction_test_coords = self.trained_umap.transform(prediction_test_features)
+            prediction_test_coords = rescale_embedding(
+                prediction_test_coords,
+                preset_min=self.min_embeddings,
+                preset_max=self.max_embeddings
+            )
+            logger.info("Transformed and rescaled prediction test data using the UMAP model.")
+            context['prediction_test_coords'] = prediction_test_coords
+
+        # Update context with UMAP and clustering outputs using new naming convention
         context.update({
-            'embeddings': self.embeddings,
-            'test_embeddings': self.test_embeddings,
-            'trained_umap': self.trained_umap,
-            'min_embeddings': self.min_embeddings,
-            'max_embeddings': self.max_embeddings,
-            'clusterer': self.best_clusterer,  # Using 'clusterer' as the key
-            'cluster_labels': self.cluster_labels,
+            # Standardized naming for embedding data
+            'embedding_train_coords': self.embeddings,
+            'embedding_test_coords': self.test_embeddings,
+            'embedding_train_umap_model': self.trained_umap,
+            
+            # Standardized naming for clustering data
+            'embedding_train_clusterer': self.best_clusterer,
+            'embedding_train_cluster_labels': self.cluster_labels,
+            
+            # Standardized naming for scaling information
+            'embedding_train_min_coords': self.min_embeddings,
+            'embedding_train_max_coords': self.max_embeddings,
+            
+            # File paths - keep naming as is since these are implementation details
             'cluster_model_path': self.cluster_model_path,
             'cluster_labels_path': self.cluster_labels_path
         })

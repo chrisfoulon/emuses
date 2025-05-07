@@ -19,37 +19,59 @@ class HeatmapStage(PipelineStage):
         logger = logging.getLogger(__name__)
         logger.info("Running Heatmap Stage (kernel regression version)")
 
-        args = self.config.args
+        # Use the new naming convention only
+        
+        # Get prediction coordinates (UMAP embeddings for labeled data)
+        prediction_train_coords = context.get('prediction_train_coords')
+        
+        # Get prediction labels (scores for prediction)
+        prediction_train_labels = context.get('prediction_train_labels')
+        
+        # Get embedding coordinates (UMAP embeddings for unlabelled data used for UMAP training)
+        embedding_train_coords = context.get('embedding_train_coords')
+        
+        # Get feature data for input matrices
+        embedding_train_features = context.get('embedding_train_features')
+        prediction_train_features = context.get('prediction_train_features')
 
-        # Use labelled data if available
-        if 'train_labelled_embeddings' in context and 'train_labelled_scores' in context:
-            embeddings_labelled = context['train_labelled_embeddings']
-            train_labels = context['train_labelled_scores']
-            logger.info("Using labelled training data for heatmap analysis.")
-            combined_input_matrix = np.concatenate([context.get('train_features'),
-                                                    context.get('train_labelled_matrix')],
-                                                   axis=0)
+        # Determine which data to use for the heatmap stage
+        if prediction_train_coords is not None and prediction_train_labels is not None:
+            # Use labeled data coordinates and labels for heatmap analysis
+            embeddings_labelled = prediction_train_coords
+            train_labels = prediction_train_labels
+            logger.info("Using prediction training data for heatmap analysis.")
+            
+            # Combine original features for statistical maps
+            if embedding_train_features is not None and prediction_train_features is not None:
+                combined_input_matrix = np.concatenate([embedding_train_features, prediction_train_features], axis=0)
+            else:
+                combined_input_matrix = prediction_train_features
+                logger.warning("Could not combine input matrices; using only prediction training features.")
         else:
-            embeddings_labelled = context.get('embeddings')
-            train_labels = context.get('train_labels')
-            combined_input_matrix = context.get('train_features')
-
+            # Fall back to full embeddings and labels (classic mode)
+            embeddings_labelled = embedding_train_coords
+            train_labels = prediction_train_labels  # Should be the same in classic mode
+            combined_input_matrix = embedding_train_features
+            logger.info("Using classic mode data for heatmap analysis.")
 
         # In label_dataset mode, also get the full UMAP training embeddings
         full_embeddings = None
-        clusterer = context['clusterer']
-        if 'train_labelled_embeddings' in context and 'embeddings' in context:
-            full_embeddings = context['embeddings']
+        
+        # Use the standardized naming only
+        clusterer = context.get('embedding_train_clusterer')
+        
+        # If we're in the label_dataset mode, we have both embedding and prediction data
+        if prediction_train_coords is not None and embedding_train_coords is not None:
+            full_embeddings = embedding_train_coords
             # Compute clustering on the labelled embeddings if not already done
-            if 'clusterer_labelled' not in context:
+            if 'prediction_train_cluster_labels' not in context:
                 # Compute clustering on the combined embeddings of full and labelled data
                 combined = np.concatenate([full_embeddings, embeddings_labelled], axis=0)
-                context['cluster_labels_labelled'] = clusterer.fit_predict(combined)
-
-                context['clusterer_labelled'] = clusterer
-            cluster_labels = context.get('cluster_labels_labelled')
+                context['prediction_train_cluster_labels'] = clusterer.fit_predict(combined)
+                context['prediction_train_clusterer'] = clusterer
+            cluster_labels = context.get('prediction_train_cluster_labels')
         else:
-            cluster_labels = context.get('cluster_labels')
+            cluster_labels = context.get('embedding_train_cluster_labels')
 
         dataset_type = context.get('dataset_type', 'image')
 
@@ -57,7 +79,7 @@ class HeatmapStage(PipelineStage):
             raise ValueError("Input matrix is required for heatmap analysis.")
 
         # Prepare scores vectors dictionary
-        if getattr(args, 'classification', False):
+        if getattr(self.config, 'classification', False):
             unique_labels = np.unique(train_labels)
             scores_vectors_dict = {
                 str(score_tag): (train_labels == score_tag).astype(int)
@@ -89,12 +111,12 @@ class HeatmapStage(PipelineStage):
             sigma = None
             logger.info("No sigma or FWHM provided; proceeding without smoothing.")
 
-        show_plots = getattr(args, 'show_plots', False)
+        show_plots = getattr(self.config, 'show_plots', False)
         context['show_plots'] = show_plots
         generate_plots = True
 
         # Interactive clustering plot: display clustering labels (rather than data labels)
-        if getattr(args, 'interactive_plot', False):
+        if getattr(self.config, 'interactive_plot', False):
             interactive_folder = Path(self.config.output_folder) / "interactive_plots"
             interactive_folder.mkdir(exist_ok=True)
             if full_embeddings is not None:
@@ -109,9 +131,10 @@ class HeatmapStage(PipelineStage):
                     return_plot=True
                 )
                 logger.info(f"Interactive clustering plot for labelled & full embeddings saved at: {interactive_path}")
-                context['interactive_clustering_plot'] = fig
+                # Use standardized naming for interactive plots
+                context['embedding_and_prediction_clustering_plot'] = fig
             else:
-                if getattr(args, 'classification', False):
+                if getattr(self.config, 'classification', False):
                     interactive_path = interactive_folder / "interactive_clustering_classification.html"
                     fig = plot_clustering_interactive_with_hover(
                         embeddings_labelled, cluster_labels,
@@ -120,7 +143,8 @@ class HeatmapStage(PipelineStage):
                         return_plot=True
                     )
                     logger.info(f"Interactive clustering plot (classification) saved at: {interactive_path}")
-                    context['interactive_clustering_plot'] = fig
+                    # Use standardized naming for interactive plots
+                    context['prediction_train_clustering_plot'] = fig
                 else:
                     interactive_plots = {}
                     for key, score_vec in scores_vectors_dict.items():
@@ -133,13 +157,15 @@ class HeatmapStage(PipelineStage):
                         )
                         logger.info(f"Interactive clustering plot for score {key} saved at: {interactive_path}")
                         interactive_plots[key] = fig
-                    context['interactive_clustering_plots'] = interactive_plots
+                    
+                    # Use standardized naming for interactive plots by score
+                    context['prediction_train_score_clustering_plots'] = interactive_plots
 
         # Use our robust OOD evaluation function instead of new_pipeline_test
         results = robust_ood_evaluation(
             context=context,
             output_folder=self.config.output_folder,
-            classification=getattr(args, 'classification', False)
+            classification=getattr(self.config, 'classification', False)
         )
 
         # Store results in context
@@ -224,7 +250,8 @@ def robust_ood_evaluation(context, output_folder, classification=True):
                     logger.warning(f"Failed to load UMAP model from {path}: {e}")
         
         if original_umap is None:
-            original_umap = context.get('umap_model')
+            # Only check for the new naming standard
+            original_umap = context.get('embedding_train_umap_model')
             
         if original_umap is not None:
             logger.info("Using parameters from existing UMAP model")
@@ -267,8 +294,8 @@ def robust_ood_evaluation(context, output_folder, classification=True):
         # For non-digits_label_dataset mode, use the standard approach
         logger.info("Using standard evaluation approach (not digits_label_dataset mode)")
         
-        # Get required data from context - try different possible keys
-        umap_model = context.get('umap_model')
+        # Get required data from context - use only the new naming
+        umap_model = context.get('embedding_train_umap_model')
         if umap_model is None:
             # Try loading from file if not in context
             umap_path = Path(output_folder).parent / "best_umap_model.joblib"
@@ -279,38 +306,20 @@ def robust_ood_evaluation(context, output_folder, classification=True):
                 except Exception as e:
                     raise ValueError(f"Failed to load UMAP model from {umap_path}: {e}")
             else:
-                raise ValueError("UMAP model is required for OOD evaluation")
+                raise ValueError("embedding_train_umap_model is required for OOD evaluation")
         
-        # Try different keys for labeled data and scores
-        labeled_data = None
-        labeled_scores = None
-        
-        # Option 1: Check train_labelled_matrix/scores
-        if 'train_labelled_matrix' in context and 'train_labelled_scores' in context:
-            labeled_data = context['train_labelled_matrix']
-            labeled_scores = context['train_labelled_scores']
-            logger.info("Using train_labelled_matrix/scores for labeled data")
-        # Option 2: Check unlabelled data in labeled dataset mode 
-        elif 'labelled_input_matrix' in context and 'scores' in context:
-            labeled_data = context['labelled_input_matrix']
-            labeled_scores = context['scores']
-            logger.info("Using labelled_input_matrix/scores for labeled data")
-        # Option 3: Use train features and labels
-        elif 'train_features' in context and 'train_labels' in context:
-            labeled_data = context['train_features']
-            labeled_scores = context['train_labels']
-            logger.info("Using train_features/labels for labeled data")
+        # Use only new naming convention
+        labeled_data = context.get('prediction_train_features')
+        labeled_scores = context.get('prediction_train_labels')
         
         if labeled_data is None or labeled_scores is None:
-            raise ValueError(f"Labeled data and scores are required for OOD evaluation. Available keys: {list(context.keys())}")
+            raise ValueError(f"prediction_train_features and prediction_train_labels are required for OOD evaluation. Available keys: {list(context.keys())}")
         
         # Project labeled data through the UMAP model to get embeddings
         labeled_embeddings = umap_model.transform(labeled_data)
         
-        # Optional: get already-computed embeddings for comparison
-        precomputed_embeddings = context.get('train_labelled_embeddings')
-        if precomputed_embeddings is None:
-            precomputed_embeddings = context.get('embeddings')
+        # Use already-computed embeddings if available
+        precomputed_embeddings = context.get('prediction_train_coords')
         
         if precomputed_embeddings is not None:
             # Verify that our newly computed embeddings match the precomputed ones
@@ -368,7 +377,7 @@ def robust_ood_evaluation(context, output_folder, classification=True):
                     
                     for inner_train_idx, inner_val_idx in inner_cv.split(X_train, y_train):
                         X_inner_train, X_inner_val = X_train[inner_train_idx], X_train[inner_val_idx]
-                        y_inner_train, y_inner_val = y_train[inner_train_idx], y_train[inner_val_idx]
+                        y_inner_train, y_inner_val = y_train[inner_train_idx], y_inner_val[inner_val_idx]
                         
                         klr = KernelLogisticRegressor(sigma=sigma)  # Remove 'kernel' parameter
                         klr.fit(X_inner_train, y_inner_train)
@@ -507,7 +516,7 @@ def robust_ood_evaluation(context, output_folder, classification=True):
                 
                 for inner_train_idx, inner_val_idx in inner_cv.split(X_train):
                     X_inner_train, X_inner_val = X_train[inner_train_idx], X_train[inner_val_idx]
-                    y_inner_train, y_inner_val = y_train[inner_train_idx], y_train[inner_val_idx]
+                    y_inner_train, y_inner_val = y_train[inner_train_idx], y_inner_val[inner_val_idx]
                     
                     kr = KernelRegressor(kernel='rbf', sigma=sigma)
                     kr.fit(X_inner_train, y_inner_train)

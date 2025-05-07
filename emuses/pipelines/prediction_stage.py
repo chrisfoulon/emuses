@@ -30,42 +30,23 @@ class PredictionStage(PipelineStage):
         logger = logging.getLogger(__name__)
         logger.info("Running Prediction Stage (Test Evaluation)")
 
-        args = self.config.args
-
-        # Extract embeddings and labels from context
-        if 'train_labelled_embeddings' in context and context['train_labelled_embeddings'] is not None:
-            # Use the UMAP-transformed labeled data when in label_dataset mode
-            train_embeddings = context['train_labelled_embeddings']
-            train_labels = context['train_labelled_scores']
-            
-            if 'test_labelled_embeddings' in context and context['test_labelled_embeddings'] is not None:
-                test_embeddings = context['test_labelled_embeddings']
-                test_labels = context['test_labelled_scores']
-            else:
-                # If no specific test embeddings, fall back to test set
-                test_embeddings = context.get('test_embeddings')
-                test_labels = context.get('test_labels')
-                
-            logger.info(
-                "Using labeled dataset embeddings for prediction: training on UMAP-transformed labeled training data")
-        else:
-            # Fallback: use the default splits from unsupervised data splitting.
-            train_embeddings = context.get('embeddings')
-            test_embeddings = context.get('test_embeddings')
-            train_labels = context.get('train_labels')
-            test_labels = context.get('test_labels')
+        # Extract embeddings and labels from context using new naming convention only
+        train_embeddings = context.get('prediction_train_coords')
+        test_embeddings = context.get('prediction_test_coords')
+        train_labels = context.get('prediction_train_labels')
+        test_labels = context.get('prediction_test_labels')
 
         if train_embeddings is None:
-            raise ValueError("Training embeddings are required for prediction.")
+            raise ValueError("prediction_train_coords is required for prediction.")
         if train_labels is None:
-            raise ValueError("Training labels are required for prediction.")
+            raise ValueError("prediction_train_labels is required for prediction.")
 
         # Determine if we use enhanced pipeline with Optuna
-        use_enhanced_pipeline = getattr(args, 'use_enhanced_pipeline', False)
-        n_jobs = getattr(args, 'n_jobs', -1)
-        optuna_trials = getattr(args, 'optuna_trials', 50)
-        parallel_models = getattr(args, 'parallel_models', False)
-        model_selection = getattr(args, 'model_selection', None)
+        use_enhanced_pipeline = getattr(self.config, 'use_enhanced_pipeline', False)
+        n_jobs = getattr(self.config, 'n_jobs', -1)
+        optuna_trials = getattr(self.config, 'optuna_trials', 50)
+        parallel_models = getattr(self.config, 'parallel_models', False)
+        model_selection = getattr(self.config, 'model_selection', None)
         
         # Setup output folder
         output_folder = self.config.output_folder / 'prediction_models'
@@ -76,11 +57,13 @@ class PredictionStage(PipelineStage):
             
             # Extract GWD features from embeddings
             # Get sigma value from context or compute default
-            sigma = context.get('best_sigma')
+            sigma = context.get('prediction_train_sigma')
             if sigma is None:
                 # Use a default heuristic if no specific sigma is provided
                 sigma = np.sqrt(train_embeddings.shape[1]) * 0.5
                 logger.info(f"No sigma value found in context. Using default: {sigma}")
+                # Store the computed sigma in context with standardized name
+                context['prediction_train_sigma'] = sigma
             
             # Compute GWD features for train and test sets
             logger.info("Computing GWD features for enhanced predictions...")
@@ -294,8 +277,8 @@ class PredictionStage(PipelineStage):
                     test_embeddings=test_embeddings,
                     test_labels=test_labels,
                     output_folder=output_folder,
-                    categorical=getattr(args, 'classification', False),
-                    show_plot=getattr(args, 'show_plots', False),
+                    categorical=getattr(self.config, 'classification', False),
+                    show_plot=getattr(self.config, 'show_plots', False),
                     n_jobs=n_jobs  # Pass the n_jobs parameter to control parallelism
                 )
             else:
