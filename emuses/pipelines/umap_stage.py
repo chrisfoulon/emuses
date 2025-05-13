@@ -13,7 +13,7 @@ from emuses.tools.emuses_utils import rescale_embedding
 from emuses.config.optim_configs import load_optim_dict, optim_dict_default
 
 
-class UMAPStage(PipelineStage):
+class UMAPStage(PipelineStage):    
     def __init__(self, config):
         super().__init__(config)
         self.trained_umap = None
@@ -29,10 +29,16 @@ class UMAPStage(PipelineStage):
         self.cluster_labels = None
         self.cluster_model_path = None
         self.cluster_labels_path = None
-
+        
     def run(self, context, progress_queue=None):
         logger = logging.getLogger(__name__)
         logger.info("Running UMAP Stage")
+        
+        # Get component-specific seeds from context
+        random_seeds = context.get('random_seeds', {})
+        umap_seed = random_seeds.get('umap_seed', 42)
+        clustering_seed = random_seeds.get('clustering_seed', 42)
+        logger.info(f"Using random seeds - UMAP: {umap_seed}, Clustering: {clustering_seed}")
         
         # Use new naming convention only
         train_features = context.get('embedding_train_features')
@@ -66,9 +72,7 @@ class UMAPStage(PipelineStage):
                     logger.error(f"Error loading optim_dict '{optim_dict_name}': {e}. Falling back to default.")
                     optim_dict = optim_dict_default
             else:
-                optim_dict = optim_dict_default
-
-            # Run nested optimization for UMAP + HDBSCAN.
+                optim_dict = optim_dict_default            # Run nested optimization for UMAP + HDBSCAN.
             (self.trained_umap,
              embeddings,
              umap_path,
@@ -86,7 +90,8 @@ class UMAPStage(PipelineStage):
                     pref=self.config.prefix,
                     n_jobs=self.config.umap_jobs if self.config.umap_jobs is not None else 1,
                     inner_n_jobs=self.config.hdbscan_jobs if self.config.hdbscan_jobs is not None else 1,
-                    random_state=getattr(self.config, 'random_state', None)
+                    random_state=umap_seed,
+                    clusterer_random_state=clustering_seed
                 )
             self.embeddings = embeddings
             logger.info(f"UMAP model saved at: {umap_path} and embeddings saved at: {embeddings_path}")

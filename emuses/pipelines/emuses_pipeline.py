@@ -1,8 +1,11 @@
 # pipelines/emuses_pipeline.py
 
 import logging
+import time
+import json
 import numpy as np
 from pathlib import Path
+from numpy.random import default_rng
 from sklearn.model_selection import train_test_split
 
 from emuses.pipelines.pipeline_config import PipelineConfig
@@ -21,6 +24,7 @@ from emuses.tools.inputs_utils import (
     handle_bids_dataset
 )
 from emuses.tools.data_preproc import find_min_resolution
+
 
 class EMUSESPipeline:
     def __init__(self, args):
@@ -46,7 +50,6 @@ class EMUSESPipeline:
         self.logger = logging.getLogger(__name__)
 
         # Initialize pipeline metadata
-        import time
         self.context['pipeline_metadata'] = {
             'start_time': time.time(),
             'stages_completed': [],
@@ -55,13 +58,40 @@ class EMUSESPipeline:
         }
 
         self.validate_args()
-        self.format_args()
-
+        self.format_args()        # Initialize random state management
+        master_seed = getattr(self.config, 'random_state', 42)
+        self.logger.info(f"Initializing pipeline with master random seed: {master_seed}")
+        
+        # Create root random number generator
+        root_rng = default_rng(master_seed)
+        
+        # Create component-specific seeds for reproducibility
+        random_seeds = {
+            'master_seed': master_seed,
+            'split_seed': root_rng.integers(0, 2**32),
+            'umap_seed': root_rng.integers(0, 2**32),
+            'clustering_seed': root_rng.integers(0, 2**32),
+            'prediction_seed': root_rng.integers(0, 2**32),
+            'cv_seed': root_rng.integers(0, 2**32),
+            'optuna_seed': root_rng.integers(0, 2**32),
+        }
+        
+        # Store seeds in config for persistence
+        self.config.random_seeds = random_seeds
+        
+        # Save the generated seeds to a JSON file for future reference
+        self.output_folder.mkdir(parents=True, exist_ok=True)  # Ensure output folder exists
+        seed_file = self.output_folder / "random_seeds.json"
+        with open(seed_file, 'w') as f:
+            json.dump(random_seeds, f, indent=2)
+        self.logger.info(f"Saved component-specific random seeds to {seed_file}")
+        
         # Update context with common settings.
         self.context.update({
             'output_format_info': self.output_format_info,
             'dataset_type': self.dataset_type,
             'output_folder': self.output_folder,
+            'random_seeds': random_seeds,  # Store seeds in context for stage access
         })
         if self.config.load_embeddings:
             self.context['embeddings'] = np.load(self.config.load_embeddings)
@@ -344,10 +374,12 @@ class EMUSESPipeline:
         args = self.args
         test_size = getattr(args, 'test_size', 0.2)
         split_folder = self.output_folder / "split_dataset"
-        split_folder.mkdir(parents=True, exist_ok=True)
-
-        # Extract indices if available from DataFrames
+        split_folder.mkdir(parents=True, exist_ok=True)        # Extract indices if available from DataFrames
         scores_indices = self.context.get('scores_indices', None)
+        
+        # Get the specific seed for dataset splitting
+        split_seed = self.config.random_seeds['split_seed']
+        self.logger.info(f"Splitting dataset with seed: {split_seed}")
         
         if getattr(args, 'label_dataset', None):
             self.logger.info("Splitting labelled dataset (label_dataset mode).")
@@ -369,7 +401,7 @@ class EMUSESPipeline:
                     train_indices, test_indices = train_test_split(
                         indices, 
                         test_size=test_size,
-                        random_state=42
+                        random_state=split_seed
                     )
                     train_mat = self.labelled_input_matrix[train_indices]
                     test_mat = self.labelled_input_matrix[test_indices]
@@ -380,12 +412,12 @@ class EMUSESPipeline:
                     prediction_train_indices = scores_indices.iloc[train_indices] if hasattr(scores_indices, 'iloc') else None
                     prediction_test_indices = scores_indices.iloc[test_indices] if hasattr(scores_indices, 'iloc') else None
                 else:
-                    # Regular split without indices
+                    # Regular split without indices                    
                     train_mat, test_mat, train_scores, test_scores = train_test_split(
                         self.labelled_input_matrix,
                         self.scores,
                         test_size=test_size,
-                        random_state=42
+                        random_state=split_seed
                     )
                     prediction_train_indices = None
                     prediction_test_indices = None
@@ -451,11 +483,11 @@ class EMUSESPipeline:
             else:
                 if scores_indices is not None:
                     # Split with indices tracking
-                    indices = np.arange(len(self.input_matrix))
+                    indices = np.arange(len(self.input_matrix))                   
                     train_indices_pos, test_indices_pos = train_test_split(
                         indices,
                         test_size=test_size,
-                        random_state=42
+                        random_state=split_seed
                     )
                     train_features = self.input_matrix[train_indices_pos]
                     test_features = self.input_matrix[test_indices_pos]
@@ -466,12 +498,12 @@ class EMUSESPipeline:
                     train_indices = scores_indices.iloc[train_indices_pos] if hasattr(scores_indices, 'iloc') else None
                     test_indices = scores_indices.iloc[test_indices_pos] if hasattr(scores_indices, 'iloc') else None
                 else:
-                    # Regular split without indices
+                    # Regular split without indices                    
                     train_features, test_features, train_labels, test_labels = train_test_split(
                         self.input_matrix,
                         self.scores,
                         test_size=test_size,
-                        random_state=42
+                        random_state=split_seed
                     )
                     train_indices = None
                     test_indices = None
@@ -522,7 +554,6 @@ class EMUSESPipeline:
 
     def run(self, progress_callback=None, progress_queue=None):
         total_stages = len(self.stages)
-        import time
         
         for i, stage in enumerate(self.stages):
             stage_name = stage.__class__.__name__

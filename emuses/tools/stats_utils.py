@@ -1299,7 +1299,8 @@ def train_predictive_model_gpy(X, y, is_classification=False, sparse_threshold=5
 def new_pipeline_test(embeddings, combined_input_matrix, scores_vectors_dict, output_folder,
                       grid_size=100, dataset_type='image', cluster_labels=None, full_embeddings=None,
                       test_embeddings=None, test_labels=None, sparse_threshold=500,
-                      run_parallel=True, n_jobs=-1, optuna_trials=50, model_selection=None):
+                      run_parallel=True, n_jobs=-1, optuna_trials=50, model_selection=None,
+                      random_state=42, optuna_seed=None):
     """
     Enhanced pipeline function with robust model selection and parallel training.
 
@@ -1332,6 +1333,9 @@ def new_pipeline_test(embeddings, combined_input_matrix, scores_vectors_dict, ou
         n_jobs (int): Number of processes for parallel execution (-1 for all cores).
         optuna_trials (int): Number of trials for Optuna optimization per model/feature set.
         model_selection (list): Model types to try. If None, uses ['gp', 'rf', 'gb', 'kr', 'xgb'].
+        random_state (int): Random seed for training models and cross-validation splits.
+        optuna_seed (int, optional): Random seed for Optuna hyperparameter optimization.
+                                     If None, uses random_state.
 
     Returns:
         dict: A dictionary containing outputs including the GWD matrix, summaries, combined features,
@@ -1445,8 +1449,14 @@ def new_pipeline_test(embeddings, combined_input_matrix, scores_vectors_dict, ou
         # Return the average R2 score across all outer folds
         return np.mean(r2_scores)
     
-    # Create Optuna study
-    study = optuna.create_study(direction='maximize')
+    # Create Optuna study with seed for reproducibility
+    # Use optuna_seed if provided, otherwise fall back to random_state
+    if optuna_seed is None:
+        optuna_seed = random_state
+    study = optuna.create_study(
+        direction='maximize', 
+        sampler=optuna.samplers.TPESampler(seed=optuna_seed)
+    )
     
     # Run Optuna optimization with defined number of trials
     print(f"Running Optuna optimization with {optuna_trials} trials...")
@@ -1478,7 +1488,8 @@ def new_pipeline_test(embeddings, combined_input_matrix, scores_vectors_dict, ou
         n_inner=3,
         n_passes=3,  # Reduced number of passes since we already have a good sigma range
         convergence_tol=1e-3,
-        classification=False
+        classification=False,
+        random_state=random_state
     )
     
     # Calculate final sigma using a robust approach
@@ -1578,7 +1589,8 @@ def new_pipeline_test(embeddings, combined_input_matrix, scores_vectors_dict, ou
             feature_set_name=feature_set_name,
             metric='r2',
             n_splits=5,
-            random_state=42,
+            random_state=random_state,  # Use the random_state from the outer function
+            optuna_seed=optuna_seed,    # Use the optuna_seed from the outer function
             models=model_selection
         )
         
@@ -1839,7 +1851,7 @@ def compute_all_gwd_test(test_embeddings, train_embeddings, sigma):
     return gwd
 
 
-def optuna_model_selection(X, y, n_trials=50, n_jobs=1, output_folder=None, feature_set_name="features", metric='r2', n_splits=5, random_state=42, models=None):
+def optuna_model_selection(X, y, n_trials=50, n_jobs=1, output_folder=None, feature_set_name="features", metric='r2', n_splits=5, random_state=42, optuna_seed=None, models=None):
     """
     Use Optuna to find the best model and hyperparameters for a given feature set.
     
@@ -1852,7 +1864,9 @@ def optuna_model_selection(X, y, n_trials=50, n_jobs=1, output_folder=None, feat
         feature_set_name (str): Name of the feature set (for logging)
         metric (str): Metric to optimize ('r2', 'mse', 'mae')
         n_splits (int): Number of cross-validation splits
-        random_state (int): Random seed
+        random_state (int): Random seed for model training
+        optuna_seed (int, optional): Random seed for Optuna hyperparameter optimization.
+                                     If None, uses random_state
         models (list): List of models to try. Options: 'gp', 'rf', 'gb', 'kr', 'xgb', 'lgb', 'et', 'svr'
                       If None, uses ['gp', 'rf', 'gb', 'kr', 'xgb']
     
@@ -2088,7 +2102,14 @@ def optuna_model_selection(X, y, n_trials=50, n_jobs=1, output_folder=None, feat
     
     # Create study with pruner
     pruner = optuna.pruners.MedianPruner(n_startup_trials=10, n_warmup_steps=5)
-    study = optuna.create_study(direction=direction, pruner=pruner)
+    # Use optuna_seed if provided, otherwise fall back to random_state
+    if optuna_seed is None:
+        optuna_seed = random_state
+    study = optuna.create_study(
+        direction=direction, 
+        pruner=pruner,
+        sampler=optuna.samplers.TPESampler(seed=optuna_seed)
+    )
     
     # Run optimization
     start_time = time.time()

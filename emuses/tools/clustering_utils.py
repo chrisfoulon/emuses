@@ -126,7 +126,7 @@ def evaluate_clustering_metrics(clusterer, embeddings, metrics_config=None):
 # --- Inner (HDBSCAN) Optimization Using optim_dict --- #
 ###########################################################
 
-def inner_optimize_hdbscan(embeddings, optim_dict, n_inner_trials=20, n_jobs=1):
+def inner_optimize_hdbscan(embeddings, optim_dict, n_inner_trials=20, n_jobs=1, random_state=42):
     """
     For a given UMAP embedding, optimize HDBSCAN parameters.
 
@@ -136,6 +136,7 @@ def inner_optimize_hdbscan(embeddings, optim_dict, n_inner_trials=20, n_jobs=1):
                   optim_dict["param"]["hdbscan"] and optim_dict["metrics"]["hdbscan"].
       n_inner_trials: int, number of inner trials.
       n_jobs (int): Number of parallel jobs to run.
+      random_state (int): Random state for reproducibility.
 
     Returns:
       best_params, best_score, best_clusterer, best_labels, best_metrics
@@ -143,16 +144,18 @@ def inner_optimize_hdbscan(embeddings, optim_dict, n_inner_trials=20, n_jobs=1):
     # Enforce the correct key for HDBSCAN parameters.
     if "hdbscan" not in optim_dict["param"]:
         raise ValueError("The optimization dictionary must have a 'hdbscan' key in optim_dict['param'].")
-
+        
     inner_optim_dict = {
         "param": {"hdbscan": optim_dict["param"]["hdbscan"]},
         "metrics": {"hdbscan": optim_dict["metrics"]["hdbscan"]}
     }
-
+    
     def inner_objective(inner_trial):
         params_all = suggest_parameters(inner_trial, inner_optim_dict)
         hdbscan_params = params_all.get("hdbscan", params_all)
-        clusterer = hdbscan.HDBSCAN(**hdbscan_params)
+        # Include random_state in HDBSCAN parameters
+        hdbscan_params['cluster_selection_method'] = hdbscan_params.get('cluster_selection_method', 'eom')
+        clusterer = hdbscan.HDBSCAN(**hdbscan_params, cluster_selection_epsilon=0.0, seed=random_state)
         clusterer.fit(embeddings)
         metrics = evaluate_clustering_metrics(clusterer, embeddings, inner_optim_dict["metrics"]["hdbscan"])
         # Wrap the metrics under the "hdbscan" key to match the nested configuration
@@ -160,7 +163,7 @@ def inner_optimize_hdbscan(embeddings, optim_dict, n_inner_trials=20, n_jobs=1):
                                           inner_optim_dict["metrics"])
         return score
 
-    inner_study = optuna.create_study(direction="maximize")
+    inner_study = optuna.create_study(direction="maximize", sampler=optuna.samplers.TPESampler(seed=random_state))
     inner_study.optimize(inner_objective, n_trials=n_inner_trials, n_jobs=n_jobs)
 
     best_params = inner_study.best_params
@@ -170,23 +173,23 @@ def inner_optimize_hdbscan(embeddings, optim_dict, n_inner_trials=20, n_jobs=1):
     if not best_params:
         best_params = inner_optim_dict["param"]["hdbscan"]
 
-    best_hdbscan_params = best_params.get("hdbscan", best_params)
-
-    # Re-train best HDBSCAN model using the best parameters.
-    best_clusterer = hdbscan.HDBSCAN(prediction_data=True, **best_hdbscan_params)
+    best_hdbscan_params = best_params.get("hdbscan", best_params)    # Re-train best HDBSCAN model using the best parameters.
+    best_hdbscan_params['cluster_selection_method'] = best_hdbscan_params.get('cluster_selection_method', 'eom')
+    best_clusterer = hdbscan.HDBSCAN(prediction_data=True, seed=random_state, cluster_selection_epsilon=0.0, **best_hdbscan_params)
     best_labels = best_clusterer.fit_predict(embeddings)
     best_metrics = evaluate_clustering_metrics(best_clusterer, embeddings)
     return best_params, best_score, best_clusterer, best_labels, best_metrics
 
 
 
-def evaluate_hdbscan(filtered_coordinates, size_factor=0.5):
+def evaluate_hdbscan(filtered_coordinates, size_factor=0.5, random_state=42):
     """
     Automatically selects the best parameters for HDBSCAN clustering.
 
     Parameters:
     filtered_coordinates (np.array): Array of shape (n_samples, 2) containing the filtered coordinates.
     size_factor (float): Fraction of total data points to use as the upper bound for `min_cluster_size`.
+    random_state (int): Random seed for reproducibility.
 
     Returns:
     best_params (dict): Best parameters and corresponding metrics (stability, silhouette).
@@ -210,8 +213,8 @@ def evaluate_hdbscan(filtered_coordinates, size_factor=0.5):
 
     for min_cluster_size in min_cluster_sizes:
         for min_samples in min_samples_list:
-            try:
-                clusterer = hdbscan.HDBSCAN(min_cluster_size=min_cluster_size, min_samples=min_samples)
+            try:                
+                clusterer = hdbscan.HDBSCAN(min_cluster_size=min_cluster_size, min_samples=min_samples, seed=random_state)
                 labels = clusterer.fit_predict(filtered_coordinates)
 
                 # Ignore results with no clusters

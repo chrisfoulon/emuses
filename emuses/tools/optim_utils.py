@@ -235,7 +235,7 @@ def compute_detailed_components(metrics_config, computed_metrics):
 
 
 def optuna_model_selection(X, y, n_trials=100, n_jobs=-1, output_folder=None, feature_set_name=None,
-                          metric='r2', n_splits=5, random_state=42, models=None):
+                          metric='r2', n_splits=5, random_state=42, optuna_seed=None, models=None):
     """
     Use Optuna to find the best model and hyperparameters for a regression task.
     
@@ -258,7 +258,9 @@ def optuna_model_selection(X, y, n_trials=100, n_jobs=-1, output_folder=None, fe
     n_splits : int
         Number of cross-validation splits
     random_state : int
-        Random seed for reproducibility
+        Random seed for model training and cross-validation splits
+    optuna_seed : int, optional
+        Random seed for Optuna hyperparameter optimization. If None, uses random_state.
     models : list or None
         List of model types to try. If None, tries ['gp', 'rf', 'gb', 'kr']
         
@@ -355,8 +357,14 @@ def optuna_model_selection(X, y, n_trials=100, n_jobs=-1, output_folder=None, fe
             score = cross_val_score(model, X, y, cv=cv, scoring='neg_mean_absolute_error', n_jobs=1)
             return np.mean(score)  # Higher (less negative) is better
     
-    # Create Optuna study
-    study = optuna.create_study(direction='maximize')
+    # Create Optuna study with seed for reproducibility
+    # Use optuna_seed if provided, otherwise fall back to random_state
+    if optuna_seed is None:
+        optuna_seed = random_state
+    study = optuna.create_study(
+        direction='maximize', 
+        sampler=optuna.samplers.TPESampler(seed=optuna_seed)
+    )
     
     # Execute optimization
     start_time = time.time()
@@ -462,7 +470,7 @@ def optuna_model_selection(X, y, n_trials=100, n_jobs=-1, output_folder=None, fe
 
 def optuna_feature_set_comparison(X_sets, y, output_folder, feature_set_names=None,
                                 n_trials=100, n_jobs=-1, metric='r2', n_splits=5, 
-                                random_state=42, models=None):
+                                random_state=42, optuna_seed=None, models=None):
     """
     Compare different feature sets using Optuna to find the best model for each.
     
@@ -485,7 +493,9 @@ def optuna_feature_set_comparison(X_sets, y, output_folder, feature_set_names=No
     n_splits : int
         Number of CV splits
     random_state : int
-        Random seed
+        Random seed for model training and cross-validation splits
+    optuna_seed : int, optional
+        Random seed for Optuna hyperparameter optimization. If None, uses random_state.
     models : list or None
         List of model types to try
         
@@ -514,6 +524,7 @@ def optuna_feature_set_comparison(X_sets, y, output_folder, feature_set_names=No
             metric=metric,
             n_splits=n_splits,
             random_state=random_state,
+            optuna_seed=optuna_seed,
             models=models
         )
     

@@ -15,7 +15,7 @@ from sklearn.metrics import silhouette_score, pairwise_distances
 from sklearn.neighbors import NearestNeighbors
 import optuna.visualization as ov
 
-from emuses.tools.clustering_utils import evaluate_clustering_metrics, inner_optimize_hdbscan
+from emuses.tools.clustering_utils import evaluate_clustering_metrics, inner_optimize_hdbscan, evaluate_hdbscan
 from emuses.tools.optim_utils import calculate_composite_score, suggest_parameters, calculate_score, auto_n_neighbors, \
     are_parameters_fixed, compute_detailed_components
 from emuses.tools.visualisation import plot_embeddings, plot_clustering_interactive_with_hover, \
@@ -324,6 +324,8 @@ def train_and_save_umap_optim_with_nested_clustering(
         n_jobs=4,
         parallel_mode="umap",  # "umap" or "hdbscan"
         inner_n_jobs=4,
+        random_state=42,
+        clusterer_random_state=None,
         **kwargs
 ):
     """
@@ -358,6 +360,10 @@ def train_and_save_umap_optim_with_nested_clustering(
             Whether to parallelize the outer optimization ("umap") or inner optimization ("hdbscan").
       inner_n_jobs : int, default=4
             Number of parallel jobs for inner optimization
+      random_state : int, default=42
+            Random seed for UMAP for reproducibility.
+      clusterer_random_state : int, optional
+            Random seed for HDBSCAN clustering. If None, uses the same as random_state.
 
       **kwargs :
           Additional parameters for UMAP.
@@ -428,8 +434,9 @@ def train_and_save_umap_optim_with_nested_clustering(
 
         print(f"Trial {trial.number}: Suggested UMAP parameters: {umap_params}")
 
-        # Train UMAP with the suggested parameters.
-        umap_model = umap.UMAP(**umap_params, **kwargs)
+        # Train UMAP with the suggested parameters and random_state
+        umap_params_with_random_state = {**umap_params, 'random_state': random_state}
+        umap_model = umap.UMAP(**umap_params_with_random_state, **kwargs)
         embeddings = umap_model.fit_transform(input_matrix)
         print(f"Trial {trial.number}: UMAP training completed.")
 
@@ -437,15 +444,18 @@ def train_and_save_umap_optim_with_nested_clustering(
         umap_metrics = evaluate_embedding_statistics(embeddings, optim_dict["metrics"]["umap"])
         print(f"Trial {trial.number}: UMAP metrics: {umap_metrics}")
 
-        # Inner optimization: optimize HDBSCAN for this UMAP embedding.
+        # Get the clusterer random state
+        clusterer_rs = clusterer_random_state if clusterer_random_state is not None else random_state
+            
         # Inner optimization: optimize HDBSCAN for this UMAP embedding.
         if parallel_mode == "hdbscan":
             (best_hdbscan_params, best_hdbscan_score, best_clusterer_trial, best_labels_trial,
              best_hdbscan_metrics) = inner_optimize_hdbscan(embeddings, optim_dict, n_inner_trials=n_inner_trials,
-                                                            n_jobs=inner_n_jobs)
+                                                           n_jobs=inner_n_jobs, random_state=clusterer_rs)
         else:
             (best_hdbscan_params, best_hdbscan_score, best_clusterer_trial, best_labels_trial,
-             best_hdbscan_metrics) = inner_optimize_hdbscan(embeddings, optim_dict, n_inner_trials=n_inner_trials)
+             best_hdbscan_metrics) = inner_optimize_hdbscan(embeddings, optim_dict, n_inner_trials=n_inner_trials,
+                                                           random_state=clusterer_rs)
 
         print(f"Trial {trial.number}: Best HDBSCAN parameters: {best_hdbscan_params}")
         print(f"Trial {trial.number}: Best HDBSCAN score: {best_hdbscan_score}")
@@ -518,7 +528,8 @@ def train_and_save_umap_optim_with_nested_clustering(
         direction="maximize",
         storage=storage_url,
         study_name="umap_nested_optimization",
-        load_if_exists=True
+        load_if_exists=True,
+        sampler=optuna.samplers.TPESampler(seed=random_state)
     )
     print("Starting outer (UMAP) optimization...")
     if parallel_mode == "umap":
@@ -624,7 +635,7 @@ def train_and_save_umap_optim_with_nested_clustering(
     )
 
 
-def train_and_save_umap_optim(input_matrix, output_folder, optim_dict, n_trials=50, **kwargs):
+def train_and_save_umap_optim(input_matrix, output_folder, optim_dict, n_trials=50, random_state=42, **kwargs):
     """
     Train a UMAP model with parameter optimization and save the results.
 
@@ -633,6 +644,7 @@ def train_and_save_umap_optim(input_matrix, output_folder, optim_dict, n_trials=
         output_folder (str or Path): Directory to save the model and embeddings.
         optim_dict (dict): Optimization dictionary defining parameters and metrics.
         n_trials (int): Number of optimization trials.
+        random_state (int): Random seed for reproducibility.
         **kwargs: Additional keyword arguments for the UMAP model.
 
     Returns:
@@ -648,7 +660,11 @@ def train_and_save_umap_optim(input_matrix, output_folder, optim_dict, n_trials=
         params = suggest_parameters(trial, optim_dict)
 
         # Train the UMAP model with suggested parameters
-        umap_model = umap.UMAP(**params['umap'], **kwargs)
+        umap_params = params['umap'].copy()
+        # Ensure random_state is set for reproducibility
+        if 'random_state' not in umap_params:
+            umap_params['random_state'] = random_state
+        umap_model = umap.UMAP(**umap_params, **kwargs)
         embeddings = umap_model.fit_transform(input_matrix)
 
         # Calculate metrics
@@ -658,7 +674,7 @@ def train_and_save_umap_optim(input_matrix, output_folder, optim_dict, n_trials=
 
         # If clustering is part of the optimization, evaluate HDBSCAN metrics
         if 'hdbscan' in params:
-            from clustering_utils import evaluate_hdbscan
+            # Use the imported evaluate_hdbscan function
             metrics_values_dict['hdbscan'] = evaluate_hdbscan(
                 embeddings, params['hdbscan'], optim_dict['metrics']['hdbscan']
             )
@@ -667,8 +683,9 @@ def train_and_save_umap_optim(input_matrix, output_folder, optim_dict, n_trials=
         composite_score = calculate_composite_score(optim_dict, metrics_values_dict)
         return composite_score
 
-    # Initialize and run the Optuna study
-    study = optuna.create_study(direction='maximize')
+    # Initialize and run the Optuna study with reproducible sampler
+    sampler = optuna.samplers.TPESampler(seed=random_state)
+    study = optuna.create_study(direction='maximize', sampler=sampler)
     study.optimize(objective, n_trials=n_trials)
 
     # Retrieve the best parameters and score
@@ -676,7 +693,11 @@ def train_and_save_umap_optim(input_matrix, output_folder, optim_dict, n_trials=
     best_score = study.best_value
 
     # Train the final UMAP model with the best parameters
-    best_umap_model = umap.UMAP(**best_params['umap'], **kwargs)
+    umap_params = best_params['umap'].copy()
+    # Ensure random_state is set for reproducibility
+    if 'random_state' not in umap_params:
+        umap_params['random_state'] = random_state
+    best_umap_model = umap.UMAP(**umap_params, **kwargs)
     best_embeddings = best_umap_model.fit_transform(input_matrix)
 
     # Save the best model and embeddings
@@ -699,6 +720,8 @@ def train_and_save_umap_with_bayesian_search(
     n_trials=50,
     maximize_metrics=None,
     pref=None,
+    random_state=42,
+    optuna_seed=None,
     **kwargs,
 ):
     """
@@ -726,6 +749,10 @@ def train_and_save_umap_with_bayesian_search(
         Dictionary specifying whether to maximize (True) or minimize (False) each metric.
     - pref: str, optional
         Prefix for the saved files.
+    - random_state: int, default=42
+        Random seed for model training for reproducibility.
+    - optuna_seed: int, optional
+        Random seed for Optuna hyperparameter optimization. If None, uses random_state.
     - **kwargs: additional keyword arguments
         Additional parameters to pass to UMAP.
     """
@@ -753,8 +780,9 @@ def train_and_save_umap_with_bayesian_search(
 
         print(f"Trial {trial.number + 1}: Suggested parameters: {params}")
 
-        # Train UMAP model with suggested parameters
-        umap_model = umap.UMAP(**params, **kwargs)
+        # Train UMAP model with suggested parameters and set random_state
+        umap_params = {**params, "random_state": random_state}
+        umap_model = umap.UMAP(**umap_params, **kwargs)
         embeddings = umap_model.fit_transform(input_matrix)
         print(f"Trial {trial.number + 1}: UMAP training completed.")
 
@@ -791,9 +819,14 @@ def train_and_save_umap_with_bayesian_search(
 
         return score
 
-    # Initialize Optuna study
-    study = optuna.create_study(direction="maximize")
-    print("Optuna study created.")
+    # Initialize Optuna study with seed for reproducibility
+    if optuna_seed is None:
+        optuna_seed = random_state
+    study = optuna.create_study(
+        direction="maximize", 
+        sampler=optuna.samplers.TPESampler(seed=optuna_seed)
+    )
+    print("Optuna study created with seed for reproducibility.")
 
     # Run optimization
     study.optimize(objective, n_trials=n_trials)
@@ -805,10 +838,11 @@ def train_and_save_umap_with_bayesian_search(
     print(f"Best Parameters: {best_params}")
     print(f"Best Objective Score: {best_score}")
 
-    # Train the UMAP model with the best parameters
-    best_umap_model = umap.UMAP(**best_params, **kwargs)
+    # Train the UMAP model with the best parameters and random_state
+    best_params_with_random_state = {**best_params, "random_state": random_state}
+    best_umap_model = umap.UMAP(**best_params_with_random_state, **kwargs)
     best_embeddings = best_umap_model.fit_transform(input_matrix)
-    print("Trained UMAP model with best parameters.")
+    print("Trained UMAP model with best parameters and consistent random state.")
 
     # Save the model, embeddings, and input matrix
     prefix = f"{pref}_" if pref else ""

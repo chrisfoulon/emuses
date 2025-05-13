@@ -199,7 +199,7 @@ class KernelLogisticRegressor(BaseEstimator, ClassifierMixin):
         return (probas >= 0.5).astype(int)
 
 
-def nested_cv_kernel_regression(X, y, sigma_values, n_outer=5, n_inner=3):
+def nested_cv_kernel_regression(X, y, sigma_values, n_outer=5, n_inner=3, random_state=42):
     """
     Perform nested cross-validation for kernel regression.
     
@@ -215,6 +215,8 @@ def nested_cv_kernel_regression(X, y, sigma_values, n_outer=5, n_inner=3):
         Number of folds for outer CV
     n_inner : int
         Number of folds for inner CV
+    random_state : int
+        Random seed for reproducibility
         
     Returns:
     --------
@@ -229,8 +231,8 @@ def nested_cv_kernel_regression(X, y, sigma_values, n_outer=5, n_inner=3):
     """
     from sklearn.model_selection import KFold
     
-    outer_cv = KFold(n_splits=n_outer, shuffle=True, random_state=42)
-    inner_cv = KFold(n_splits=n_inner, shuffle=True, random_state=24)
+    outer_cv = KFold(n_splits=n_outer, shuffle=True, random_state=random_state)
+    inner_cv = KFold(n_splits=n_inner, shuffle=True, random_state=random_state+1)
     
     trained_models = []
     performance_results = []
@@ -410,7 +412,8 @@ def run_kernel_heatmap_analysis(
     output_format_info=None,
     full_embeddings=None,
     clusterer=None,
-    cluster_predict_method="kdtree"
+    cluster_predict_method="kdtree",
+    random_state=42
 ):
     """
     Generate a kernel regression–based heatmap of predicted outcomes on a 2D latent space.
@@ -1004,7 +1007,7 @@ def optimize_gp_model(model, max_iter=300, verbose=True):
     return model
 
 
-def train_prediction_models(embeddings, targets, score_names, output_folder=None, sigma_values=None):
+def train_prediction_models(embeddings, targets, score_names, output_folder=None, sigma_values=None, random_state=42):
     """
     Train kernel regression models for each target score.
     
@@ -1020,6 +1023,8 @@ def train_prediction_models(embeddings, targets, score_names, output_folder=None
         Path to save models if specified
     sigma_values : list or None, optional
         List of sigma values to try. If None, uses default range
+    random_state : int, optional
+        Random seed for reproducibility
         
     Returns:
     --------
@@ -1042,10 +1047,9 @@ def train_prediction_models(embeddings, targets, score_names, output_folder=None
         
         # Extract the target score
         y = targets[:, i]
-        
-        # Use nested cross-validation to find the best sigma and train models
+          # Use nested cross-validation to find the best sigma and train models
         trained_models, performance_results, _, sigma_values_used = nested_cv_kernel_regression(
-            embeddings, y, sigma_values, n_outer=5, n_inner=3
+            embeddings, y, sigma_values, n_outer=5, n_inner=3, random_state=random_state
         )
         
         # Use the ensemble of models

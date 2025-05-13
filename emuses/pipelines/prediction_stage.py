@@ -24,11 +24,18 @@ class PredictionStage(PipelineStage):
     optionally including Gaussian weighted distances (GWD) features.
     """
     def __init__(self, config):
-        super().__init__(config)
-
+        super().__init__(config)    
+        
     def run(self, context, progress_queue=None):
         logger = logging.getLogger(__name__)
         logger.info("Running Prediction Stage (Test Evaluation)")
+
+        # Get component-specific seeds from context
+        random_seeds = context.get('random_seeds', {})
+        prediction_seed = random_seeds.get('prediction_seed', 42)
+        cv_seed = random_seeds.get('cv_seed', 42)
+        optuna_seed = random_seeds.get('optuna_seed', 42)
+        logger.info(f"Using random seeds - Prediction: {prediction_seed}, CV: {cv_seed}, Optuna: {optuna_seed}")
 
         # Extract embeddings and labels from context using new naming convention only
         train_embeddings = context.get('prediction_train_coords')
@@ -131,11 +138,9 @@ class PredictionStage(PipelineStage):
                     def train_feature_set(feature_name, features):
                         logger.info(f"Training on feature set: {feature_name}")
                         X_train, X_test = features
-                        
-                        # Use Optuna for model selection
+                          # Use Optuna for model selection
                         label_output_folder = output_folder / label_name / feature_name
                         label_output_folder.mkdir(parents=True, exist_ok=True)
-                        
                         results = optuna_model_selection(
                             X=X_train, 
                             y=y_train,
@@ -143,7 +148,9 @@ class PredictionStage(PipelineStage):
                             n_jobs=1,  # Use 1 here because we're already parallelizing at the feature set level
                             output_folder=label_output_folder,
                             feature_set_name=feature_name,
-                            models=model_selection
+                            models=model_selection,
+                            random_state=cv_seed,
+                            optuna_seed=optuna_seed
                         )
                         
                         # Get the best model and evaluate on test set if available
@@ -215,11 +222,9 @@ class PredictionStage(PipelineStage):
                     for feature_name, features in feature_sets.items():
                         logger.info(f"Training on feature set: {feature_name}")
                         X_train, X_test = features
-                        
-                        # Use Optuna for model selection
+                          # Use Optuna for model selection
                         label_output_folder = output_folder / label_name / feature_name
                         label_output_folder.mkdir(parents=True, exist_ok=True)
-                        
                         results = optuna_model_selection(
                             X=X_train, 
                             y=y_train,
@@ -227,7 +232,9 @@ class PredictionStage(PipelineStage):
                             n_jobs=n_jobs,  # Use all available jobs since we're not parallelizing feature sets
                             output_folder=label_output_folder,
                             feature_set_name=feature_name,
-                            models=model_selection
+                            models=model_selection,
+                            random_state=cv_seed,
+                            optuna_seed=optuna_seed
                         )
                         
                         # Get the best model and evaluate on test set if available

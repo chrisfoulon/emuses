@@ -3,11 +3,19 @@ import logging
 from pathlib import Path
 import pandas as pd
 import hdbscan
+import matplotlib.pyplot as plt
+import umap
+import joblib
+from sklearn.model_selection import StratifiedKFold, KFold
+from sklearn.metrics import accuracy_score, balanced_accuracy_score, r2_score, mean_squared_error, confusion_matrix
 
 from emuses.pipelines.pipeline_stage import PipelineStage
 from emuses.tools.stats_utils import fwhm_to_sigma
 from emuses.tools.kernel_regression_utils import run_kernel_heatmap_analysis, ensemble_predict, nested_cv_kernel_regression
+from emuses.tools.kernel_regression_utils import KernelLogisticRegressor, KernelRegressor
 from emuses.tools.visualisation import plot_clustering_interactive_with_hover
+from emuses.tools.inputs_utils import load_and_preprocess_digits_dataset
+from bcblib.tools.general_utils import save_json
 
 
 class HeatmapStage(PipelineStage):
@@ -198,15 +206,11 @@ def robust_ood_evaluation(context, output_folder, classification=True):
     dict
         Dictionary containing evaluation results
     """
+    # Get random seeds from context
+    random_seeds = context.get('random_seeds', {})
+    random_state = random_seeds.get('prediction_seed', 42)  # Use prediction_seed or fall back to 42
     logger = logging.getLogger(__name__)
     logger.info("Running robust OOD evaluation")
-    
-    from pathlib import Path
-    from sklearn.model_selection import StratifiedKFold, KFold
-    from sklearn.metrics import accuracy_score, balanced_accuracy_score, r2_score, mean_squared_error
-    import matplotlib.pyplot as plt
-    import umap
-    import joblib
     
     # Ensure output folder exists
     output_folder = Path(output_folder) / "ood_evaluation"
@@ -221,9 +225,7 @@ def robust_ood_evaluation(context, output_folder, classification=True):
     
     if is_digits_label_dataset:
         logger.info("Detected digits_label_dataset mode - setting up true OOD evaluation")
-        
-        # 1. Get the original data and indices of the 400 labeled samples
-        from emuses.tools.inputs_utils import load_and_preprocess_digits_dataset
+          # 1. Get the original data and indices of the 400 labeled samples
         all_features, all_labels, labeled_indices = load_and_preprocess_digits_dataset('digits_label_dataset')
         
         # 2. Create mask for the training set (everything except the 400 labeled samples)
@@ -273,7 +275,7 @@ def robust_ood_evaluation(context, output_folder, classification=True):
             n_neighbors=n_neighbors,
             min_dist=min_dist,
             metric=metric,
-            random_state=42
+            random_state=random_state
         )
         unlabeled_embeddings = true_ood_umap.fit_transform(all_features[mask])
         
@@ -332,12 +334,11 @@ def robust_ood_evaluation(context, output_folder, classification=True):
                 labeled_embeddings = precomputed_embeddings
             else:
                 logger.warning("Precomputed embeddings found but length doesn't match labeled data")
-    
-    # Define CV strategy
+      # Define CV strategy
     n_splits = 5
-    random_state = 42
-    cv = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=random_state) if classification \
-        else KFold(n_splits=n_splits, shuffle=True, random_state=random_state)
+    cv_seed = random_seeds.get('cv_seed', random_state)  # Use cv_seed from context or fall back to random_state
+    cv = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=cv_seed) if classification \
+        else KFold(n_splits=n_splits, shuffle=True, random_state=cv_seed)
     
     results = {}
     
@@ -371,8 +372,7 @@ def robust_ood_evaluation(context, output_folder, classification=True):
                 # Inner CV to find best sigma
                 best_sigma, best_score = None, -np.inf
                 for sigma in np.logspace(-2, 0, 10):  # Try various sigma values
-                    from emuses.tools.kernel_regression_utils import KernelLogisticRegressor
-                    inner_cv = StratifiedKFold(n_splits=3, shuffle=True, random_state=random_state)
+                    inner_cv = StratifiedKFold(n_splits=3, shuffle=True, random_state=cv_seed)
                     scores = []
                     
                     for inner_train_idx, inner_val_idx in inner_cv.split(X_train, y_train):
@@ -432,9 +432,7 @@ def robust_ood_evaluation(context, output_folder, classification=True):
             
             logger.info(f"  Class {label} - Average: Accuracy={avg_metrics['accuracy']:.4f}, "
                        f"Balanced Accuracy={avg_metrics['balanced_accuracy']:.4f}")
-        
-        # Calculate overall multi-class accuracy
-        from sklearn.metrics import confusion_matrix
+          # Calculate overall multi-class accuracy
         
         # Convert to array for easier processing
         all_true = np.array(all_true)
@@ -511,7 +509,7 @@ def robust_ood_evaluation(context, output_folder, classification=True):
             best_sigma, best_score = None, -np.inf
             for sigma in np.logspace(-2, 0, 10):
                 from emuses.tools.kernel_regression_utils import KernelRegressor
-                inner_cv = KFold(n_splits=3, shuffle=True, random_state=random_state)
+                inner_cv = KFold(n_splits=3, shuffle=True, random_state=cv_seed)
                 scores = []
                 
                 for inner_train_idx, inner_val_idx in inner_cv.split(X_train):
@@ -527,9 +525,7 @@ def robust_ood_evaluation(context, output_folder, classification=True):
                 if mean_score > best_score:
                     best_score = mean_score
                     best_sigma = sigma
-            
-            # Train model on full training fold with best sigma
-            from emuses.tools.kernel_regression_utils import KernelRegressor
+              # Train model on full training fold with best sigma
             kr = KernelRegressor(kernel='rbf', sigma=best_sigma)
             kr.fit(X_train, y_train)
             
@@ -576,9 +572,7 @@ def robust_ood_evaluation(context, output_folder, classification=True):
         
         logger.info(f"Overall R² Score: {avg_metrics['r2_score']:.4f}")
         logger.info(f"Overall MSE: {avg_metrics['mse']:.4f}")
-    
-    # Save results to file
-    import json
+      # Save results to file
     
     # Convert NumPy arrays to lists for JSON serialization
     for key in results:
@@ -586,9 +580,9 @@ def robust_ood_evaluation(context, output_folder, classification=True):
             for subkey in results[key]:
                 if isinstance(results[key][subkey], np.ndarray):
                     results[key][subkey] = results[key][subkey].tolist()
-    
-    with open(output_folder / "ood_results.json", 'w') as f:
-        json.dump(results, f, indent=2)
+
+    # save with save_json function
+    save_json(output_folder / "ood_results.json", results)
     
     logger.info("OOD evaluation complete. Results saved to JSON file.")
     

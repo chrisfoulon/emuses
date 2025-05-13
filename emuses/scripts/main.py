@@ -85,6 +85,14 @@ def add_scores_arguments(parser):
                         help='If set, filter the labelled dataset to only keep files referenced in the scores file.')
 
 
+def add_random_state_argument(parser):
+    """
+    Adds random_state parameter for reproducibility
+    """
+    parser.add_argument('--random_state', type=int, default=42,
+                        help='Master random seed for reproducibility (default: 42)')
+
+
 def add_umap_arguments(parser):
     """
     Adds optional arguments related to the UMAP stage to the parser.
@@ -170,6 +178,8 @@ def main():
     add_clustering_arguments(full_parser)
     add_smoothing_arguments(full_parser)
     add_enhanced_pipeline_arguments(full_parser)  # Add enhanced pipeline arguments
+    add_random_state_argument(full_parser)  # Add random state argument for reproducibility
+    add_random_state_argument(full_parser)  # Add random state argument
 
     # Subparser for the 'umap' command
     umap_parser = subparsers.add_parser('umap', help='Train the UMAP and get the embeddings')
@@ -178,6 +188,8 @@ def main():
     # Add optional arguments
     add_input_dataset_optional_arguments(umap_parser)
     add_umap_arguments(umap_parser)
+    add_random_state_argument(umap_parser)  # Add random state argument for reproducibility
+    add_random_state_argument(umap_parser)  # Add random state argument
 
     # Subparser for the 'clustering' command
     clustering_parser = subparsers.add_parser('clustering', help='Perform clustering on embeddings')
@@ -186,6 +198,7 @@ def main():
     # Add optional arguments
     clustering_parser.add_argument('--load_embeddings', help='Path to precomputed embeddings')
     add_clustering_arguments(clustering_parser)
+    add_random_state_argument(clustering_parser)  # Add random state argument for reproducibility
 
     # Subparser for the 'heatmap' command
     heatmap_parser = subparsers.add_parser('heatmap', help='Create a heatmap')
@@ -198,6 +211,7 @@ def main():
     heatmap_parser.add_argument('--load_embeddings', help='Embeddings from the UMAP')
     heatmap_parser.add_argument('--load_hdbscan', help='Path to a pre-trained HDBSCAN model')
     heatmap_parser.add_argument('--output_format_info', help='Output format information needed')
+    add_random_state_argument(heatmap_parser)  # Add random state argument for reproducibility
 
     # Subparser for the 'prediction' command
     prediction_parser = subparsers.add_parser('prediction', help='Train a prediction model')
@@ -208,6 +222,7 @@ def main():
     add_scores_arguments(prediction_parser)
     add_umap_arguments(prediction_parser)
     add_enhanced_pipeline_arguments(prediction_parser)  # Add enhanced pipeline arguments
+    add_random_state_argument(prediction_parser)  # Add random state argument
 
     # add run_old_prediction argument
     full_parser.add_argument('--run_old_prediction', action='store_true',
