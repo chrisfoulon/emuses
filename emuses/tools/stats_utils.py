@@ -1,11 +1,11 @@
 import os
 import time
-import json
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import pickle
 import optuna
+from bcblib.tools.general_utils import save_json
 from multiprocessing import Pool, cpu_count
 from pathlib import Path
 from bcblib.tools.arrays_utils import separate_clusters_and_extract_coords, find_centroid_and_check
@@ -1628,11 +1628,10 @@ def new_pipeline_test(embeddings, combined_input_matrix, scores_vectors_dict, ou
         
         # Save final results
         results_file = os.path.join(feature_set_dir, 'optimization_results.json')
-        with open(results_file, 'w') as f:
-            # Convert non-serializable objects to strings
-            serializable_results = {k: (str(v) if not isinstance(v, (str, int, float, bool, list, dict)) else v) 
-                                   for k, v in results.items() if k != 'best_model'}
-            json.dump(serializable_results, f, indent=2)
+        # Convert non-serializable objects to strings
+        serializable_results = {k: (str(v) if not isinstance(v, (str, int, float, bool, list, dict)) else v) 
+                               for k, v in results.items() if k != 'best_model'}
+        save_json(results_file, serializable_results)
         
         # Save the best model
         model_file = os.path.join(feature_set_dir, f'best_model_{results["best_model_name"]}.joblib')
@@ -1823,7 +1822,7 @@ def new_pipeline_test(embeddings, combined_input_matrix, scores_vectors_dict, ou
             if k not in ['gwd_matrix', 'gwd_summaries', 'combined_features', 'feature_sets', 
                          'correlation_heatmap']
         }
-        json.dump(serializable_results, f, indent=2)
+        save_json(f.name, serializable_results)
     
     return final_results
 

@@ -2,7 +2,6 @@
 
 import logging
 import time
-import json
 import numpy as np
 from pathlib import Path
 from numpy.random import default_rng
@@ -10,7 +9,7 @@ from sklearn.model_selection import train_test_split
 
 from emuses.pipelines.pipeline_config import PipelineConfig
 
-from bcblib.tools.general_utils import parse_file_list_argument
+from bcblib.tools.general_utils import parse_file_list_argument, save_json
 from bcblib.tools.dataframe_filtering import normalize_dataframe
 from bcblib.tools.nifti_utils import load_nifti
 from emuses.tools.inputs_utils import (
@@ -78,12 +77,10 @@ class EMUSESPipeline:
         
         # Store seeds in config for persistence
         self.config.random_seeds = random_seeds
-        
-        # Save the generated seeds to a JSON file for future reference
+          # Save the generated seeds to a JSON file for future reference
         self.output_folder.mkdir(parents=True, exist_ok=True)  # Ensure output folder exists
         seed_file = self.output_folder / "random_seeds.json"
-        with open(seed_file, 'w') as f:
-            json.dump(random_seeds, f, indent=2)
+        save_json(seed_file, random_seeds)
         self.logger.info(f"Saved component-specific random seeds to {seed_file}")
         
         # Update context with common settings.
@@ -378,7 +375,8 @@ class EMUSESPipeline:
         scores_indices = self.context.get('scores_indices', None)
         
         # Get the specific seed for dataset splitting
-        split_seed = self.config.random_seeds['split_seed']
+        random_seeds = getattr(self.config, 'random_seeds', {})
+        split_seed = random_seeds.get('split_seed', getattr(self.config, 'random_state', 42))
         self.logger.info(f"Splitting dataset with seed: {split_seed}")
         
         if getattr(args, 'label_dataset', None):

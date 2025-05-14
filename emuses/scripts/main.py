@@ -128,6 +128,9 @@ def add_smoothing_arguments(parser):
     smoothing_group.add_argument('--sigma', type=float, help='Sigma value for the smoothing')
     smoothing_group.add_argument('--fwhm', type=float,
                                  help='Full width at half maximum value for the smoothing')
+    # Add a flag for data inspection
+    parser.add_argument('--inspect_data_state', action='store_true',
+                       help='Inspect data state before model training (for debugging)')
 
 
 # Parser arguments related to model optimization and parallelization
@@ -179,7 +182,6 @@ def main():
     add_smoothing_arguments(full_parser)
     add_enhanced_pipeline_arguments(full_parser)  # Add enhanced pipeline arguments
     add_random_state_argument(full_parser)  # Add random state argument for reproducibility
-    add_random_state_argument(full_parser)  # Add random state argument
 
     # Subparser for the 'umap' command
     umap_parser = subparsers.add_parser('umap', help='Train the UMAP and get the embeddings')
@@ -189,7 +191,6 @@ def main():
     add_input_dataset_optional_arguments(umap_parser)
     add_umap_arguments(umap_parser)
     add_random_state_argument(umap_parser)  # Add random state argument for reproducibility
-    add_random_state_argument(umap_parser)  # Add random state argument
 
     # Subparser for the 'clustering' command
     clustering_parser = subparsers.add_parser('clustering', help='Perform clustering on embeddings')

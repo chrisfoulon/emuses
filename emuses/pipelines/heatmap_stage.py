@@ -167,9 +167,61 @@ class HeatmapStage(PipelineStage):
                         interactive_plots[key] = fig
                     
                     # Use standardized naming for interactive plots by score
-                    context['prediction_train_score_clustering_plots'] = interactive_plots
-
-        # Use our robust OOD evaluation function instead of new_pipeline_test
+                    context['prediction_train_score_clustering_plots'] = interactive_plots        # ==================== DATA PREPARATION COMPLETE ====================
+        # At this point all data has been collected and preprocessed.
+        # The next step would be to call robust_ood_evaluation for model training.
+        
+        # Log the state of the data for inspection
+        logger.info("===== DATA STATE BEFORE MODEL TRAINING =====")
+        logger.info(f"embeddings_labelled shape: {embeddings_labelled.shape if embeddings_labelled is not None else None}")
+        logger.info(f"train_labels shape: {train_labels.shape if train_labels is not None else None}")
+        logger.info(f"combined_input_matrix shape: {combined_input_matrix.shape if combined_input_matrix is not None else None}")
+        logger.info(f"full_embeddings shape: {full_embeddings.shape if full_embeddings is not None else None}")
+        logger.info(f"cluster_labels shape: {cluster_labels.shape if cluster_labels is not None else None}")
+        logger.info(f"scores_vectors_dict keys: {list(scores_vectors_dict.keys())}")
+        for key, val in scores_vectors_dict.items():
+            logger.info(f"  scores_vector '{key}' shape: {val.shape if val is not None else None}")
+        logger.info(f"sigma: {sigma}")
+        logger.info(f"classification: {getattr(self.config, 'classification', False)}")
+        
+        # Create a data inspection directory
+        inspect_dir = Path(self.config.output_folder) / "data_inspection"
+        inspect_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Save basic data summary
+        data_summary = {
+            "embeddings_labelled_shape": embeddings_labelled.shape if embeddings_labelled is not None else None,
+            "train_labels_shape": train_labels.shape if train_labels is not None else None,
+            "train_labels_unique": np.unique(train_labels).tolist() if train_labels is not None else None,
+            "combined_input_matrix_shape": combined_input_matrix.shape if combined_input_matrix is not None else None,
+            "full_embeddings_shape": full_embeddings.shape if full_embeddings is not None else None,
+            "cluster_labels_shape": cluster_labels.shape if cluster_labels is not None else None,
+            "classification": getattr(self.config, 'classification', False),
+            "sigma": sigma if sigma is None else sigma.tolist() if hasattr(sigma, 'tolist') else sigma,
+        }
+        save_json(inspect_dir / "data_summary.json", data_summary)
+        
+        # Create a visualization of the embeddings with labels
+        if embeddings_labelled is not None and embeddings_labelled.shape[1] >= 2:
+            plt.figure(figsize=(10, 8))
+            if getattr(self.config, 'classification', False):
+                # For classification, use categorical colors
+                scatter = plt.scatter(embeddings_labelled[:, 0], embeddings_labelled[:, 1], 
+                                     c=train_labels, cmap='viridis', alpha=0.7)
+                plt.colorbar(scatter, label='Class')
+            else:
+                # For regression, use continuous colormap
+                scatter = plt.scatter(embeddings_labelled[:, 0], embeddings_labelled[:, 1], 
+                                     c=train_labels, cmap='coolwarm', alpha=0.7)
+                plt.colorbar(scatter, label='Score')
+            plt.title('UMAP Embeddings Colored by Target')
+            plt.xlabel('UMAP Dimension 1')
+            plt.ylabel('UMAP Dimension 2')
+            plt.tight_layout()
+            plt.savefig(inspect_dir / "embeddings_with_labels.png")
+            plt.close()
+        
+        # Continue with the regular pipeline
         results = robust_ood_evaluation(
             context=context,
             output_folder=self.config.output_folder,
@@ -178,6 +230,158 @@ class HeatmapStage(PipelineStage):
 
         # Store results in context
         context.update(results)
+
+
+def inspect_data_state(context, embeddings_labelled, train_labels, combined_input_matrix, 
+                      full_embeddings, cluster_labels, scores_vectors_dict, sigma,
+                      classification, output_folder):
+    """
+    Inspects and reports on the state of data just before model training would begin.
+    This function creates detailed reports about each data component to help understand
+    what's available for model training and in what format.
+    
+    Parameters
+    ----------
+    context : dict
+        The pipeline context containing all available data
+    embeddings_labelled : np.ndarray
+        The 2D embeddings for labeled data used for training
+    train_labels : np.ndarray
+        The target labels/scores corresponding to embeddings_labelled
+    combined_input_matrix : np.ndarray
+        The original high-dimensional input features
+    full_embeddings : np.ndarray or None
+        In label_dataset mode, the unlabelled embeddings used for UMAP training
+    cluster_labels : np.ndarray or None
+        The cluster assignments for data points
+    scores_vectors_dict : dict
+        Dictionary mapping score tags to score vectors
+    sigma : np.ndarray
+        The kernel bandwidth values to try
+    classification : bool
+        Whether this is a classification or regression task
+    output_folder : str or Path
+        Directory where inspection results will be saved
+    """
+    logger = logging.getLogger(__name__)
+    logger.info("Inspecting data state before model training")
+    
+    # Create output directory
+    output_folder = Path(output_folder) / "data_inspection"
+    output_folder.mkdir(parents=True, exist_ok=True)
+    
+    # Function to safely get shape and dtype
+    def get_array_info(arr):
+        if arr is None:
+            return {"shape": None, "dtype": None, "is_none": True}
+        return {"shape": arr.shape, "dtype": str(arr.dtype), "is_none": False}
+    
+    # Basic data summary
+    data_summary = {
+        "embeddings_labelled": get_array_info(embeddings_labelled),
+        "train_labels": get_array_info(train_labels),
+        "combined_input_matrix": get_array_info(combined_input_matrix),
+        "full_embeddings": get_array_info(full_embeddings),
+        "cluster_labels": get_array_info(cluster_labels),
+        "classification": classification,
+        "sigma_values": None if sigma is None else sigma.tolist() if hasattr(sigma, 'tolist') else sigma
+    }
+    
+    # Score vectors summary
+    score_vectors_summary = {}
+    for key, vec in scores_vectors_dict.items():
+        score_vectors_summary[key] = {
+            "shape": vec.shape,
+            "dtype": str(vec.dtype),
+            "min": float(np.min(vec)),
+            "max": float(np.max(vec)),
+            "mean": float(np.mean(vec)),
+            "unique_values": int(len(np.unique(vec)))
+        }
+        if classification:
+            # For classification, count classes
+            unique, counts = np.unique(vec, return_counts=True)
+            score_vectors_summary[key]["class_counts"] = {
+                str(int(u)): int(c) for u, c in zip(unique, counts)
+            }
+    
+    # Context keys summary
+    context_keys = list(context.keys())
+    context_key_types = {k: str(type(context[k])) for k in context_keys}
+    
+    # Save all info to JSON
+    inspection_data = {
+        "data_summary": data_summary,
+        "score_vectors_summary": score_vectors_summary,
+        "context_keys": context_keys,
+        "context_key_types": context_key_types
+    }
+    save_json(output_folder / "data_inspection.json", inspection_data)
+    
+    # Create some basic visualizations
+    
+    # 1. Scatter plot of embeddings (colored by cluster if available)
+    if embeddings_labelled is not None and embeddings_labelled.shape[1] >= 2:
+        plt.figure(figsize=(10, 8))
+        if cluster_labels is not None:
+            plt.scatter(embeddings_labelled[:, 0], embeddings_labelled[:, 1], 
+                        c=cluster_labels, cmap='viridis', alpha=0.7)
+            plt.colorbar(label='Cluster')
+        else:
+            plt.scatter(embeddings_labelled[:, 0], embeddings_labelled[:, 1], alpha=0.7)
+        plt.title('Labeled Embeddings')
+        plt.xlabel('UMAP Dimension 1')
+        plt.ylabel('UMAP Dimension 2')
+        plt.tight_layout()
+        plt.savefig(output_folder / "labeled_embeddings.png")
+        plt.close()
+    
+    # 2. For each score in scores_vectors_dict, plot a heatmap on the embeddings
+    for key, vec in scores_vectors_dict.items():
+        if embeddings_labelled is not None and embeddings_labelled.shape[1] >= 2:
+            plt.figure(figsize=(10, 8))
+            scatter = plt.scatter(embeddings_labelled[:, 0], embeddings_labelled[:, 1], 
+                                 c=vec, cmap='coolwarm', alpha=0.7)
+            plt.colorbar(scatter, label=f'Score: {key}')
+            plt.title(f'Embeddings colored by {key}')
+            plt.xlabel('UMAP Dimension 1')
+            plt.ylabel('UMAP Dimension 2')
+            plt.tight_layout()
+            plt.savefig(output_folder / f"embeddings_by_{key}.png")
+            plt.close()
+    
+    # 3. If we have both full and labeled embeddings, plot to show their relationship
+    if full_embeddings is not None and embeddings_labelled is not None:
+        plt.figure(figsize=(10, 8))
+        plt.scatter(full_embeddings[:, 0], full_embeddings[:, 1], 
+                   color='lightgray', alpha=0.5, label='Unlabeled')
+        plt.scatter(embeddings_labelled[:, 0], embeddings_labelled[:, 1], 
+                   color='red', alpha=0.7, label='Labeled')
+        plt.title('Full vs. Labeled Embeddings')
+        plt.xlabel('UMAP Dimension 1')
+        plt.ylabel('UMAP Dimension 2')
+        plt.legend()
+        plt.tight_layout()
+        plt.savefig(output_folder / "full_vs_labeled_embeddings.png")
+        plt.close()
+    
+    # Output detailed statistics
+    
+    # Distances between points in embedding space
+    if embeddings_labelled is not None and len(embeddings_labelled) > 1:
+        from scipy.spatial.distance import pdist
+        distances = pdist(embeddings_labelled)
+        distance_stats = {
+            "min": float(np.min(distances)),
+            "max": float(np.max(distances)),
+            "mean": float(np.mean(distances)),
+            "median": float(np.median(distances)),
+            "std": float(np.std(distances))
+        }
+        save_json(output_folder / "embedding_distances.json", distance_stats)
+    
+    logger.info(f"Data inspection report saved to {output_folder}")
+    return inspection_data
 
 
 def robust_ood_evaluation(context, output_folder, classification=True):

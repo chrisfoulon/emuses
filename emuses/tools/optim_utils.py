@@ -1,10 +1,10 @@
 import numpy as np
 import os
 import time
-import json
 
 # Optuna imports
 import optuna
+from bcblib.tools.general_utils import save_json
 from optuna.integration import OptunaSearchCV
 
 # Scikit-learn imports
@@ -462,8 +462,7 @@ def optuna_model_selection(X, y, n_trials=100, n_jobs=-1, output_folder=None, fe
         
         # Save results (excluding model object)
         results_json = {k: v for k, v in results.items() if k != 'best_model'}
-        with open(results_file, 'w') as f:
-            json.dump(results_json, f, indent=2)
+        save_json(results_file, results_json)
     
     return results
 
@@ -560,8 +559,7 @@ def optuna_feature_set_comparison(X_sets, y, output_folder, feature_set_names=No
     
     # Save summary
     summary_file = os.path.join(output_folder, "feature_set_comparison_summary.json")
-    with open(summary_file, 'w') as f:
-        json.dump({k: v for k, v in summary.items() if k != 'best_model_overall'}, f, indent=2)
+    save_json(summary_file, {k: v for k, v in summary.items() if k != 'best_model_overall'})
     
     # Save best overall model
     best_model_file = os.path.join(output_folder, "best_model_overall.joblib")
