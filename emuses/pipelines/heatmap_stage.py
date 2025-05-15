@@ -10,7 +10,6 @@ from sklearn.model_selection import StratifiedKFold, KFold
 from sklearn.metrics import accuracy_score, balanced_accuracy_score, r2_score, mean_squared_error, confusion_matrix
 
 from emuses.pipelines.pipeline_stage import PipelineStage
-from emuses.tools.stats_utils import fwhm_to_sigma
 from emuses.tools.kernel_regression_utils import run_kernel_heatmap_analysis, ensemble_predict, nested_cv_kernel_regression
 from emuses.tools.kernel_regression_utils import KernelLogisticRegressor, KernelRegressor
 from emuses.tools.visualisation import plot_clustering_interactive_with_hover
@@ -100,25 +99,10 @@ class HeatmapStage(PipelineStage):
                 scores_vectors_dict = {
                     f"score_{i}": train_labels[:, i]
                     for i in range(train_labels.shape[1])
-                }
-        context['score_vectors_dict'] = scores_vectors_dict
+                }        
+                context['score_vectors_dict'] = scores_vectors_dict
 
-        # Set candidate sigma values for the kernel regressor.
-        sigma = self.config.heatmap_params.get('sigma', None)
-        if sigma is None:
-            sigma = np.linspace(0.01, 0.2, num=8)
-        else:
-            if not isinstance(sigma, (list, np.ndarray)):
-                sigma = np.array([sigma])
-
-        fwhm = self.config.heatmap_params.get('fwhm', None)
-        if sigma is None and fwhm is not None:
-            sigma = fwhm_to_sigma(fwhm)
-            logger.info(f"Converted FWHM {fwhm} to sigma {sigma}")
-        elif sigma is None and fwhm is None:
-            sigma = None
-            logger.info("No sigma or FWHM provided; proceeding without smoothing.")
-
+        # Kernel regression will use its internal optimization for sigma values
         show_plots = getattr(self.config, 'show_plots', False)
         context['show_plots'] = show_plots
         generate_plots = True
@@ -167,7 +151,8 @@ class HeatmapStage(PipelineStage):
                         interactive_plots[key] = fig
                     
                     # Use standardized naming for interactive plots by score
-                    context['prediction_train_score_clustering_plots'] = interactive_plots        # ==================== DATA PREPARATION COMPLETE ====================
+                    context['prediction_train_score_clustering_plots'] = interactive_plots        
+                    # ==================== DATA PREPARATION COMPLETE ====================
         # At this point all data has been collected and preprocessed.
         # The next step would be to call robust_ood_evaluation for model training.
         
@@ -177,11 +162,10 @@ class HeatmapStage(PipelineStage):
         logger.info(f"train_labels shape: {train_labels.shape if train_labels is not None else None}")
         logger.info(f"combined_input_matrix shape: {combined_input_matrix.shape if combined_input_matrix is not None else None}")
         logger.info(f"full_embeddings shape: {full_embeddings.shape if full_embeddings is not None else None}")
-        logger.info(f"cluster_labels shape: {cluster_labels.shape if cluster_labels is not None else None}")
+        logger.info(f"cluster_labels shape: {cluster_labels.shape if cluster_labels is not None else None}")        
         logger.info(f"scores_vectors_dict keys: {list(scores_vectors_dict.keys())}")
         for key, val in scores_vectors_dict.items():
             logger.info(f"  scores_vector '{key}' shape: {val.shape if val is not None else None}")
-        logger.info(f"sigma: {sigma}")
         logger.info(f"classification: {getattr(self.config, 'classification', False)}")
         
         # Create a data inspection directory
@@ -192,12 +176,10 @@ class HeatmapStage(PipelineStage):
         data_summary = {
             "embeddings_labelled_shape": embeddings_labelled.shape if embeddings_labelled is not None else None,
             "train_labels_shape": train_labels.shape if train_labels is not None else None,
-            "train_labels_unique": np.unique(train_labels).tolist() if train_labels is not None else None,
-            "combined_input_matrix_shape": combined_input_matrix.shape if combined_input_matrix is not None else None,
+            "train_labels_unique": np.unique(train_labels).tolist() if train_labels is not None else None,            "combined_input_matrix_shape": combined_input_matrix.shape if combined_input_matrix is not None else None,
             "full_embeddings_shape": full_embeddings.shape if full_embeddings is not None else None,
             "cluster_labels_shape": cluster_labels.shape if cluster_labels is not None else None,
             "classification": getattr(self.config, 'classification', False),
-            "sigma": sigma if sigma is None else sigma.tolist() if hasattr(sigma, 'tolist') else sigma,
         }
         save_json(inspect_dir / "data_summary.json", data_summary)
         
@@ -206,13 +188,29 @@ class HeatmapStage(PipelineStage):
             plt.figure(figsize=(10, 8))
             if getattr(self.config, 'classification', False):
                 # For classification, use categorical colors
-                scatter = plt.scatter(embeddings_labelled[:, 0], embeddings_labelled[:, 1], 
-                                     c=train_labels, cmap='viridis', alpha=0.7)
+                # Check if train_labels is 2D (contains multiple scores)
+                if train_labels.ndim > 1 and train_labels.shape[1] > 1:
+                    # For visualization, just use the first score
+                    first_score = train_labels[:, 0]
+                    scatter = plt.scatter(embeddings_labelled[:, 0], embeddings_labelled[:, 1], 
+                                        c=first_score, cmap='viridis', alpha=0.7)
+                    plt.title('UMAP Embeddings Colored by First Class')
+                else:
+                    # Use the 1D label array directly
+                    scatter = plt.scatter(embeddings_labelled[:, 0], embeddings_labelled[:, 1], 
+                                        c=train_labels, cmap='viridis', alpha=0.7)
                 plt.colorbar(scatter, label='Class')
             else:
                 # For regression, use continuous colormap
-                scatter = plt.scatter(embeddings_labelled[:, 0], embeddings_labelled[:, 1], 
-                                     c=train_labels, cmap='coolwarm', alpha=0.7)
+                if train_labels.ndim > 1 and train_labels.shape[1] > 1:
+                    # For visualization, just use the first score
+                    first_score = train_labels[:, 0]
+                    scatter = plt.scatter(embeddings_labelled[:, 0], embeddings_labelled[:, 1], 
+                                         c=first_score, cmap='coolwarm', alpha=0.7)
+                    plt.title('UMAP Embeddings Colored by First Score')
+                else:
+                    scatter = plt.scatter(embeddings_labelled[:, 0], embeddings_labelled[:, 1], 
+                                        c=train_labels, cmap='coolwarm', alpha=0.7)
                 plt.colorbar(scatter, label='Score')
             plt.title('UMAP Embeddings Colored by Target')
             plt.xlabel('UMAP Dimension 1')
@@ -233,7 +231,7 @@ class HeatmapStage(PipelineStage):
 
 
 def inspect_data_state(context, embeddings_labelled, train_labels, combined_input_matrix, 
-                      full_embeddings, cluster_labels, scores_vectors_dict, sigma,
+                      full_embeddings, cluster_labels, scores_vectors_dict,
                       classification, output_folder):
     """
     Inspects and reports on the state of data just before model training would begin.
@@ -253,11 +251,8 @@ def inspect_data_state(context, embeddings_labelled, train_labels, combined_inpu
     full_embeddings : np.ndarray or None
         In label_dataset mode, the unlabelled embeddings used for UMAP training
     cluster_labels : np.ndarray or None
-        The cluster assignments for data points
-    scores_vectors_dict : dict
+        The cluster assignments for data points    scores_vectors_dict : dict
         Dictionary mapping score tags to score vectors
-    sigma : np.ndarray
-        The kernel bandwidth values to try
     classification : bool
         Whether this is a classification or regression task
     output_folder : str or Path
@@ -275,16 +270,14 @@ def inspect_data_state(context, embeddings_labelled, train_labels, combined_inpu
         if arr is None:
             return {"shape": None, "dtype": None, "is_none": True}
         return {"shape": arr.shape, "dtype": str(arr.dtype), "is_none": False}
-    
-    # Basic data summary
+      # Basic data summary
     data_summary = {
         "embeddings_labelled": get_array_info(embeddings_labelled),
         "train_labels": get_array_info(train_labels),
         "combined_input_matrix": get_array_info(combined_input_matrix),
         "full_embeddings": get_array_info(full_embeddings),
         "cluster_labels": get_array_info(cluster_labels),
-        "classification": classification,
-        "sigma_values": None if sigma is None else sigma.tolist() if hasattr(sigma, 'tolist') else sigma
+        "classification": classification
     }
     
     # Score vectors summary
