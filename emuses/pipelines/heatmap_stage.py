@@ -220,7 +220,7 @@ class HeatmapStage(PipelineStage):
             plt.tight_layout()
             plt.savefig(inspect_dir / "embeddings_with_labels.png")
             plt.close()
-        
+        exit()
         # Continue with the regular pipeline
         results = robust_ood_evaluation(
             context=context,
@@ -572,8 +572,7 @@ def robust_ood_evaluation(context, output_folder, classification=True):
             for fold, (train_idx, test_idx) in enumerate(cv.split(labeled_embeddings, binary_labels)):
                 X_train, X_test = labeled_embeddings[train_idx], labeled_embeddings[test_idx]
                 y_train, y_test = binary_labels[train_idx], binary_labels[test_idx]
-                
-                # Inner CV to find best sigma
+                  # Inner CV to find best sigma
                 best_sigma, best_score = None, -np.inf
                 for sigma in np.logspace(-2, 0, 10):  # Try various sigma values
                     inner_cv = StratifiedKFold(n_splits=3, shuffle=True, random_state=cv_seed)
@@ -581,7 +580,7 @@ def robust_ood_evaluation(context, output_folder, classification=True):
                     
                     for inner_train_idx, inner_val_idx in inner_cv.split(X_train, y_train):
                         X_inner_train, X_inner_val = X_train[inner_train_idx], X_train[inner_val_idx]
-                        y_inner_train, y_inner_val = y_train[inner_train_idx], y_inner_val[inner_val_idx]
+                        y_inner_train, y_inner_val = y_train[inner_train_idx], y_train[inner_val_idx]
                         
                         klr = KernelLogisticRegressor(sigma=sigma)  # Remove 'kernel' parameter
                         klr.fit(X_inner_train, y_inner_train)
@@ -706,19 +705,16 @@ def robust_ood_evaluation(context, output_folder, classification=True):
         all_pred = []
         
         for fold, (train_idx, test_idx) in enumerate(cv.split(labeled_embeddings)):
-            X_train, X_test = labeled_embeddings[train_idx], labeled_embeddings[test_idx]
             y_train, y_test = labeled_scores[train_idx], labeled_scores[test_idx]
             
             # Inner CV to find best sigma
             best_sigma, best_score = None, -np.inf
             for sigma in np.logspace(-2, 0, 10):
-                from emuses.tools.kernel_regression_utils import KernelRegressor
                 inner_cv = KFold(n_splits=3, shuffle=True, random_state=cv_seed)
                 scores = []
-                
                 for inner_train_idx, inner_val_idx in inner_cv.split(X_train):
                     X_inner_train, X_inner_val = X_train[inner_train_idx], X_train[inner_val_idx]
-                    y_inner_train, y_inner_val = y_train[inner_train_idx], y_inner_val[inner_val_idx]
+                    y_inner_train, y_inner_val = y_train[inner_train_idx], y_train[inner_val_idx]
                     
                     kr = KernelRegressor(kernel='rbf', sigma=sigma)
                     kr.fit(X_inner_train, y_inner_train)

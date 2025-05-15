@@ -118,16 +118,17 @@ def add_clustering_arguments(parser):
     parser.add_argument('--min_cluster_size', type=int, default=5, help='Minimum cluster size')
     parser.add_argument('--interactive_plot', action='store_true',
                         help='Option to create interactive clustering plots')
+    # Add reproducibility parameters for HDBSCAN
+    parser.add_argument('--hdbscan_approx_min_span_tree', action='store_false', default=True,
+                      help='When set to False, ensures reproducibility but with much longer runtime (10x-100x slower)')
+    parser.add_argument('--hdbscan_core_dist_n_jobs', type=int, default=-1,
+                      help='Number of parallel jobs for core distance computation in HDBSCAN (use 1 for reproducibility)')
 
 
 def add_smoothing_arguments(parser):
     """
-    Adds mutually exclusive optional arguments related to smoothing to the parser.
+    Adds optional arguments related to smoothing to the parser.
     """
-    smoothing_group = parser.add_mutually_exclusive_group()
-    smoothing_group.add_argument('--sigma', type=float, help='Sigma value for the smoothing')
-    smoothing_group.add_argument('--fwhm', type=float,
-                                 help='Full width at half maximum value for the smoothing')
     # Add a flag for data inspection
     parser.add_argument('--inspect_data_state', action='store_true',
                        help='Inspect data state before model training (for debugging)')

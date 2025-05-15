@@ -46,10 +46,16 @@ class PipelineConfig:
         self.output_folder = Path(self.output_folder).resolve()
         self.output_folder.mkdir(parents=True, exist_ok=True)
         
-        # Set up parameter dictionaries
+    # Set up parameter dictionaries
         self.heatmap_params = {
             'sigma': self.sigma,
             'fwhm': self.fwhm,
+        }
+            
+        # HDBSCAN parameters for clustering
+        self.clustering_params = {
+            'hdbscan_approx_min_span_tree': getattr(self, 'hdbscan_approx_min_span_tree', True),
+            'hdbscan_core_dist_n_jobs': getattr(self, 'hdbscan_core_dist_n_jobs', -1),
         }
 
         # Save the arguments to a log file

@@ -126,7 +126,8 @@ def evaluate_clustering_metrics(clusterer, embeddings, metrics_config=None):
 # --- Inner (HDBSCAN) Optimization Using optim_dict --- #
 ###########################################################
 
-def inner_optimize_hdbscan(embeddings, optim_dict, n_inner_trials=20, n_jobs=1, random_state=42):
+def inner_optimize_hdbscan(embeddings, optim_dict, n_inner_trials=20, n_jobs=1, random_state=42,
+                        approx_min_span_tree=True, core_dist_n_jobs=-1):
     """
     For a given UMAP embedding, optimize HDBSCAN parameters.
 
@@ -137,6 +138,10 @@ def inner_optimize_hdbscan(embeddings, optim_dict, n_inner_trials=20, n_jobs=1, 
       n_inner_trials: int, number of inner trials.
       n_jobs (int): Number of parallel jobs to run.
       random_state (int): Random state for reproducibility.
+      approx_min_span_tree (bool): Whether to use approximate min span tree.
+                                   Set to False for reproducibility (but 10-100x slower).
+      core_dist_n_jobs (int): Number of jobs for core distance calculations.
+                             Set to 1 for reproducibility.
 
     Returns:
       best_params, best_score, best_clusterer, best_labels, best_metrics
@@ -152,10 +157,17 @@ def inner_optimize_hdbscan(embeddings, optim_dict, n_inner_trials=20, n_jobs=1, 
     
     def inner_objective(inner_trial):
         params_all = suggest_parameters(inner_trial, inner_optim_dict)
-        hdbscan_params = params_all.get("hdbscan", params_all)
-        # Include random_state in HDBSCAN parameters
+        hdbscan_params = params_all.get("hdbscan", params_all)        # Include reproducibility parameters in HDBSCAN parameters
         hdbscan_params['cluster_selection_method'] = hdbscan_params.get('cluster_selection_method', 'eom')
-        clusterer = hdbscan.HDBSCAN(**hdbscan_params, cluster_selection_epsilon=0.0, seed=random_state)
+        
+        # Create HDBSCAN with appropriate parameters
+        # HDBSCAN accepts random_state but needs to prevent it from being passed to KDTree
+        clusterer = hdbscan.HDBSCAN(
+            **hdbscan_params,
+            cluster_selection_epsilon=0.0,
+            approx_min_span_tree=approx_min_span_tree,
+            core_dist_n_jobs=core_dist_n_jobs
+        )
         clusterer.fit(embeddings)
         metrics = evaluate_clustering_metrics(clusterer, embeddings, inner_optim_dict["metrics"]["hdbscan"])
         # Wrap the metrics under the "hdbscan" key to match the nested configuration
@@ -171,18 +183,25 @@ def inner_optimize_hdbscan(embeddings, optim_dict, n_inner_trials=20, n_jobs=1, 
 
     # If best_params is empty (which can happen if all parameters are fixed), fall back to the fixed dict.
     if not best_params:
-        best_params = inner_optim_dict["param"]["hdbscan"]
-
-    best_hdbscan_params = best_params.get("hdbscan", best_params)    # Re-train best HDBSCAN model using the best parameters.
-    best_hdbscan_params['cluster_selection_method'] = best_hdbscan_params.get('cluster_selection_method', 'eom')
-    best_clusterer = hdbscan.HDBSCAN(prediction_data=True, seed=random_state, cluster_selection_epsilon=0.0, **best_hdbscan_params)
+        best_params = inner_optim_dict["param"]["hdbscan"]    
+        best_hdbscan_params = best_params.get("hdbscan", best_params)    
+    # Re-train best HDBSCAN model using the best parameters.
+    best_hdbscan_params['cluster_selection_method'] = best_hdbscan_params.get('cluster_selection_method', 'eom')    
+    best_clusterer = hdbscan.HDBSCAN(
+        prediction_data=True,
+        cluster_selection_epsilon=0.0,
+        approx_min_span_tree=approx_min_span_tree,
+        core_dist_n_jobs=core_dist_n_jobs,
+        **best_hdbscan_params
+    )
     best_labels = best_clusterer.fit_predict(embeddings)
     best_metrics = evaluate_clustering_metrics(best_clusterer, embeddings)
     return best_params, best_score, best_clusterer, best_labels, best_metrics
 
 
 
-def evaluate_hdbscan(filtered_coordinates, size_factor=0.5, random_state=42):
+def evaluate_hdbscan(filtered_coordinates, size_factor=0.5, random_state=42, 
+                approx_min_span_tree=True, core_dist_n_jobs=-1):
     """
     Automatically selects the best parameters for HDBSCAN clustering.
 
@@ -190,6 +209,10 @@ def evaluate_hdbscan(filtered_coordinates, size_factor=0.5, random_state=42):
     filtered_coordinates (np.array): Array of shape (n_samples, 2) containing the filtered coordinates.
     size_factor (float): Fraction of total data points to use as the upper bound for `min_cluster_size`.
     random_state (int): Random seed for reproducibility.
+    approx_min_span_tree (bool): Whether to use approximate min span tree.
+                               Set to False for reproducibility (but 10-100x slower).
+    core_dist_n_jobs (int): Number of jobs for core distance calculations.
+                          Set to 1 for reproducibility.
 
     Returns:
     best_params (dict): Best parameters and corresponding metrics (stability, silhouette).
@@ -212,9 +235,14 @@ def evaluate_hdbscan(filtered_coordinates, size_factor=0.5, random_state=42):
     best_clusterer = None
 
     for min_cluster_size in min_cluster_sizes:
-        for min_samples in min_samples_list:
-            try:                
-                clusterer = hdbscan.HDBSCAN(min_cluster_size=min_cluster_size, min_samples=min_samples, seed=random_state)
+        for min_samples in min_samples_list:            
+            try:                  
+                clusterer = hdbscan.HDBSCAN(
+                    min_cluster_size=min_cluster_size, 
+                    min_samples=min_samples, 
+                    approx_min_span_tree=approx_min_span_tree,
+                    core_dist_n_jobs=core_dist_n_jobs
+                )
                 labels = clusterer.fit_predict(filtered_coordinates)
 
                 # Ignore results with no clusters

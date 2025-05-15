@@ -29,7 +29,7 @@ class UMAPStage(PipelineStage):
         self.cluster_labels = None
         self.cluster_model_path = None
         self.cluster_labels_path = None
-        
+
     def run(self, context, progress_queue=None):
         logger = logging.getLogger(__name__)
         logger.info("Running UMAP Stage")
@@ -72,7 +72,10 @@ class UMAPStage(PipelineStage):
                     logger.error(f"Error loading optim_dict '{optim_dict_name}': {e}. Falling back to default.")
                     optim_dict = optim_dict_default
             else:
-                optim_dict = optim_dict_default            # Run nested optimization for UMAP + HDBSCAN.
+                optim_dict = optim_dict_default            # Run nested optimization for UMAP + HDBSCAN.            # Get HDBSCAN reproducibility parameters from config
+            approx_min_span_tree = getattr(self.config, 'hdbscan_approx_min_span_tree', True)
+            core_dist_n_jobs = getattr(self.config, 'hdbscan_core_dist_n_jobs', -1)
+            
             (self.trained_umap,
              embeddings,
              umap_path,
@@ -91,7 +94,9 @@ class UMAPStage(PipelineStage):
                     n_jobs=self.config.umap_jobs if self.config.umap_jobs is not None else 1,
                     inner_n_jobs=self.config.hdbscan_jobs if self.config.hdbscan_jobs is not None else 1,
                     random_state=umap_seed,
-                    clusterer_random_state=clustering_seed
+                    clusterer_random_state=clustering_seed,
+                    approx_min_span_tree=approx_min_span_tree,
+                    core_dist_n_jobs=core_dist_n_jobs
                 )
             self.embeddings = embeddings
             logger.info(f"UMAP model saved at: {umap_path} and embeddings saved at: {embeddings_path}")

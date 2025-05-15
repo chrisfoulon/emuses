@@ -199,7 +199,7 @@ class KernelLogisticRegressor(BaseEstimator, ClassifierMixin):
         return (probas >= 0.5).astype(int)
 
 
-def nested_cv_kernel_regression(X, y, sigma_values, n_outer=5, n_inner=3, random_state=42):
+def nested_cv_kernel_regression(X, y, sigma_values, n_outer=5, n_inner=3, optimize_sigma=True, classification=False, random_state=42):
     """
     Perform nested cross-validation for kernel regression.
     
@@ -209,12 +209,18 @@ def nested_cv_kernel_regression(X, y, sigma_values, n_outer=5, n_inner=3, random
         Feature embeddings
     y : numpy.ndarray
         Target score
-    sigma_values : list
-        List of sigma values to try
+    sigma_values : list or array-like
+        List of sigma values to try for optimization, or fixed sigma values for reproducibility
     n_outer : int
         Number of folds for outer CV
     n_inner : int
         Number of folds for inner CV
+    optimize_sigma : bool, default=True
+        If True, performs inner CV to find optimal sigma from sigma_values.
+        If False, each fold in the ensemble uses the corresponding sigma from sigma_values
+        directly (for reproducibility). If len(sigma_values)=1, that single value is used for all folds.
+    classification : bool, default=False
+        Whether to use KernelRegressor (False) or KernelLogisticRegressor (True)
     random_state : int
         Random seed for reproducibility
         
@@ -237,60 +243,112 @@ def nested_cv_kernel_regression(X, y, sigma_values, n_outer=5, n_inner=3, random
     trained_models = []
     performance_results = []
     best_sigmas = []
+    unseen_preds_dict = {}
+    
+    # Create indices for outer CV
+    outer_cv_indices = list(outer_cv.split(X))
+    
+    # Variable to keep track of current fold for fixed sigma values
+    fold_counter = 0
     
     # Outer CV loop
-    for train_idx, test_idx in outer_cv.split(X):
+    for train_idx, test_idx in outer_cv_indices:
         X_train_outer, X_test_outer = X[train_idx], X[test_idx]
         y_train_outer, y_test_outer = y[train_idx], y[test_idx]
         
-        # Inner CV to find best sigma
-        best_sigma = None
-        best_score = -np.inf
-        
-        for sigma in sigma_values:
-            scores = []
+        # Determine which sigma to use for this fold
+        if optimize_sigma:
+            # Inner CV to find best sigma
+            best_sigma = None
+            best_score = -np.inf
             
-            # Inner CV loop
-            for inner_train_idx, inner_val_idx in inner_cv.split(X_train_outer):
-                X_train_inner, X_val_inner = X_train_outer[inner_train_idx], X_train_outer[inner_val_idx]
-                y_train_inner, y_val_inner = y_train_outer[inner_train_idx], y_train_outer[inner_val_idx]
+            for sigma in sigma_values:
+                scores = []
                 
-                # Train model with current sigma
-                model = KernelRegressor(sigma=sigma)
-                model.fit(X_train_inner, y_train_inner)
+                # Inner CV loop
+                for inner_train_idx, inner_val_idx in inner_cv.split(X_train_outer):
+                    X_train_inner, X_val_inner = X_train_outer[inner_train_idx], X_train_outer[inner_val_idx]
+                    y_train_inner, y_val_inner = y_train_outer[inner_train_idx], y_train_outer[inner_val_idx]
+                    
+                    # Train model with current sigma
+                    if classification:
+                        model = KernelLogisticRegressor(sigma=sigma)
+                    else:
+                        model = KernelRegressor(sigma=sigma)
+                    
+                    model.fit(X_train_inner, y_train_inner)
+                    
+                    # Evaluate on validation set
+                    y_pred = model.predict(X_val_inner)
+                    if classification:
+                        from sklearn.metrics import balanced_accuracy_score
+                        score = balanced_accuracy_score(y_val_inner, y_pred)
+                    else:
+                        score = r2_score(y_val_inner, y_pred)
+                    scores.append(score)
                 
-                # Evaluate on validation set
-                y_pred = model.predict(X_val_inner)
-                score = r2_score(y_val_inner, y_pred)
-                scores.append(score)
-            
-            # Average score for this sigma
-            mean_score = np.mean(scores)
-            
-            if mean_score > best_score:
-                best_score = mean_score
-                best_sigma = sigma
+                # Average score for this sigma
+                mean_score = np.mean(scores)
+                
+                if mean_score > best_score:
+                    best_score = mean_score
+                    best_sigma = sigma
+        else:
+            # Fixed sigma mode - no optimization
+            if len(sigma_values) == 1:
+                # If only one sigma value provided, use it for all folds
+                best_sigma = sigma_values[0]
+            else:
+                # If multiple fixed values, use them in sequence for each fold
+                sigma_index = fold_counter % len(sigma_values)
+                best_sigma = sigma_values[sigma_index]
         
         # Train model on full outer training set with best sigma
         best_sigmas.append(best_sigma)
-        model = KernelRegressor(sigma=best_sigma)
+        if classification:
+            model = KernelLogisticRegressor(sigma=best_sigma)
+        else:
+            model = KernelRegressor(sigma=best_sigma)
+            
         model.fit(X_train_outer, y_train_outer)
         trained_models.append(model)
         
         # Evaluate on outer test set
         y_pred = model.predict(X_test_outer)
-        mse = mean_squared_error(y_test_outer, y_pred)
-        rmse = np.sqrt(mse)
-        r2 = r2_score(y_test_outer, y_pred)
         
-        performance_results.append({
-            'mse': mse,
-            'rmse': rmse,
-            'r2': r2
-        })
+        # Store predictions on test set
+        for idx, pred in zip(test_idx, y_pred):
+            unseen_preds_dict[idx] = (y[idx], pred)
+        
+        # Calculate and store performance metrics
+        if classification:
+            from sklearn.metrics import balanced_accuracy_score, accuracy_score
+            acc = accuracy_score(y_test_outer, y_pred)
+            bal_acc = balanced_accuracy_score(y_test_outer, y_pred)
+            performance_results.append({
+                'accuracy': acc,
+                'balanced_accuracy': bal_acc,
+                'best_sigma': best_sigma
+            })
+        else:
+            mse = mean_squared_error(y_test_outer, y_pred)
+            rmse = np.sqrt(mse)
+            r2 = r2_score(y_test_outer, y_pred)
+            performance_results.append({
+                'mse': mse,
+                'rmse': rmse,
+                'r2': r2,
+                'best_sigma': best_sigma
+            })
+        
+        # Increment fold counter for fixed sigma mode
+        fold_counter += 1
     
     # Determine overall best sigma (most frequently chosen)
-    best_sigma = max(set(best_sigmas), key=best_sigmas.count)
+    if len(set(best_sigmas)) > 0:
+        best_sigma = max(set(best_sigmas), key=best_sigmas.count)
+    else:
+        best_sigma = sigma_values[0] if len(sigma_values) > 0 else None
     
     return trained_models, performance_results, best_sigma, best_sigmas
 
@@ -413,6 +471,7 @@ def run_kernel_heatmap_analysis(
     full_embeddings=None,
     clusterer=None,
     cluster_predict_method="kdtree",
+    optimize_sigma=True,
     random_state=42
 ):
     """

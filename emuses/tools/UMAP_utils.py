@@ -326,6 +326,8 @@ def train_and_save_umap_optim_with_nested_clustering(
         inner_n_jobs=4,
         random_state=42,
         clusterer_random_state=None,
+        approx_min_span_tree=True,  # For reproducibility (False = reproducible but 10-100x slower)
+        core_dist_n_jobs=-1,       # For reproducibility (1 = reproducible)
         **kwargs
 ):
     """
@@ -364,6 +366,12 @@ def train_and_save_umap_optim_with_nested_clustering(
             Random seed for UMAP for reproducibility.
       clusterer_random_state : int, optional
             Random seed for HDBSCAN clustering. If None, uses the same as random_state.
+      approx_min_span_tree : bool, default=True
+            Whether to use approximate minimum spanning tree in HDBSCAN.
+            Setting to False ensures reproducibility but at a significant performance cost (10-100x slower).
+      core_dist_n_jobs : int, default=-1
+            Number of parallel jobs for core distance calculations in HDBSCAN.
+            Setting to 1 ensures reproducibility but at a performance cost.
 
       **kwargs :
           Additional parameters for UMAP.
@@ -447,15 +455,23 @@ def train_and_save_umap_optim_with_nested_clustering(
         # Get the clusterer random state
         clusterer_rs = clusterer_random_state if clusterer_random_state is not None else random_state
             
+        # Get reproducibility parameters from kwargs if available
+        approx_min_span_tree = kwargs.get('approx_min_span_tree', True)
+        core_dist_n_jobs = kwargs.get('core_dist_n_jobs', -1)
+        
         # Inner optimization: optimize HDBSCAN for this UMAP embedding.
         if parallel_mode == "hdbscan":
             (best_hdbscan_params, best_hdbscan_score, best_clusterer_trial, best_labels_trial,
              best_hdbscan_metrics) = inner_optimize_hdbscan(embeddings, optim_dict, n_inner_trials=n_inner_trials,
-                                                           n_jobs=inner_n_jobs, random_state=clusterer_rs)
+                                                           n_jobs=inner_n_jobs, random_state=clusterer_rs,
+                                                           approx_min_span_tree=approx_min_span_tree,
+                                                           core_dist_n_jobs=core_dist_n_jobs)
         else:
             (best_hdbscan_params, best_hdbscan_score, best_clusterer_trial, best_labels_trial,
              best_hdbscan_metrics) = inner_optimize_hdbscan(embeddings, optim_dict, n_inner_trials=n_inner_trials,
-                                                           random_state=clusterer_rs)
+                                                           random_state=clusterer_rs,
+                                                           approx_min_span_tree=approx_min_span_tree,
+                                                           core_dist_n_jobs=core_dist_n_jobs)
 
         print(f"Trial {trial.number}: Best HDBSCAN parameters: {best_hdbscan_params}")
         print(f"Trial {trial.number}: Best HDBSCAN score: {best_hdbscan_score}")
