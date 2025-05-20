@@ -19,41 +19,43 @@ from sklearn.datasets import fetch_openml, load_digits
 from sklearn.preprocessing import RobustScaler, StandardScaler
 
 
-def load_and_preprocess_digits_dataset(dataset='digits'):
+def load_and_preprocess_digits_dataset(dataset="digits"):
     """
     Downloads the specified dataset if it's not already on the machine and preprocesses it to make an input matrix for
     UMAP training.
 
     Parameters:
     - dataset (str): The name of the dataset to load. Options are 'mnist', 'digits', or 'digits_label_dataset'.
-                    When 'digits_label_dataset' is used, it returns the full dataset for UMAP training and 
+                    When 'digits_label_dataset' is used, it returns the full dataset for UMAP training and
                     a subset of indices (400 samples) for supervised learning.
 
     Returns:
     - features_normalized (ndarray): The preprocessed feature matrix.
     - labels (ndarray): The labels for the dataset.
-    - labeled_indices (ndarray, optional): Only returned when dataset='digits_label_dataset'. 
+    - labeled_indices (ndarray, optional): Only returned when dataset='digits_label_dataset'.
                                          Indices of the subset to use for supervised learning.
     """
-    if dataset == 'mnist':
+    if dataset == "mnist":
         # Download the MNIST dataset
-        features, labels = fetch_openml('mnist_784', version=1, return_X_y=True)
+        features, labels = fetch_openml("mnist_784", version=1, return_X_y=True)
 
         # Normalize the pixel values to be between 0 and 1
         features_normalized = features / 255.0
 
-    elif dataset in ['digits', 'digits_label_dataset']:
+    elif dataset in ["digits", "digits_label_dataset"]:
         # Load the Digits dataset
         digits = load_digits()
-        print(f'Shape of digits data: {digits.data.shape}')
+        print(f"Shape of digits data: {digits.data.shape}")
         features = digits.data
         labels = digits.target
 
         # Normalize the pixel values to be between 0 and 1
-        features_normalized = features / 16.0  # Digits data is already scaled between 0 and 16
-        
+        features_normalized = (
+            features / 16.0
+        )  # Digits data is already scaled between 0 and 16
+
         # For digits_label_dataset, create a random subset for supervised learning
-        if dataset == 'digits_label_dataset':
+        if dataset == "digits_label_dataset":
             # Create a deterministic random state for reproducibility
             rng = np.random.RandomState(42)
             n_samples = len(labels)
@@ -64,7 +66,9 @@ def load_and_preprocess_digits_dataset(dataset='digits'):
             return features_normalized, labels, labeled_indices
 
     else:
-        raise ValueError("Unsupported dataset. Choose 'mnist', 'digits', or 'digits_label_dataset'.")
+        raise ValueError(
+            "Unsupported dataset. Choose 'mnist', 'digits', or 'digits_label_dataset'."
+        )
 
     return features_normalized, labels
 
@@ -104,23 +108,26 @@ def detect_dataset_type(file_paths: List[os.PathLike]) -> str:
     dataset_type = None
     for file_path in file_paths:
         file_path = Path(file_path)
-        extension = ''.join(file_path.suffixes)
-        if extension in ['.jpg', '.png']:
-            dataset_type = 'image'
+        extension = "".join(file_path.suffixes)
+        if extension in [".jpg", ".png"]:
+            dataset_type = "image"
             break
-        elif extension in ['.nii', '.nii.gz']:
-            dataset_type = 'nifti'
+        elif extension in [".nii", ".nii.gz"]:
+            dataset_type = "nifti"
             break
-        elif extension in ['.csv', '.xlsx', '.xls']:
-            dataset_type = 'spreadsheet'
+        elif extension in [".csv", ".xlsx", ".xls"]:
+            dataset_type = "spreadsheet"
             break
         else:
             raise ValueError(f"Unsupported file format: {extension}")
     return dataset_type
 
 
-def nifti_dataset_to_matrix(nifti_list: List[nib.Nifti1Image], pre_allocate_memory: bool = True,
-                            disable_progress: bool = False) -> np.ndarray:
+def nifti_dataset_to_matrix(
+    nifti_list: List[nib.Nifti1Image],
+    pre_allocate_memory: bool = True,
+    disable_progress: bool = False,
+) -> np.ndarray:
     """
     Converts a list of nifti images into a matrix where each row is a flattened nifti image
     after reorienting it to canonical space
@@ -174,9 +181,12 @@ def load_image_list(image_paths: List[str]):
     return images
 
 
-def image_paths_list_to_matrix_old(image_paths_list: List[os.PathLike], rescale: Optional[bool] = False,
-                               output_shape: Optional[Tuple[int, int]] = None,
-                               disable_progress: Optional[bool] = False) -> lil_matrix:
+def image_paths_list_to_matrix_old(
+    image_paths_list: List[os.PathLike],
+    rescale: Optional[bool] = False,
+    output_shape: Optional[Tuple[int, int]] = None,
+    disable_progress: Optional[bool] = False,
+) -> lil_matrix:
     """
     Load a list of jpg or png images loaded with PIL and convert them to a matrix where each row is a flattened image
     Parameters
@@ -205,11 +215,11 @@ def image_paths_list_to_matrix_old(image_paths_list: List[os.PathLike], rescale:
     flattened_size = np.prod((3,) + output_shape)
     out_matrix = lil_matrix((len(image_paths_list), flattened_size))
 
-    print(f'Output shape: {output_shape}')
-    print(f'Flattened size: {flattened_size}')
-    print(f'out_matrix shape: {out_matrix.shape}')
+    print(f"Output shape: {output_shape}")
+    print(f"Flattened size: {flattened_size}")
+    print(f"out_matrix shape: {out_matrix.shape}")
 
-    print('Converting images to matrix')
+    print("Converting images to matrix")
     for i, path in tqdm(enumerate(image_paths_list), disable=disable_progress):
         path = str(path)
         img = Image.open(path)
@@ -234,12 +244,20 @@ def process_images(image_list, target_size=(128, 128)):
         with Image.open(img_path) as img:
             img = img.resize(target_size)
             img_array = np.array(img, dtype=np.uint8)  # Use uint8 to save memory
-            images.append(img_array.flatten())  # Flatten if necessary or adapt based on UMAP needs
+            images.append(
+                img_array.flatten()
+            )  # Flatten if necessary or adapt based on UMAP needs
     return np.array(images)
 
 
-def spreadsheet_to_input_df(file_path, header=None, index_col=None, filter_columns_list=None,
-                            filter_rows_list=None, columns_are_features=False):
+def spreadsheet_to_input_df(
+    file_path,
+    header=None,
+    index_col=None,
+    filter_columns_list=None,
+    filter_rows_list=None,
+    columns_are_features=False,
+):
     """
     Import a spreadsheet and make an input matrix (observations, features),
     with automatic handling of invalid columns and data conversion.
@@ -279,7 +297,7 @@ def spreadsheet_to_input_df(file_path, header=None, index_col=None, filter_colum
     """
 
     # Read the spreadsheet into a DataFrame
-    if str(file_path).endswith('.csv'):
+    if str(file_path).endswith(".csv"):
         df = pd.read_csv(file_path, header=header, index_col=index_col)
     else:
         df = pd.read_excel(file_path, header=header, index_col=index_col)
@@ -303,7 +321,7 @@ def spreadsheet_to_input_df(file_path, header=None, index_col=None, filter_colum
         df = df.loc[:, df.nunique() > 1]
 
     # Convert boolean columns to integers
-    boolean_columns = df.select_dtypes(include=['bool']).columns.tolist()
+    boolean_columns = df.select_dtypes(include=["bool"]).columns.tolist()
     if boolean_columns:
         print(f"Converted boolean columns to integers: {boolean_columns}")
         for col in boolean_columns:
@@ -312,27 +330,31 @@ def spreadsheet_to_input_df(file_path, header=None, index_col=None, filter_colum
     # Handle object columns
     columns_to_remove = []
     unprocessable_examples = {}
-    for col in df.select_dtypes(include=['object']).columns:
+    for col in df.select_dtypes(include=["object"]).columns:
         try:
             # Attempt to parse as datetime with a specified format
-            df[col] = pd.to_datetime(df[col], format='%Y-%m-%d', errors='raise')
+            df[col] = pd.to_datetime(df[col], format="%Y-%m-%d", errors="raise")
         except (ValueError, TypeError):
             try:
                 # Attempt to parse as time-only and convert to timedelta
-                df[col] = pd.to_datetime(df[col], format='%H:%M:%S', errors='raise').dt.time
+                df[col] = pd.to_datetime(
+                    df[col], format="%H:%M:%S", errors="raise"
+                ).dt.time
                 df[col] = pd.to_timedelta(df[col].astype(str))
             except (ValueError, TypeError):
                 try:
                     # Attempt to parse as timedelta
-                    df[col] = pd.to_timedelta(df[col], errors='raise')
+                    df[col] = pd.to_timedelta(df[col], errors="raise")
                 except (ValueError, TypeError):
                     try:
                         # Attempt to convert to numeric
-                        df[col] = pd.to_numeric(df[col], errors='raise')
+                        df[col] = pd.to_numeric(df[col], errors="raise")
                     except ValueError:
                         # Mark column for removal if all attempts fail
                         columns_to_remove.append(col)
-                        unprocessable_examples[col] = df[col].dropna().unique()[:5].tolist()
+                        unprocessable_examples[col] = (
+                            df[col].dropna().unique()[:5].tolist()
+                        )
 
     # Show examples of unprocessable columns
     if unprocessable_examples:
@@ -412,17 +434,17 @@ def reshape_input_matrix_data(input_matrix, original_shape, indices=None):
 
 def prepare_input_matrix(paths_list, dataset_type):
     """Prepare the input matrix based on the dataset type."""
-    if dataset_type == 'image':
+    if dataset_type == "image":
         min_res = find_min_resolution(paths_list)
         return process_images(paths_list, min_res)
-    elif dataset_type == 'nifti':
+    elif dataset_type == "nifti":
         return nifti_dataset_to_matrix(paths_list)
-    elif dataset_type == 'mnist':
+    elif dataset_type == "mnist":
         mnist_features_normalized, _ = load_and_preprocess_digits_dataset()
         return mnist_features_to_input_matrix(mnist_features_normalized)
-    elif dataset_type == 'digits_label_dataset':
+    elif dataset_type == "digits_label_dataset":
         # Get the full dataset for UMAP training
-        features, _, _ = load_and_preprocess_digits_dataset('digits_label_dataset')
+        features, _, _ = load_and_preprocess_digits_dataset("digits_label_dataset")
         return features
     else:
         raise ValueError(f"Unsupported dataset type: {dataset_type}")
@@ -445,7 +467,8 @@ def prepare_scores(scores, match_length=None):
         elif scores.shape[0] > match_length:
             print(
                 f"Warning: More scores ({scores.shape[0]}) than expected ({match_length}). "
-                f"Filtering to first {match_length} observations.")
+                f"Filtering to first {match_length} observations."
+            )
             scores = scores[:match_length, :]
     return scores
 
@@ -466,16 +489,20 @@ def handle_bids_dataset(folder_path, filters=None, verbose=True):
         layout = BIDSLayout(folder_path)
         # Apply filters if provided
         if filters:
-            files = layout.get(**filters, extension=['.nii', '.nii.gz'])
+            files = layout.get(**filters, extension=[".nii", ".nii.gz"])
         else:
-            files = layout.get(extension=['.nii', '.nii.gz'])
+            files = layout.get(extension=[".nii", ".nii.gz"])
         paths_list = [f.path for f in files]
 
         if verbose:
-            print(f'Found {len(paths_list)} files with filters {filters} in BIDS dataset at {folder_path}')
+            print(
+                f"Found {len(paths_list)} files with filters {filters} in BIDS dataset at {folder_path}"
+            )
 
         if len(paths_list) == 0:
-            raise argparse.ArgumentTypeError(f"No files found with filters {filters} in BIDS dataset at {folder_path}")
+            raise argparse.ArgumentTypeError(
+                f"No files found with filters {filters} in BIDS dataset at {folder_path}"
+            )
 
         return paths_list
 
@@ -493,17 +520,19 @@ def is_bids_dataset(folder_path):
     Returns:
         bool: True if the folder is a BIDS dataset, False otherwise.
     """
-    return (folder_path / 'dataset_description.json').exists()
+    return (folder_path / "dataset_description.json").exists()
 
 
-def load_or_check_umap_outputs(output_paths, data_dict, umap_params, force_recompute=False):
+def load_or_check_umap_outputs(
+    output_paths, data_dict, umap_params, force_recompute=False
+):
     """
     Load or generate UMAP model and embeddings.
-    
+
     This function checks if UMAP model and embeddings files exist at the specified paths.
     If they exist and force_recompute is False, it loads them.
     Otherwise, it generates new UMAP model and embeddings.
-    
+
     Parameters:
     -----------
     output_paths : dict
@@ -515,7 +544,7 @@ def load_or_check_umap_outputs(output_paths, data_dict, umap_params, force_recom
         Dictionary with UMAP parameters to use if generating new model
     force_recompute : bool, optional (default=False)
         Whether to force recomputation even if files exist
-        
+
     Returns:
     --------
     dict
@@ -530,128 +559,246 @@ def load_or_check_umap_outputs(output_paths, data_dict, umap_params, force_recom
     import numpy as np
     import time
     from pathlib import Path
-    
+
     # Initialize results dictionary
     results = {
-        'reducer': None,
-        'train_embeddings': None,
-        'test_embeddings': None,
-        'status': {'loaded': [], 'generated': []}
+        "reducer": None,
+        "train_embeddings": None,
+        "test_embeddings": None,
+        "status": {"loaded": [], "generated": []},
     }
-    
+
     # Check if output paths exist
-    model_path = Path(output_paths['umap_model'])
-    embeddings_path = Path(output_paths['embeddings'])
-    
+    model_path = Path(output_paths["umap_model"])
+    embeddings_path = Path(output_paths["embeddings"])
+
     model_exists = model_path.exists() and not force_recompute
     embeddings_exist = embeddings_path.exists() and not force_recompute
-    
+
     # If both files exist and we're not forcing recomputation, load them
     if model_exists and embeddings_exist:
         print(f"Loading existing UMAP model from {model_path}")
         reducer = joblib.load(model_path)
-        results['reducer'] = reducer
-        results['status']['loaded'].append('reducer')
-        
+        results["reducer"] = reducer
+        results["status"]["loaded"].append("reducer")
+
         print(f"Loading existing embeddings from {embeddings_path}")
         embeddings_data = np.load(embeddings_path)
-        results['train_embeddings'] = embeddings_data['train_embeddings']
-        results['status']['loaded'].append('train_embeddings')
-        
-        if 'test_embeddings' in embeddings_data:
-            results['test_embeddings'] = embeddings_data['test_embeddings']
-            results['status']['loaded'].append('test_embeddings')
-            
+        results["train_embeddings"] = embeddings_data["train_embeddings"]
+        results["status"]["loaded"].append("train_embeddings")
+
+        if "test_embeddings" in embeddings_data:
+            results["test_embeddings"] = embeddings_data["test_embeddings"]
+            results["status"]["loaded"].append("test_embeddings")
+
     # Otherwise, generate new model and embeddings
     else:
         # Check what to generate
         if not model_exists or force_recompute:
-            print(f"Generating new UMAP model (existing: {model_exists}, force: {force_recompute})")
-            
+            print(
+                f"Generating new UMAP model (existing: {model_exists}, force: {force_recompute})"
+            )
+
             # Create UMAP reducer with specified parameters
             reducer = umap.UMAP(
-                n_neighbors=umap_params.get('n_neighbors', 15),
-                min_dist=umap_params.get('min_dist', 0.1),
-                n_components=umap_params.get('n_components', 2),
-                metric=umap_params.get('metric', 'euclidean'),
-                random_state=umap_params.get('random_state', 42)
+                n_neighbors=umap_params.get("n_neighbors", 15),
+                min_dist=umap_params.get("min_dist", 0.1),
+                n_components=umap_params.get("n_components", 2),
+                metric=umap_params.get("metric", "euclidean"),
+                random_state=umap_params.get("random_state", 42),
             )
-            
+
             # Fit UMAP model
             start_time = time.time()
             print("Fitting UMAP model...")
-            
+
             # Check for NaN or Inf values in training data
-            train_data = data_dict['train_features_array']
+            train_data = data_dict["train_features_array"]
             if np.isnan(train_data).any() or np.isinf(train_data).any():
                 print("Warning: NaN or Inf values detected. Replacing with zeros.")
                 train_data = np.nan_to_num(train_data, nan=0.0, posinf=0.0, neginf=0.0)
-            
+
             # Fit the model
             reducer.fit(train_data)
             end_time = time.time()
             print(f"UMAP fitting completed in {end_time - start_time:.2f} seconds")
-            
+
             # Save the model
             joblib.dump(reducer, model_path)
             print(f"UMAP model saved to {model_path}")
-            
-            results['reducer'] = reducer
-            results['status']['generated'].append('reducer')
+
+            results["reducer"] = reducer
+            results["status"]["generated"].append("reducer")
         else:
             print(f"Using existing UMAP model from {model_path}")
             reducer = joblib.load(model_path)
-            results['reducer'] = reducer
-            results['status']['loaded'].append('reducer')
-        
+            results["reducer"] = reducer
+            results["status"]["loaded"].append("reducer")
+
         # Generate embeddings
         if not embeddings_exist or force_recompute:
-            print(f"Generating new embeddings (existing: {embeddings_exist}, force: {force_recompute})")
-            
+            print(
+                f"Generating new embeddings (existing: {embeddings_exist}, force: {force_recompute})"
+            )
+
             # Transform training data
             print("Transforming training data...")
-            train_data = data_dict['train_features_array']
+            train_data = data_dict["train_features_array"]
             # Handle NaN or Inf values if present
             if np.isnan(train_data).any() or np.isinf(train_data).any():
-                print("Warning: NaN or Inf values detected in training data. Replacing with zeros.")
+                print(
+                    "Warning: NaN or Inf values detected in training data. Replacing with zeros."
+                )
                 train_data = np.nan_to_num(train_data, nan=0.0, posinf=0.0, neginf=0.0)
-            
+
             train_embeddings = reducer.transform(train_data)
             print(f"Training embeddings shape: {train_embeddings.shape}")
-            
+
             # Transform test data if available
             test_embeddings = None
-            if 'test_features_array' in data_dict and data_dict['test_features_array'] is not None:
+            if (
+                "test_features_array" in data_dict
+                and data_dict["test_features_array"] is not None
+            ):
                 print("Transforming test data...")
-                test_data = data_dict['test_features_array']
+                test_data = data_dict["test_features_array"]
                 # Handle NaN or Inf values if present
                 if np.isnan(test_data).any() or np.isinf(test_data).any():
-                    print("Warning: NaN or Inf values detected in test data. Replacing with zeros.")
-                    test_data = np.nan_to_num(test_data, nan=0.0, posinf=0.0, neginf=0.0)
-                
+                    print(
+                        "Warning: NaN or Inf values detected in test data. Replacing with zeros."
+                    )
+                    test_data = np.nan_to_num(
+                        test_data, nan=0.0, posinf=0.0, neginf=0.0
+                    )
+
                 test_embeddings = reducer.transform(test_data)
                 print(f"Test embeddings shape: {test_embeddings.shape}")
-            
+
             # Save embeddings
             if test_embeddings is not None:
-                np.savez(embeddings_path, train_embeddings=train_embeddings, test_embeddings=test_embeddings)
+                np.savez(
+                    embeddings_path,
+                    train_embeddings=train_embeddings,
+                    test_embeddings=test_embeddings,
+                )
                 print(f"Embeddings saved to {embeddings_path}")
-                results['test_embeddings'] = test_embeddings
-                results['status']['generated'].append('test_embeddings')
+                results["test_embeddings"] = test_embeddings
+                results["status"]["generated"].append("test_embeddings")
             else:
                 np.savez(embeddings_path, train_embeddings=train_embeddings)
                 print(f"Training embeddings saved to {embeddings_path}")
-            
-            results['train_embeddings'] = train_embeddings
-            results['status']['generated'].append('train_embeddings')
+
+            results["train_embeddings"] = train_embeddings
+            results["status"]["generated"].append("train_embeddings")
         else:
             print(f"Using existing embeddings from {embeddings_path}")
             embeddings_data = np.load(embeddings_path)
-            results['train_embeddings'] = embeddings_data['train_embeddings']
-            results['status']['loaded'].append('train_embeddings')
-            
-            if 'test_embeddings' in embeddings_data:
-                results['test_embeddings'] = embeddings_data['test_embeddings']
-                results['status']['loaded'].append('test_embeddings')
-    
+            results["train_embeddings"] = embeddings_data["train_embeddings"]
+            results["status"]["loaded"].append("train_embeddings")
+
+            if "test_embeddings" in embeddings_data:
+                results["test_embeddings"] = embeddings_data["test_embeddings"]
+                results["status"]["loaded"].append("test_embeddings")
+
     return results
+
+
+def get_array_info(arr, detailed=True):
+    """
+    Get detailed information about a numpy array.
+
+    Parameters
+    ----------
+    arr : np.ndarray or None
+        The array to profile
+    detailed : bool, default=False
+        Whether to include detailed statistics for each dimension
+
+    Returns
+    -------
+    dict
+        Dictionary with array information and statistics
+    """
+    if arr is None:
+        return {"shape": None, "dtype": None, "is_none": True}
+
+    info = {
+        "shape": arr.shape,
+        "dtype": str(arr.dtype),
+        "is_none": False,
+        "ndim": arr.ndim,
+        "size": arr.size,
+    }
+
+    # Basic statistics for the entire array
+    if np.issubdtype(arr.dtype, np.number):  # Only compute stats for numeric arrays
+        info.update(
+            {
+                "min": float(np.min(arr)),
+                "max": float(np.max(arr)),
+                "mean": float(np.mean(arr)),
+                "std": float(np.std(arr)),
+                "median": float(np.median(arr)),
+                "is_normalized": float(np.min(arr)) >= 0 and float(np.max(arr)) <= 1,
+                "appears_zscored": abs(float(np.mean(arr))) < 0.1
+                and 0.9 < float(np.std(arr)) < 1.1,
+                "sparsity": float(np.sum(arr == 0) / arr.size),
+            }
+        )
+
+        # Check for NaN and Inf values
+        info["contains_nan"] = bool(np.isnan(arr).any())
+        info["contains_inf"] = bool(np.isinf(arr).any())
+
+        # If detailed is True and it's a 2D array, add per-dimension statistics
+        if detailed and arr.ndim > 1:
+            # Stats for each dimension
+            dim_stats = {}
+
+            # For dimension 0 (samples/rows)
+            if arr.shape[0] > 1:  # Only if we have more than one sample
+                row_means = np.mean(arr, axis=1)
+                row_stds = np.std(arr, axis=1)
+                dim_stats["dim0"] = {
+                    "means": {
+                        "min": float(np.min(row_means)),
+                        "max": float(np.max(row_means)),
+                        "mean": float(np.mean(row_means)),
+                        "std": float(np.std(row_means)),
+                    },
+                    "stds": {
+                        "min": float(np.min(row_stds)),
+                        "max": float(np.max(row_stds)),
+                        "mean": float(np.mean(row_stds)),
+                        "std": float(np.std(row_stds)),
+                    },
+                }
+
+            # For dimension 1 (features/columns)
+            if arr.shape[1] > 1:  # Only if we have more than one feature
+                col_means = np.mean(arr, axis=0)
+                col_stds = np.std(arr, axis=0)
+                dim_stats["dim1"] = {
+                    "means": {
+                        "min": float(np.min(col_means)),
+                        "max": float(np.max(col_means)),
+                        "mean": float(np.mean(col_means)),
+                        "std": float(np.std(col_means)),
+                    },
+                    "stds": {
+                        "min": float(np.min(col_stds)),
+                        "max": float(np.max(col_stds)),
+                        "mean": float(np.mean(col_stds)),
+                        "std": float(np.std(col_stds)),
+                    },
+                }
+
+            info["dimensions"] = dim_stats
+    else:
+        # For non-numeric arrays, just count unique values
+        try:
+            info["unique_values"] = len(np.unique(arr))
+        except:
+            info["unique_values"] = "Could not compute"
+
+    return info

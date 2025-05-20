@@ -20,7 +20,7 @@ from emuses.tools.inputs_utils import (
     prepare_scores,
     spreadsheet_to_input_df,
     is_bids_dataset,
-    handle_bids_dataset
+    handle_bids_dataset,
 )
 from emuses.tools.data_preproc import find_min_resolution
 
@@ -49,50 +49,58 @@ class EMUSESPipeline:
         self.logger = logging.getLogger(__name__)
 
         # Initialize pipeline metadata
-        self.context['pipeline_metadata'] = {
-            'start_time': time.time(),
-            'stages_completed': [],
-            'stages_runtime': {},
-            'dataset_name': getattr(self.config, 'input_dataset', 'unknown'),
+        self.context["pipeline_metadata"] = {
+            "start_time": time.time(),
+            "stages_completed": [],
+            "stages_runtime": {},
+            "dataset_name": getattr(self.config, "input_dataset", "unknown"),
         }
 
         self.validate_args()
-        self.format_args()        # Initialize random state management
-        master_seed = getattr(self.config, 'random_state', 42)
-        self.logger.info(f"Initializing pipeline with master random seed: {master_seed}")
-        
+        self.format_args()  # Initialize random state management
+        master_seed = getattr(self.config, "random_state", 42)
+        self.logger.info(
+            f"Initializing pipeline with master random seed: {master_seed}"
+        )
+
         # Create root random number generator
         root_rng = default_rng(master_seed)
-        
+
         # Create component-specific seeds for reproducibility
         random_seeds = {
-            'master_seed': master_seed,
-            'split_seed': root_rng.integers(0, 2**32),
-            'umap_seed': root_rng.integers(0, 2**32),
-            'clustering_seed': root_rng.integers(0, 2**32),
-            'prediction_seed': root_rng.integers(0, 2**32),
-            'cv_seed': root_rng.integers(0, 2**32),
-            'optuna_seed': root_rng.integers(0, 2**32),
+            "master_seed": master_seed,
+            "split_seed": root_rng.integers(0, 2**32),
+            "umap_seed": root_rng.integers(0, 2**32),
+            "clustering_seed": root_rng.integers(0, 2**32),
+            "prediction_seed": root_rng.integers(0, 2**32),
+            "cv_seed": root_rng.integers(0, 2**32),
+            "optuna_seed": root_rng.integers(0, 2**32),
         }
-        
+
         # Store seeds in config for persistence
         self.config.random_seeds = random_seeds
-          # Save the generated seeds to a JSON file for future reference
-        self.output_folder.mkdir(parents=True, exist_ok=True)  # Ensure output folder exists
+        # Save the generated seeds to a JSON file for future reference
+        self.output_folder.mkdir(
+            parents=True, exist_ok=True
+        )  # Ensure output folder exists
         seed_file = self.output_folder / "random_seeds.json"
         save_json(seed_file, random_seeds)
         self.logger.info(f"Saved component-specific random seeds to {seed_file}")
-        
+
         # Update context with common settings.
-        self.context.update({
-            'output_format_info': self.output_format_info,
-            'dataset_type': self.dataset_type,
-            'output_folder': self.output_folder,
-            'random_seeds': random_seeds,  # Store seeds in context for stage access
-        })
+        self.context.update(
+            {
+                "output_format_info": self.output_format_info,
+                "dataset_type": self.dataset_type,
+                "output_folder": self.output_folder,
+                "random_seeds": random_seeds,  # Store seeds in context for stage access
+            }
+        )
         if self.config.load_embeddings:
-            self.context['embeddings'] = np.load(self.config.load_embeddings)
-            print(f"Loaded embeddings from {self.config.load_embeddings} with shape {self.context['embeddings'].shape}")
+            self.context["embeddings"] = np.load(self.config.load_embeddings)
+            print(
+                f"Loaded embeddings from {self.config.load_embeddings} with shape {self.context['embeddings'].shape}"
+            )
         self.context["cli_args"] = vars(self.config)
 
     def validate_args(self):
@@ -108,12 +116,12 @@ class EMUSESPipeline:
           - Process the main (fully labelled) dataset.
         Then, call split_dataset() to perform the splitting, save the files, and update the context.
         """
-        if getattr(self.config, 'label_dataset', None):
+        if getattr(self.config, "label_dataset", None):
             self.logger.info("Labelled dataset mode activated.")
-            self.input_matrix, self.dataset_type, self.output_format_info, _ = self.process_dataset(
-                self.config.input_dataset, is_labelled=False
+            self.input_matrix, self.dataset_type, self.output_format_info, _ = (
+                self.process_dataset(self.config.input_dataset, is_labelled=False)
             )
-            if getattr(self.config, 'filter_labelled_by_scores', False):
+            if getattr(self.config, "filter_labelled_by_scores", False):
                 self.load_and_process_scores(expected_length=None)
                 self.labelled_input_matrix, _, _, _ = self.process_dataset(
                     self.config.label_dataset, is_labelled=True
@@ -122,11 +130,13 @@ class EMUSESPipeline:
                 self.labelled_input_matrix, _, _, _ = self.process_dataset(
                     self.config.label_dataset, is_labelled=True
                 )
-                self.load_and_process_scores(expected_length=self.labelled_input_matrix.shape[0])
+                self.load_and_process_scores(
+                    expected_length=self.labelled_input_matrix.shape[0]
+                )
             self.logger.info(f"Main dataset type: {self.dataset_type}")
         else:
-            self.input_matrix, self.dataset_type, self.output_format_info, scores = self.process_dataset(
-                self.config.input_dataset, is_labelled=False
+            self.input_matrix, self.dataset_type, self.output_format_info, scores = (
+                self.process_dataset(self.config.input_dataset, is_labelled=False)
             )
             if scores is not None:
                 self.scores = scores
@@ -134,7 +144,6 @@ class EMUSESPipeline:
                 self.load_and_process_scores(expected_length=self.input_matrix.shape[0])
         # After processing the datasets, perform the splitting:
         self.split_dataset()
-
 
     def process_dataset(self, dataset_identifier, is_labelled=False):
         """
@@ -146,40 +155,58 @@ class EMUSESPipeline:
         """
         args = self.args
         # Handle special cases: 'mnist' and 'input_matrix'
-        if str(dataset_identifier).lower() == 'mnist':
-            dataset_type = 'mnist'
+        if str(dataset_identifier).lower() == "mnist":
+            dataset_type = "mnist"
             self.paths_list = None
             features, labels = load_and_preprocess_digits_dataset()
             input_matrix = features
             # Only in classic mode (not labelled) do we return the labels
             scores = labels if not is_labelled else None
-            output_format_info = (8, 8) if features[0].shape == (64,) else features[0].shape
+            output_format_info = (
+                (8, 8) if features[0].shape == (64,) else features[0].shape
+            )
             return input_matrix, dataset_type, output_format_info, scores
-        elif str(dataset_identifier).lower() == 'digits_label_dataset':
-            dataset_type = 'digits'
+        elif str(dataset_identifier).lower() == "digits_label_dataset":
+            dataset_type = "digits"
             self.paths_list = None
-            
+
             # For unlabeled dataset used for UMAP/clustering
             if not is_labelled:
-                features, labels, labeled_indices = load_and_preprocess_digits_dataset('digits_label_dataset')
+                features, labels, labeled_indices = load_and_preprocess_digits_dataset(
+                    "digits_label_dataset"
+                )
                 input_matrix = features
-                scores = labels  # Include labels for the full dataset in non-labeled mode
-                print(f"DEBUG: Processed full digits dataset for UMAP with shape {input_matrix.shape}")
-                print(f"DEBUG: Generated labeled subset indices with {len(labeled_indices)} samples")
+                scores = (
+                    labels  # Include labels for the full dataset in non-labeled mode
+                )
+                print(
+                    f"DEBUG: Processed full digits dataset for UMAP with shape {input_matrix.shape}"
+                )
+                print(
+                    f"DEBUG: Generated labeled subset indices with {len(labeled_indices)} samples"
+                )
             # For labeled dataset used for predictive models
             else:
-                features, labels, labeled_indices = load_and_preprocess_digits_dataset('digits_label_dataset')
+                features, labels, labeled_indices = load_and_preprocess_digits_dataset(
+                    "digits_label_dataset"
+                )
                 input_matrix = features[labeled_indices]
                 scores = labels[labeled_indices]
                 # Store labeled indices in context for potential later use
-                self.context['labeled_indices'] = labeled_indices
-                print(f"DEBUG: Processed labeled digits subset with shape {input_matrix.shape}")
-                print(f"DEBUG: Scores shape: {scores.shape if scores is not None else None}")
-            
-            output_format_info = (8, 8) if features[0].shape == (64,) else features[0].shape
+                self.context["labeled_indices"] = labeled_indices
+                print(
+                    f"DEBUG: Processed labeled digits subset with shape {input_matrix.shape}"
+                )
+                print(
+                    f"DEBUG: Scores shape: {scores.shape if scores is not None else None}"
+                )
+
+            output_format_info = (
+                (8, 8) if features[0].shape == (64,) else features[0].shape
+            )
             return input_matrix, dataset_type, output_format_info, scores
-        elif str(dataset_identifier).lower() == 'input_matrix':
-            dataset_type = 'input_matrix'
+        elif str(dataset_identifier).lower() == "input_matrix":
+            dataset_type = "input_matrix"
             self.paths_list = None
             input_matrix = np.load(dataset_identifier)
             output_format_info = args.output_format_info
@@ -191,8 +218,10 @@ class EMUSESPipeline:
             raise ValueError(f"Dataset {dataset_path} is not a valid path")
         # Check for BIDS dataset
         if is_bids_dataset(dataset_path):
-            paths_list = handle_bids_dataset(dataset_path, args.bids_filters, verbose=True)
-            dataset_type = 'nifti'
+            paths_list = handle_bids_dataset(
+                dataset_path, args.bids_filters, verbose=True
+            )
+            dataset_type = "nifti"
         else:
             if dataset_path.is_file():
                 dataset_type = detect_dataset_type([dataset_path])
@@ -202,12 +231,16 @@ class EMUSESPipeline:
                     dataset_path,
                     recursive_file_search=args.recursive_input_file_search,
                     file_types=args.input_file_types,
-                    arg_separator=args.arg_separator
+                    arg_separator=args.arg_separator,
                 )
                 dataset_type = detect_dataset_type(paths_list)
-        if dataset_type in ['image', 'nifti'] and is_labelled and getattr(args, 'filter_labelled_by_scores', False):
+        if (
+            dataset_type in ["image", "nifti"]
+            and is_labelled
+            and getattr(args, "filter_labelled_by_scores", False)
+        ):
             # Use the stored DataFrame directly.
-            scores_df = self.context['scores_df']
+            scores_df = self.context["scores_df"]
             # Derive valid IDs from the DataFrame index.
             valid_ids = set(scores_df.index.astype(str))
             original_count = len(paths_list)
@@ -216,11 +249,15 @@ class EMUSESPipeline:
 
             for p in paths_list:
                 # Find all valid IDs that appear in the file's stem or name.
-                matches = [vid for vid in valid_ids if vid in Path(p).stem or vid in Path(p).name]
+                matches = [
+                    vid
+                    for vid in valid_ids
+                    if vid in Path(p).stem or vid in Path(p).name
+                ]
                 if len(matches) == 1:
                     vid = matches[0]
                     # If scores_column is specified, check if all score values are missing.
-                    if hasattr(args, 'scores_column') and args.scores_column:
+                    if hasattr(args, "scores_column") and args.scores_column:
                         score_row = scores_df.loc[vid]
                         if score_row[args.scores_column].isna().all():
                             self.logger.warning(
@@ -231,7 +268,9 @@ class EMUSESPipeline:
                     filtered_paths.append(p)
                     matched_ids_list.append(vid)
                 elif len(matches) > 1:
-                    self.logger.warning(f"File {p} has multiple valid ID matches: {matches}. Skipping file.")
+                    self.logger.warning(
+                        f"File {p} has multiple valid ID matches: {matches}. Skipping file."
+                    )
                 # Files with no matches are simply ignored.
 
             paths_list = filtered_paths
@@ -247,50 +286,63 @@ class EMUSESPipeline:
                     f"Scores successfully reindexed to match filtered files: {len(filtered_scores_df)} observations."
                 )
             # Update both the context and the pipeline's self.scores attribute.
-            self.context['scores_df'] = filtered_scores_df
-            self.context['scores'] = prepare_scores(filtered_scores_df)
-            self.context['scores_indices'] = filtered_scores_df.index
-            self.scores = prepare_scores(filtered_scores_df)  # Ensure self.scores matches the filtered scores
+            self.context["scores_df"] = filtered_scores_df
+            self.context["scores"] = prepare_scores(filtered_scores_df)
+            self.context["scores_indices"] = filtered_scores_df.index
+            self.scores = prepare_scores(
+                filtered_scores_df
+            )  # Ensure self.scores matches the filtered scores
 
             self.logger.info(
                 f"Filtered labelled dataset: {len(paths_list)} of {original_count} files kept based on scores file."
             )
-            print(f"Filtered labelled dataset: {len(paths_list)} of {original_count} files kept based on scores file.")
-
+            print(
+                f"Filtered labelled dataset: {len(paths_list)} of {original_count} files kept based on scores file."
+            )
 
         # Process according to dataset type.
-        if dataset_type == 'image':
+        if dataset_type == "image":
             min_res = find_min_resolution(paths_list)
             input_matrix = process_images(paths_list, min_res)
             output_format_info = min_res
-        elif dataset_type == 'nifti':
+        elif dataset_type == "nifti":
             input_matrix = nifti_dataset_to_matrix(paths_list)
             first_image = load_nifti(paths_list[0])
             output_shape = first_image.shape
             output_affine = first_image.affine
             output_format_info = (output_shape, output_affine)
-        elif dataset_type in ['spreadsheet', 'tabular']:
+        elif dataset_type in ["spreadsheet", "tabular"]:
             inputs_df = spreadsheet_to_input_df(
                 dataset_path,
                 header=args.input_header,
                 index_col=args.input_index_column,
                 filter_columns_list=args.inputs_columns,
                 filter_rows_list=None,
-                columns_are_features=args.columns_are_features
+                columns_are_features=args.columns_are_features,
             )
-            if args.input_normalization and args.input_normalization.lower() != 'none':
-                self.logger.info(f"Normalizing dataset with method={args.input_normalization}")
+            if args.input_normalization and args.input_normalization.lower() != "none":
+                self.logger.info(
+                    f"Normalizing dataset with method={args.input_normalization}"
+                )
                 before_shape = inputs_df.shape
 
                 # Compute scaling factors for the training dataset or apply precomputed ones
                 if not is_labelled:
-                    inputs_df, scaling_factors = normalize_dataframe(inputs_df, method=args.input_normalization)
-                    self.context['input_scaling_factors'] = scaling_factors
+                    inputs_df, scaling_factors = normalize_dataframe(
+                        inputs_df, method=args.input_normalization
+                    )
+                    self.context["input_scaling_factors"] = scaling_factors
                 else:
-                    scaling_factors = self.context.get('input_scaling_factors', None)
+                    scaling_factors = self.context.get("input_scaling_factors", None)
                     if scaling_factors is None:
-                        raise ValueError("Scaling factors are missing for labelled dataset normalization.")
-                    inputs_df, _ = normalize_dataframe(inputs_df, method=args.input_normalization, scaling_factors=scaling_factors)
+                        raise ValueError(
+                            "Scaling factors are missing for labelled dataset normalization."
+                        )
+                    inputs_df, _ = normalize_dataframe(
+                        inputs_df,
+                        method=args.input_normalization,
+                        scaling_factors=scaling_factors,
+                    )
 
                 after_shape = inputs_df.shape
                 if after_shape != before_shape:
@@ -312,20 +364,31 @@ class EMUSESPipeline:
         (Scores are always provided via a spreadsheet.)
         """
         args = self.args
-        if getattr(args, 'scores', None):
+        if getattr(args, "scores", None):
             scores_df = spreadsheet_to_input_df(
                 args.scores,
                 header=args.scores_header,
                 index_col=args.scores_index_column,
-                filter_columns_list=args.scores_column
-                if args.scores_column is None or isinstance(args.scores_column, list) else [args.scores_column],
+                filter_columns_list=(
+                    args.scores_column
+                    if args.scores_column is None
+                    or isinstance(args.scores_column, list)
+                    else [args.scores_column]
+                ),
                 filter_rows_list=None,
-                columns_are_features=not args.scores_are_rows
+                columns_are_features=not args.scores_are_rows,
             )
-            if args.scores_normalization and args.scores_normalization.lower() != 'none':
-                self.logger.info(f"Normalizing scores dataframe with method={args.scores_normalization}")
+            if (
+                args.scores_normalization
+                and args.scores_normalization.lower() != "none"
+            ):
+                self.logger.info(
+                    f"Normalizing scores dataframe with method={args.scores_normalization}"
+                )
                 before_shape = scores_df.shape
-                scores_df = normalize_dataframe(scores_df, method=args.scores_normalization)
+                scores_df = normalize_dataframe(
+                    scores_df, method=args.scores_normalization
+                )
                 after_shape = scores_df.shape
                 if after_shape != before_shape:
                     self.logger.warning(
@@ -339,9 +402,9 @@ class EMUSESPipeline:
                     raise ValueError(
                         f"Scores file has {len(scores_df)} rows, but expected {expected_length} rows."
                     )
-            self.context['scores_df'] = scores_df
-            self.context['scores'] = self.scores
-            self.context['scores_indices'] = scores_df.index
+            self.context["scores_df"] = scores_df
+            self.context["scores"] = self.scores
+            self.context["scores_indices"] = scores_df.index
 
     def split_dataset(self):
         """
@@ -369,17 +432,21 @@ class EMUSESPipeline:
             embedding_train_features and prediction_train_features refer to the same data.
         """
         args = self.args
-        test_size = getattr(args, 'test_size', 0.2)
+        test_size = getattr(args, "test_size", 0.2)
         split_folder = self.output_folder / "split_dataset"
-        split_folder.mkdir(parents=True, exist_ok=True)        # Extract indices if available from DataFrames
-        scores_indices = self.context.get('scores_indices', None)
-        
+        split_folder.mkdir(
+            parents=True, exist_ok=True
+        )  # Extract indices if available from DataFrames
+        scores_indices = self.context.get("scores_indices", None)
+
         # Get the specific seed for dataset splitting
-        random_seeds = getattr(self.config, 'random_seeds', {})
-        split_seed = random_seeds.get('split_seed', getattr(self.config, 'random_state', 42))
+        random_seeds = getattr(self.config, "random_seeds", {})
+        split_seed = random_seeds.get(
+            "split_seed", getattr(self.config, "random_state", 42)
+        )
         self.logger.info(f"Splitting dataset with seed: {split_seed}")
-        
-        if getattr(args, 'label_dataset', None):
+
+        if getattr(args, "label_dataset", None):
             self.logger.info("Splitting labelled dataset (label_dataset mode).")
             # Assume self.labelled_input_matrix and self.scores are already available.
             if test_size == 0:
@@ -388,7 +455,7 @@ class EMUSESPipeline:
                 train_scores = self.scores
                 test_mat = None
                 test_scores = None
-                
+
                 # For indices tracking
                 prediction_train_indices = scores_indices
                 prediction_test_indices = None
@@ -397,75 +464,104 @@ class EMUSESPipeline:
                     # Split with indices
                     indices = np.arange(len(self.labelled_input_matrix))
                     train_indices, test_indices = train_test_split(
-                        indices, 
-                        test_size=test_size,
-                        random_state=split_seed
+                        indices, test_size=test_size, random_state=split_seed
                     )
                     train_mat = self.labelled_input_matrix[train_indices]
                     test_mat = self.labelled_input_matrix[test_indices]
-                    train_scores = self.scores[train_indices] if isinstance(self.scores, np.ndarray) else self.scores.iloc[train_indices]
-                    test_scores = self.scores[test_indices] if isinstance(self.scores, np.ndarray) else self.scores.iloc[test_indices]
-                    
+                    train_scores = (
+                        self.scores[train_indices]
+                        if isinstance(self.scores, np.ndarray)
+                        else self.scores.iloc[train_indices]
+                    )
+                    test_scores = (
+                        self.scores[test_indices]
+                        if isinstance(self.scores, np.ndarray)
+                        else self.scores.iloc[test_indices]
+                    )
+
                     # Store the actual indices if we have them from scores_df
-                    prediction_train_indices = scores_indices.iloc[train_indices] if hasattr(scores_indices, 'iloc') else None
-                    prediction_test_indices = scores_indices.iloc[test_indices] if hasattr(scores_indices, 'iloc') else None
+                    prediction_train_indices = (
+                        scores_indices.iloc[train_indices]
+                        if hasattr(scores_indices, "iloc")
+                        else None
+                    )
+                    prediction_test_indices = (
+                        scores_indices.iloc[test_indices]
+                        if hasattr(scores_indices, "iloc")
+                        else None
+                    )
                 else:
-                    # Regular split without indices                    
+                    # Regular split without indices
                     train_mat, test_mat, train_scores, test_scores = train_test_split(
                         self.labelled_input_matrix,
                         self.scores,
                         test_size=test_size,
-                        random_state=split_seed
+                        random_state=split_seed,
                     )
                     prediction_train_indices = None
                     prediction_test_indices = None
-                
+
                 np.save(split_folder / "test_labelled_matrix.npy", test_mat)
                 np.save(split_folder / "test_labelled_scores.npy", test_scores)
-            
+
             np.save(split_folder / "train_labelled_matrix.npy", train_mat)
             np.save(split_folder / "train_labelled_scores.npy", train_scores)
-            
+
             # Track indices for unlabelled data (embedding)
             embedding_train_indices = None
             embedding_test_indices = None
-            
+
             # Update context with new naming scheme only (no backward compatibility)
-            self.context.update({
-                # New naming pattern for embedding/UMAP (using unlabelled data)
-                'embedding_train_features': self.input_matrix,
-                'embedding_train_indices': embedding_train_indices,
-                
-                # New naming pattern for prediction (using labelled data)
-                'prediction_train_features': train_mat,
-                'prediction_train_labels': train_scores,
-                'prediction_train_indices': prediction_train_indices,
-                'prediction_test_features': test_mat,
-                'prediction_test_labels': test_scores,
-                'prediction_test_indices': prediction_test_indices,
-            })
-            
+            self.context.update(
+                {
+                    # New naming pattern for embedding/UMAP (using unlabelled data)
+                    "embedding_train_features": self.input_matrix,
+                    "embedding_train_indices": embedding_train_indices,
+                    # New naming pattern for prediction (using labelled data)
+                    "prediction_train_features": train_mat,
+                    "prediction_train_labels": train_scores,
+                    "prediction_train_indices": prediction_train_indices,
+                    "prediction_test_features": test_mat,
+                    "prediction_test_labels": test_scores,
+                    "prediction_test_indices": prediction_test_indices,
+                }
+            )
+
             # Add structured dataset metadata
-            self.context['dataset_metadata'] = {
-                'type': self.dataset_type,
-                'name': str(getattr(self.config, 'input_dataset', 'unknown')),
-                'label_dataset_name': str(getattr(self.config, 'label_dataset', 'unknown')),
-                'mode': 'label_dataset',
-                'embedding_train_size': self.input_matrix.shape[0] if self.input_matrix is not None else 0,
-                'embedding_train_dimensions': self.input_matrix.shape[1] if self.input_matrix is not None else 0,
-                'prediction_train_size': train_mat.shape[0] if train_mat is not None else 0,
-                'prediction_test_size': test_mat.shape[0] if test_mat is not None else 0,
-                'prediction_dimensions': train_mat.shape[1] if train_mat is not None else 0,
-                'test_size_proportion': test_size,
+            self.context["dataset_metadata"] = {
+                "type": self.dataset_type,
+                "name": str(getattr(self.config, "input_dataset", "unknown")),
+                "label_dataset_name": str(
+                    getattr(self.config, "label_dataset", "unknown")
+                ),
+                "mode": "label_dataset",
+                "embedding_train_size": (
+                    self.input_matrix.shape[0] if self.input_matrix is not None else 0
+                ),
+                "embedding_train_dimensions": (
+                    self.input_matrix.shape[1] if self.input_matrix is not None else 0
+                ),
+                "prediction_train_size": (
+                    train_mat.shape[0] if train_mat is not None else 0
+                ),
+                "prediction_test_size": (
+                    test_mat.shape[0] if test_mat is not None else 0
+                ),
+                "prediction_dimensions": (
+                    train_mat.shape[1] if train_mat is not None else 0
+                ),
+                "test_size_proportion": test_size,
             }
-            
+
             # Add placeholder for performance metrics
-            self.context['prediction_performance'] = {
-                'train': {},  # Will be populated during model training
-                'test': {},   # Will be populated during model evaluation
+            self.context["prediction_performance"] = {
+                "train": {},  # Will be populated during model training
+                "test": {},  # Will be populated during model evaluation
             }
-            
-            self.logger.info("Labelled dataset split and context updated for label_dataset mode.")
+
+            self.logger.info(
+                "Labelled dataset split and context updated for label_dataset mode."
+            )
         else:
             self.logger.info("Splitting main dataset (classic mode).")
             if test_size == 0:
@@ -474,77 +570,98 @@ class EMUSESPipeline:
                 train_labels = self.scores
                 test_features = None
                 test_labels = None
-                
+
                 # For indices tracking
                 train_indices = scores_indices
                 test_indices = None
             else:
                 if scores_indices is not None:
                     # Split with indices tracking
-                    indices = np.arange(len(self.input_matrix))                   
+                    indices = np.arange(len(self.input_matrix))
                     train_indices_pos, test_indices_pos = train_test_split(
-                        indices,
-                        test_size=test_size,
-                        random_state=split_seed
+                        indices, test_size=test_size, random_state=split_seed
                     )
                     train_features = self.input_matrix[train_indices_pos]
                     test_features = self.input_matrix[test_indices_pos]
-                    train_labels = self.scores[train_indices_pos] if isinstance(self.scores, np.ndarray) else self.scores.iloc[train_indices_pos]
-                    test_labels = self.scores[test_indices_pos] if isinstance(self.scores, np.ndarray) else self.scores.iloc[test_indices_pos]
-                    
+                    train_labels = (
+                        self.scores[train_indices_pos]
+                        if isinstance(self.scores, np.ndarray)
+                        else self.scores.iloc[train_indices_pos]
+                    )
+                    test_labels = (
+                        self.scores[test_indices_pos]
+                        if isinstance(self.scores, np.ndarray)
+                        else self.scores.iloc[test_indices_pos]
+                    )
+
                     # Store the actual indices
-                    train_indices = scores_indices.iloc[train_indices_pos] if hasattr(scores_indices, 'iloc') else None
-                    test_indices = scores_indices.iloc[test_indices_pos] if hasattr(scores_indices, 'iloc') else None
+                    train_indices = (
+                        scores_indices.iloc[train_indices_pos]
+                        if hasattr(scores_indices, "iloc")
+                        else None
+                    )
+                    test_indices = (
+                        scores_indices.iloc[test_indices_pos]
+                        if hasattr(scores_indices, "iloc")
+                        else None
+                    )
                 else:
-                    # Regular split without indices                    
-                    train_features, test_features, train_labels, test_labels = train_test_split(
-                        self.input_matrix,
-                        self.scores,
-                        test_size=test_size,
-                        random_state=split_seed
+                    # Regular split without indices
+                    train_features, test_features, train_labels, test_labels = (
+                        train_test_split(
+                            self.input_matrix,
+                            self.scores,
+                            test_size=test_size,
+                            random_state=split_seed,
+                        )
                     )
                     train_indices = None
                     test_indices = None
-                
+
                 np.save(split_folder / "test_features.npy", test_features)
                 np.save(split_folder / "test_labels.npy", test_labels)
-            
+
             np.save(split_folder / "train_features.npy", train_features)
             np.save(split_folder / "train_labels.npy", train_labels)
-            
+
             # Update context with new naming pattern only (no backward compatibility)
-            self.context.update({
-                # New naming pattern (in classic mode, same data used for both purposes)
-                'embedding_train_features': train_features,
-                'embedding_train_indices': train_indices,
-                'embedding_test_features': test_features,
-                'embedding_test_indices': test_indices,
-                
-                'prediction_train_features': train_features,
-                'prediction_train_labels': train_labels,
-                'prediction_train_indices': train_indices,
-                'prediction_test_features': test_features,
-                'prediction_test_labels': test_labels,
-                'prediction_test_indices': test_indices,
-            })
-            
+            self.context.update(
+                {
+                    # New naming pattern (in classic mode, same data used for both purposes)
+                    "embedding_train_features": train_features,
+                    "embedding_train_indices": train_indices,
+                    "embedding_test_features": test_features,
+                    "embedding_test_indices": test_indices,
+                    "prediction_train_features": train_features,
+                    "prediction_train_labels": train_labels,
+                    "prediction_train_indices": train_indices,
+                    "prediction_test_features": test_features,
+                    "prediction_test_labels": test_labels,
+                    "prediction_test_indices": test_indices,
+                }
+            )
+
             # Add structured dataset metadata
-            self.context['dataset_metadata'] = {
-                'type': self.dataset_type,
-                'name': str(getattr(self.config, 'input_dataset', 'unknown')),
-                'mode': 'classic',
-                'train_size': train_features.shape[0] if train_features is not None else 0,
-                'test_size': test_features.shape[0] if test_features is not None else 0,
-                'dimensions': train_features.shape[1] if train_features is not None else 0,
-                'test_size_proportion': test_size,
+            self.context["dataset_metadata"] = {
+                "type": self.dataset_type,
+                "name": str(getattr(self.config, "input_dataset", "unknown")),
+                "mode": "classic",
+                "train_size": (
+                    train_features.shape[0] if train_features is not None else 0
+                ),
+                "test_size": test_features.shape[0] if test_features is not None else 0,
+                "dimensions": (
+                    train_features.shape[1] if train_features is not None else 0
+                ),
+                "test_size_proportion": test_size,
             }
-            
+
             # Add placeholder for performance metrics
-            self.context['prediction_performance'] = {
-                'train': {},  # Will be populated during model training
-                'test': {},   # Will be populated during model evaluation
+            self.context["prediction_performance"] = {
+                "train": {},  # Will be populated during model training
+                "test": {},  # Will be populated during model evaluation
             }
-            
+
             self.logger.info("Main dataset split and context updated for classic mode.")
 
     def add_stage(self, stage):
@@ -552,33 +669,35 @@ class EMUSESPipeline:
 
     def run(self, progress_callback=None, progress_queue=None):
         total_stages = len(self.stages)
-        
+
         for i, stage in enumerate(self.stages):
             stage_name = stage.__class__.__name__
             stage_start_time = time.time()
-            
+
             if progress_callback:
                 progress = i / total_stages
                 progress_callback(stage_name=stage_name, progress=progress)
-            
+
             # Run the stage
             stage.run(self.context, progress_queue=progress_queue)
-            
+
             # Record stage completion and runtime
             stage_end_time = time.time()
             stage_runtime = stage_end_time - stage_start_time
-            
+
             # Update pipeline metadata with completion info
-            self.context['pipeline_metadata']['stages_completed'].append(stage_name)
-            self.context['pipeline_metadata']['stages_runtime'][stage_name] = stage_runtime
-            
+            self.context["pipeline_metadata"]["stages_completed"].append(stage_name)
+            self.context["pipeline_metadata"]["stages_runtime"][
+                stage_name
+            ] = stage_runtime
+
             if progress_callback:
                 progress = (i + 1) / total_stages
                 progress_callback(stage_name=stage_name, progress=progress)
-        
+
         # Update total pipeline runtime
-        self.context['pipeline_metadata']['end_time'] = time.time()
-        self.context['pipeline_metadata']['total_runtime'] = (
-            self.context['pipeline_metadata']['end_time'] - 
-            self.context['pipeline_metadata']['start_time']
+        self.context["pipeline_metadata"]["end_time"] = time.time()
+        self.context["pipeline_metadata"]["total_runtime"] = (
+            self.context["pipeline_metadata"]["end_time"]
+            - self.context["pipeline_metadata"]["start_time"]
         )
