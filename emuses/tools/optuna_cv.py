@@ -36,7 +36,7 @@ def _objective_factory(X, y, task: str, inner_cv):
         # 3 ─ cross-validate
         pipe = Pipeline([("feat", feats), ("est", est)])
         return cross_val_score(
-            pipe, X, y, cv=inner_cv, scoring=scoring, n_jobs=1
+            pipe, X, y, cv=inner_cv, scoring=scoring, n_jobs=-1
         ).mean()
 
     return objective
@@ -50,6 +50,8 @@ def nested_optuna_cv(
     n_outer: int = 5,
     n_trials: int = 50,
     random_state: int = 42,
+    target_tag: str = "target",
+    output_folder: str = None,
 ):
     """
     Fully nested CV:
@@ -58,7 +60,7 @@ def nested_optuna_cv(
     Returns
     -------
     scores     : ndarray (n_outer,)
-    pipelines  : list[Pipeline]  – best pipeline per outer fold
+    pipelines  : list[Pipeline]  - best pipeline per outer fold
     """
     outer_cv = (StratifiedKFold if task == "clf" else KFold)(
         n_splits=n_outer, shuffle=True, random_state=random_state
@@ -73,7 +75,10 @@ def nested_optuna_cv(
         X_te, y_te = X[te_idx], y[te_idx]
 
         # ── run Optuna on *inner* CV ────────────────────────────
-        study = optuna.create_study(direction="maximize")
+        storage_str = f"sqlite:///{output_folder}/optuna_{target_tag}.db"
+        study = optuna.create_study(
+            storage=storage_str, direction="maximize", load_if_exists=True
+        )
         study.optimize(
             _objective_factory(X_tr, y_tr, task, inner_cv),
             n_trials=n_trials,

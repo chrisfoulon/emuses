@@ -5,11 +5,12 @@ from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.preprocessing import FunctionTransformer
 
 
-class RawCoords(FunctionTransformer):
-    """Returns coordinates unchanged (kept as explicit transformer for Pipeline)."""
+class RawCoords(BaseEstimator, TransformerMixin):
+    def fit(self, X, y=None):
+        return self
 
-    def __init__(self):
-        super().__init__(lambda X: X, validate=False)
+    def transform(self, X):
+        return X
 
 
 class GWD(BaseEstimator, TransformerMixin):
