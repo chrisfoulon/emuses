@@ -29,6 +29,11 @@ from emuses.tools.visualisation import plot_clustering_interactive_with_hover
 from emuses.tools.inputs_utils import load_and_preprocess_digits_dataset, get_array_info
 from bcblib.tools.general_utils import save_json
 
+import optuna
+from emuses.config.optim_configs_predict import optim_dict_predict
+from emuses.tools.optim_utils import suggest_parameters_conditional
+from emuses.tools.optuna_cv import nested_optuna_cv
+
 
 class HeatmapStage(PipelineStage):
     def __init__(self, config, output_format_info):
@@ -53,6 +58,39 @@ class HeatmapStage(PipelineStage):
         # Get feature data for input matrices
         embedding_train_features = context.get("embedding_train_features")
         prediction_train_features = context.get("prediction_train_features")
+
+        # Decide whether we are in regression or classification mode
+        task = "clf" if getattr(self.config, "classification", False) else "reg"
+
+        # ------------------------------------------------------------------
+        # 1 ─ Assemble the design matrix (X) and targets (y) for Optuna
+        #     You can later replace `prediction_train_coords` by any feature
+        #     stack you build (e.g. RawCoords ⊕ GWD, polynomial terms, …)
+        # ------------------------------------------------------------------
+        X = prediction_train_coords  # shape (n_samples, 2)
+        y = prediction_train_labels  # shape (n_samples,) or (n_samples, p)
+
+        # Store everything in context for the next step (nested CV / training)
+        context.update(
+            {
+                "prediction_X": X,
+                "prediction_y": y,
+                "prediction_task": task,
+                "optim_dict_predict": optim_dict_predict,
+            }
+        )
+
+        # ------------------------------------------------------------------
+        # 2 ─ Sanity-check the search space: grab ONE random draw
+        #     This lets you inspect what Optuna will actually see.
+        # ------------------------------------------------------------------
+        _tmp_study = optuna.create_study()  # direction irrelevant here
+        _tmp_trial = _tmp_study.ask()  # empty trial, no objective yet
+        sample_params = suggest_parameters_conditional(_tmp_trial, optim_dict_predict)
+        logger.info("[Optuna-check] example sampled hyper-parameters ↓")
+        logger.info(sample_params)
+        _tmp_study.tell(_tmp_trial, 0.0)  # close the trial cleanly
+        # ------------------------------------------------------------------
 
         # Determine which data to use for the heatmap stage
         if prediction_train_coords is not None and prediction_train_labels is not None:
@@ -80,6 +118,15 @@ class HeatmapStage(PipelineStage):
             train_labels = prediction_train_labels  # Should be the same in classic mode
             combined_input_matrix = embedding_train_features
             logger.info("Using classic mode data for heatmap analysis.")
+
+        scores, best_models = nested_optuna_cv(
+            X=context["prediction_X"],
+            y=context["prediction_y"],
+            task=context["prediction_task"],
+            n_outer=3,
+            n_trials=30,
+        )  # small numbers just to sanity-check
+        print("outer-CV scores:", scores)
 
         # In label_dataset mode, also get the full UMAP training embeddings
         full_embeddings = None
