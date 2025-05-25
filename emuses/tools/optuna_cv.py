@@ -21,13 +21,13 @@ from emuses.tools.models_utils import build_estimator, build_feature_union
 # ---------------------------------------------------------------
 
 
-def _objective_factory(X, y, task: str, inner_cv):
+def _objective_factory(X, y, task: str, inner_cv, optim_dict):
     """Return an Optuna objective that samples the *conditional* space."""
     scoring = "accuracy" if task == "clf" else "r2"
 
     def objective(trial):
         # 1 ─ sample hyper-parameters
-        params = suggest_parameters_conditional(trial, optim_dict_predict)
+        params = suggest_parameters_conditional(trial, optim_dict)
 
         # 2 ─ build feature transformer + estimator
         feats = build_feature_union(params["features"])
@@ -52,6 +52,7 @@ def nested_optuna_cv(
     random_state: int = 42,
     target_tag: str = "target",
     output_folder: str = None,
+    optim_dict=None,
 ):
     """
     Fully nested CV:
@@ -62,6 +63,10 @@ def nested_optuna_cv(
     scores     : ndarray (n_outer,)
     pipelines  : list[Pipeline]  - best pipeline per outer fold
     """
+    # Use provided optim_dict or fall back to default
+    if optim_dict is None:
+        optim_dict = optim_dict_predict
+
     outer_cv = (StratifiedKFold if task == "clf" else KFold)(
         n_splits=n_outer, shuffle=True, random_state=random_state
     )
@@ -80,15 +85,13 @@ def nested_optuna_cv(
             storage=storage_str, direction="maximize", load_if_exists=True
         )
         study.optimize(
-            _objective_factory(X_tr, y_tr, task, inner_cv),
+            _objective_factory(X_tr, y_tr, task, inner_cv, optim_dict),
             n_trials=n_trials,
             show_progress_bar=False,
         )
 
         # ── refit best params on full outer-train split ────────
-        best_params = suggest_parameters_conditional(
-            study.best_trial, optim_dict_predict
-        )
+        best_params = suggest_parameters_conditional(study.best_trial, optim_dict)
         best_pipe = Pipeline(
             [
                 ("feat", build_feature_union(best_params["features"])),

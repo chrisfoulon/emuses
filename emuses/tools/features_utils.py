@@ -112,3 +112,27 @@ class KernelPCAGWD(BaseEstimator, TransformerMixin):
 
         # 2) project
         return self.kpca_.transform(K_new)
+
+
+# ───────────────────────────────────────────────────────────────
+class CorrFilter(BaseEstimator, TransformerMixin):
+    """
+    Keep GWD columns whose |Pearson r| w/ y >= threshold.
+    Uses only the current training fold – no leakage.
+    """
+
+    def __init__(self, thr: float = 0.25):
+        self.thr = thr  # Optuna will tune this
+
+    def fit(self, X, y):
+        # X shape (n, d), y shape (n,) or (n,1)
+        y = y.ravel()
+        r = np.abs(np.corrcoef(X, y, rowvar=False)[-1, :-1])
+        self.mask_ = r >= self.thr
+        # if nothing survives, keep the best single column
+        if not self.mask_.any():
+            self.mask_[np.argmax(r)] = True
+        return self
+
+    def transform(self, X):
+        return X[:, self.mask_]

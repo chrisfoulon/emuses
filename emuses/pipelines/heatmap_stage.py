@@ -32,12 +32,15 @@ from emuses.tools.inputs_utils import load_and_preprocess_digits_dataset, get_ar
 from bcblib.tools.general_utils import save_json
 
 import optuna
-from emuses.config.optim_configs_predict import optim_dict_predict
+from emuses.config.optim_configs_predict import (
+    load_optim_dict_predict,
+    optim_dict_predict,
+)
 from emuses.tools.optim_utils import suggest_parameters_conditional
 from emuses.tools.optuna_cv import nested_optuna_cv
 
 
-def _optimise_target(col_idx, X, Y, task, cfg, out_dir, logger_name):
+def _optimise_target(col_idx, X, Y, task, cfg, out_dir, logger_name, optim_dict):
     """
     Runs nested Optuna-CV for one target column and returns artefacts.
     Executed in a forked process by joblib → must be picklable.
@@ -59,6 +62,7 @@ def _optimise_target(col_idx, X, Y, task, cfg, out_dir, logger_name):
         n_trials=cfg.optuna_trials,
         target_tag=tag,
         output_folder=out_dir,
+        optim_dict=optim_dict,
     )
     logger.info(
         "%s  kept %d / %d rows  -  mean=%.3f", tag, len(yi), len(Y), scores.mean()
@@ -94,6 +98,28 @@ class HeatmapStage(PipelineStage):
         task = "clf" if getattr(self.config, "classification", False) else "reg"
 
         # ------------------------------------------------------------------
+        # Load or generate the prediction optimization dictionary.
+        # ------------------------------------------------------------------
+        if "optim_dict_predict" in context and context["optim_dict_predict"]:
+            optim_dict_predict_selected = context["optim_dict_predict"]
+        elif "cli_args" in context and "prediction_optim_dict" in context["cli_args"]:
+            prediction_optim_dict_name = context["cli_args"]["prediction_optim_dict"]
+            try:
+                optim_dict_predict_selected = load_optim_dict_predict(
+                    prediction_optim_dict_name
+                )
+                logger.info(
+                    f"Loaded prediction optimization dictionary: '{prediction_optim_dict_name}'"
+                )
+            except Exception as e:
+                logger.error(
+                    f"Error loading prediction optim_dict '{prediction_optim_dict_name}': {e}. Falling back to default."
+                )
+                optim_dict_predict_selected = optim_dict_predict
+        else:
+            optim_dict_predict_selected = optim_dict_predict
+
+        # ------------------------------------------------------------------
         # 1 ─ Assemble the design matrix (X) and targets (y) for Optuna
         #     You can later replace `prediction_train_coords` by any feature
         #     stack you build (e.g. RawCoords ⊕ GWD, polynomial terms, …)
@@ -107,7 +133,7 @@ class HeatmapStage(PipelineStage):
                 "prediction_X": X,
                 "prediction_y": y,
                 "prediction_task": task,
-                "optim_dict_predict": optim_dict_predict,
+                "optim_dict_predict": optim_dict_predict_selected,
             }
         )
 
@@ -117,7 +143,9 @@ class HeatmapStage(PipelineStage):
         # ------------------------------------------------------------------
         _tmp_study = optuna.create_study()  # direction irrelevant here
         _tmp_trial = _tmp_study.ask()  # empty trial, no objective yet
-        sample_params = suggest_parameters_conditional(_tmp_trial, optim_dict_predict)
+        sample_params = suggest_parameters_conditional(
+            _tmp_trial, optim_dict_predict_selected
+        )
         logger.info("[Optuna-check] example sampled hyper-parameters ↓")
         logger.info(sample_params)
         _tmp_study.tell(_tmp_trial, 0.0)  # close the trial cleanly
@@ -128,7 +156,7 @@ class HeatmapStage(PipelineStage):
         _trial = optuna.create_study().ask()
         logger.debug(
             "Optuna sample ➜ %s",
-            suggest_parameters_conditional(_trial, optim_dict_predict),
+            suggest_parameters_conditional(_trial, optim_dict_predict_selected),
         )
         # ------------------------------------------------------------------
 
@@ -151,6 +179,7 @@ class HeatmapStage(PipelineStage):
                 self.config,
                 self.config.output_folder,
                 logger.name,  # pass logger name so child can log
+                optim_dict_predict_selected,  # pass selected optimization dictionary
             )
             for col_idx in range(Y.shape[1])
         )

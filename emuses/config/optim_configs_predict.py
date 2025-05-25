@@ -48,6 +48,92 @@ optim_dict_predict = {
                 "log": True,
                 "conditional_on": {"feat_type": ["kpca_gwd"]},
             },
+            # correlation filtering threshold
+            "corr_thr": {
+                "low": 0.15,
+                "high": 0.35,
+                "conditional_on": {"feat_type": ["gwd", "pca_gwd", "kpca_gwd"]},
+            },
         },
     }
 }
+
+
+# emuses/config/optim_configs_predict_phase1.py
+optim_dict_phase1 = {
+    "param": {
+        "model": {
+            "model_type": {"choices": ["kernel", "rf", "elastic"]},
+            "kernel": {"sigma": {"low": 0.05, "high": 0.15, "log": True}},
+            "rf": {
+                "n_estimators": {"low": 100, "high": 300, "step": 50},
+                "max_depth": {"low": 3, "high": 10},
+            },
+            "elastic": {
+                "alpha": {"low": 1e-4, "high": 1.0, "log": True},
+                "l1_ratio": {"low": 0.1, "high": 0.9},
+                "tol": {"value": 1e-3},
+                "max_iter": {"value": 5000},
+            },
+        },
+        "features": {
+            "type": {"choices": ["gwd", "pca_gwd"]},
+            "sigma_gwd": {"low": 0.05, "high": 0.15, "log": True},
+            "corr_thr": {"low": 0.10, "high": 0.30},
+            "n_comp": {
+                "low": 20,
+                "high": 50,
+                "step": 10,
+                "conditional_on": {"type": ["pca_gwd"]},
+            },
+        },
+    }
+}
+
+
+def load_optim_dict_predict(name):
+    """
+    Dynamically load a prediction optimization dictionary from this module.
+
+    The name should correspond to a variable in this module (e.g., 'optim_dict_predict', 'optim_dict_phase1').
+    If name does not contain an underscore, the function simply returns the variable from this module.
+    If name contains underscores, it tries to split and process similar to the UMAP optim_dict loader.
+
+    Parameters:
+        name (str): Name of the prediction optimization dictionary to load.
+
+    Returns:
+        dict: The selected prediction optimization dictionary.
+
+    Raises:
+        ValueError: If the variable is not found or if processing fails.
+    """
+    globals_dict = globals()
+
+    # First, check if the full name exists.
+    if name in globals_dict:
+        return globals_dict[name]
+
+    # Otherwise, try to split at the last underscore.
+    if "_" in name:
+        base, param = name.rsplit("_", 1)
+        if base in globals_dict:
+            obj = globals_dict[base]
+            try:
+                if isinstance(obj, list):
+                    idx = int(param)
+                    return obj[idx]
+                elif callable(obj):
+                    try:
+                        param_val = int(param)
+                    except ValueError:
+                        param_val = param
+                    return obj(param_val)
+                else:
+                    return obj
+            except Exception as e:
+                raise ValueError(f"Error processing {name}: {e}")
+        else:
+            raise ValueError(f"Variable '{base}' not found in optim_configs_predict.")
+    else:
+        raise ValueError(f"Variable '{name}' not found in optim_configs_predict.")

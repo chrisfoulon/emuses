@@ -12,52 +12,52 @@ from emuses.tools.kernel_regression_utils import (
 )
 
 from sklearn.pipeline import FeatureUnion
-from emuses.tools.features_utils import RawCoords, GWD, PCAGWD, KernelPCAGWD
-from sklearn.preprocessing import PolynomialFeatures
+from emuses.tools.features_utils import RawCoords, GWD, PCAGWD, KernelPCAGWD, CorrFilter
+from sklearn.preprocessing import PolynomialFeatures, StandardScaler
 
 
 def build_feature_union(feat_cfg: dict):
     steps = []
 
     # 1) Always (optionally) include the raw coordinates
-    if feat_cfg.get("use_raw", False):
+    if feat_cfg.get("use_raw", True):
         steps.append(("raw", RawCoords()))
 
-    ftype = feat_cfg["type"]  # 'gwd' | 'pca_gwd' | 'kpca_gwd'
-    sigma = feat_cfg["sigma_gwd"]
-    poly_deg = feat_cfg["poly_deg"]
+    # 2) GWD
+    steps.append(("gwd", GWD(sigma=feat_cfg["sigma_gwd"], agg="none")))
 
-    if ftype == "gwd":
-        steps.append(("gwd", GWD(sigma=sigma, agg="none")))
+    # 3) optional correlation filter (only when corr_thr in dict)
+    if "corr_thr" in feat_cfg:
+        steps.append(("corr", CorrFilter(thr=feat_cfg["corr_thr"])))
 
-    elif ftype == "pca_gwd":
-        # PCA-based reduction of the GWD matrix
+    # 4) optional PCA / KPCA
+    if feat_cfg["type"] == "pca_gwd":
+        # Handle both n_comp and var_thr approaches
         var_thr = feat_cfg.get("var_thr", None)
         n_comp = None if var_thr is not None else feat_cfg.get("n_comp")
-        steps.append(("pca_gwd", PCAGWD(sigma=sigma, n_comp=n_comp, var_thr=var_thr)))
-
-    elif ftype == "kpca_gwd":
-        # Kernel‐PCA compression of the GWD matrix
+        steps.append(
+            ("pca", PCAGWD(sigma=feat_cfg["sigma_gwd"], n_comp=n_comp, var_thr=var_thr))
+        )
+    elif feat_cfg["type"] == "kpca_gwd":
         kpca_gamma = feat_cfg.get("feat_gamma")
         if kpca_gamma is None:
             raise KeyError("KPCA-GWD feature type requires 'feat_gamma' parameter")
         steps.append(
             (
-                "kpca_gwd",
+                "kpca",
                 KernelPCAGWD(
-                    sigma=sigma,
+                    sigma=feat_cfg["sigma_gwd"],
                     n_comp=feat_cfg.get("n_comp"),
                     kpca_gamma=kpca_gamma,
                 ),
             )
         )
-    else:
-        raise ValueError(f"Unknown feature type: {ftype!r}")
 
-    # 3) Add polynomial lifting if requested
-    if poly_deg > 1:
-        steps.append(("poly", PolynomialFeatures(poly_deg, include_bias=False)))
-
+    # 5) optional polynomial lift
+    if feat_cfg.get("poly_deg", 1) > 1:
+        steps.append(
+            ("poly", PolynomialFeatures(feat_cfg["poly_deg"], include_bias=False))
+        )
     return FeatureUnion(steps)
 
 
@@ -116,14 +116,14 @@ def build_estimator(model_cfg: dict, task: str):
             return ElasticNet(
                 alpha=model_cfg["alpha"],
                 l1_ratio=model_cfg["l1_ratio"],
-                max_iter=5000,
+                max_iter=10000,
             )
         # classification path
         return LogisticRegression(
             C=model_cfg["C"],
             penalty=model_cfg["penalty"],
             solver="saga",
-            max_iter=5000,
+            max_iter=10000,
             n_jobs=-1,
         )
 

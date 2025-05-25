@@ -363,6 +363,11 @@ def main():
     add_clustering_arguments(full_parser)
     add_smoothing_arguments(full_parser)
     add_enhanced_pipeline_arguments(full_parser)  # Add enhanced pipeline arguments
+    full_parser.add_argument(
+        "--prediction_optim_dict",
+        default="optim_dict_predict",
+        help="Name of a prediction optim_dict in optim_configs_predict.py (e.g., 'optim_dict_predict', 'optim_dict_phase1')",
+    )
     add_random_state_argument(
         full_parser
     )  # Add random state argument for reproducibility
@@ -410,6 +415,11 @@ def main():
     heatmap_parser.add_argument(
         "--output_format_info", help="Output format information needed"
     )
+    heatmap_parser.add_argument(
+        "--prediction_optim_dict",
+        default="optim_dict_predict",
+        help="Name of a prediction optim_dict in optim_configs_predict.py (e.g., 'optim_dict_predict', 'optim_dict_phase1')",
+    )
     add_random_state_argument(
         heatmap_parser
     )  # Add random state argument for reproducibility
@@ -427,6 +437,11 @@ def main():
     add_enhanced_pipeline_arguments(
         prediction_parser
     )  # Add enhanced pipeline arguments
+    prediction_parser.add_argument(
+        "--prediction_optim_dict",
+        default="optim_dict_predict",
+        help="Name of a prediction optim_dict in optim_configs_predict.py (e.g., 'optim_dict_predict', 'optim_dict_phase1')",
+    )
     add_random_state_argument(prediction_parser)  # Add random state argument
 
     # add run_old_prediction argument
