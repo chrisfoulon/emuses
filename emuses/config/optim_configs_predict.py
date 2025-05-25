@@ -21,11 +21,33 @@ optim_dict_predict = {
             },
         },
         "features": {
-            # GWD bandwidth
-            "sigma_gwd": {"low": 0.02, "high": 0.25, "log": True},
-            # optional polynomial degree
-            "poly_deg": {"low": 1, "high": 3, "step": 1},
+            # choose feature recipe
+            "type": {"choices": ["gwd", "pca_gwd", "kpca_gwd"]},
+            # common
+            "sigma_gwd": {"low": 0.05, "high": 0.2, "log": True},
+            "poly_deg": {"choices": [1, 2]},
             "use_raw": {"choices": [True, False]},
+            # PCA / KPCA specific
+            # linear PCA variant
+            "n_comp": {
+                "low": 10,
+                "high": 80,
+                "step": 10,
+                "conditional_on": {"feat_type": ["pca_gwd", "kpca_gwd"]},
+            },
+            # OR adaptive-variance variant
+            "var_thr": {
+                "low": 0.75,
+                "high": 0.95,
+                "conditional_on": {"feat_type": ["pca_gwd"]},
+            },
+            # kpca-specific
+            "feat_gamma": {
+                "low": 0.5,
+                "high": 5.0,
+                "log": True,
+                "conditional_on": {"feat_type": ["kpca_gwd"]},
+            },
         },
     }
 }

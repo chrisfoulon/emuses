@@ -12,42 +12,53 @@ from emuses.tools.kernel_regression_utils import (
 )
 
 from sklearn.pipeline import FeatureUnion
-from emuses.tools.features_utils import RawCoords, GWD
+from emuses.tools.features_utils import RawCoords, GWD, PCAGWD, KernelPCAGWD
 from sklearn.preprocessing import PolynomialFeatures
 
 
 def build_feature_union(feat_cfg: dict):
-    """
-    Build a FeatureUnion from the feature hyper-parameter dict.
-    Keys expected (all optional, default off unless present):
-        sigma_gwd : float    - bandwidth for GWD
-        poly_deg  : int ≥1   - polynomial expansion degree
-        use_raw   : bool     - include raw coords (default True)
-    """
-    transformers = []
+    steps = []
 
-    # raw coordinates
-    if feat_cfg.get("use_raw", True):
-        transformers.append(("raw", RawCoords()))
+    # 1) Always (optionally) include the raw coordinates
+    if feat_cfg.get("use_raw", False):
+        steps.append(("raw", RawCoords()))
 
-    # Gaussian-weighted distances
-    if "sigma_gwd" in feat_cfg:
-        transformers.append(("gwd", GWD(sigma=feat_cfg["sigma_gwd"])))
+    ftype = feat_cfg["type"]  # 'gwd' | 'pca_gwd' | 'kpca_gwd'
+    sigma = feat_cfg["sigma_gwd"]
+    poly_deg = feat_cfg["poly_deg"]
 
-    # polynomial expansion
-    if feat_cfg.get("poly_deg", 1) > 1:
-        transformers.append(
+    if ftype == "gwd":
+        steps.append(("gwd", GWD(sigma=sigma, agg="none")))
+
+    elif ftype == "pca_gwd":
+        # PCA-based reduction of the GWD matrix
+        var_thr = feat_cfg.get("var_thr", None)
+        n_comp = None if var_thr is not None else feat_cfg.get("n_comp")
+        steps.append(("pca_gwd", PCAGWD(sigma=sigma, n_comp=n_comp, var_thr=var_thr)))
+
+    elif ftype == "kpca_gwd":
+        # Kernel‐PCA compression of the GWD matrix
+        kpca_gamma = feat_cfg.get("feat_gamma")
+        if kpca_gamma is None:
+            raise KeyError("KPCA-GWD feature type requires 'feat_gamma' parameter")
+        steps.append(
             (
-                "poly",
-                PolynomialFeatures(degree=feat_cfg["poly_deg"], include_bias=False),
+                "kpca_gwd",
+                KernelPCAGWD(
+                    sigma=sigma,
+                    n_comp=feat_cfg.get("n_comp"),
+                    kpca_gamma=kpca_gamma,
+                ),
             )
         )
+    else:
+        raise ValueError(f"Unknown feature type: {ftype!r}")
 
-    # Guarantee at least one transformer
-    if not transformers:
-        transformers.append(("raw", RawCoords()))
+    # 3) Add polynomial lifting if requested
+    if poly_deg > 1:
+        steps.append(("poly", PolynomialFeatures(poly_deg, include_bias=False)))
 
-    return FeatureUnion(transformers)
+    return FeatureUnion(steps)
 
 
 def build_estimator(model_cfg: dict, task: str):
@@ -69,7 +80,7 @@ def build_estimator(model_cfg: dict, task: str):
 
     Returns
     -------
-    sklearn-compatible estimator – already initialised with the
+    sklearn-compatible estimator - already initialised with the
     sampled hyper-parameters.
     """
     task = task.lower()

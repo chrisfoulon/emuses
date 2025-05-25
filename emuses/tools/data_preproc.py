@@ -11,7 +11,7 @@ def normalize_input_matrix(input_matrix):
 
 
 def find_min_resolution(image_paths_list):
-    min_width = min_height = float('inf')
+    min_width = min_height = float("inf")
     for img_path in image_paths_list:
         img = Image.open(img_path)
         width, height = img.size
@@ -47,7 +47,7 @@ def rescale_image_array(images_list, output_shape=None):
     """
     # If output_shape is not provided, find the minimum resolution among all images
     if output_shape is None:
-        min_width = min_height = float('inf')
+        min_width = min_height = float("inf")
         for img in images_list:
             width, height = img.size
             min_width = min(min_width, width)
@@ -73,3 +73,11 @@ def normalise_colours_in_array(images_list):
     """
     for i in tqdm(range(len(images_list))):
         images_list[i] = np.array(images_list[i]) / 255
+
+
+def filter_nan_rows(coords: np.ndarray, scores: np.ndarray):
+    """
+    Remove rows where `scores` is NaN.  Returns (X_clean, y_clean, mask).
+    """
+    mask = ~np.isnan(scores)
+    return coords[mask], scores[mask], mask

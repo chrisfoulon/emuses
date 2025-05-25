@@ -1,13 +1,20 @@
 # pipelines/pipeline_config.py
 
 import argparse
+import atexit
 from dataclasses import dataclass, field
 import logging
+from logging.handlers import QueueHandler, QueueListener
 from pathlib import Path
 from datetime import datetime
 import sys
+import sys, multiprocessing as mp
 
 from bcblib.tools.general_utils import save_json
+import optuna
+
+# create ONE queue at module load, so children can see it
+LOG_QUEUE = mp.Queue(-1)
 
 
 @dataclass
@@ -17,6 +24,9 @@ class PipelineConfig:
     sigma: float = None
     fwhm: float = None
     # Other parameters with defaults as needed
+    # TODO: NEW hyper-parameter search controls to add to the interface at some point
+    outer_folds: int = 5  # number of outer CV splits
+    optuna_trials: int = 60  # trials per outer split
 
     # Computed fields
     output_folder: Path = field(init=False)
@@ -50,6 +60,7 @@ class PipelineConfig:
         # ------------------------------------------------------------------
         self.output_folder = Path(self.output_folder).resolve()
         self.output_folder.mkdir(parents=True, exist_ok=True)
+        self._configure_logging()
 
         # ------------------------------------------------------------------
         # Configure global logging (only once)
@@ -96,3 +107,40 @@ class PipelineConfig:
             log_path / f"arguments_{dict_args['datetime'].replace(':','-')}.json",
             dict_args,
         )
+
+    def _configure_logging(self):
+        log_dir = self.output_folder / "log"
+        log_dir.mkdir(exist_ok=True)
+        log_file = log_dir / "pipeline.log"
+
+        root = logging.getLogger()
+        root.setLevel(logging.INFO)
+
+        # ➋ CHILD processes: just attach QueueHandler once and return
+        if mp.current_process().name != "MainProcess":
+            if not any(isinstance(h, QueueHandler) for h in root.handlers):
+                root.addHandler(QueueHandler(LOG_QUEUE))
+            return
+
+        # ➌ MAIN process: create listener & real handlers
+        stream = logging.StreamHandler(sys.stdout)
+        file = logging.FileHandler(log_file, mode="a", encoding="utf-8")
+
+        listener = QueueListener(LOG_QUEUE, file, stream, respect_handler_level=True)
+        listener.start()
+
+        # remove any default handlers added by basicConfig
+        root.handlers.clear()
+        root.addHandler(QueueHandler(LOG_QUEUE))
+
+        # make sure everything is flushed on shutdown
+        atexit.register(listener.stop)
+
+        opt_file = logging.FileHandler(
+            log_dir / "optuna.log", mode="a", encoding="utf-8"
+        )
+        opt_file.setLevel(logging.INFO)
+        logging.getLogger("optuna").addHandler(opt_file)
+
+        optuna.logging.disable_default_handler()
+        optuna.logging.enable_propagation()

@@ -17,6 +17,7 @@ from sklearn.metrics import (
 )
 
 from emuses.pipelines.pipeline_stage import PipelineStage
+from emuses.tools.data_preproc import filter_nan_rows
 from emuses.tools.kernel_regression_utils import (
     run_kernel_heatmap_analysis,
     ensemble_predict,
@@ -41,22 +42,27 @@ def _optimise_target(col_idx, X, Y, task, cfg, out_dir, logger_name):
     Runs nested Optuna-CV for one target column and returns artefacts.
     Executed in a forked process by joblib → must be picklable.
     """
-    import logging, optuna
-
     logger = logging.getLogger(logger_name)
+
     tag = f"target_{col_idx}"
+    Xi, yi, keep_mask = filter_nan_rows(X, Y[:, col_idx])
+
+    if len(yi) < 10:  # arbitrary sanity threshold
+        logger.warning("%s skipped – only %d non-NaN rows", tag, len(yi))
+        return tag, np.array([]), []  # skip optimisation
 
     scores, pipes = nested_optuna_cv(
-        X,
-        Y[:, col_idx],
+        Xi,
+        yi,
         task=task,
         n_outer=cfg.outer_folds,
         n_trials=cfg.optuna_trials,
         target_tag=tag,
         output_folder=out_dir,
     )
-
-    logger.info("%s  outer-CV  %.3f ± %.3f", tag, scores.mean(), scores.std())
+    logger.info(
+        "%s  kept %d / %d rows  -  mean=%.3f", tag, len(yi), len(Y), scores.mean()
+    )
     return tag, scores, pipes
 
 
@@ -421,27 +427,6 @@ class HeatmapStage(PipelineStage):
 
         # # Store results in context
         # context.update(results)
-
-    # ─────────────────────────────────────────────────────────
-    def _run_single_target(self, X, y_vec, target_tag, task, ctx, logger):
-        """Nested-CV + Optuna for ONE target column; stores artefacts in context."""
-        scores, pipes = nested_optuna_cv(
-            X,
-            y_vec,
-            task=task,
-            n_outer=self.config.outer_folds,
-            n_trials=self.config.optuna_trials,
-            target_tag=target_tag,
-            output_folder=self.config.output_folder,  # ← pass folder here
-        )
-        logger.info(
-            f"{target_tag}: outer-CV mean={scores.mean():.3f} ± {scores.std():.3f}"
-        )
-
-        ctx.setdefault("prediction_results", {})[target_tag] = {
-            "cv_scores": scores,
-            "best_pipelines": pipes,
-        }
 
 
 def inspect_data_state(
