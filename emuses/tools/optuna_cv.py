@@ -21,7 +21,7 @@ from emuses.tools.models_utils import build_estimator, build_feature_union
 # ---------------------------------------------------------------
 
 
-def _objective_factory(X, y, task: str, inner_cv, optim_dict):
+def _objective_factory(X, y, task: str, inner_cv, optim_dict, pretrained_ae=None):
     """Return an Optuna objective that samples the *conditional* space."""
     scoring = "accuracy" if task == "clf" else "r2"
 
@@ -30,7 +30,7 @@ def _objective_factory(X, y, task: str, inner_cv, optim_dict):
         params = suggest_parameters_conditional(trial, optim_dict)
 
         # 2 ─ build feature transformer + estimator
-        feats = build_feature_union(params["features"])
+        feats = build_feature_union(params["features"], pretrained_ae=pretrained_ae)
         est = build_estimator(params["model"], task)
 
         # 3 ─ cross-validate
@@ -53,6 +53,7 @@ def nested_optuna_cv(
     target_tag: str = "target",
     output_folder: str = None,
     optim_dict=None,
+    pretrained_ae=None,
 ):
     """
     Fully nested CV:
@@ -85,7 +86,7 @@ def nested_optuna_cv(
             storage=storage_str, direction="maximize", load_if_exists=True
         )
         study.optimize(
-            _objective_factory(X_tr, y_tr, task, inner_cv, optim_dict),
+            _objective_factory(X_tr, y_tr, task, inner_cv, optim_dict, pretrained_ae),
             n_trials=n_trials,
             show_progress_bar=False,
         )
@@ -94,7 +95,12 @@ def nested_optuna_cv(
         best_params = suggest_parameters_conditional(study.best_trial, optim_dict)
         best_pipe = Pipeline(
             [
-                ("feat", build_feature_union(best_params["features"])),
+                (
+                    "feat",
+                    build_feature_union(
+                        best_params["features"], pretrained_ae=pretrained_ae
+                    ),
+                ),
                 ("est", build_estimator(best_params["model"], task)),
             ]
         ).fit(X_tr, y_tr)

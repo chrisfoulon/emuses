@@ -22,9 +22,14 @@ optim_dict_predict = {
         },
         "features": {
             # choose feature recipe
-            "type": {"choices": ["gwd", "pca_gwd", "kpca_gwd"]},
-            # common
-            "sigma_gwd": {"low": 0.05, "high": 0.2, "log": True},
+            "feat_type": {"choices": ["gwd", "pca_gwd", "kpca_gwd", "ae"]},
+            # common for GWD-based features
+            "sigma_gwd": {
+                "low": 0.05,
+                "high": 0.2,
+                "log": True,
+                "conditional_on": {"feat_type": ["gwd", "pca_gwd", "kpca_gwd"]},
+            },
             "poly_deg": {"choices": [1, 2]},
             "use_raw": {"choices": [True, False]},
             # PCA / KPCA specific
@@ -77,15 +82,105 @@ optim_dict_phase1 = {
             },
         },
         "features": {
-            "type": {"choices": ["gwd", "pca_gwd"]},
+            "feat_type": {"choices": ["gwd", "pca_gwd"]},
             "sigma_gwd": {"low": 0.05, "high": 0.15, "log": True},
             "corr_thr": {"low": 0.10, "high": 0.30},
             "n_comp": {
                 "low": 20,
                 "high": 50,
                 "step": 10,
-                "conditional_on": {"type": ["pca_gwd"]},
+                "conditional_on": {"feat_type": ["pca_gwd"]},
             },
+        },
+    }
+}
+
+
+# optim_configs_predict.py
+
+optim_dict_corr_pca = {
+    "param": {
+        "model": {
+            # same model choices as before
+            "model_type": {"choices": ["kernel", "rf", "elastic"]},
+            "kernel": {
+                "sigma": {"low": 0.01, "high": 0.3, "log": True},
+            },
+            "rf": {
+                "n_estimators": {"low": 50, "high": 400, "step": 50},
+                "max_depth": {"low": 2, "high": 20},
+            },
+            "elastic": {
+                "alpha": {"low": 1e-4, "high": 10, "log": True},
+                "l1_ratio": {"low": 0.0, "high": 1.0},
+                "C": {"low": 0.01, "high": 100, "log": True},
+                "penalty": {"choices": ["l1", "l2"]},
+            },
+        },
+        "features": {
+            # only PCA and KPCA on the GWD matrix
+            "feat_type": {"choices": ["pca_gwd", "kpca_gwd"]},
+            # bandwidth for the underlying GWD computation
+            "sigma_gwd": {"low": 0.05, "high": 0.2, "log": True},
+            # optional polynomial lift
+            "poly_deg": {"choices": [1, 2]},
+            "use_raw": {"choices": [True, False]},
+            # if you want to fix the number of components
+            "n_comp": {
+                "low": 10,
+                "high": 80,
+                "step": 10,
+                "conditional_on": {"feat_type": ["pca_gwd", "kpca_gwd"]},
+            },
+            # PCA‐only adaptive variance threshold
+            "var_thr": {
+                "low": 0.75,
+                "high": 0.95,
+                "conditional_on": {"feat_type": ["pca_gwd"]},
+            },
+            # KPCA‐only RBF gamma
+            "feat_gamma": {
+                "low": 0.5,
+                "high": 5.0,
+                "log": True,
+                "conditional_on": {"feat_type": ["kpca_gwd"]},
+            },
+            # correlation filtering threshold (applies to both PCA and KPCA pipelines)
+            "corr_thr": {
+                "low": 0.15,
+                "high": 0.35,
+                "conditional_on": {"feat_type": ["pca_gwd", "kpca_gwd"]},
+            },
+        },
+    }
+}
+
+
+optim_dict_ae = {
+    "param": {
+        "model": {
+            # same model choices as other configs
+            "model_type": {"choices": ["kernel", "rf", "elastic"]},
+            "kernel": {
+                "sigma": {"low": 0.01, "high": 0.3, "log": True},
+            },
+            "rf": {
+                "n_estimators": {"low": 50, "high": 400, "step": 50},
+                "max_depth": {"low": 2, "high": 20},
+            },
+            "elastic": {
+                "alpha": {"low": 1e-4, "high": 10, "log": True},
+                "l1_ratio": {"low": 0.0, "high": 1.0},
+                "C": {"low": 0.01, "high": 100, "log": True},
+                "penalty": {"choices": ["l1", "l2"]},
+            },
+        },
+        "features": {
+            # Only AE features for direct comparison with PCA/KPCA approaches
+            "feat_type": {"choices": ["ae"]},
+            # optional polynomial lift
+            "poly_deg": {"choices": [1, 2]},
+            "use_raw": {"choices": [True, False]},
         },
     }
 }

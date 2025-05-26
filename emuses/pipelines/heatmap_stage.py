@@ -38,9 +38,12 @@ from emuses.config.optim_configs_predict import (
 )
 from emuses.tools.optim_utils import suggest_parameters_conditional
 from emuses.tools.optuna_cv import nested_optuna_cv
+from emuses.tools.ae_optuna import optimize_ae_pretraining
 
 
-def _optimise_target(col_idx, X, Y, task, cfg, out_dir, logger_name, optim_dict):
+def _optimise_target(
+    col_idx, X, Y, task, cfg, out_dir, logger_name, optim_dict, pretrained_ae=None
+):
     """
     Runs nested Optuna-CV for one target column and returns artefacts.
     Executed in a forked process by joblib → must be picklable.
@@ -63,10 +66,12 @@ def _optimise_target(col_idx, X, Y, task, cfg, out_dir, logger_name, optim_dict)
         target_tag=tag,
         output_folder=out_dir,
         optim_dict=optim_dict,
+        pretrained_ae=pretrained_ae,
     )
     logger.info(
         "%s  kept %d / %d rows  -  mean=%.3f", tag, len(yi), len(Y), scores.mean()
     )
+
     return tag, scores, pipes
 
 
@@ -160,6 +165,77 @@ class HeatmapStage(PipelineStage):
         )
         # ------------------------------------------------------------------
 
+        # ------------------------------------------------------------------
+        # 2.5 ─ AE/VAE Pretraining (if needed)
+        #       Check if the optimization space includes AE features and run
+        #       pretraining if enabled in config
+        # ------------------------------------------------------------------
+        ae_results = None
+
+        # Check if AE pretraining should be enabled
+        use_ae_pretrain = getattr(self.config, "use_ae_pretrain", False)
+        feat_choices = optim_dict_predict_selected["param"]["features"]["feat_type"][
+            "choices"
+        ]
+        has_ae_choice = "ae" in feat_choices
+
+        # Auto-enable AE pretraining if using AE-only optimization dictionary
+        # (i.e., when feat_type choices only contain "ae")
+        if not use_ae_pretrain and feat_choices == ["ae"]:
+            use_ae_pretrain = True
+            logger.info(
+                "Auto-enabling AE pretraining: optim dict only contains 'ae' features"
+            )
+
+        logger.info("=== AE PRETRAINING STATUS ===")
+        logger.info(f"use_ae_pretrain (final): {use_ae_pretrain}")
+        logger.info(f"feat_type choices: {feat_choices}")
+        logger.info(f"'ae' in choices: {has_ae_choice}")
+        logger.info(f"Will run AE pretraining: {use_ae_pretrain and has_ae_choice}")
+
+        # Log which optim dict is being used
+        if "cli_args" in context and "prediction_optim_dict" in context["cli_args"]:
+            logger.info(
+                f"Using optim dict from CLI: {context['cli_args']['prediction_optim_dict']}"
+            )
+        elif "optim_dict_predict" in context:
+            logger.info("Using optim dict from context")
+        else:
+            logger.info("Using default optim_dict_predict")
+
+        if use_ae_pretrain and has_ae_choice:
+
+            logger.info("Running AE/VAE pretraining optimization...")
+
+            # Use prediction coordinates as input for AE pretraining
+            ae_input_data = prediction_train_coords
+
+            # Get AE optimization parameters from config
+            ae_trials = getattr(self.config, "ae_optuna_trials", 20)
+
+            try:
+                ae_results = optimize_ae_pretraining(
+                    X=ae_input_data,
+                    n_trials=ae_trials,
+                    output_folder=self.config.output_folder,
+                    random_state=42,
+                )
+
+                logger.info(
+                    f"AE pretraining completed. Best reconstruction error: {ae_results['best_score']:.4f}"
+                )
+                logger.info(f"Best AE parameters: {ae_results['best_params']}")
+
+                # Store AE results in context for potential reuse
+                context["ae_pretraining_results"] = ae_results
+
+            except Exception as e:
+                logger.warning(
+                    f"AE pretraining failed: {e}. Continuing without AE pretraining."
+                )
+                ae_results = None
+        # ------------------------------------------------------------------
+
         # --------------  LOOP OVER TARGET COLUMNS  ------------------------
         X = prediction_train_coords  # design matrix
         Y = prediction_train_labels  # 1-D or 2-D
@@ -169,6 +245,11 @@ class HeatmapStage(PipelineStage):
 
         task = "clf" if getattr(self.config, "classification", False) else "reg"
         logger.info("HeatmapStage: optimising %d target(s)", Y.shape[1])
+
+        # Extract the fitted AE if available for use in parallel jobs
+        fitted_ae = None
+        if ae_results is not None:
+            fitted_ae = ae_results.get("fitted_ae")
 
         results = Parallel(n_jobs=-1, backend="loky")(
             delayed(_optimise_target)(
@@ -180,6 +261,7 @@ class HeatmapStage(PipelineStage):
                 self.config.output_folder,
                 logger.name,  # pass logger name so child can log
                 optim_dict_predict_selected,  # pass selected optimization dictionary
+                fitted_ae,  # pass pre-fitted AE if available
             )
             for col_idx in range(Y.shape[1])
         )

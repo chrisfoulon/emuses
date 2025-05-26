@@ -5,6 +5,13 @@ import logging
 import sys
 from pathlib import Path
 import urllib.parse
+import glob
+
+# Import pipeline classes
+from emuses.pipelines.emuses_pipeline import EMUSESPipeline
+from emuses.pipelines.umap_stage import UMAPStage
+from emuses.pipelines.heatmap_stage import HeatmapStage
+from emuses.pipelines.prediction_stage import PredictionStage
 
 
 def resolve_path(path_str):
@@ -55,11 +62,44 @@ def resolve_path(path_str):
     return path_str
 
 
-# Import pipeline classes
-from emuses.pipelines.emuses_pipeline import EMUSESPipeline
-from emuses.pipelines.umap_stage import UMAPStage
-from emuses.pipelines.heatmap_stage import HeatmapStage
-from emuses.pipelines.prediction_stage import PredictionStage
+def check_for_existing_optuna_databases(output_folder):
+    """
+    Check for existing Optuna database files in the output folder and exit if found.
+    This prevents conflicts from running the pipeline multiple times in the same directory.
+
+    Args:
+        output_folder: Path to the output directory
+    """
+    # Look for Optuna database files with the pattern optuna_target_*.db
+    db_pattern = str(output_folder / "optuna_target_*.db")
+    existing_dbs = glob.glob(db_pattern)
+
+    if existing_dbs:
+        print("\n" + "=" * 70)
+        print("ERROR: EXISTING OPTUNA DATABASE FILES DETECTED")
+        print("=" * 70)
+        print(
+            f"Found {len(existing_dbs)} existing Optuna database file(s) in output directory:"
+        )
+        for db_file in existing_dbs:
+            print(f"  - {db_file}")
+        print(
+            "\nThis indicates that the pipeline has been run previously in this directory."
+        )
+        print(
+            "Running the pipeline again without cleanup will cause Optuna study conflicts."
+        )
+        print("\nTo resolve this issue, please choose one of the following options:")
+        print("  1. Use a different output directory for this run")
+        print("  2. Delete the existing database files if you want to start fresh:")
+        for db_file in existing_dbs:
+            print(f'     rm "{db_file}"')
+        print("  3. Move the existing files to a backup location")
+        print(
+            "\nFor more information about this issue, see the pipeline documentation."
+        )
+        print("=" * 70)
+        sys.exit(1)
 
 
 def add_output_folder_argument(parser):
@@ -465,6 +505,9 @@ def main():
     # Create the output folder if it doesn't exist
     output_folder = Path(args.output_folder).resolve()
     output_folder.mkdir(parents=True, exist_ok=True)
+
+    # Check for existing Optuna database files to prevent conflicts
+    check_for_existing_optuna_databases(output_folder)
 
     command_file = output_folder / "command.txt"
     with open(command_file, "w") as f:

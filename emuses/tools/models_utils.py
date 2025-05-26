@@ -3,6 +3,7 @@ Helpers to instantiate regression / classification estimators
 from the Optuna-sampled hyper-parameter dict.
 """
 
+import logging
 from sklearn.ensemble import RandomForestRegressor, RandomForestClassifier
 from sklearn.linear_model import ElasticNet, LogisticRegression
 
@@ -13,45 +14,81 @@ from emuses.tools.kernel_regression_utils import (
 
 from sklearn.pipeline import FeatureUnion
 from emuses.tools.features_utils import RawCoords, GWD, PCAGWD, KernelPCAGWD, CorrFilter
+from emuses.tools.ae_utils import AETransformer
 from sklearn.preprocessing import PolynomialFeatures, StandardScaler
 
+logger = logging.getLogger(__name__)
 
-def build_feature_union(feat_cfg: dict):
+
+def build_feature_union(feat_cfg: dict, pretrained_ae=None):
+    """
+    Build feature union from configuration.
+
+    Parameters
+    ----------
+    feat_cfg : dict
+        Feature configuration dictionary
+    pretrained_ae : AETransformer, optional
+        Pre-fitted AE transformer to use instead of training new one
+
+    Returns
+    -------
+    sklearn.pipeline.FeatureUnion
+        Configured feature union
+    """
     steps = []
 
     # 1) Always (optionally) include the raw coordinates
     if feat_cfg.get("use_raw", True):
         steps.append(("raw", RawCoords()))
 
-    # 2) GWD
-    steps.append(("gwd", GWD(sigma=feat_cfg["sigma_gwd"], agg="none")))
+    # 2) Handle different feature types
+    feat_type = feat_cfg.get("feat_type", "gwd")
 
-    # 3) optional correlation filter (only when corr_thr in dict)
-    if "corr_thr" in feat_cfg:
-        steps.append(("corr", CorrFilter(thr=feat_cfg["corr_thr"])))
-
-    # 4) optional PCA / KPCA
-    if feat_cfg["type"] == "pca_gwd":
-        # Handle both n_comp and var_thr approaches
-        var_thr = feat_cfg.get("var_thr", None)
-        n_comp = None if var_thr is not None else feat_cfg.get("n_comp")
-        steps.append(
-            ("pca", PCAGWD(sigma=feat_cfg["sigma_gwd"], n_comp=n_comp, var_thr=var_thr))
-        )
-    elif feat_cfg["type"] == "kpca_gwd":
-        kpca_gamma = feat_cfg.get("feat_gamma")
-        if kpca_gamma is None:
-            raise KeyError("KPCA-GWD feature type requires 'feat_gamma' parameter")
-        steps.append(
-            (
-                "kpca",
-                KernelPCAGWD(
-                    sigma=feat_cfg["sigma_gwd"],
-                    n_comp=feat_cfg.get("n_comp"),
-                    kpca_gamma=kpca_gamma,
-                ),
+    if feat_type == "ae":
+        # Autoencoder/VAE features - requires pretrained AE
+        if pretrained_ae is not None:
+            # Use the pre-fitted AE
+            logger.info("Using pre-fitted AE transformer")
+            steps.append(("ae", pretrained_ae))
+        else:
+            raise ValueError(
+                "feat_type='ae' requires a pretrained autoencoder. "
+                "Enable AE pretraining in your configuration or provide pretrained_ae parameter."
             )
-        )
+    else:
+        # Traditional GWD-based features
+        steps.append(("gwd", GWD(sigma=feat_cfg["sigma_gwd"], agg="none")))
+
+        # 3) optional correlation filter (only when corr_thr in dict)
+        if "corr_thr" in feat_cfg:
+            steps.append(("corr", CorrFilter(thr=feat_cfg["corr_thr"])))
+
+        # 4) optional PCA / KPCA
+        if feat_cfg["feat_type"] == "pca_gwd":
+            # Handle both n_comp and var_thr approaches
+            var_thr = feat_cfg.get("var_thr", None)
+            n_comp = None if var_thr is not None else feat_cfg.get("n_comp")
+            steps.append(
+                (
+                    "pca",
+                    PCAGWD(sigma=feat_cfg["sigma_gwd"], n_comp=n_comp, var_thr=var_thr),
+                )
+            )
+        elif feat_cfg["feat_type"] == "kpca_gwd":
+            kpca_gamma = feat_cfg.get("feat_gamma")
+            if kpca_gamma is None:
+                raise KeyError("KPCA-GWD feature type requires 'feat_gamma' parameter")
+            steps.append(
+                (
+                    "kpca",
+                    KernelPCAGWD(
+                        sigma=feat_cfg["sigma_gwd"],
+                        n_comp=feat_cfg.get("n_comp"),
+                        kpca_gamma=kpca_gamma,
+                    ),
+                )
+            )
 
     # 5) optional polynomial lift
     if feat_cfg.get("poly_deg", 1) > 1:

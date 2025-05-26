@@ -55,12 +55,19 @@ def _make_unique_name(section: str, key: str, explicit: str | None) -> str:
     Build a unique Optuna parameter name. If `explicit` is supplied in the
     spec it wins, otherwise <section>_<key> is used. This guarantees no
     collisions across sections (kernel_sigma vs rf_sigma, etc.).
+
+    Prevents double prefixing when key already starts with section prefix.
     """
     if explicit:
         base = explicit
     else:
         base = key
-    return f"{section}_{base}"
+
+    # Avoid double prefixing - if key already starts with section_, don't add prefix
+    if base.startswith(f"{section}_"):
+        return base
+    else:
+        return f"{section}_{base}"
 
 
 # ──────────────────────────────────────────────────────────────────────
