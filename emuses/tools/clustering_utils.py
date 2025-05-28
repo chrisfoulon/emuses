@@ -7,7 +7,11 @@ import optuna
 from hdbscan import validity
 from sklearn.metrics import silhouette_score
 
-from emuses.tools.optim_utils import calculate_score, suggest_parameters, calculate_composite_score
+from emuses.tools.optim_utils import (
+    calculate_score,
+    suggest_parameters,
+    calculate_composite_score,
+)
 
 
 def compute_cluster_persistence(clusterer, normalized=True, max_value=1.0):
@@ -29,11 +33,14 @@ def compute_cluster_persistence(clusterer, normalized=True, max_value=1.0):
         float: Cluster persistence (or 0 if all points are noise).
     """
     # Check if labels are available and all points are noise.
-    if hasattr(clusterer, 'labels_') and np.all(clusterer.labels_ == -1):
+    if hasattr(clusterer, "labels_") and np.all(clusterer.labels_ == -1):
         return 0.0
 
     # Compute the raw persistence.
-    if hasattr(clusterer, 'cluster_persistence_') and len(clusterer.cluster_persistence_) > 0:
+    if (
+        hasattr(clusterer, "cluster_persistence_")
+        and len(clusterer.cluster_persistence_) > 0
+    ):
         persistence = np.mean(clusterer.cluster_persistence_)
     else:
         persistence = 0.0
@@ -41,7 +48,6 @@ def compute_cluster_persistence(clusterer, normalized=True, max_value=1.0):
     if not normalized:
         return persistence
     return min(1, persistence / max_value)
-
 
 
 def compute_noise_ratio(labels, normalized=True):
@@ -114,7 +120,9 @@ def evaluate_clustering_metrics(clusterer, embeddings, metrics_config=None):
             # We assume here that dbcv and validity_index refer to the same computation.
             computed_metrics["dbcv"] = compute_dbcv(embeddings, labels)
         elif metric_name == "cluster_persistence":
-            computed_metrics["cluster_persistence"] = compute_cluster_persistence(clusterer)
+            computed_metrics["cluster_persistence"] = compute_cluster_persistence(
+                clusterer
+            )
         else:
             # If you add more metrics in the future, handle them here.
             print(f"Warning: No computation defined for metric '{metric_name}'.")
@@ -126,8 +134,16 @@ def evaluate_clustering_metrics(clusterer, embeddings, metrics_config=None):
 # --- Inner (HDBSCAN) Optimization Using optim_dict --- #
 ###########################################################
 
-def inner_optimize_hdbscan(embeddings, optim_dict, n_inner_trials=20, n_jobs=1, random_state=42,
-                        approx_min_span_tree=True, core_dist_n_jobs=-1):
+
+def inner_optimize_hdbscan(
+    embeddings,
+    optim_dict,
+    n_inner_trials=20,
+    n_jobs=1,
+    random_state=42,
+    approx_min_span_tree=True,
+    core_dist_n_jobs=-1,
+):
     """
     For a given UMAP embedding, optimize HDBSCAN parameters.
 
@@ -148,60 +164,107 @@ def inner_optimize_hdbscan(embeddings, optim_dict, n_inner_trials=20, n_jobs=1, 
     """
     # Enforce the correct key for HDBSCAN parameters.
     if "hdbscan" not in optim_dict["param"]:
-        raise ValueError("The optimization dictionary must have a 'hdbscan' key in optim_dict['param'].")
-        
+        raise ValueError(
+            "The optimization dictionary must have a 'hdbscan' key in optim_dict['param']."
+        )
+
     inner_optim_dict = {
         "param": {"hdbscan": optim_dict["param"]["hdbscan"]},
-        "metrics": {"hdbscan": optim_dict["metrics"]["hdbscan"]}
+        "metrics": {"hdbscan": optim_dict["metrics"]["hdbscan"]},
     }
-    
+
     def inner_objective(inner_trial):
         params_all = suggest_parameters(inner_trial, inner_optim_dict)
-        hdbscan_params = params_all.get("hdbscan", params_all)        # Include reproducibility parameters in HDBSCAN parameters
-        hdbscan_params['cluster_selection_method'] = hdbscan_params.get('cluster_selection_method', 'eom')
-        
+        print(f"Trial {inner_trial.number}: Suggested parameters: {params_all}")
+        hdbscan_params = params_all.get("hdbscan", params_all)
+        print(f"Trial {inner_trial.number}: HDBSCAN parameters: {hdbscan_params}")
+
+        # Include reproducibility parameters in HDBSCAN parameters
+        hdbscan_params["cluster_selection_method"] = hdbscan_params.get(
+            "cluster_selection_method", "eom"
+        )
+
         # Create HDBSCAN with appropriate parameters
         # HDBSCAN accepts random_state but needs to prevent it from being passed to KDTree
         clusterer = hdbscan.HDBSCAN(
             **hdbscan_params,
             cluster_selection_epsilon=0.0,
             approx_min_span_tree=approx_min_span_tree,
-            core_dist_n_jobs=core_dist_n_jobs
+            core_dist_n_jobs=core_dist_n_jobs,
         )
         clusterer.fit(embeddings)
-        metrics = evaluate_clustering_metrics(clusterer, embeddings, inner_optim_dict["metrics"]["hdbscan"])
+        metrics = evaluate_clustering_metrics(
+            clusterer, embeddings, inner_optim_dict["metrics"]["hdbscan"]
+        )
         # Wrap the metrics under the "hdbscan" key to match the nested configuration
-        score = calculate_composite_score({"hdbscan": metrics},
-                                          inner_optim_dict["metrics"])
+        score = calculate_composite_score(
+            {"hdbscan": metrics}, inner_optim_dict["metrics"]
+        )
         return score
 
-    inner_study = optuna.create_study(direction="maximize", sampler=optuna.samplers.TPESampler(seed=random_state))
+    inner_study = optuna.create_study(
+        direction="maximize", sampler=optuna.samplers.TPESampler(seed=random_state)
+    )
+
+    # Debug: Check what parameters are available for optimization
+    print(f"HDBSCAN optimization parameters: {inner_optim_dict['param']['hdbscan']}")
+
     inner_study.optimize(inner_objective, n_trials=n_inner_trials, n_jobs=n_jobs)
 
     best_params = inner_study.best_params
     best_score = inner_study.best_value
 
+    # Debug: Check optimization results
+    print(f"Optuna study completed. Number of trials: {len(inner_study.trials)}")
+    print(f"Best params from study: {best_params}")
+    print(f"Best score: {best_score}")
+
     # If best_params is empty (which can happen if all parameters are fixed), fall back to the fixed dict.
     if not best_params:
-        best_params = inner_optim_dict["param"]["hdbscan"]    
-        best_hdbscan_params = best_params.get("hdbscan", best_params)    
+        print("Warning: best_params is empty, falling back to fixed parameters")
+        best_params = inner_optim_dict["param"]["hdbscan"]
+        best_hdbscan_params = best_params.get("hdbscan", best_params)
+    else:
+        # Convert prefixed parameter names from Optuna back to raw HDBSCAN parameter names
+        best_hdbscan_params = {}
+        for param_name, value in best_params.items():
+            if param_name.startswith("hdbscan_"):
+                # Strip the "hdbscan_" prefix
+                clean_param_name = param_name[len("hdbscan_") :]
+                best_hdbscan_params[clean_param_name] = value
+            else:
+                # Keep non-prefixed parameters as-is
+                best_hdbscan_params[param_name] = value
+
+    # Debug: Print the cleaned parameters
+    print(f"Cleaned HDBSCAN parameters: {best_hdbscan_params}")
+
     # Re-train best HDBSCAN model using the best parameters.
-    best_hdbscan_params['cluster_selection_method'] = best_hdbscan_params.get('cluster_selection_method', 'eom')    
+    best_hdbscan_params["cluster_selection_method"] = best_hdbscan_params.get(
+        "cluster_selection_method", "eom"
+    )
+
+    # Debug: Print final parameters before creating HDBSCAN
+    print(f"Final HDBSCAN parameters for model creation: {best_hdbscan_params}")
     best_clusterer = hdbscan.HDBSCAN(
         prediction_data=True,
         cluster_selection_epsilon=0.0,
         approx_min_span_tree=approx_min_span_tree,
         core_dist_n_jobs=core_dist_n_jobs,
-        **best_hdbscan_params
+        **best_hdbscan_params,
     )
     best_labels = best_clusterer.fit_predict(embeddings)
     best_metrics = evaluate_clustering_metrics(best_clusterer, embeddings)
     return best_params, best_score, best_clusterer, best_labels, best_metrics
 
 
-
-def evaluate_hdbscan(filtered_coordinates, size_factor=0.5, random_state=42, 
-                approx_min_span_tree=True, core_dist_n_jobs=-1):
+def evaluate_hdbscan(
+    filtered_coordinates,
+    size_factor=0.5,
+    random_state=42,
+    approx_min_span_tree=True,
+    core_dist_n_jobs=-1,
+):
     """
     Automatically selects the best parameters for HDBSCAN clustering.
 
@@ -235,13 +298,13 @@ def evaluate_hdbscan(filtered_coordinates, size_factor=0.5, random_state=42,
     best_clusterer = None
 
     for min_cluster_size in min_cluster_sizes:
-        for min_samples in min_samples_list:            
-            try:                  
+        for min_samples in min_samples_list:
+            try:
                 clusterer = hdbscan.HDBSCAN(
-                    min_cluster_size=min_cluster_size, 
-                    min_samples=min_samples, 
+                    min_cluster_size=min_cluster_size,
+                    min_samples=min_samples,
                     approx_min_span_tree=approx_min_span_tree,
-                    core_dist_n_jobs=core_dist_n_jobs
+                    core_dist_n_jobs=core_dist_n_jobs,
                 )
                 labels = clusterer.fit_predict(filtered_coordinates)
 
@@ -259,11 +322,13 @@ def evaluate_hdbscan(filtered_coordinates, size_factor=0.5, random_state=42,
                             "min_samples": min_samples,
                             "stability": stability,
                             "silhouette": silhouette,
-                            "score": score
+                            "score": score,
                         }
                         best_clusterer = clusterer
             except ValueError as e:
-                print(f"Failed for min_cluster_size={min_cluster_size}, min_samples={min_samples}: {e}")
+                print(
+                    f"Failed for min_cluster_size={min_cluster_size}, min_samples={min_samples}: {e}"
+                )
                 continue
 
     return best_clusterer, best_params
@@ -284,7 +349,9 @@ def cluster_coordinates(filtered_coordinates, size_factor=0.5):
     """
     if filtered_coordinates.shape[0] > 0:
         # Call the automated evaluation function to find the best parameters
-        best_clusterer, best_params = evaluate_hdbscan(filtered_coordinates, size_factor=size_factor)
+        best_clusterer, best_params = evaluate_hdbscan(
+            filtered_coordinates, size_factor=size_factor
+        )
 
         if best_clusterer:
             # Use the best clusterer to generate labels
@@ -302,7 +369,9 @@ def cluster_coordinates(filtered_coordinates, size_factor=0.5):
     return best_clusterer, cluster_labels, best_params
 
 
-def save_hdbscan_model(clusterer, output_folder, prefix='', model_name='hdbscan_model', joblib_version=None):
+def save_hdbscan_model(
+    clusterer, output_folder, prefix="", model_name="hdbscan_model", joblib_version=None
+):
     """
     Save an HDBSCAN model to a file based on the filename convention and system joblib version.
 
@@ -346,10 +415,16 @@ def is_hdbscan_file(filepath):
     Returns:
     is_hdbscan (bool): True if the file is an HDBSCAN model file, False otherwise.
     """
-    return str(filepath).endswith('.joblib')
+    return str(filepath).endswith(".joblib")
 
 
-def load_hdbscan_model(base_path, prefix='', model_name='hdbscan_model', joblib_version=None, max_attempts=10):
+def load_hdbscan_model(
+    base_path,
+    prefix="",
+    model_name="hdbscan_model",
+    joblib_version=None,
+    max_attempts=10,
+):
     """
     Load an HDBSCAN model based on the filename convention and system joblib version.
 

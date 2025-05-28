@@ -407,9 +407,10 @@ def optuna_model_selection(
     random_state=42,
     optuna_seed=None,
     models=None,
+    task="reg",
 ):
     """
-    Use Optuna to find the best model and hyperparameters for a regression task.
+    Use Optuna to find the best model and hyperparameters for regression or classification.
 
     Parameters:
     -----------
@@ -426,7 +427,9 @@ def optuna_model_selection(
     feature_set_name : str
         Name of the feature set (for logging)
     metric : str
-        Evaluation metric ('r2', 'neg_mean_squared_error', 'neg_mean_absolute_error')
+        Evaluation metric.
+        For regression: 'r2', 'neg_mean_squared_error', 'neg_mean_absolute_error'
+        For classification: 'accuracy', 'balanced_accuracy', 'f1', 'roc_auc'
     n_splits : int
         Number of cross-validation splits
     random_state : int
@@ -435,6 +438,8 @@ def optuna_model_selection(
         Random seed for Optuna hyperparameter optimization. If None, uses random_state.
     models : list or None
         List of model types to try. If None, tries ['gp', 'rf', 'gb', 'kr']
+    task : str, default="reg"
+        Task type: "reg" for regression or "clf" for classification
 
     Returns:
     --------
@@ -528,19 +533,42 @@ def optuna_model_selection(
             model = KernelRegressor(kernel=kernel, sigma=bandwidth)
 
         # Evaluate with cross-validation
-        if metric == "r2":
-            score = cross_val_score(model, X, y, cv=cv, scoring="r2", n_jobs=1)
-            return np.mean(score)  # Higher is better
-        elif metric == "neg_mean_squared_error":
-            score = cross_val_score(
-                model, X, y, cv=cv, scoring="neg_mean_squared_error", n_jobs=1
-            )
-            return np.mean(score)  # Higher (less negative) is better
-        elif metric == "neg_mean_absolute_error":
-            score = cross_val_score(
-                model, X, y, cv=cv, scoring="neg_mean_absolute_error", n_jobs=1
-            )
-            return np.mean(score)  # Higher (less negative) is better
+        if task == "reg":
+            # Regression metrics
+            if metric == "r2":
+                score = cross_val_score(model, X, y, cv=cv, scoring="r2", n_jobs=1)
+            elif metric == "neg_mean_squared_error":
+                score = cross_val_score(
+                    model, X, y, cv=cv, scoring="neg_mean_squared_error", n_jobs=1
+                )
+            elif metric == "neg_mean_absolute_error":
+                score = cross_val_score(
+                    model, X, y, cv=cv, scoring="neg_mean_absolute_error", n_jobs=1
+                )
+            else:
+                # Default to R² for unknown regression metrics
+                score = cross_val_score(model, X, y, cv=cv, scoring="r2", n_jobs=1)
+        else:
+            # Classification metrics
+            if metric == "accuracy":
+                score = cross_val_score(
+                    model, X, y, cv=cv, scoring="accuracy", n_jobs=1
+                )
+            elif metric == "balanced_accuracy":
+                score = cross_val_score(
+                    model, X, y, cv=cv, scoring="balanced_accuracy", n_jobs=1
+                )
+            elif metric == "f1":
+                score = cross_val_score(model, X, y, cv=cv, scoring="f1", n_jobs=1)
+            elif metric == "roc_auc":
+                score = cross_val_score(model, X, y, cv=cv, scoring="roc_auc", n_jobs=1)
+            else:
+                # Default to accuracy for unknown classification metrics
+                score = cross_val_score(
+                    model, X, y, cv=cv, scoring="accuracy", n_jobs=1
+                )
+
+        return np.mean(score)  # Higher is better
 
     # Create Optuna study with seed for reproducibility
     # Use optuna_seed if provided, otherwise fall back to random_state
@@ -616,24 +644,57 @@ def optuna_model_selection(
 
     # Evaluate on the full dataset
     y_pred = best_model.predict(X)
-    r2 = r2_score(y, y_pred)
-    mse = mean_squared_error(y, y_pred)
-    mae = mean_absolute_error(y, y_pred)
 
-    # Prepare results
+    # Calculate metrics based on task type
     results = {
         "best_model_name": best_model_name,
         "best_params": best_params,
         "best_model": best_model,
         "best_trial": study.best_trial,
         "best_value": study.best_value,
-        "r2": r2,
-        "mse": mse,
-        "mae": mae,
         "optimization_time": optimization_time,
         "n_trials": n_trials,
         "feature_set_name": feature_set_name,
     }
+
+    if task == "reg":
+        # Regression metrics
+        r2 = r2_score(y, y_pred)
+        mse = mean_squared_error(y, y_pred)
+        mae = mean_absolute_error(y, y_pred)
+        results.update({"r2": r2, "mse": mse, "mae": mae})
+    else:
+        # Classification metrics
+        from sklearn.metrics import (
+            accuracy_score,
+            balanced_accuracy_score,
+            f1_score,
+            roc_auc_score,
+        )
+
+        accuracy = accuracy_score(y, y_pred)
+        balanced_acc = balanced_accuracy_score(y, y_pred)
+
+        # For multi-class compatibility
+        f1_avg = f1_score(y, y_pred, average="weighted")
+
+        results.update(
+            {
+                "accuracy": accuracy,
+                "balanced_accuracy": balanced_acc,
+                "f1_score": f1_avg,
+            }
+        )
+
+        # ROC AUC is only applicable for binary classification or with OvR strategy
+        try:
+            if hasattr(best_model, "predict_proba") and len(np.unique(y)) == 2:
+                y_proba = best_model.predict_proba(X)[:, 1]  # Probability of class 1
+                roc_auc = roc_auc_score(y, y_proba)
+                results["roc_auc"] = roc_auc
+        except Exception as e:
+            print(f"Warning: Could not compute ROC AUC: {e}")
+            pass
 
     # Save results if output folder is provided
     if output_folder is not None:

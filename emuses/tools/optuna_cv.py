@@ -23,7 +23,18 @@ from emuses.tools.models_utils import build_estimator, build_feature_union
 
 def _objective_factory(X, y, task: str, inner_cv, optim_dict, pretrained_ae=None):
     """Return an Optuna objective that samples the *conditional* space."""
-    scoring = "accuracy" if task == "clf" else "r2"
+    # Use appropriate scoring metric based on the task
+    if task == "clf":
+        # For classification tasks
+        if len(np.unique(y)) == 2:  # Binary classification
+            scoring = (
+                "balanced_accuracy"  # More robust than accuracy for imbalanced data
+            )
+        else:  # Multi-class classification
+            scoring = "balanced_accuracy"  # Good default for multi-class
+    else:
+        # For regression tasks
+        scoring = "r2"
 
     def objective(trial):
         # 1 ─ sample hyper-parameters
@@ -35,9 +46,15 @@ def _objective_factory(X, y, task: str, inner_cv, optim_dict, pretrained_ae=None
 
         # 3 ─ cross-validate
         pipe = Pipeline([("feat", feats), ("est", est)])
-        return cross_val_score(
-            pipe, X, y, cv=inner_cv, scoring=scoring, n_jobs=-1
-        ).mean()
+
+        try:
+            scores = cross_val_score(
+                pipe, X, y, cv=inner_cv, scoring=scoring, n_jobs=-1
+            )
+            return scores.mean()
+        except Exception as e:
+            print(f"Warning: Cross-validation failed with error: {e}")
+            return float("-inf")  # Return worst possible score on error
 
     return objective
 
@@ -59,10 +76,36 @@ def nested_optuna_cv(
     Fully nested CV:
       outer K-fold  → unbiased score
       inner K-fold  → Optuna search
+
+    Parameters
+    ----------
+    X : array-like, shape (n_samples, n_features)
+        Training input samples.
+    y : array-like, shape (n_samples,)
+        Target values.
+    task : str, default="reg"
+        Task type, either "reg" for regression or "clf" for classification.
+    n_outer : int, default=5
+        Number of outer cross-validation folds.
+    n_trials : int, default=50
+        Number of Optuna trials per inner CV.
+    random_state : int, default=42
+        Random state for reproducibility.
+    target_tag : str, default="target"
+        Tag for target variable, used in output file naming.
+    output_folder : str, default=None
+        Folder to save output files.
+    optim_dict : dict, default=None
+        Optimization parameter space dictionary.
+    pretrained_ae : object, default=None
+        Pretrained autoencoder for feature extraction.
+
     Returns
     -------
-    scores     : ndarray (n_outer,)
-    pipelines  : list[Pipeline]  - best pipeline per outer fold
+    scores : ndarray, shape (n_outer,)
+        Scores for each outer fold.
+    pipelines : list[Pipeline]
+        Best pipeline for each outer fold.
     """
     # Use provided optim_dict or fall back to default
     if optim_dict is None:

@@ -39,6 +39,7 @@ from emuses.config.optim_configs_predict import (
 from emuses.tools.optim_utils import suggest_parameters_conditional
 from emuses.tools.optuna_cv import nested_optuna_cv
 from emuses.tools.ae_optuna import optimize_ae_pretraining
+import openpyxl
 
 
 def _optimise_target(
@@ -157,15 +158,6 @@ class HeatmapStage(PipelineStage):
         # ------------------------------------------------------------------
 
         # ------------------------------------------------------------------
-        # DEBUG print one random sample of the search space
-        _trial = optuna.create_study().ask()
-        logger.debug(
-            "Optuna sample ➜ %s",
-            suggest_parameters_conditional(_trial, optim_dict_predict_selected),
-        )
-        # ------------------------------------------------------------------
-
-        # ------------------------------------------------------------------
         # 2.5 ─ AE/VAE Pretraining (if needed)
         #       Check if the optimization space includes AE features and run
         #       pretraining if enabled in config
@@ -179,12 +171,12 @@ class HeatmapStage(PipelineStage):
         ]
         has_ae_choice = "ae" in feat_choices
 
-        # Auto-enable AE pretraining if using AE-only optimization dictionary
-        # (i.e., when feat_type choices only contain "ae")
-        if not use_ae_pretrain and feat_choices == ["ae"]:
+        # Auto-enable AE pretraining if optimization dictionary includes AE features
+        # This ensures AE pretraining runs whenever "ae" is in the feature choices
+        if not use_ae_pretrain and has_ae_choice:
             use_ae_pretrain = True
             logger.info(
-                "Auto-enabling AE pretraining: optim dict only contains 'ae' features"
+                "Auto-enabling AE pretraining: optim dict contains 'ae' features"
             )
 
         logger.info("=== AE PRETRAINING STATUS ===")
@@ -205,7 +197,11 @@ class HeatmapStage(PipelineStage):
 
         if use_ae_pretrain and has_ae_choice:
 
+            logger.info("=== AUTOENCODER PRETRAINING ===")
             logger.info("Running AE/VAE pretraining optimization...")
+            logger.info(
+                "This step will find optimal autoencoder parameters for feature extraction."
+            )
 
             # Use prediction coordinates as input for AE pretraining
             ae_input_data = prediction_train_coords
@@ -244,7 +240,43 @@ class HeatmapStage(PipelineStage):
             Y = Y[:, None]
 
         task = "clf" if getattr(self.config, "classification", False) else "reg"
-        logger.info("HeatmapStage: optimising %d target(s)", Y.shape[1])
+
+        # For multi-class classification, convert to one-vs-rest binary targets
+        if task == "clf" and Y.shape[1] == 1:
+            unique_classes = np.unique(Y[:, 0])
+            n_classes = len(unique_classes)
+
+            if n_classes > 2:
+                # Convert multi-class to multiple binary classification targets
+                logger.info(
+                    "HeatmapStage: converting %d-class problem to %d binary classification targets (one-vs-rest)",
+                    n_classes,
+                    n_classes,
+                )
+
+                # Create binary target matrix: each column is one class vs rest
+                Y_binary = np.zeros((Y.shape[0], n_classes), dtype=int)
+                for i, class_label in enumerate(unique_classes):
+                    Y_binary[:, i] = (Y[:, 0] == class_label).astype(int)
+
+                Y = Y_binary
+                logger.info(
+                    "HeatmapStage: optimising %d binary classification targets",
+                    Y.shape[1],
+                )
+            else:
+                # Binary classification - keep as is
+                logger.info("HeatmapStage: optimising 1 binary classification target")
+        else:
+            # Regression or already multi-target
+            if task == "clf":
+                logger.info(
+                    "HeatmapStage: optimising %d classification targets", Y.shape[1]
+                )
+            else:
+                logger.info(
+                    "HeatmapStage: optimising %d regression target(s)", Y.shape[1]
+                )
 
         # Extract the fitted AE if available for use in parallel jobs
         fitted_ae = None
@@ -271,6 +303,12 @@ class HeatmapStage(PipelineStage):
                 "cv_scores": scores,
                 "best_pipelines": pipes,
             }
+
+        # ------------------------------------------------------------------
+        # Generate performance measures CSV files
+        # ------------------------------------------------------------------
+        self._generate_performance_csv_files(context, task, Y.shape[1], logger)
+
         # ------------------------------------------------------------------
 
         # # Determine which data to use for the heatmap stage
@@ -538,6 +576,184 @@ class HeatmapStage(PipelineStage):
 
         # # Store results in context
         # context.update(results)
+
+    def _generate_performance_csv_files(self, context, task, n_targets, logger):
+        """
+        Generate performance measures CSV files after the parallel optimization loop.
+
+        Creates multiple CSV files with explicit names containing detailed cross-validation
+        performance data for all targets, making it easy to quickly view results.
+
+        Parameters
+        ----------
+        context : dict
+            Pipeline context containing prediction_results
+        task : str
+            "clf" for classification, "reg" for regression
+        n_targets : int
+            Number of targets that were optimized
+        logger : logging.Logger
+            Logger instance for status messages
+        """
+        logger.info("Generating performance measures CSV files...")
+
+        try:
+            prediction_results = context.get("prediction_results", {})
+
+            if not prediction_results:
+                logger.warning("No prediction results found - skipping CSV generation")
+                return
+
+            # Prepare data for CSVs
+            summary_data = []
+            individual_fold_data = []
+
+            for target_tag, result_data in prediction_results.items():
+                cv_scores = result_data.get("cv_scores", [])
+
+                if len(cv_scores) == 0:
+                    logger.warning(f"No CV scores found for {target_tag}")
+                    continue
+
+                # Calculate summary statistics for main summary file
+                summary_row = {
+                    "Target": target_tag,
+                    "Task": task.upper(),
+                    "N_Folds": len(cv_scores),
+                    "Mean_Score": np.mean(cv_scores),
+                    "Std_Score": np.std(cv_scores),
+                    "Min_Score": np.min(cv_scores),
+                    "Max_Score": np.max(cv_scores),
+                    "Median_Score": np.median(cv_scores),
+                    "Q1_Score": np.percentile(cv_scores, 25),
+                    "Q3_Score": np.percentile(cv_scores, 75),
+                    "Range_Score": np.max(cv_scores) - np.min(cv_scores),
+                }
+                summary_data.append(summary_row)
+
+                # Prepare individual fold data for detailed file
+                for i, score in enumerate(cv_scores):
+                    fold_row = {
+                        "Target": target_tag,
+                        "Task": task.upper(),
+                        "Fold": i + 1,
+                        "Score": score,
+                    }
+                    individual_fold_data.append(fold_row)
+
+            if not summary_data:
+                logger.warning("No valid data for CSV generation")
+                return
+
+            # Generate timestamp for unique filenames
+            from datetime import datetime
+
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            output_folder = Path(self.config.output_folder)
+
+            # File 1: Performance Summary Statistics
+            summary_df = pd.DataFrame(summary_data)
+            summary_df = summary_df.sort_values("Target")
+            numeric_columns = summary_df.select_dtypes(include=[np.number]).columns
+            summary_df[numeric_columns] = summary_df[numeric_columns].round(4)
+
+            summary_filename = f"performance_summary_statistics_{task}_{timestamp}.csv"
+            summary_path = output_folder / summary_filename
+            summary_df.to_csv(summary_path, index=False)
+            logger.info(f"Performance summary statistics saved: {summary_filename}")
+
+            # File 2: Individual Fold Scores
+            if individual_fold_data:
+                folds_df = pd.DataFrame(individual_fold_data)
+                folds_df = folds_df.sort_values(["Target", "Fold"])
+                folds_df["Score"] = folds_df["Score"].round(4)
+
+                folds_filename = f"performance_individual_folds_{task}_{timestamp}.csv"
+                folds_path = output_folder / folds_filename
+                folds_df.to_csv(folds_path, index=False)
+                logger.info(f"Individual fold scores saved: {folds_filename}")
+
+            # File 3: Overall Statistics (if multiple targets)
+            if len(summary_data) > 1:
+                overall_stats = {
+                    "Metric": [
+                        "Overall_Mean_Performance",
+                        "Overall_Std_Performance",
+                        "Best_Performing_Target",
+                        "Best_Target_Score",
+                        "Worst_Performing_Target",
+                        "Worst_Target_Score",
+                        "Total_Targets_Optimized",
+                        "Task_Type",
+                    ],
+                    "Value": [
+                        round(summary_df["Mean_Score"].mean(), 4),
+                        round(summary_df["Mean_Score"].std(), 4),
+                        summary_df.loc[summary_df["Mean_Score"].idxmax(), "Target"],
+                        round(summary_df["Mean_Score"].max(), 4),
+                        summary_df.loc[summary_df["Mean_Score"].idxmin(), "Target"],
+                        round(summary_df["Mean_Score"].min(), 4),
+                        len(summary_data),
+                        task.upper(),
+                    ],
+                }
+                overall_df = pd.DataFrame(overall_stats)
+
+                overall_filename = (
+                    f"performance_overall_statistics_{task}_{timestamp}.csv"
+                )
+                overall_path = output_folder / overall_filename
+                overall_df.to_csv(overall_path, index=False)
+                logger.info(f"Overall statistics saved: {overall_filename}")
+
+            # File 4: Target Rankings by Performance
+            if len(summary_data) > 1:
+                ranking_df = summary_df[["Target", "Mean_Score", "Std_Score"]].copy()
+                ranking_df = ranking_df.sort_values("Mean_Score", ascending=False)
+                ranking_df["Rank"] = range(1, len(ranking_df) + 1)
+                ranking_df = ranking_df[["Rank", "Target", "Mean_Score", "Std_Score"]]
+
+                ranking_filename = f"performance_target_rankings_{task}_{timestamp}.csv"
+                ranking_path = output_folder / ranking_filename
+                ranking_df.to_csv(ranking_path, index=False)
+                logger.info(f"Target rankings saved: {ranking_filename}")
+
+            # Log performance summary statistics
+            mean_performance = summary_df["Mean_Score"].mean()
+            std_performance = summary_df["Mean_Score"].std()
+            best_target = summary_df.loc[summary_df["Mean_Score"].idxmax(), "Target"]
+            best_score = summary_df["Mean_Score"].max()
+
+            logger.info(f"Performance Summary Statistics:")
+            logger.info(f"  Task: {task.upper()}")
+            logger.info(f"  Targets optimized: {len(summary_data)}")
+            logger.info(f"  Overall mean performance: {mean_performance:.4f}")
+            logger.info(f"  Overall std performance: {std_performance:.4f}")
+            logger.info(f"  Best target: {best_target} (score: {best_score:.4f})")
+
+            # Store summary in context for potential later use
+            csv_files_created = [summary_filename]
+            if individual_fold_data:
+                csv_files_created.append(folds_filename)
+            if len(summary_data) > 1:
+                csv_files_created.extend([overall_filename, ranking_filename])
+
+            context["performance_summary"] = {
+                "summary_dataframe": summary_df,
+                "csv_files_created": csv_files_created,
+                "summary_csv_path": str(summary_path),
+                "overall_stats": {
+                    "mean_performance": float(mean_performance),
+                    "std_performance": float(std_performance),
+                    "best_target": best_target,
+                    "best_score": float(best_score),
+                    "n_targets": len(summary_data),
+                    "task": task,
+                },
+            }
+
+        except Exception as e:
+            logger.error(f"Error generating performance CSV files: {e}")
 
 
 def inspect_data_state(

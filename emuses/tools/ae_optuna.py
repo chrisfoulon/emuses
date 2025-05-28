@@ -48,20 +48,23 @@ def ae_objective_factory(X, cv_folds=5, random_state=42, optim_dict=None):
         # Sample AE hyperparameters using optim_dict mechanism
         params = suggest_parameters(trial, optim_dict)
 
+        # Extract parameters from the nested structure - suggest_parameters returns {"ae": {...}}
+        ae_params = params.get("ae", {})
+
         # Extract parameters with defaults for compatibility
-        ae_type = params.get("ae_type", "ae")
-        hidden_dim = params.get("ae_hidden_dim", 64)
-        lr = params.get("ae_lr", 1e-3)
-        epochs = params.get("ae_epochs", 100)
-        batch_size = params.get("ae_batch_size", 32)
-        weight_decay = params.get("ae_weight_decay", 0.0)
+        ae_type = ae_params.get("ae_type", "ae")
+        hidden_dim = ae_params.get("ae_hidden_dim", 64)
+        lr = ae_params.get("ae_lr", 1e-3)
+        epochs = ae_params.get("ae_epochs", 100)
+        batch_size = ae_params.get("ae_batch_size", 32)
+        weight_decay = ae_params.get("ae_weight_decay", 0.0)
 
         # VAE-specific parameter (only used if ae_type is "vae")
-        beta = params.get("vae_beta", 1.0)
+        beta = ae_params.get("vae_beta", 1.0)
 
         # ImprovedAE-specific parameters
-        ae_depth = params.get("ae_depth", 2)
-        dropout = params.get("ae_dropout", 0.1)
+        ae_depth = ae_params.get("ae_depth", 2)
+        dropout = ae_params.get("ae_dropout", 0.1)
 
         # Create AE transformer with sampled parameters
         ae_transformer = AETransformer(
@@ -134,8 +137,13 @@ def optimize_ae_pretraining(X, n_trials=200, output_folder=None, random_state=42
         load_if_exists=True,
     )
 
+    # Load AE optimization dictionary
+    optim_dict_ae = load_optim_dict_ae("default")
+
     # Run optimization
-    objective = ae_objective_factory(X, random_state=random_state)
+    objective = ae_objective_factory(
+        X, random_state=random_state, optim_dict=optim_dict_ae
+    )
     study.optimize(objective, n_trials=n_trials, show_progress_bar=True)
 
     # Get best parameters and fit final model
