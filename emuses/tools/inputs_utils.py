@@ -14,6 +14,7 @@ from scipy.sparse import lil_matrix
 from bids import BIDSLayout
 
 from emuses.tools.data_preproc import find_min_resolution
+from emuses.tools.model_io import ModelIOManager
 
 from sklearn.datasets import fetch_openml, load_digits
 from sklearn.preprocessing import RobustScaler, StandardScaler
@@ -578,7 +579,29 @@ def load_or_check_umap_outputs(
     # If both files exist and we're not forcing recomputation, load them
     if model_exists and embeddings_exist:
         print(f"Loading existing UMAP model from {model_path}")
-        reducer = joblib.load(model_path)
+
+        # Try to load using new I/O system first, then fallback to legacy
+        try:
+            manager = ModelIOManager(model_path.parent)
+            model_name = model_path.stem.replace("_model", "").replace(".joblib", "")
+
+            artifact = manager.load_model(
+                model_name=model_name, model_type="umap", allow_version_mismatch=True
+            )
+
+            if artifact:
+                reducer = artifact.model
+                print(
+                    f"Successfully loaded UMAP model using ModelIOManager: {artifact.filepath}"
+                )
+            else:
+                # Fallback to legacy loading
+                reducer = joblib.load(model_path)
+                print(f"Loaded UMAP model using legacy method from {model_path}")
+        except Exception as e:
+            print(f"ModelIOManager loading failed: {e}, falling back to legacy method")
+            reducer = joblib.load(model_path)
+
         results["reducer"] = reducer
         results["status"]["loaded"].append("reducer")
 
@@ -623,15 +646,62 @@ def load_or_check_umap_outputs(
             end_time = time.time()
             print(f"UMAP fitting completed in {end_time - start_time:.2f} seconds")
 
-            # Save the model
-            joblib.dump(reducer, model_path)
-            print(f"UMAP model saved to {model_path}")
+            # Save the model using ModelIOManager
+            try:
+                manager = ModelIOManager(model_path.parent)
+                model_name = model_path.stem.replace("_model", "").replace(
+                    ".joblib", ""
+                )
+
+                saved_path = manager.save_model(
+                    model=reducer,
+                    model_name=model_name,
+                    model_type="umap",
+                    config=umap_params,
+                    description="UMAP model trained on input features",
+                    tags=["input_processing", "feature_reduction"],
+                )
+                print(f"UMAP model saved using ModelIOManager: {saved_path}")
+            except Exception as e:
+                print(
+                    f"ModelIOManager saving failed: {e}, falling back to legacy method"
+                )
+                joblib.dump(reducer, model_path)
+                print(f"UMAP model saved to {model_path}")
 
             results["reducer"] = reducer
             results["status"]["generated"].append("reducer")
         else:
             print(f"Using existing UMAP model from {model_path}")
-            reducer = joblib.load(model_path)
+
+            # Try to load using new I/O system first, then fallback to legacy
+            try:
+                manager = ModelIOManager(model_path.parent)
+                model_name = model_path.stem.replace("_model", "").replace(
+                    ".joblib", ""
+                )
+
+                artifact = manager.load_model(
+                    model_name=model_name,
+                    model_type="umap",
+                    allow_version_mismatch=True,
+                )
+
+                if artifact:
+                    reducer = artifact.model
+                    print(
+                        f"Successfully loaded UMAP model using ModelIOManager: {artifact.filepath}"
+                    )
+                else:
+                    # Fallback to legacy loading
+                    reducer = joblib.load(model_path)
+                    print(f"Loaded UMAP model using legacy method from {model_path}")
+            except Exception as e:
+                print(
+                    f"ModelIOManager loading failed: {e}, falling back to legacy method"
+                )
+                reducer = joblib.load(model_path)
+
             results["reducer"] = reducer
             results["status"]["loaded"].append("reducer")
 

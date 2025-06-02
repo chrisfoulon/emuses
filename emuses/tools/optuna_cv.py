@@ -7,6 +7,9 @@ import joblib
 import numpy as np
 import optuna
 
+# Import new model I/O system
+from .model_io import ModelIOManager
+
 from sklearn.pipeline import Pipeline
 from sklearn.model_selection import (
     KFold,
@@ -153,6 +156,19 @@ def nested_optuna_cv(
         scores.append(score)
         pipelines.append(best_pipe)
 
-        joblib.dump(best_pipe, f"best_pipeline_fold{fold}.joblib")
+        # Save pipeline using new model I/O system
+        if output_folder:
+            model_manager = ModelIOManager(output_folder)
+            model_manager.save_model(
+                model=best_pipe,
+                model_name=f"best_pipeline_fold{fold}",
+                model_type="sklearn_pipeline",
+                description=f"Best pipeline for fold {fold} with score {score:.4f}",
+                tags=["cv", "pipeline", f"fold_{fold}", target_tag],
+                config=best_params,
+            )
+        else:
+            # Fallback to current directory if no output folder specified
+            joblib.dump(best_pipe, f"best_pipeline_fold{fold}.joblib")
 
     return np.asarray(scores), pipelines

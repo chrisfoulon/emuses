@@ -28,6 +28,9 @@ class PipelineConfig:
     outer_folds: int = 5  # number of outer CV splits
     optuna_trials: int = 60  # trials per outer split
 
+    # Model versioning for standardized I/O
+    model_version: str = "1.0.0"  # Version for model artifacts and metadata tracking
+
     # Computed fields
     output_folder: Path = field(init=False)
     umap_params: dict = field(default_factory=dict)
@@ -144,3 +147,16 @@ class PipelineConfig:
 
         optuna.logging.disable_default_handler()
         optuna.logging.enable_propagation()
+
+    def get_model_io_manager(self):
+        """
+        Get a ModelIOManager instance for standardized model persistence.
+
+        Returns:
+            ModelIOManager: Configured manager for this pipeline's models
+        """
+        from ..tools.model_io import ModelIOManager
+
+        return ModelIOManager(
+            base_path=self.output_folder / "models", version=self.model_version
+        )

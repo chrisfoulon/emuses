@@ -33,6 +33,7 @@ from emuses.tools.visualisation import (
     plot_clustering_interactive_with_hover,
     save_optimization_log_plot,
 )
+from emuses.tools.model_io import ModelIOManager
 
 
 def evaluate_embedding_statistics(embeddings, metrics_config):
@@ -453,9 +454,19 @@ def train_and_save_umap_optim_with_nested_clustering(
             best_umap_params = trial.user_attrs["umap_params"]
             best_model = umap.UMAP(**best_umap_params, **kwargs)
             best_model.fit(input_matrix)
-            dump(best_model, best_model_path)
+
+            # Use ModelIOManager for saving
+            manager = ModelIOManager(output_folder)
+            manager.save_model(
+                model=best_model,
+                model_name="best_umap_model",
+                model_type="umap",
+                config=best_umap_params,
+                description=f"Best UMAP model from trial {trial.number} with score {trial.value}",
+                tags=["optimization", "best_model", f"trial_{trial.number}"],
+            )
             print(
-                f"New best model saved (trial {trial.number} with score {trial.value}) at {best_model_path}"
+                f"New best model saved (trial {trial.number} with score {trial.value}) using ModelIOManager"
             )
 
     def outer_objective(trial):
@@ -585,10 +596,22 @@ def train_and_save_umap_optim_with_nested_clustering(
             best_score_so_far = composite_score
             best_clusterer = best_clusterer_trial
             best_labels = best_labels_trial
-            dump(umap_model, best_model_path)
+
+            # Use ModelIOManager for saving UMAP model
+            manager = ModelIOManager(output_folder)
+            manager.save_model(
+                model=umap_model,
+                model_name="best_umap_model",
+                model_type="umap",
+                config=umap_params,
+                description=f"Best UMAP model from trial {trial.number} with composite score {composite_score}",
+                tags=["optimization", "best_model", f"trial_{trial.number}"],
+            )
+
+            # Save embeddings using numpy
             np.save(best_embeddings_path, embeddings)
             print(
-                f"New best UMAP model saved at {best_model_path} (Trial {trial.number}, Score: {best_score_so_far})"
+                f"New best UMAP model saved using ModelIOManager (Trial {trial.number}, Score: {best_score_so_far})"
             )
 
         return composite_score
@@ -647,7 +670,21 @@ def train_and_save_umap_optim_with_nested_clustering(
 
     # Load the best UMAP model and embeddings that were saved during optimization.
     print("Loading best UMAP model and embeddings from saved files.")
-    best_umap_model = load(best_model_path)
+
+    # Use ModelIOManager for loading
+    manager = ModelIOManager(output_folder)
+    umap_artifact = manager.load_model(
+        model_name="best_umap_model", model_type="umap", allow_version_mismatch=True
+    )
+
+    if umap_artifact:
+        best_umap_model = umap_artifact.model
+        print(f"Successfully loaded UMAP model: {umap_artifact.metadata.description}")
+    else:
+        # Fallback to legacy loading
+        print("Falling back to legacy loading method")
+        best_umap_model = load(best_model_path)
+
     best_embeddings = np.load(best_embeddings_path)
 
     # Use the global best_clusterer and best_labels as determined during optimization.
@@ -671,10 +708,24 @@ def train_and_save_umap_optim_with_nested_clustering(
     cluster_model_path = output_folder / f"{prefix}hdbscan_model.joblib"
     cluster_labels_path = output_folder / f"{prefix}cluster_labels.npy"
 
-    # Save the final outputs.
+    # Save the final outputs using new I/O system where applicable
     np.save(best_model_path.parent / f"{prefix}embeddings.npy", best_embeddings)
     np.save(input_matrix_path, input_matrix)
-    dump(best_clusterer, cluster_model_path)
+
+    # Use clustering_utils for HDBSCAN model saving (already updated)
+    from emuses.tools.clustering_utils import save_hdbscan_model
+
+    save_hdbscan_model(
+        best_clusterer,
+        cluster_model_path.parent,
+        prefix=prefix.rstrip("_") if prefix else "",
+        model_name="hdbscan_model",
+        config={
+            "best_params": best_outer_trial.user_attrs.get("hdbscan_best_params", {}),
+            "composite_score": best_composite_score,
+        },
+    )
+
     np.save(cluster_labels_path, best_labels)
 
     print(f"UMAP model saved at: {best_model_path}")
@@ -784,9 +835,20 @@ def train_and_save_umap_optim(
     best_umap_model = umap.UMAP(**umap_params, **kwargs)
     best_embeddings = best_umap_model.fit_transform(input_matrix)
 
-    # Save the best model and embeddings
-    dump(best_umap_model, output_folder / "best_umap_model.joblib")
+    # Save the best model and embeddings using new I/O system
+    manager = ModelIOManager(output_folder)
+    umap_filepath = manager.save_model(
+        model=best_umap_model,
+        model_name="best_umap_model",
+        model_type="umap",
+        config={"best_params": best_params, "n_trials": n_trials},
+        description=f"Best UMAP model from {n_trials} trials with score {best_score}",
+        tags=["optimization", "final_model"],
+    )
+
     np.save(output_folder / "best_embeddings.npy", best_embeddings)
+    print(f"UMAP model saved using ModelIOManager: {umap_filepath}")
+    print(f"Embeddings saved at: {output_folder / 'best_embeddings.npy'}")
 
     return {
         "best_model": best_umap_model,
@@ -932,14 +994,32 @@ def train_and_save_umap_with_bayesian_search(
     best_embeddings = best_umap_model.fit_transform(input_matrix)
     print("Trained UMAP model with best parameters and consistent random state.")
 
-    # Save the model, embeddings, and input matrix
+    # Save the model, embeddings, and input matrix using new I/O system
     prefix = f"{pref}_" if pref else ""
-    model_filename = f"{prefix}umap_model.joblib"
+
+    # Save UMAP model using ModelIOManager
+    manager = ModelIOManager(output_folder)
+    umap_filepath = manager.save_model(
+        model=best_umap_model,
+        model_name=f"{prefix}umap_model" if prefix else "umap_model",
+        model_type="umap",
+        config={
+            "best_params": best_params,
+            "n_trials": n_trials,
+            "maximize_metrics": maximize_metrics,
+        },
+        description=f"Best UMAP model from Bayesian search with {n_trials} trials",
+        tags=(
+            ["bayesian_optimization", "final_model", pref]
+            if pref
+            else ["bayesian_optimization", "final_model"]
+        ),
+    )
+    print(f"UMAP model saved using ModelIOManager: {umap_filepath}")
+
+    # Save embeddings and input matrix
     embeddings_filename = f"{prefix}embeddings.npy"
     input_matrix_filename = f"{prefix}input_matrix.npy"
-
-    dump(best_umap_model, output_folder / model_filename)
-    print(f"UMAP model saved at: {output_folder / model_filename}")
 
     np.save(output_folder / embeddings_filename, best_embeddings)
     print(f"Embeddings saved at: {output_folder / embeddings_filename}")
@@ -950,7 +1030,7 @@ def train_and_save_umap_with_bayesian_search(
     return (
         best_umap_model,
         best_embeddings,
-        output_folder / model_filename,
+        umap_filepath,
         output_folder / embeddings_filename,
         output_folder / input_matrix_filename,
     )
@@ -962,8 +1042,7 @@ def is_umap_file(umap_path):
 
 def load_umap_model(base_path, prefix="", model_name="umap_model", joblib_version=None):
     """
-    Load a UMAP model based on the filename convention and local joblib version.
-    If loading the specified joblib version fails, try all others in the directory.
+    Load a UMAP model using the new model I/O system with automatic fallback.
 
     Parameters:
     -----------
@@ -974,7 +1053,7 @@ def load_umap_model(base_path, prefix="", model_name="umap_model", joblib_versio
     model_name : str
         Base name of the model.
     joblib_version : str, optional
-        Version of joblib used in the saved file. If None, the current system joblib version is used.
+        Version of joblib used in the saved file (for legacy compatibility).
 
     Returns:
     --------
@@ -985,7 +1064,7 @@ def load_umap_model(base_path, prefix="", model_name="umap_model", joblib_versio
     """
     base_path = Path(base_path)
 
-    # If base_path is a file, attempt to load it directly.
+    # If base_path is a file, attempt to load it directly using legacy method.
     if base_path.is_file():
         try:
             loaded_umap = joblib.load(base_path)
@@ -994,7 +1073,31 @@ def load_umap_model(base_path, prefix="", model_name="umap_model", joblib_versio
         except Exception as e:
             print(f"Failed to load UMAP model from file: {base_path}, due to: {e}")
 
-    # Otherwise, treat base_path as a directory.
+    # Try to load using the new model I/O system first
+    try:
+        manager = ModelIOManager(base_path)
+
+        # Construct model name with prefix if provided
+        full_model_name = f"{prefix}_{model_name}" if prefix else model_name
+
+        artifact = manager.load_model(
+            model_name=full_model_name, model_type="umap", allow_version_mismatch=True
+        )
+
+        if artifact:
+            print(
+                f"Successfully loaded UMAP model using ModelIOManager: {artifact.filepath}"
+            )
+            if hasattr(artifact.metadata, "description"):
+                print(f"Model description: {artifact.metadata.description}")
+            return artifact.model, artifact.filepath
+        else:
+            print(f"No UMAP model found with name: {full_model_name}")
+
+    except Exception as e:
+        print(f"Failed to load UMAP model using new I/O system: {e}")
+
+    # Fallback to legacy loading method
     current_joblib_version = joblib.__version__
     if not joblib_version:
         joblib_version = current_joblib_version
@@ -1017,6 +1120,7 @@ def load_umap_model(base_path, prefix="", model_name="umap_model", joblib_versio
     else:
         print(f"No model found at: {filepath}")
 
+    # Try other versions in the directory
     pattern = (
         f"{prefix}_{model_name}_joblib*.joblib"
         if prefix

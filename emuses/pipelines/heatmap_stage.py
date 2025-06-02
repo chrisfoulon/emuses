@@ -8,6 +8,9 @@ import umap
 import joblib
 from joblib import Parallel, delayed
 from sklearn.model_selection import StratifiedKFold, KFold
+
+# Import new model I/O system
+from ..tools.model_io import ModelIOManager
 from sklearn.metrics import (
     accuracy_score,
     balanced_accuracy_score,
@@ -29,6 +32,7 @@ from emuses.tools.kernel_regression_utils import (
 )
 from emuses.tools.visualisation import plot_clustering_interactive_with_hover
 from emuses.tools.inputs_utils import load_and_preprocess_digits_dataset, get_array_info
+from emuses.tools.model_io import ModelIOManager
 from bcblib.tools.general_utils import save_json
 
 import optuna
@@ -262,6 +266,7 @@ class HeatmapStage(PipelineStage):
                 Y = Y_binary
                 logger.info(
                     "HeatmapStage: optimising %d binary classification targets",
+
                     Y.shape[1],
                 )
             else:
@@ -994,19 +999,24 @@ def robust_ood_evaluation(context, output_folder, classification=True):
 
         # Try different ways to get the original UMAP model parameters
         original_umap = None
-        umap_model_paths = [
-            Path(output_folder).parent / "best_umap_model.joblib",
-            Path(output_folder).parent / "umap" / "best_umap_model.joblib",
-        ]
-
-        for path in umap_model_paths:
-            if path.exists():
-                try:
-                    original_umap = joblib.load(path)
-                    logger.info(f"Loaded UMAP model from: {path}")
-                    break
-                except Exception as e:
-                    logger.warning(f"Failed to load UMAP model from {path}: {e}")
+        
+        # Initialize model I/O manager for loading UMAP models
+        umap_manager = ModelIOManager(Path(output_folder).parent)
+        
+        # Try to load UMAP model using the new I/O system
+        umap_artifact = umap_manager.load_model(
+            model_name="best_umap_model",
+            model_type="umap",
+            base_path=Path(output_folder).parent / "umap",
+            allow_version_mismatch=True
+        )
+        
+        if umap_artifact:
+            original_umap = umap_artifact.model
+            logger.info(f"Loaded UMAP model from: {umap_artifact.filepath}")
+            logger.debug(f"UMAP model metadata: {umap_artifact.metadata}")
+        else:
+            logger.warning("Failed to load UMAP model using model I/O system")
 
         if original_umap is None:
             # Only check for the new naming standard
@@ -1049,7 +1059,14 @@ def robust_ood_evaluation(context, output_folder, classification=True):
         )
 
         # Save the new UMAP model and embeddings for reference
-        joblib.dump(true_ood_umap, output_folder / "true_ood_umap_model.joblib")
+        ood_umap_manager = ModelIOManager(output_folder)
+        ood_umap_manager.save_model(
+            model=true_ood_umap,
+            model_name="true_ood_umap_model", 
+            model_type="umap",
+            description="UMAP model trained excluding labeled samples for true OOD evaluation",
+            tags=["ood", "evaluation", "true_ood"]
+        )
         np.save(output_folder / "unlabeled_embeddings.npy", unlabeled_embeddings)
         np.save(output_folder / "labeled_ood_embeddings.npy", labeled_embeddings)
     else:
@@ -1061,17 +1078,20 @@ def robust_ood_evaluation(context, output_folder, classification=True):
         # Get required data from context - use only the new naming
         umap_model = context.get("embedding_train_umap_model")
         if umap_model is None:
-            # Try loading from file if not in context
-            umap_path = Path(output_folder).parent / "best_umap_model.joblib"
-            if umap_path.exists():
-                try:
-                    umap_model = joblib.load(umap_path)
-                    logger.info(f"Loaded UMAP model from file: {umap_path}")
-                except Exception as e:
-                    raise ValueError(f"Failed to load UMAP model from {umap_path}: {e}")
+            # Try loading from file if not in context using new I/O system
+            fallback_manager = ModelIOManager(Path(output_folder).parent)
+            umap_artifact = fallback_manager.load_model(
+                model_name="best_umap_model",
+                model_type="umap",
+                allow_version_mismatch=True
+            )
+            if umap_artifact:
+                umap_model = umap_artifact.model
+                logger.info(f"Loaded UMAP model from file: {umap_artifact.filepath}")
             else:
                 raise ValueError(
-                    "embedding_train_umap_model is required for OOD evaluation"
+                    "embedding_train_umap_model is required for OOD evaluation - failed to load from file"
+                )
                 )
 
         # Use only new naming convention
