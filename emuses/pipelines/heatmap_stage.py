@@ -8,6 +8,7 @@ import umap
 import joblib
 from joblib import Parallel, delayed
 from sklearn.model_selection import StratifiedKFold, KFold
+from datetime import datetime
 
 # Import new model I/O system
 from ..tools.model_io import ModelIOManager
@@ -202,38 +203,127 @@ class HeatmapStage(PipelineStage):
         if use_ae_pretrain and has_ae_choice:
 
             logger.info("=== AUTOENCODER PRETRAINING ===")
-            logger.info("Running AE/VAE pretraining optimization...")
-            logger.info(
-                "This step will find optimal autoencoder parameters for feature extraction."
-            )
 
             # Use prediction coordinates as input for AE pretraining
             ae_input_data = prediction_train_coords
 
-            # Get AE optimization parameters from config
-            ae_trials = getattr(self.config, "ae_optuna_trials", 20)
-
+            # First try to load a pretrained AE model
+            ae_results = None
             try:
-                ae_results = optimize_ae_pretraining(
-                    X=ae_input_data,
-                    n_trials=ae_trials,
-                    output_folder=self.config.output_folder,
-                    random_state=42,
-                )
+                from emuses.tools.ae_optuna import load_pretrained_ae
 
-                logger.info(
-                    f"AE pretraining completed. Best reconstruction error: {ae_results['best_score']:.4f}"
-                )
-                logger.info(f"Best AE parameters: {ae_results['best_params']}")
+                logger.info("Checking for existing pretrained AE model...")
+                saved_ae = load_pretrained_ae(self.config.output_folder)
 
-                # Store AE results in context for potential reuse
-                context["ae_pretraining_results"] = ae_results
+                if saved_ae:
+                    logger.info(
+                        f"Found pretrained AE model with reconstruction error: {saved_ae['best_score']:.4f}"
+                    )
+                    logger.info(f"Using saved AE parameters: {saved_ae['best_params']}")
+
+                    # Check if we need to validate the model on current data
+                    if getattr(self.config, "validate_loaded_ae", True):
+                        # Compute reconstruction error on current data
+                        fitted_ae = saved_ae["fitted_ae"]
+                        recon_error = np.mean(
+                            fitted_ae.get_reconstruction_error(ae_input_data)
+                        )
+                        logger.info(
+                            f"Validation reconstruction error on current data: {recon_error:.4f}"
+                        )
+
+                        # Decide whether to use the loaded model based on validation
+                        max_diff = getattr(self.config, "max_ae_error_diff", 0.2)
+                        if abs(recon_error - saved_ae["best_score"]) > max_diff:
+                            logger.warning(
+                                f"Reconstruction error on current data ({recon_error:.4f}) "
+                                f"differs significantly from saved model ({saved_ae['best_score']:.4f}). "
+                                f"Training a new model instead."
+                            )
+                            saved_ae = None
+
+                    if saved_ae:
+                        ae_results = saved_ae
+                        # Store AE results in context for reuse
+                        context["ae_pretraining_results"] = ae_results
+                        context["ae_loaded_from_disk"] = True
 
             except Exception as e:
-                logger.warning(
-                    f"AE pretraining failed: {e}. Continuing without AE pretraining."
+                logger.warning(f"Error while loading pretrained AE model: {e}")
+
+            # If no saved model was found or it was invalid, train a new one
+            if ae_results is None:
+                logger.info(
+                    "Running AE/VAE pretraining optimization to create a new model..."
                 )
-                ae_results = None
+                logger.info(
+                    "This step will find optimal autoencoder parameters for feature extraction."
+                )
+
+                # Get AE optimization parameters from config
+                ae_trials = getattr(self.config, "ae_optuna_trials", 20)
+
+                try:
+                    from emuses.tools.ae_optuna import optimize_ae_pretraining
+
+                    # Use a timestamp in the model name to allow multiple runs
+                    import time
+
+                    timestamp = int(time.time())
+                    model_name = f"best_ae_model_{timestamp}"
+
+                    ae_results = optimize_ae_pretraining(
+                        X=ae_input_data,
+                        n_trials=ae_trials,
+                        output_folder=self.config.output_folder,
+                        random_state=42,
+                        model_name=model_name,
+                    )
+
+                    logger.info(
+                        f"AE pretraining completed. Best reconstruction error: {ae_results['best_score']:.4f}"
+                    )
+                    logger.info(f"Best AE parameters: {ae_results['best_params']}")
+
+                    # Save a symlink or copy to "best_ae_model" for easy loading in future runs
+                    if "model_path" in ae_results and ae_results["model_path"]:
+                        try:
+                            from pathlib import Path
+                            from emuses.tools.model_io import ModelIOManager
+
+                            # Initialize model I/O manager and save as "best_ae_model" too
+                            model_manager = ModelIOManager(self.config.output_folder)
+                            model_manager.save_model(
+                                model=ae_results["fitted_ae"],
+                                model_name="best_ae_model",
+                                model_type="autoencoder",
+                                description=f"Latest pretrained {ae_results['best_params']['ae_type']} model (copy of {model_name})",
+                                tags=[
+                                    "autoencoder",
+                                    ae_results["best_params"]["ae_type"],
+                                    "pretrained",
+                                    "latest",
+                                ],
+                                config=ae_results["best_params"],
+                                optuna_study=ae_results["study"],
+                                optuna_trial=ae_results["study"].best_trial,
+                                cv_score=ae_results["best_score"],
+                            )
+                            logger.info(
+                                "Saved additional copy of AE model as 'best_ae_model'"
+                            )
+                        except Exception as e:
+                            logger.warning(f"Could not save additional model copy: {e}")
+
+                    # Store AE results in context for potential reuse
+                    context["ae_pretraining_results"] = ae_results
+                    context["ae_loaded_from_disk"] = False
+
+                except Exception as e:
+                    logger.warning(
+                        f"AE pretraining failed: {e}. Continuing without AE pretraining."
+                    )
+                    ae_results = None
         # ------------------------------------------------------------------
 
         # --------------  LOOP OVER TARGET COLUMNS  ------------------------
@@ -266,7 +356,6 @@ class HeatmapStage(PipelineStage):
                 Y = Y_binary
                 logger.info(
                     "HeatmapStage: optimising %d binary classification targets",
-
                     Y.shape[1],
                 )
             else:
@@ -586,8 +675,8 @@ class HeatmapStage(PipelineStage):
         """
         Generate performance measures CSV files after the parallel optimization loop.
 
-        Creates multiple CSV files with explicit names containing detailed cross-validation
-        performance data for all targets, making it easy to quickly view results.
+        Creates separate CSV files for each target in target-specific directories,
+        plus aggregated summary files for cross-target comparison.
 
         Parameters
         ----------
@@ -609,9 +698,18 @@ class HeatmapStage(PipelineStage):
                 logger.warning("No prediction results found - skipping CSV generation")
                 return
 
-            # Prepare data for CSVs
+            # Generate timestamp for unique filenames
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            output_folder = Path(self.config.output_folder)
+
+            # Create summary folder for aggregated files
+            summary_folder = output_folder / "performance_summary"
+            summary_folder.mkdir(parents=True, exist_ok=True)
+
+            # Prepare data for aggregated CSVs and create per-target files
             summary_data = []
             individual_fold_data = []
+            per_target_files_created = []
 
             for target_tag, result_data in prediction_results.items():
                 cv_scores = result_data.get("cv_scores", [])
@@ -620,8 +718,18 @@ class HeatmapStage(PipelineStage):
                     logger.warning(f"No CV scores found for {target_tag}")
                     continue
 
-                # Calculate summary statistics for main summary file
-                summary_row = {
+                # Create target-specific directory (same as model saving)
+                target_dir = output_folder / target_tag
+                target_dir.mkdir(parents=True, exist_ok=True)
+
+                # Create performance subdirectory within target directory
+                target_perf_dir = target_dir / "performance"
+                target_perf_dir.mkdir(parents=True, exist_ok=True)
+
+                # ===== PER-TARGET FILES =====
+
+                # Target-specific summary statistics
+                target_summary = {
                     "Target": target_tag,
                     "Task": task.upper(),
                     "N_Folds": len(cv_scores),
@@ -634,49 +742,72 @@ class HeatmapStage(PipelineStage):
                     "Q3_Score": np.percentile(cv_scores, 75),
                     "Range_Score": np.max(cv_scores) - np.min(cv_scores),
                 }
-                summary_data.append(summary_row)
 
-                # Prepare individual fold data for detailed file
+                # Save per-target summary
+                target_summary_df = pd.DataFrame([target_summary])
+                target_summary_df = target_summary_df.round(4)
+                target_summary_filename = f"performance_summary_{target_tag}.csv"
+                target_summary_path = target_perf_dir / target_summary_filename
+                target_summary_df.to_csv(target_summary_path, index=False)
+
+                # Target-specific individual fold scores
+                target_fold_data = []
                 for i, score in enumerate(cv_scores):
                     fold_row = {
                         "Target": target_tag,
                         "Task": task.upper(),
                         "Fold": i + 1,
-                        "Score": score,
+                        "Score": round(score, 4),
                     }
-                    individual_fold_data.append(fold_row)
+                    target_fold_data.append(fold_row)
+
+                target_folds_df = pd.DataFrame(target_fold_data)
+                target_folds_filename = f"performance_individual_folds_{target_tag}.csv"
+                target_folds_path = target_perf_dir / target_folds_filename
+                target_folds_df.to_csv(target_folds_path, index=False)
+
+                logger.info(
+                    f"Created performance files for {target_tag} in {target_perf_dir}"
+                )
+                per_target_files_created.extend(
+                    [str(target_summary_path), str(target_folds_path)]
+                )
+
+                # Collect data for aggregated files
+                summary_data.append(target_summary)
+                individual_fold_data.extend(target_fold_data)
 
             if not summary_data:
                 logger.warning("No valid data for CSV generation")
                 return
 
-            # Generate timestamp for unique filenames
-            from datetime import datetime
+            # ===== AGGREGATED SUMMARY FILES =====
 
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            output_folder = Path(self.config.output_folder)
-
-            # File 1: Performance Summary Statistics
+            # File 1: Performance Summary Statistics (all targets)
             summary_df = pd.DataFrame(summary_data)
             summary_df = summary_df.sort_values("Target")
             numeric_columns = summary_df.select_dtypes(include=[np.number]).columns
             summary_df[numeric_columns] = summary_df[numeric_columns].round(4)
 
             summary_filename = f"performance_summary_statistics_{task}_{timestamp}.csv"
-            summary_path = output_folder / summary_filename
+            summary_path = summary_folder / summary_filename
             summary_df.to_csv(summary_path, index=False)
-            logger.info(f"Performance summary statistics saved: {summary_filename}")
+            logger.info(f"Aggregated performance summary saved: {summary_filename}")
 
-            # File 2: Individual Fold Scores
+            # File 2: Individual Fold Scores (all targets)
+            aggregated_csv_files = [str(summary_path)]
             if individual_fold_data:
                 folds_df = pd.DataFrame(individual_fold_data)
                 folds_df = folds_df.sort_values(["Target", "Fold"])
                 folds_df["Score"] = folds_df["Score"].round(4)
 
                 folds_filename = f"performance_individual_folds_{task}_{timestamp}.csv"
-                folds_path = output_folder / folds_filename
+                folds_path = summary_folder / folds_filename
                 folds_df.to_csv(folds_path, index=False)
-                logger.info(f"Individual fold scores saved: {folds_filename}")
+                logger.info(
+                    f"Aggregated individual fold scores saved: {folds_filename}"
+                )
+                aggregated_csv_files.append(str(folds_path))
 
             # File 3: Overall Statistics (if multiple targets)
             if len(summary_data) > 1:
@@ -707,21 +838,22 @@ class HeatmapStage(PipelineStage):
                 overall_filename = (
                     f"performance_overall_statistics_{task}_{timestamp}.csv"
                 )
-                overall_path = output_folder / overall_filename
+                overall_path = summary_folder / overall_filename
                 overall_df.to_csv(overall_path, index=False)
                 logger.info(f"Overall statistics saved: {overall_filename}")
+                aggregated_csv_files.append(str(overall_path))
 
-            # File 4: Target Rankings by Performance
-            if len(summary_data) > 1:
+                # File 4: Target Rankings by Performance
                 ranking_df = summary_df[["Target", "Mean_Score", "Std_Score"]].copy()
                 ranking_df = ranking_df.sort_values("Mean_Score", ascending=False)
                 ranking_df["Rank"] = range(1, len(ranking_df) + 1)
                 ranking_df = ranking_df[["Rank", "Target", "Mean_Score", "Std_Score"]]
 
                 ranking_filename = f"performance_target_rankings_{task}_{timestamp}.csv"
-                ranking_path = output_folder / ranking_filename
+                ranking_path = summary_folder / ranking_filename
                 ranking_df.to_csv(ranking_path, index=False)
                 logger.info(f"Target rankings saved: {ranking_filename}")
+                aggregated_csv_files.append(str(ranking_path))
 
             # Log performance summary statistics
             mean_performance = summary_df["Mean_Score"].mean()
@@ -732,21 +864,19 @@ class HeatmapStage(PipelineStage):
             logger.info(f"Performance Summary Statistics:")
             logger.info(f"  Task: {task.upper()}")
             logger.info(f"  Targets optimized: {len(summary_data)}")
+            logger.info(f"  Per-target files created: {len(per_target_files_created)}")
+            logger.info(f"  Aggregated files created: {len(aggregated_csv_files)}")
             logger.info(f"  Overall mean performance: {mean_performance:.4f}")
             logger.info(f"  Overall std performance: {std_performance:.4f}")
             logger.info(f"  Best target: {best_target} (score: {best_score:.4f})")
 
             # Store summary in context for potential later use
-            csv_files_created = [summary_filename]
-            if individual_fold_data:
-                csv_files_created.append(folds_filename)
-            if len(summary_data) > 1:
-                csv_files_created.extend([overall_filename, ranking_filename])
-
             context["performance_summary"] = {
                 "summary_dataframe": summary_df,
-                "csv_files_created": csv_files_created,
+                "per_target_files_created": per_target_files_created,
+                "aggregated_csv_files_created": aggregated_csv_files,
                 "summary_csv_path": str(summary_path),
+                "summary_folder_path": str(summary_folder),
                 "overall_stats": {
                     "mean_performance": float(mean_performance),
                     "std_performance": float(std_performance),
@@ -999,18 +1129,16 @@ def robust_ood_evaluation(context, output_folder, classification=True):
 
         # Try different ways to get the original UMAP model parameters
         original_umap = None
-        
+
         # Initialize model I/O manager for loading UMAP models
         umap_manager = ModelIOManager(Path(output_folder).parent)
-        
-        # Try to load UMAP model using the new I/O system
+
+        # Try to load UMAP model using the enhanced I/O system
         umap_artifact = umap_manager.load_model(
             model_name="best_umap_model",
             model_type="umap",
-            base_path=Path(output_folder).parent / "umap",
-            allow_version_mismatch=True
         )
-        
+
         if umap_artifact:
             original_umap = umap_artifact.model
             logger.info(f"Loaded UMAP model from: {umap_artifact.filepath}")
@@ -1062,10 +1190,10 @@ def robust_ood_evaluation(context, output_folder, classification=True):
         ood_umap_manager = ModelIOManager(output_folder)
         ood_umap_manager.save_model(
             model=true_ood_umap,
-            model_name="true_ood_umap_model", 
+            model_name="true_ood_umap_model",
             model_type="umap",
             description="UMAP model trained excluding labeled samples for true OOD evaluation",
-            tags=["ood", "evaluation", "true_ood"]
+            tags=["ood", "evaluation", "true_ood"],
         )
         np.save(output_folder / "unlabeled_embeddings.npy", unlabeled_embeddings)
         np.save(output_folder / "labeled_ood_embeddings.npy", labeled_embeddings)
@@ -1078,12 +1206,11 @@ def robust_ood_evaluation(context, output_folder, classification=True):
         # Get required data from context - use only the new naming
         umap_model = context.get("embedding_train_umap_model")
         if umap_model is None:
-            # Try loading from file if not in context using new I/O system
+            # Try loading from file if not in context using enhanced I/O system
             fallback_manager = ModelIOManager(Path(output_folder).parent)
             umap_artifact = fallback_manager.load_model(
                 model_name="best_umap_model",
                 model_type="umap",
-                allow_version_mismatch=True
             )
             if umap_artifact:
                 umap_model = umap_artifact.model
@@ -1091,7 +1218,6 @@ def robust_ood_evaluation(context, output_folder, classification=True):
             else:
                 raise ValueError(
                     "embedding_train_umap_model is required for OOD evaluation - failed to load from file"
-                )
                 )
 
         # Use only new naming convention

@@ -26,12 +26,50 @@ import numpy as np
 from dataclasses import dataclass, asdict
 import sys
 
+# Import bcblib save_json for consistent serialization
+from bcblib.tools.general_utils import save_json
+
 logger = logging.getLogger(__name__)
 
 
 @dataclass
+class OptunaTrial:
+    """Optuna trial information."""
+
+    trial_number: int
+    value: float
+    params: Dict[str, Any]
+    user_attrs: Dict[str, Any] = None
+    system_attrs: Dict[str, Any] = None
+    state: str = ""
+    datetime_start: str = ""
+    datetime_complete: str = ""
+    duration: float = 0.0
+
+    def __post_init__(self):
+        if self.user_attrs is None:
+            self.user_attrs = {}
+        if self.system_attrs is None:
+            self.system_attrs = {}
+
+
+@dataclass
+class OptunaStudy:
+    """Optuna study information."""
+
+    study_name: str
+    direction: str
+    best_value: float
+    best_trial: OptunaTrial
+    n_trials: int
+    optimization_time: float = 0.0
+    sampler_name: str = ""
+    pruner_name: str = ""
+
+
+@dataclass
 class ModelMetadata:
-    """Metadata for model artifacts."""
+    """Enhanced metadata for model artifacts with Optuna support."""
 
     model_type: str
     version: str
@@ -43,6 +81,17 @@ class ModelMetadata:
     file_size: int
     description: str = ""
     tags: List[str] = None
+
+    # Optuna-specific metadata
+    optuna_study: OptunaStudy = None
+    raw_optuna_params: Dict[str, Any] = None
+    processed_params: Dict[str, Any] = None
+
+    # Cross-validation info
+    cv_score: float = None
+    cv_scores: List[float] = None
+    cv_folds: int = None
+    fold_index: int = None
 
     def __post_init__(self):
         if self.tags is None:
@@ -95,9 +144,16 @@ class ModelIOManager:
         tags: Optional[List[str]] = None,
         prefix: str = "",
         force_version: Optional[str] = None,
+        # Optuna-specific parameters
+        optuna_study: Optional[Any] = None,
+        optuna_trial: Optional[Any] = None,
+        cv_score: Optional[float] = None,
+        cv_scores: Optional[List[float]] = None,
+        cv_folds: Optional[int] = None,
+        fold_index: Optional[int] = None,
     ) -> Path:
         """
-        Save a model with comprehensive metadata.
+        Save a model with comprehensive metadata including Optuna information.
 
         Args:
             model: The model object to save
@@ -108,6 +164,12 @@ class ModelIOManager:
             tags: List of tags for categorization
             prefix: Optional prefix for the filename
             force_version: Force a specific version (for testing/compatibility)
+            optuna_study: Optuna study object with optimization results
+            optuna_trial: Optuna trial object (best trial)
+            cv_score: Cross-validation score for this model
+            cv_scores: List of all CV fold scores
+            cv_folds: Number of CV folds used
+            fold_index: Index of the current fold (for CV models)
 
         Returns:
             Path to the saved model file
@@ -120,6 +182,12 @@ class ModelIOManager:
                 description=description,
                 tags=tags or [],
                 force_version=force_version,
+                optuna_study=optuna_study,
+                optuna_trial=optuna_trial,
+                cv_score=cv_score,
+                cv_scores=cv_scores,
+                cv_folds=cv_folds,
+                fold_index=fold_index,
             )
 
             # Generate filename
@@ -139,7 +207,10 @@ class ModelIOManager:
             self._save_metadata(filepath, metadata)
 
             logger.info(f"Successfully saved {model_type} model: {filepath}")
-            logger.debug(f"Model metadata: {asdict(metadata)}")
+            if optuna_study:
+                logger.info(
+                    f"Optuna optimization: {optuna_study.n_trials} trials, best value: {optuna_study.best_value:.4f}"
+                )
 
             return filepath
 
@@ -152,53 +223,39 @@ class ModelIOManager:
         model_name: str,
         model_type: Optional[str] = None,
         prefix: str = "",
-        base_path: Optional[Path] = None,
-        max_attempts: int = 10,
-        allow_version_mismatch: bool = True,
     ) -> Optional[ModelArtifact]:
         """
-        Load a model with automatic fallback to compatible versions.
+        Load a model with simplified loading mechanism.
 
         Args:
             model_name: Base name of the model
             model_type: Expected model type for validation
             prefix: Optional prefix used when saving
-            base_path: Alternative base path to search (for legacy compatibility)
-            max_attempts: Maximum number of version fallback attempts
-            allow_version_mismatch: Whether to allow loading models from different versions
 
         Returns:
             ModelArtifact containing model and metadata, or None if loading failed
         """
         try:
-            # Try current location first
-            search_paths = [self.base_path]
+            # Try exact match first
+            artifact = self._try_load_exact_match(
+                self.base_path, model_name, model_type, prefix
+            )
+            if artifact:
+                return artifact
 
-            # Add alternative base path if provided
-            if base_path:
-                search_paths.append(Path(base_path))
+            # Try pattern matching
+            artifact = self._try_load_with_pattern(
+                self.base_path, model_name, model_type, prefix
+            )
+            if artifact:
+                return artifact
 
-            for search_path in search_paths:
-                # Try exact match first
-                artifact = self._try_load_exact_match(
-                    search_path, model_name, model_type, prefix
-                )
-                if artifact:
-                    return artifact
+            logger.warning(f"Could not find model: {model_name}")
+            return None
 
-                # Try pattern matching with fallback
-                artifact = self._try_load_with_fallback(
-                    search_path,
-                    model_name,
-                    model_type,
-                    prefix,
-                    max_attempts,
-                    allow_version_mismatch,
-                )
-                if artifact:
-                    return artifact
-
-            # Try legacy loading as last resort
+        except Exception as e:
+            logger.error(f"Failed to load model {model_name}: {e}")
+            return None
             return self._try_legacy_loading(model_name, prefix, search_paths)
 
         except Exception as e:
@@ -293,8 +350,14 @@ class ModelIOManager:
         description: str,
         tags: List[str],
         force_version: Optional[str],
+        optuna_study: Optional[Any] = None,
+        optuna_trial: Optional[Any] = None,
+        cv_score: Optional[float] = None,
+        cv_scores: Optional[List[float]] = None,
+        cv_folds: Optional[int] = None,
+        fold_index: Optional[int] = None,
     ) -> ModelMetadata:
-        """Create metadata for a model."""
+        """Create metadata for a model with Optuna support."""
         # Get dependency versions
         dependencies = self._get_dependencies()
 
@@ -303,6 +366,13 @@ class ModelIOManager:
 
         # Use forced version or current version
         version = force_version or self.version
+
+        # Process Optuna information
+        optuna_study_metadata = None
+        if optuna_study:
+            optuna_study_metadata = self._extract_optuna_study_metadata(
+                optuna_study, optuna_trial
+            )
 
         return ModelMetadata(
             model_type=model_type,
@@ -315,7 +385,90 @@ class ModelIOManager:
             file_size=0,  # Will be updated after saving
             description=description,
             tags=tags,
+            # Optuna metadata
+            optuna_study=optuna_study_metadata,
+            raw_optuna_params=optuna_trial.params if optuna_trial else None,
+            processed_params=config,
+            # CV metadata
+            cv_score=cv_score,
+            cv_scores=cv_scores,
+            cv_folds=cv_folds,
+            fold_index=fold_index,
         )
+
+    def _extract_optuna_study_metadata(self, study: Any, trial: Any) -> OptunaStudy:
+        """Extract metadata from Optuna study and trial objects."""
+        try:
+            # Extract best trial information
+            best_trial_data = OptunaTrial(
+                trial_number=trial.number if trial else study.best_trial.number,
+                value=trial.value if trial else study.best_trial.value,
+                params=trial.params if trial else study.best_trial.params,
+                user_attrs=(
+                    getattr(trial, "user_attrs", {})
+                    if trial
+                    else getattr(study.best_trial, "user_attrs", {})
+                ),
+                system_attrs=(
+                    getattr(trial, "system_attrs", {})
+                    if trial
+                    else getattr(study.best_trial, "system_attrs", {})
+                ),
+                state=(
+                    str(trial.state)
+                    if trial and hasattr(trial, "state")
+                    else str(study.best_trial.state)
+                ),
+                datetime_start=(
+                    str(trial.datetime_start)
+                    if trial and hasattr(trial, "datetime_start")
+                    else str(getattr(study.best_trial, "datetime_start", ""))
+                ),
+                datetime_complete=(
+                    str(trial.datetime_complete)
+                    if trial and hasattr(trial, "datetime_complete")
+                    else str(getattr(study.best_trial, "datetime_complete", ""))
+                ),
+                duration=(
+                    getattr(trial, "duration", 0.0)
+                    if trial
+                    else getattr(study.best_trial, "duration", 0.0)
+                ),
+            )
+
+            # Extract study information
+            study_metadata = OptunaStudy(
+                study_name=study.study_name,
+                direction=str(study.direction),
+                best_value=study.best_value,
+                best_trial=best_trial_data,
+                n_trials=len(study.trials),
+                sampler_name=(
+                    str(type(study.sampler).__name__)
+                    if hasattr(study, "sampler")
+                    else ""
+                ),
+                pruner_name=(
+                    str(type(study.pruner).__name__) if hasattr(study, "pruner") else ""
+                ),
+            )
+
+            return study_metadata
+
+        except Exception as e:
+            logger.warning(f"Failed to extract Optuna metadata: {e}")
+            # Return minimal metadata
+            return OptunaStudy(
+                study_name=getattr(study, "study_name", "unknown"),
+                direction=str(getattr(study, "direction", "minimize")),
+                best_value=getattr(study, "best_value", 0.0),
+                best_trial=OptunaTrial(
+                    trial_number=0,
+                    value=0.0,
+                    params={},
+                ),
+                n_trials=len(getattr(study, "trials", [])),
+            )
 
     def _generate_filename(
         self, model_name: str, metadata: ModelMetadata, prefix: str
@@ -336,14 +489,14 @@ class ModelIOManager:
         return "_".join(components) + ".joblib"
 
     def _save_metadata(self, model_filepath: Path, metadata: ModelMetadata) -> None:
-        """Save metadata to a JSON file."""
+        """Save metadata to a JSON file with custom serialization for complex objects."""
         metadata_file = self.metadata_path / f"{model_filepath.stem}.json"
 
-        with open(metadata_file, "w") as f:
-            json.dump(asdict(metadata), f, indent=2)
+        # Use bcblib save_json for consistent serialization and numpy array support
+        save_json(asdict(metadata), metadata_file)
 
     def _load_metadata(self, model_filepath: Path) -> Optional[ModelMetadata]:
-        """Load metadata from a JSON file."""
+        """Load metadata from a JSON file with support for complex nested structures."""
         metadata_file = self.metadata_path / f"{model_filepath.stem}.json"
 
         if not metadata_file.exists():
@@ -352,10 +505,42 @@ class ModelIOManager:
         try:
             with open(metadata_file, "r") as f:
                 data = json.load(f)
+
+            # Handle nested Optuna structures
+            if data.get("optuna_study"):
+                study_data = data["optuna_study"]
+                if study_data.get("best_trial"):
+                    trial_data = study_data["best_trial"]
+                    study_data["best_trial"] = OptunaTrial(**trial_data)
+                data["optuna_study"] = OptunaStudy(**study_data)
+
             return ModelMetadata(**data)
         except Exception as e:
             logger.warning(f"Failed to load metadata from {metadata_file}: {e}")
-            return None
+            # Try to load with backward compatibility (old format)
+            try:
+                with open(metadata_file, "r") as f:
+                    data = json.load(f)
+                # Remove any new fields that don't exist in old format
+                old_fields = {
+                    "model_type",
+                    "version",
+                    "created_at",
+                    "emuses_version",
+                    "joblib_version",
+                    "dependencies",
+                    "config_hash",
+                    "file_size",
+                    "description",
+                    "tags",
+                }
+                filtered_data = {k: v for k, v in data.items() if k in old_fields}
+                return ModelMetadata(**filtered_data)
+            except Exception as e2:
+                logger.warning(
+                    f"Failed to load metadata with backward compatibility: {e2}"
+                )
+                return None
 
     def _try_load_exact_match(
         self, search_path: Path, model_name: str, model_type: Optional[str], prefix: str
@@ -375,6 +560,32 @@ class ModelIOManager:
 
         if filepath.exists():
             return self._load_model_file(filepath, model_type)
+
+        return None
+
+    def _try_load_with_pattern(
+        self, search_path: Path, model_name: str, model_type: Optional[str], prefix: str
+    ) -> Optional[ModelArtifact]:
+        """Try to load a model using pattern matching."""
+        # Build pattern for this model
+        pattern_base = f"{prefix}_{model_name}" if prefix else model_name
+        pattern = f"{pattern_base}_v*.joblib"
+
+        # Find all matching files
+        matching_files = list(search_path.glob(pattern))
+
+        if not matching_files:
+            return None
+
+        # Sort by modification time (newest first)
+        matching_files.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+
+        # Try loading the newest file
+        for filepath in matching_files:
+            artifact = self._load_model_file(filepath, model_type)
+            if artifact:
+                logger.info(f"Loaded model using pattern matching: {filepath}")
+                return artifact
 
         return None
 
@@ -611,7 +822,6 @@ def save_model(
 def load_model(
     filepath: Union[str, Path],
     model_type: Optional[str] = None,
-    allow_legacy: bool = True,
 ) -> Optional[Any]:
     """
     Convenience function to load a model.
@@ -619,7 +829,6 @@ def load_model(
     Args:
         filepath: Path to model file or directory containing models
         model_type: Expected model type for validation
-        allow_legacy: Whether to try loading legacy formats
 
     Returns:
         Loaded model object or None if loading failed
@@ -639,6 +848,5 @@ def load_model(
         artifact = manager.load_model(
             model_name="*",  # Will use pattern matching
             model_type=model_type,
-            allow_version_mismatch=allow_legacy,
         )
         return artifact.model if artifact else None

@@ -100,7 +100,9 @@ def ae_objective_factory(X, cv_folds=5, random_state=42, optim_dict=None):
     return objective
 
 
-def optimize_ae_pretraining(X, n_trials=200, output_folder=None, random_state=42):
+def optimize_ae_pretraining(
+    X, n_trials=200, output_folder=None, random_state=42, model_name="best_ae_model"
+):
     """
     Run Optuna optimization for AE/VAE pretraining.
 
@@ -114,6 +116,8 @@ def optimize_ae_pretraining(X, n_trials=200, output_folder=None, random_state=42
         Directory to save optimization results
     random_state : int, optional
         Random seed for reproducibility
+    model_name : str, optional
+        Name to use when saving the model
 
     Returns
     -------
@@ -122,6 +126,7 @@ def optimize_ae_pretraining(X, n_trials=200, output_folder=None, random_state=42
         - 'best_params': Best hyperparameters found
         - 'best_score': Best reconstruction error achieved
         - 'fitted_ae': Fitted AE transformer with best parameters
+        - 'model_path': Path to saved model file (if output_folder provided)
     """
     logger.info(f"Starting AE/VAE pretraining optimization with {n_trials} trials")
 
@@ -168,11 +173,40 @@ def optimize_ae_pretraining(X, n_trials=200, output_folder=None, random_state=42
 
     best_ae.fit(X)
 
+    # Save the fitted AE model if output folder is provided
+    model_path = None
+    if output_folder:
+        try:
+            from pathlib import Path
+            from emuses.tools.model_io import ModelIOManager
+
+            # Initialize model I/O manager
+            model_manager = ModelIOManager(output_folder)
+
+            # Save the model with appropriate metadata
+            model_path = model_manager.save_model(
+                model=best_ae,
+                model_name=model_name,
+                model_type="autoencoder",
+                description=f"Pretrained {best_params['ae_type']} model with hidden_dim={best_params['ae_hidden_dim']}",
+                tags=["autoencoder", best_params["ae_type"], "pretrained"],
+                config=best_params,
+                # Include Optuna study information
+                optuna_study=study,
+                optuna_trial=study.best_trial,
+                cv_score=study.best_value,  # Use reconstruction error as CV score
+            )
+
+            logger.info(f"Saved pretrained AE model to: {model_path}")
+        except Exception as e:
+            logger.error(f"Failed to save AE model: {e}")
+
     return {
         "best_params": best_params,
         "best_score": study.best_value,
         "fitted_ae": best_ae,
         "study": study,
+        "model_path": model_path,
     }
 
 
@@ -203,3 +237,57 @@ def create_ae_feature_transformer(ae_results):
         dropout=params.get("ae_dropout", 0.1),
         weight_decay=params.get("ae_weight_decay", 0.0),
     )
+
+
+def load_pretrained_ae(output_folder, model_name="best_ae_model"):
+    """
+    Load a pretrained AE model using the ModelIOManager.
+
+    Parameters
+    ----------
+    output_folder : str or Path
+        Directory where the model was saved
+    model_name : str, optional
+        Name of the model to load
+
+    Returns
+    -------
+    dict or None
+        Dictionary containing:
+        - 'fitted_ae': The loaded AE model
+        - 'best_params': The parameters used to create the model
+        - 'best_score': The reconstruction error of the model
+        Or None if the model couldn't be loaded
+    """
+    try:
+        from pathlib import Path
+        from emuses.tools.model_io import ModelIOManager
+
+        # Initialize model I/O manager
+        model_manager = ModelIOManager(output_folder)
+
+        # Try to load the model
+        artifact = model_manager.load_model(
+            model_name=model_name, model_type="autoencoder"
+        )
+
+        if artifact:
+            logger.info(f"Loaded pretrained AE model from: {artifact.filepath}")
+
+            # Extract parameters and metadata
+            best_params = artifact.metadata.processed_params or {}
+            best_score = artifact.metadata.cv_score
+
+            return {
+                "fitted_ae": artifact.model,
+                "best_params": best_params,
+                "best_score": best_score,
+                "model_path": str(artifact.filepath),
+            }
+        else:
+            logger.info(f"No pretrained AE model found with name: {model_name}")
+            return None
+
+    except Exception as e:
+        logger.error(f"Error loading pretrained AE model: {e}")
+        return None

@@ -372,67 +372,6 @@ def cluster_coordinates(filtered_coordinates, size_factor=0.5):
     return best_clusterer, cluster_labels, best_params
 
 
-def save_hdbscan_model(
-    clusterer, output_folder, prefix="", model_name="hdbscan_model", joblib_version=None
-):
-    """
-    Save an HDBSCAN model to a file using the new model I/O system with versioning and metadata.
-
-    Parameters:
-    clusterer (HDBSCAN object): Trained HDBSCAN model to save.
-    output_folder (Path or str): The directory where the HDBSCAN model will be saved.
-    prefix (str): Prefix for the HDBSCAN model filename.
-    model_name (str): Base name of the model.
-    joblib_version (str, optional): For backward compatibility - not used with new I/O system.
-
-    Returns:
-    filepath (Path): Path of the saved model file.
-    """
-    output_folder = Path(output_folder)
-    output_folder.mkdir(parents=True, exist_ok=True)
-
-    # Initialize model I/O manager
-    model_manager = ModelIOManager(output_folder)
-
-    # Extract configuration from clusterer for metadata
-    config = {
-        "min_cluster_size": getattr(clusterer, "min_cluster_size", None),
-        "min_samples": getattr(clusterer, "min_samples", None),
-        "cluster_selection_epsilon": getattr(
-            clusterer, "cluster_selection_epsilon", 0.0
-        ),
-        "max_cluster_size": getattr(clusterer, "max_cluster_size", None),
-        "metric": getattr(clusterer, "metric", "euclidean"),
-        "alpha": getattr(clusterer, "alpha", 1.0),
-        "algorithm": getattr(clusterer, "algorithm", "best"),
-        "leaf_size": getattr(clusterer, "leaf_size", 40),
-        "cluster_selection_method": getattr(
-            clusterer, "cluster_selection_method", "eom"
-        ),
-    }
-
-    try:
-        # Save using the new model I/O system
-        filepath = model_manager.save_model(
-            model=clusterer,
-            model_name=model_name,
-            model_type="hdbscan",
-            config=config,
-            description=f"HDBSCAN clustering model with {config.get('min_cluster_size', 'unknown')} min_cluster_size",
-            tags=["clustering", "hdbscan"],
-            prefix=prefix,
-        )
-
-        print(f"Saved HDBSCAN model to: {filepath}")
-        return filepath
-
-    except Exception as e:
-        print(f"Failed to save HDBSCAN model: {e}")
-        raise
-
-    return filepath
-
-
 def is_hdbscan_file(filepath):
     """
     Check if a file is an HDBSCAN model file based on the filename convention.
@@ -450,18 +389,14 @@ def load_hdbscan_model(
     base_path,
     prefix="",
     model_name="hdbscan_model",
-    joblib_version=None,
-    max_attempts=10,
 ):
     """
-    Load an HDBSCAN model using the new model I/O system with automatic fallback.
+    Load an HDBSCAN model using the enhanced model I/O system.
 
     Parameters:
     base_path (Path or str): The directory where HDBSCAN models are saved.
     prefix (str): Prefix for the HDBSCAN model filename.
     model_name (str): Base name of the model.
-    joblib_version (str, optional): For backward compatibility - not used with new I/O system.
-    max_attempts (int): Maximum number of attempts to load different versions of the model.
 
     Returns:
     loaded_hdbscan (object or None): Loaded HDBSCAN model or None if loading failed.
@@ -469,26 +404,15 @@ def load_hdbscan_model(
     """
     base_path = Path(base_path)
 
-    # If base_path is a file, attempt to load it directly using legacy method
-    if base_path.is_file():
-        try:
-            loaded_hdbscan = joblib.load(base_path)
-            print(f"Successfully loaded HDBSCAN model from file: {base_path}")
-            return loaded_hdbscan, base_path
-        except Exception as e:
-            print(f"Failed to load HDBSCAN model from file: {base_path}, due to: {e}")
-
     # Initialize model I/O manager for loading
     model_manager = ModelIOManager(base_path)
 
     try:
-        # Try to load using the new model I/O system
+        # Load using the model I/O system
         artifact = model_manager.load_model(
             model_name=model_name,
             model_type="hdbscan",
             prefix=prefix,
-            max_attempts=max_attempts,
-            allow_version_mismatch=True,
         )
 
         if artifact:
@@ -498,18 +422,8 @@ def load_hdbscan_model(
             return artifact.model, artifact.filepath
         else:
             print(f"No HDBSCAN model found with name: {model_name}")
+            return None, None
 
     except Exception as e:
-        print(f"Failed to load HDBSCAN model using new I/O system: {e}")
-
-    # Generate a fallback path for backward compatibility
-    if joblib_version is None or not joblib_version:
-        joblib_version = joblib.__version__
-
-    if prefix:
-        filename_pattern = f"{prefix}_{model_name}_joblib{joblib_version}.joblib"
-    else:
-        filename_pattern = f"{model_name}_joblib{joblib_version}.joblib"
-    filepath = base_path / filename_pattern
-
-    return None, filepath
+        print(f"Failed to load HDBSCAN model using ModelIOManager: {e}")
+        return None, None

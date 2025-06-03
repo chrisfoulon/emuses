@@ -673,9 +673,7 @@ def train_and_save_umap_optim_with_nested_clustering(
 
     # Use ModelIOManager for loading
     manager = ModelIOManager(output_folder)
-    umap_artifact = manager.load_model(
-        model_name="best_umap_model", model_type="umap", allow_version_mismatch=True
-    )
+    umap_artifact = manager.load_model(model_name="best_umap_model", model_type="umap")
 
     if umap_artifact:
         best_umap_model = umap_artifact.model
@@ -712,18 +710,30 @@ def train_and_save_umap_optim_with_nested_clustering(
     np.save(best_model_path.parent / f"{prefix}embeddings.npy", best_embeddings)
     np.save(input_matrix_path, input_matrix)
 
-    # Use clustering_utils for HDBSCAN model saving (already updated)
-    from emuses.tools.clustering_utils import save_hdbscan_model
-
-    save_hdbscan_model(
-        best_clusterer,
-        cluster_model_path.parent,
-        prefix=prefix.rstrip("_") if prefix else "",
+    # Save HDBSCAN model using ModelIOManager directly
+    hdbscan_manager = ModelIOManager(cluster_model_path.parent)
+    hdbscan_manager.save_model(
+        model=best_clusterer,
         model_name="hdbscan_model",
+        model_type="hdbscan",
         config={
-            "best_params": best_outer_trial.user_attrs.get("hdbscan_best_params", {}),
-            "composite_score": best_composite_score,
+            "min_cluster_size": getattr(best_clusterer, "min_cluster_size", None),
+            "min_samples": getattr(best_clusterer, "min_samples", None),
+            "cluster_selection_epsilon": getattr(
+                best_clusterer, "cluster_selection_epsilon", 0.0
+            ),
+            "max_cluster_size": getattr(best_clusterer, "max_cluster_size", None),
+            "metric": getattr(best_clusterer, "metric", "euclidean"),
+            "alpha": getattr(best_clusterer, "alpha", 1.0),
+            "algorithm": getattr(best_clusterer, "algorithm", "best"),
+            "leaf_size": getattr(best_clusterer, "leaf_size", 40),
+            "cluster_selection_method": getattr(
+                best_clusterer, "cluster_selection_method", "eom"
+            ),
         },
+        description=f"HDBSCAN clustering model with {getattr(best_clusterer, 'min_cluster_size', 'unknown')} min_cluster_size",
+        tags=["clustering", "hdbscan", "optimization"],
+        prefix=prefix.rstrip("_") if prefix else "",
     )
 
     np.save(cluster_labels_path, best_labels)
@@ -1040,9 +1050,9 @@ def is_umap_file(umap_path):
     return str(umap_path).endswith(".joblib")
 
 
-def load_umap_model(base_path, prefix="", model_name="umap_model", joblib_version=None):
+def load_umap_model(base_path, prefix="", model_name="umap_model"):
     """
-    Load a UMAP model using the new model I/O system with automatic fallback.
+    Load a UMAP model using the enhanced model I/O system.
 
     Parameters:
     -----------
@@ -1052,8 +1062,6 @@ def load_umap_model(base_path, prefix="", model_name="umap_model", joblib_versio
         Prefix for the UMAP model filename.
     model_name : str
         Base name of the model.
-    joblib_version : str, optional
-        Version of joblib used in the saved file (for legacy compatibility).
 
     Returns:
     --------
@@ -1080,9 +1088,7 @@ def load_umap_model(base_path, prefix="", model_name="umap_model", joblib_versio
         # Construct model name with prefix if provided
         full_model_name = f"{prefix}_{model_name}" if prefix else model_name
 
-        artifact = manager.load_model(
-            model_name=full_model_name, model_type="umap", allow_version_mismatch=True
-        )
+        artifact = manager.load_model(model_name=full_model_name, model_type="umap")
 
         if artifact:
             print(

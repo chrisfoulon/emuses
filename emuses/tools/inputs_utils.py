@@ -585,9 +585,7 @@ def load_or_check_umap_outputs(
             manager = ModelIOManager(model_path.parent)
             model_name = model_path.stem.replace("_model", "").replace(".joblib", "")
 
-            artifact = manager.load_model(
-                model_name=model_name, model_type="umap", allow_version_mismatch=True
-            )
+            artifact = manager.load_model(model_name=model_name, model_type="umap")
 
             if artifact:
                 reducer = artifact.model
@@ -681,11 +679,7 @@ def load_or_check_umap_outputs(
                     ".joblib", ""
                 )
 
-                artifact = manager.load_model(
-                    model_name=model_name,
-                    model_type="umap",
-                    allow_version_mismatch=True,
-                )
+                artifact = manager.load_model(model_name=model_name, model_type="umap")
 
                 if artifact:
                     reducer = artifact.model
