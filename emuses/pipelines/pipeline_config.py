@@ -31,6 +31,13 @@ class PipelineConfig:
     # Model versioning for standardized I/O
     model_version: str = "1.0.0"  # Version for model artifacts and metadata tracking
 
+    # UMAP/HDBSCAN optimization parameters
+    prefix: str = ""  # Prefix for output file names
+    umap_jobs: int = None  # Number of parallel jobs for UMAP optimization
+    hdbscan_jobs: int = None  # Number of parallel jobs for HDBSCAN optimization
+    umap_trials: int = 50  # Number of UMAP optimization trials
+    hdbscan_trials: int = 20  # Number of HDBSCAN optimization trials
+
     # Computed fields
     output_folder: Path = field(init=False)
     umap_params: dict = field(default_factory=dict)
@@ -61,7 +68,7 @@ class PipelineConfig:
         # ------------------------------------------------------------------
         # Create / resolve output folder
         # ------------------------------------------------------------------
-        self.output_folder = Path(self.output_folder).resolve()
+        self.output_folder = Path(self.output_folder_path).resolve()
         self.output_folder.mkdir(parents=True, exist_ok=True)
         self._configure_logging()
 

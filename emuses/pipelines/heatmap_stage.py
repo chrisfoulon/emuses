@@ -891,6 +891,7 @@ class HeatmapStage(PipelineStage):
             logger.error(f"Error generating performance CSV files: {e}")
 
 
+# TODO check if we still need this function or if we should put it somewhere else as a reference for unittest or something
 def inspect_data_state(
     context,
     embeddings_labelled,

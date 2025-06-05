@@ -93,6 +93,9 @@ class ModelMetadata:
     cv_folds: int = None
     fold_index: int = None
 
+    # Target-specific info for prediction models
+    target_id: int = None
+
     def __post_init__(self):
         if self.tags is None:
             self.tags = []
@@ -151,6 +154,8 @@ class ModelIOManager:
         cv_scores: Optional[List[float]] = None,
         cv_folds: Optional[int] = None,
         fold_index: Optional[int] = None,
+        # Target-specific parameter for prediction models
+        target_id: Optional[int] = None,
     ) -> Path:
         """
         Save a model with comprehensive metadata including Optuna information.
@@ -170,6 +175,7 @@ class ModelIOManager:
             cv_scores: List of all CV fold scores
             cv_folds: Number of CV folds used
             fold_index: Index of the current fold (for CV models)
+            target_id: Target ID for prediction models (enables standardized naming)
 
         Returns:
             Path to the saved model file
@@ -188,6 +194,7 @@ class ModelIOManager:
                 cv_scores=cv_scores,
                 cv_folds=cv_folds,
                 fold_index=fold_index,
+                target_id=target_id,
             )
 
             # Generate filename
@@ -356,6 +363,7 @@ class ModelIOManager:
         cv_scores: Optional[List[float]] = None,
         cv_folds: Optional[int] = None,
         fold_index: Optional[int] = None,
+        target_id: Optional[int] = None,
     ) -> ModelMetadata:
         """Create metadata for a model with Optuna support."""
         # Get dependency versions
@@ -394,6 +402,8 @@ class ModelIOManager:
             cv_scores=cv_scores,
             cv_folds=cv_folds,
             fold_index=fold_index,
+            # Target metadata
+            target_id=target_id,
         )
 
     def _extract_optuna_study_metadata(self, study: Any, trial: Any) -> OptunaStudy:
@@ -473,7 +483,7 @@ class ModelIOManager:
     def _generate_filename(
         self, model_name: str, metadata: ModelMetadata, prefix: str
     ) -> str:
-        """Generate a versioned filename for the model."""
+        """Generate a versioned filename for the model with standardized naming."""
         # Clean version string for filename
         version_str = metadata.version.replace(".", "_")
         joblib_version_str = metadata.joblib_version.replace(".", "_")
@@ -482,9 +492,28 @@ class ModelIOManager:
         components = []
         if prefix:
             components.append(prefix)
-        components.extend(
-            [model_name, f"v{version_str}", f"joblib{joblib_version_str}"]
-        )
+
+        # Check if this is a prediction model with target_id and fold_index
+        if (
+            metadata.target_id is not None
+            and metadata.fold_index is not None
+            and "prediction" in model_name.lower()
+        ):
+            # Use standardized prediction model naming
+            components.extend(
+                [
+                    "best_prediction_model",
+                    f"target_{metadata.target_id}",
+                    f"fold_{metadata.fold_index}",
+                    f"v{version_str}",
+                    f"joblib{joblib_version_str}",
+                ]
+            )
+        else:
+            # Use traditional naming for backward compatibility
+            components.extend(
+                [model_name, f"v{version_str}", f"joblib{joblib_version_str}"]
+            )
 
         return "_".join(components) + ".joblib"
 
@@ -493,7 +522,7 @@ class ModelIOManager:
         metadata_file = self.metadata_path / f"{model_filepath.stem}.json"
 
         # Use bcblib save_json for consistent serialization and numpy array support
-        save_json(asdict(metadata), metadata_file)
+        save_json(metadata_file, asdict(metadata))
 
     def _load_metadata(self, model_filepath: Path) -> Optional[ModelMetadata]:
         """Load metadata from a JSON file with support for complex nested structures."""
@@ -769,6 +798,64 @@ class ModelIOManager:
         # Convert config to a stable string representation
         config_str = json.dumps(config, sort_keys=True, default=str)
         return hashlib.md5(config_str.encode()).hexdigest()[:16]
+
+    # Utility methods for standardized naming
+    @staticmethod
+    def get_standardized_prediction_model_name(target_id: int, fold: int) -> str:
+        """Generate standardized prediction model name for internal use."""
+        return f"best_prediction_model_target_{target_id}_fold_{fold}"
+
+    @staticmethod
+    def extract_target_and_fold_from_filename(
+        filename: str,
+    ) -> Tuple[Optional[int], Optional[int]]:
+        """Extract target_id and fold from standardized filename."""
+        try:
+            parts = filename.replace(".joblib", "").split("_")
+            target_id = None
+            fold = None
+
+            # Look for target_X pattern
+            for i, part in enumerate(parts):
+                if part == "target" and i + 1 < len(parts):
+                    target_id = int(parts[i + 1])
+                elif part == "fold" and i + 1 < len(parts):
+                    fold = int(parts[i + 1])
+
+            return target_id, fold
+        except (ValueError, IndexError):
+            return None, None
+
+    def load_all_cv_fold_models(
+        self, target_id: int, expected_folds: int = 5
+    ) -> List[ModelArtifact]:
+        """
+        Load all CV fold models for a specific target.
+
+        Args:
+            target_id: Target ID to load models for
+            expected_folds: Expected number of folds (default 5)
+
+        Returns:
+            List of ModelArtifact objects, sorted by fold index
+        """
+        models = []
+
+        for fold in range(expected_folds):
+            model_name = self.get_standardized_prediction_model_name(target_id, fold)
+            artifact = self.load_model(model_name, "sklearn_pipeline")
+
+            if artifact:
+                models.append(artifact)
+                logger.debug(f"Loaded model for target {target_id}, fold {fold}")
+            else:
+                logger.warning(
+                    f"Could not load model for target {target_id}, fold {fold}"
+                )
+
+        # Sort by fold index
+        models.sort(key=lambda x: x.metadata.fold_index or 0)
+        return models
 
 
 # Convenience functions for backward compatibility and ease of use

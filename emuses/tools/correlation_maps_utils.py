@@ -9,7 +9,15 @@ from emuses.tools.output_utils import save_statistical_maps
 from emuses.tools.visualisation import plot_clustering
 
 
-def calculate_correlation_grid(embeddings, train_labels, grid_size, sigma=0.5, correlation_method='pearson'):
+def calculate_correlation_grid(
+    embeddings,
+    train_labels,
+    grid_size,
+    sigma=0.5,
+    correlation_method="pearson",
+    inference_mode=False,
+    reference_embeddings=None,
+):
     """
     Calculate correlations over a grid to evaluate the relationship between the embeddings and the labels.
 
@@ -19,14 +27,21 @@ def calculate_correlation_grid(embeddings, train_labels, grid_size, sigma=0.5, c
     grid_size (int): Number of grid points along each dimension.
     sigma (float or list of floats): Standard deviation for the Gaussian filter used in distance computation.
     correlation_method (str): The correlation method to use ('pearson', 'spearman', or 'pointbiserial').
+    inference_mode (bool): If True, use reference_embeddings for grid calculation instead of current embeddings
+    reference_embeddings (np.array): Reference embeddings from training data (used when inference_mode=True)
 
     Returns:
     correlation_matrix (np.array): Correlation values for each grid point.
     grid_x (np.array): X-coordinates of the grid.
     grid_y (np.array): Y-coordinates of the grid.
     """
-    min_coords = embeddings.min(axis=0)
-    max_coords = embeddings.max(axis=0)
+    # Use reference embeddings for grid bounds in inference mode
+    if inference_mode and reference_embeddings is not None:
+        min_coords = reference_embeddings.min(axis=0)
+        max_coords = reference_embeddings.max(axis=0)
+    else:
+        min_coords = embeddings.min(axis=0)
+        max_coords = embeddings.max(axis=0)
 
     grid_x = np.linspace(min_coords[0], max_coords[0], grid_size)
     grid_y = np.linspace(min_coords[1], max_coords[1], grid_size)
@@ -36,15 +51,17 @@ def calculate_correlation_grid(embeddings, train_labels, grid_size, sigma=0.5, c
     correlation_matrix = np.zeros((grid_size, grid_size))
 
     # Select the appropriate correlation function
-    if correlation_method == 'pearson':
+    if correlation_method == "pearson":
         correlation_func = pearsonr
-    elif correlation_method == 'spearman':
+    elif correlation_method == "spearman":
         correlation_func = spearmanr
-    elif correlation_method == 'pointbiserial':
+    elif correlation_method == "pointbiserial":
         correlation_func = pointbiserialr
         # Ensure that train_labels are binary
         if not np.array_equal(train_labels, train_labels.astype(bool)):
-            raise ValueError("For point-biserial correlation, train_labels must be binary.")
+            raise ValueError(
+                "For point-biserial correlation, train_labels must be binary."
+            )
     else:
         raise ValueError(f"Unsupported correlation method: {correlation_method}")
 
@@ -52,10 +69,16 @@ def calculate_correlation_grid(embeddings, train_labels, grid_size, sigma=0.5, c
         for s in sigma:
             temp_correlation_matrix = np.zeros((grid_size, grid_size))
             dist_vectors = np.array(
-                [compute_gwd_for_point(embeddings, coord.reshape(1, -1), sigma=s) for coord in grid_points])
+                [
+                    compute_gwd_for_point(embeddings, coord.reshape(1, -1), sigma=s)
+                    for coord in grid_points
+                ]
+            )
             for idx, coord in enumerate(grid_points):
                 dist_vector = dist_vectors[idx]
-                if np.all(dist_vector == dist_vector[0]):  # Check if dist_vector is constant
+                if np.all(
+                    dist_vector == dist_vector[0]
+                ):  # Check if dist_vector is constant
                     correlation = 0
                 else:
                     correlation, _ = correlation_func(dist_vector, train_labels)
@@ -64,10 +87,16 @@ def calculate_correlation_grid(embeddings, train_labels, grid_size, sigma=0.5, c
         correlation_matrix /= len(sigma)
     else:  # Single sigma approach
         dist_vectors = np.array(
-            [compute_gwd_for_point(embeddings, coord.reshape(1, -1), sigma=sigma) for coord in grid_points])
+            [
+                compute_gwd_for_point(embeddings, coord.reshape(1, -1), sigma=sigma)
+                for coord in grid_points
+            ]
+        )
         for idx, coord in enumerate(grid_points):
             dist_vector = dist_vectors[idx]
-            if np.all(np.isclose(dist_vector, 0)) or np.all(np.isclose(train_labels, 0)):
+            if np.all(np.isclose(dist_vector, 0)) or np.all(
+                np.isclose(train_labels, 0)
+            ):
                 correlation = 0
             else:
                 correlation, _ = correlation_func(dist_vector, train_labels)
@@ -77,7 +106,14 @@ def calculate_correlation_grid(embeddings, train_labels, grid_size, sigma=0.5, c
 
 
 # Updated function to calculate correlation for each embedding
-def calculate_correlation(embeddings, train_labels, sigma=0.5, correlation_method='pearson'):
+def calculate_correlation(
+    embeddings,
+    train_labels,
+    sigma=0.5,
+    correlation_method="pearson",
+    inference_mode=False,
+    reference_embeddings=None,
+):
     """
     Calculate correlations for each embedding.
 
@@ -86,6 +122,8 @@ def calculate_correlation(embeddings, train_labels, sigma=0.5, correlation_metho
     train_labels (np.array): Labels corresponding to each embedding. Can be binary or continuous.
     sigma (float or list of floats): Standard deviation for the Gaussian filter used in distance computation.
     correlation_method (str): The correlation method to use ('pearson', 'spearman', or 'pointbiserial').
+    inference_mode (bool): If True, use reference_embeddings for correlation calculation
+    reference_embeddings (np.array): Reference embeddings from training data (used when inference_mode=True)
 
     Returns:
     correlations (np.array): Correlation values for each embedding.
@@ -93,15 +131,17 @@ def calculate_correlation(embeddings, train_labels, sigma=0.5, correlation_metho
     correlations = np.zeros(embeddings.shape[0])
 
     # Select the appropriate correlation function
-    if correlation_method == 'pearson':
+    if correlation_method == "pearson":
         correlation_func = pearsonr
-    elif correlation_method == 'spearman':
+    elif correlation_method == "spearman":
         correlation_func = spearmanr
-    elif correlation_method == 'pointbiserial':
+    elif correlation_method == "pointbiserial":
         correlation_func = pointbiserialr
         # Ensure that train_labels are binary
         if not np.array_equal(train_labels, train_labels.astype(bool)):
-            raise ValueError("For point-biserial correlation, train_labels must be binary.")
+            raise ValueError(
+                "For point-biserial correlation, train_labels must be binary."
+            )
     else:
         raise ValueError(f"Unsupported correlation method: {correlation_method}")
 
@@ -109,8 +149,12 @@ def calculate_correlation(embeddings, train_labels, sigma=0.5, correlation_metho
         for s in sigma:
             temp_correlations = np.zeros(embeddings.shape[0])
             for idx, embedding in enumerate(embeddings):
-                dist_vector = compute_gwd_for_point(embeddings, embedding.reshape(1, -1), sigma=s)
-                if np.all(dist_vector == dist_vector[0]):  # Check if dist_vector is constant
+                dist_vector = compute_gwd_for_point(
+                    embeddings, embedding.reshape(1, -1), sigma=s
+                )
+                if np.all(
+                    dist_vector == dist_vector[0]
+                ):  # Check if dist_vector is constant
                     correlation = 0
                 else:
                     correlation, _ = correlation_func(dist_vector, train_labels)
@@ -119,8 +163,12 @@ def calculate_correlation(embeddings, train_labels, sigma=0.5, correlation_metho
         correlations /= len(sigma)
     else:  # Single sigma approach
         for idx, embedding in enumerate(embeddings):
-            dist_vector = compute_gwd_for_point(embeddings, embedding.reshape(1, -1), sigma)
-            if np.all(dist_vector == dist_vector[0]):  # Check if dist_vector is constant
+            dist_vector = compute_gwd_for_point(
+                embeddings, embedding.reshape(1, -1), sigma
+            )
+            if np.all(
+                dist_vector == dist_vector[0]
+            ):  # Check if dist_vector is constant
                 correlation = 0
             else:
                 correlation, _ = correlation_func(dist_vector, train_labels)
@@ -154,9 +202,22 @@ def filter_coordinates(coordinates, correlations, correlation_threshold=0.3):
 
 
 def run_heatmap_analysis(
-    embeddings, scores_vectors_dict, input_matrix, output_folder, output_format_info, clusterer, cluster_labels,
-    input_type='image', grid_size=100, sigma=None, correlation_threshold=0.2, effect_size_threshold=0.5,
-    highlight_points=True, show_plots=False, generate_plots=False, correlation_method='pearson'
+    embeddings,
+    scores_vectors_dict,
+    input_matrix,
+    output_folder,
+    output_format_info,
+    clusterer,
+    cluster_labels,
+    input_type="image",
+    grid_size=100,
+    sigma=None,
+    correlation_threshold=0.2,
+    effect_size_threshold=0.5,
+    highlight_points=True,
+    show_plots=False,
+    generate_plots=False,
+    correlation_method="pearson",
 ):
     """
     Run heatmap creation, point-biserial correlation, and statistical analysis on the provided embeddings.
@@ -226,16 +287,25 @@ def run_heatmap_analysis(
     for score_tag, train_labels_bin in scores_vectors_dict.items():
         print("Calculating correlations over a grid...")
         correlation_matrix, grid_x, grid_y = calculate_correlation_grid(
-            embeddings, train_labels_bin, grid_size=grid_size, sigma=sigma, correlation_method=correlation_method
+            embeddings,
+            train_labels_bin,
+            grid_size=grid_size,
+            sigma=sigma,
+            correlation_method=correlation_method,
         )
         print(f"Grid correlations for score {score_tag} calculated successfully.")
 
         print("Calculating correlations for each embedding...")
         correlations = calculate_correlation(
-            embeddings, train_labels_bin, sigma=sigma, correlation_method=correlation_method
+            embeddings,
+            train_labels_bin,
+            sigma=sigma,
+            correlation_method=correlation_method,
         )
         print(f"Correlations for score {score_tag} calculated successfully.")
-        print(f"Non-zero correlation values for score {score_tag}: {np.count_nonzero(correlations)}")
+        print(
+            f"Non-zero correlation values for score {score_tag}: {np.count_nonzero(correlations)}"
+        )
 
         print("Filtering coordinates based on correlation threshold...")
         filtered_coordinates, filtered_indices = filter_coordinates(
@@ -255,27 +325,37 @@ def run_heatmap_analysis(
         # Use a stricter threshold (effect_size_threshold) on the correlations.
         high_confidence_indices = np.where(correlations > effect_size_threshold)[0]
         if len(high_confidence_indices) == 0:
-            print(f"No points with correlation above {effect_size_threshold} for score {score_tag}.")
+            print(
+                f"No points with correlation above {effect_size_threshold} for score {score_tag}."
+            )
             effect_size_maps = {}
         else:
             # Restrict to the high-confidence indices
             high_conf_embeddings = embeddings[high_confidence_indices]
             high_conf_cluster_labels = cluster_labels[high_confidence_indices]
             unique_clusters = np.unique(high_conf_cluster_labels)
-            print(f"Unique clusters among high-confidence points for score {score_tag}: {unique_clusters}")
+            print(
+                f"Unique clusters among high-confidence points for score {score_tag}: {unique_clusters}"
+            )
             effect_size_maps = {}
             for cluster in unique_clusters:
                 if cluster == -1:
                     continue  # Skip noise.
                 # Get indices among high-confidence points for this cluster.
-                cluster_indices = high_confidence_indices[high_conf_cluster_labels == cluster]
+                cluster_indices = high_confidence_indices[
+                    high_conf_cluster_labels == cluster
+                ]
                 if len(cluster_indices) < 3:
-                    print(f"Cluster {cluster} has fewer than 3 high-confidence points; skipping effect size map.")
+                    print(
+                        f"Cluster {cluster} has fewer than 3 high-confidence points; skipping effect size map."
+                    )
                     continue
-                print(f"Computing effect size map for cluster {cluster} and score tag '{score_tag}'...")
+                print(
+                    f"Computing effect size map for cluster {cluster} and score tag '{score_tag}'..."
+                )
                 # Compute effect size map; input_matrix_stat_map returns (stat_map, pval_map, effect_size_map)
                 _, _, effect_size_map = input_matrix_stat_map(
-                    input_matrix, cluster_indices, test_name='mann-whitney', n_cores=-1
+                    input_matrix, cluster_indices, test_name="mann-whitney", n_cores=-1
                 )
                 effect_size_maps[cluster] = effect_size_map
                 # Save the effect size map using your existing function (which will handle reshaping using output_format_info)
@@ -285,14 +365,18 @@ def run_heatmap_analysis(
                     output_folder=output_folder,
                     input_type=input_type,
                     output_format_info=output_format_info,
-                    filename_prefix=f'effect_size_map_score_{score_tag}_cluster_{cluster}',
+                    filename_prefix=f"effect_size_map_score_{score_tag}_cluster_{cluster}",
                     save_output=True,
-                    generate_plots=generate_plots
+                    generate_plots=generate_plots,
                 )
                 print(f"Effect size map for cluster {cluster} saved.")
 
         print("Plotting clustering of the whole space...")
-        if generate_plots and clusterer is not None and filtered_coordinates.shape[0] == filtered_cluster_labels.shape[0]:
+        if (
+            generate_plots
+            and clusterer is not None
+            and filtered_coordinates.shape[0] == filtered_cluster_labels.shape[0]
+        ):
             plot_fig = plot_clustering(
                 embeddings=embeddings,
                 clusterer=clusterer,
@@ -305,15 +389,17 @@ def run_heatmap_analysis(
                 score_tag=score_tag,
                 highlight_points=highlight_points,
                 show_plot=show_plots,
-                save_path=Path(output_folder) / f'clustering_plot_{score_tag}.png'
+                save_path=Path(output_folder) / f"clustering_plot_{score_tag}.png",
             )
             if generate_plots:
                 if score_tag not in plots:
                     plots[score_tag] = {}
-                plots[score_tag]['clustering_plot'] = plot_fig
+                plots[score_tag]["clustering_plot"] = plot_fig
             print("Clustering plot created successfully.")
         else:
-            print("Mismatch in dimensions or clustering info not available. Skipping clustering plot.")
+            print(
+                "Mismatch in dimensions or clustering info not available. Skipping clustering plot."
+            )
             if generate_plots:
                 plot_fig = plot_clustering(
                     embeddings=embeddings,
@@ -327,11 +413,12 @@ def run_heatmap_analysis(
                     score_tag=score_tag,
                     highlight_points=highlight_points,
                     show_plot=show_plots,
-                    save_path=Path(output_folder) / f'unfiltered_clustering_plot_{score_tag}.png'
+                    save_path=Path(output_folder)
+                    / f"unfiltered_clustering_plot_{score_tag}.png",
                 )
                 if score_tag not in plots:
                     plots[score_tag] = {}
-                plots[score_tag]['clustering_plot'] = plot_fig
+                plots[score_tag]["clustering_plot"] = plot_fig
                 print("Unfiltered clustering plot created successfully.")
 
     return plots

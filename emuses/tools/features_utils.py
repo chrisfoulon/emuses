@@ -46,6 +46,10 @@ class PCAGWD(BaseEstimator, TransformerMixin):
         self.var_thr = var_thr  # float in (0,1) or None
 
     def fit(self, X, y=None):
+        # Store training data for inference mode
+        self._X_fit = X.copy()
+
+        # Compute GWD matrix for training data
         d2 = ((X[:, None, :] - X[None, :, :]) ** 2).sum(-1)
         W = np.exp(-d2 / (2 * self.sigma**2))
 
@@ -63,7 +67,8 @@ class PCAGWD(BaseEstimator, TransformerMixin):
         return self
 
     def transform(self, X):
-        d2 = (X[:, None, :] - self.pca_.mean_.reshape(1, -1, 1))[:, :, 0] ** 2
+        # Compute GWD between X and training data
+        d2 = ((X[:, None, :] - self._X_fit[None, :, :]) ** 2).sum(-1)
         W = np.exp(-d2 / (2 * self.sigma**2))
         return self.pca_.transform(W)
 
