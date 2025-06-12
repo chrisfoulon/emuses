@@ -1,0 +1,39 @@
+[flake8]
+# Maximum line length (increased from default 79 to 120)
+max-line-length = 120
+
+# Ignore common warnings that experienced developers often find too restrictive
+ignore = 
+    # E203: whitespace before ':' (conflicts with black formatter)
+    E203,
+    # E501: line too long (handled by max-line-length setting)
+    E501,
+    # W503: line break before binary operator (conflicts with PEP 8 update)
+    W503,
+    # E402: module level import not at top of file (sometimes necessary)
+    E402,
+    # F401: imported but unused (handled by IDE and more specific tools)
+    F401,
+    # E731: do not assign a lambda expression, use a def (lambdas are fine)
+    E731,
+    # W504: line break after binary operator (stylistic preference)
+    W504
+
+# Additional configuration
+max-complexity = 15
+statistics = True
+count = True
+
+# Exclude common directories that shouldn't be linted
+exclude = 
+    .git,
+    __pycache__,
+    .tox,
+    .eggs,
+    *.egg,
+    build,
+    dist,
+    .venv,
+    venv,
+    env,
+    .env
