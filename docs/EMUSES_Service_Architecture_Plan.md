@@ -192,6 +192,8 @@ Following LAD principles, we implement the **smallest meaningful features** that
 
 ## 3. Incremental Implementation Plan (LAD Approach)
 
+> **📋 Implementation Reference**: See [LAD Implementation Guide](./LAD_Implementation_Guide.md) for detailed step-by-step instructions, feature descriptions, and context files for each LAD session.
+
 ### Foundation Principles
 - **Always keep main pipeline functional** - `python main.py full` should always work
 - **Each branch adds one working feature** - No half-implemented functionality
@@ -201,6 +203,8 @@ Following LAD principles, we implement the **smallest meaningful features** that
 ### Phase 0: Foundation Layer (1-2 weeks)
 
 **Goal**: Add FastAPI layer that calls existing stages without changing core logic
+
+> **📋 LAD Session 1**: See [LAD Implementation Guide - Session 1](./LAD_Implementation_Guide.md#lad-session-1-foundation-fastapi-service) for complete implementation details, context files, and feature description.
 
 #### 3.1 Feature 1.1: Basic FastAPI-UMAPStage Integration
 
