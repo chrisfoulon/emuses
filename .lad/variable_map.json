@@ -1,0 +1,66 @@
+{
+  "feature": {
+    "slug": "foundation-fastapi-service",
+    "name": "Foundation FastAPI Service",
+    "branch": "feat/foundation-fastapi-service",
+    "description": "FastAPI service layer wrapping EMUSES pipeline stages with REST endpoints, background tasks, and 100% backward compatibility"
+  },
+  "implementation": {
+    "service_layer_path": "emuses/services/",
+    "api_layer_path": "emuses/api/",
+    "main_endpoints": ["embedding", "heatmap", "prediction"],
+    "background_task_strategy": "async_with_process_pool"
+  },
+  "security": {
+    "auth_strategy": "public_endpoints",
+    "cors_enabled": true,
+    "rate_limiting": "optional_disabled_by_default"
+  },
+  "data_handling": {
+    "input_formats": ["json_arrays", "file_uploads", "nifti", "csv", "folders"],
+    "response_strategy": {
+      "small": "json",
+      "medium": "file_response",
+      "large": "streaming"
+    },
+    "max_request_size": "configurable_no_default_limit",
+    "storage_strategy": "file_based_with_download_endpoints"
+  },
+  "background_tasks": {
+    "progress_tracking": "polling_endpoints",
+    "task_cancellation": "checkpoint_resume",
+    "result_persistence": "permanent_disk_storage",
+    "websocket_support": "future_layer",
+    "webhook_support": "deferred"
+  },
+  "performance": {
+    "concurrency_model": "1_uvicorn_worker_40_thread_pool",
+    "expected_load": "5_heavy_50_lightweight_polls",
+    "path_library": "pathlib",
+    "async_strategy": "run_in_executor_process_pool",
+    "config_strategy": "layered_code_yaml_env_cli_request"
+  },
+  "error_handling": {
+    "optuna_failure_strategy": "no_special_handling",
+    "memory_constraints": "none_configurable_within_machine",
+    "timeout_strategy": "no_timeout_show_progress",
+    "warning_strategy": "collect_and_report"
+  },
+  "compatibility": {
+    "backward_compatibility": "100_percent_required",
+    "cli_integration": "unchanged_existing_main_py",
+    "python_imports": "unchanged_existing_imports",
+    "pipeline_context": "preserve_exact_context_pattern"
+  },
+  "context_files": [
+    "emuses/pipelines/emuses_pipeline.py",
+    "emuses/pipelines/umap_stage.py",
+    "emuses/pipelines/heatmap_stage.py",
+    "emuses/pipelines/prediction_stage.py",
+    "emuses/config/optim_configs.py",
+    "emuses/tools/UMAP_utils.py",
+    "emuses/scripts/main.py",
+    "docs/LAD_Implementation_Guide.md"
+  ],
+  "generated": "2025-06-30"
+}
