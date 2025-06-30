@@ -649,184 +649,75 @@ While branches are independent, sessions have logical dependencies:
    - `docs/EMUSES_Service_Architecture_Plan.md`
    - This LAD implementation guide (especially the session-specific sections)
 
-### **Context Package for Copilot**
+### **LAD Session 1 - Ready-to-Use Context Package**
 
-For each LAD session, provide this complete context package to Copilot:
+**Copy-paste this complete context package into your new LAD discussion:**
 
 ```markdown
-**Feature draft** ⟶ [Include the session's feature draft from above]
+**Feature draft** ⟶ Create a FastAPI service layer that wraps the existing EMUSES pipeline stages (EmbeddingStage for joint UMAP+HDBSCAN optimization, HeatmapStage for multi-target prediction, PredictionStage for inference) without modifying their core logic. The service should provide REST endpoints that accept Pydantic-validated requests containing optimization configurations (not individual parameters), call the existing stage.run() methods with proper context setup, and return structured responses. The EmbeddingStage performs joint UMAP+HDBSCAN optimization using Optuna nested trials and parameter dictionaries from config files. Include background task support for long-running operations like hyperparameter optimization. Must maintain 100% backward compatibility - existing CLI and Python imports continue working unchanged. The service acts as a thin translation layer between HTTP requests and the current pipeline context pattern, reusing 90%+ of existing computational code.
 
 **Implementation Requirements from LAD Analysis:**
 
-[Include these sections from the guide for the specific session:]
-- Key Implementation Requirements
-- Critical Design Decisions for Implementer  
-- Pydantic Models/API Structure (if applicable)
-- Success Criteria Checklist
+**Service Layer Structure:**
+```
+emuses/
+├── services/
+│   ├── __init__.py
+│   ├── emuses_service.py          # Main service coordinator
+│   ├── embedding_service.py       # EmbeddingStage wrapper (joint UMAP+HDBSCAN)
+│   ├── heatmap_service.py         # HeatmapStage wrapper (multi-target optimization)
+│   └── prediction_service.py      # PredictionStage wrapper
+├── api/
+│   ├── __init__.py
+│   ├── models.py                  # Pydantic request/response models
+│   ├── app.py                     # FastAPI application
+│   └── dependencies.py           # Common API dependencies
+```
+
+**Critical Design Decisions:**
+1. **Context Pattern Preservation**: Service must populate the same context dictionary that current pipeline uses. Study how `EMUSESPipeline.run()` creates and passes context between stages - especially context updates in `UMAPStage.run()` lines 230-251.
+
+2. **Optimization Configuration Handling**: EMUSES uses nested dictionaries for parameter optimization, not individual parameters. Accept `optim_config` dictionaries from `emuses/config/optim_configs.py`, handle default `optim_dict_default` if none provided.
+
+3. **Joint UMAP+HDBSCAN Architecture**: `UMAPStage` performs joint optimization of UMAP and HDBSCAN. Expose as `/embedding/fit` not `/umap/fit`, return both embeddings and cluster labels, handle nested Optuna optimization (UMAP trials × HDBSCAN trials).
+
+4. **Background Task Infrastructure**: Use FastAPI BackgroundTasks for initial implementation, prepare for Celery migration in production phase.
+
+**Pydantic Models to Define:**
+- `EmbeddingStageRequest` with features, test_features, optim_config, n_trials, hdbscan_trials, random_state, umap_jobs, hdbscan_jobs, prefix
+- `EmbeddingStageResponse` with train_embeddings, test_embeddings, cluster_labels, umap_model_path, clusterer_model_path, min_coords, max_coords, processing_time_ms, optimization_history
+- `HeatmapStageRequest` with embeddings, labels, task, optim_config, outer_folds, optim_trials, use_ae_pretrain, feature_types, random_state
+- `HeatmapStageResponse` with cv_scores, best_models, performance_summary, model_paths, processing_time_ms, optimization_studies
+
+**Success Criteria:**
+- `/embedding/fit` endpoint produces identical embeddings and cluster labels to CLI
+- `/heatmap/optimize` endpoint produces identical CV scores to CLI  
+- Optimization configurations work with both default and custom `optim_dict` settings
+- All existing Python imports continue working
+- `python emuses/scripts/main.py` CLI remains functional
+- Context dictionary passing matches existing pipeline behavior
 
 **Context Files for Exploration:**
-[List the context files from the session's "Context Files to Open" section]
+- emuses/pipelines/emuses_pipeline.py
+- emuses/pipelines/umap_stage.py
+- emuses/pipelines/heatmap_stage.py
+- emuses/pipelines/prediction_stage.py
+- emuses/pipelines/pipeline_stage.py
+- emuses/pipelines/pipeline_config.py
+- emuses/config/optim_configs.py
+- emuses/config/optim_configs_predict.py
+- emuses/tools/optim_utils.py
+- emuses/tools/model_io.py
+- emuses/tools/UMAP_utils.py
+- emuses/scripts/main.py
+- docs/LAD_Implementation_Guide.md
 
 Please implement according to this architectural guidance while exploring the codebase to understand current patterns and ensure 100% compatibility.
 ```
 
-**Why this approach works:**
-- **Leverages our analysis** - Copilot gets the benefit of our architectural research
-- **Prevents rediscovery time** - No need to re-understand joint UMAP+HDBSCAN optimization
-- **Ensures correct design** - API structure and service layer match EMUSES patterns
-- **Still allows exploration** - Copilot examines code files for implementation details
-- **Maintains LAD flexibility** - Copilot can ask questions and suggest improvements
-
-### **LAD Workflow Steps**
-
-1. **Feature Kickoff** (`00_feature_kickoff.md`):
-   - Provide the complete context package (see above)
-   - Let Copilot ask clarifying questions
-   - Provide additional context as needed
-
-2. **Context Gathering** (`01_context_gathering.md`):
-   - Generate multi-level documentation
-   - Review current codebase understanding
-
-3. **Plan Feature** (`02_plan_feature.md`):
-   - Create detailed implementation checklist
-   - Ensure test-driven development approach
-
-4. **Implementation Loop** (`04_implement_next_task.md`):
-   - Implement each checklist item
-   - Run tests after each change
-   - Commit with conventional commit messages
-
-5. **Code Review** (`05_code_review_package.md` + `06_self_review_with_chatgpt.md`):
-   - Generate comprehensive review bundle
-   - Address feedback and issues
-
-### **Success Validation for Each Session**
-
-- **Backward Compatibility**: Existing CLI and Python imports work unchanged
-- **Result Consistency**: New interfaces produce identical computational results
-- **Test Coverage**: Comprehensive test suite with good coverage
-- **Documentation**: Updated docs and examples
-- **Performance**: Maintain or improve existing performance characteristics
-
-### **Between-Session Integration**
-
-- **After each session merge**:
-  ```bash
-  # Merge completed session
-  git checkout main
-  git merge feat/foundation-fastapi-service
-  git push origin main
-  
-  # Run full integration tests
-  python -m pytest tests/integration/
-  python main.py --help  # Verify CLI still works
-  ```
-
-- **Before starting new session**:
-  ```bash
-  # Start from latest main
-  git checkout main
-  git pull origin main
-  
-  # Verify all existing functionality
-  python -m pytest tests/
-  
-  # Create new session branch
-  git checkout -b feat/enhanced-cli-typer
-  ```
-
-- **Mid-session integration issues**: 
-  - If Session 1 needs hotfixes while Session 2 is in progress:
-    ```bash
-    # From Session 2 branch
-    git checkout main
-    git checkout -b hotfix/session1-fix
-    # Make fix, PR to main
-    # Then rebase Session 2 onto updated main
-    git checkout feat/enhanced-cli-typer
-    git rebase main
-    ```
-
-### **Session Completion Checklist**
-
-Before merging each session to main:
-
-- [ ] All LAD checklist items completed
-- [ ] Comprehensive test suite passes
-- [ ] Backward compatibility verified (existing CLI works)
-- [ ] Performance benchmarks show no regression
-- [ ] Documentation updated
-- [ ] Code review completed (using LAD review bundle)
-- [ ] Integration with previous sessions tested
-
----
-
-## Additional Context for Copilot
-
-### **EMUSES Domain-Specific Knowledge**
-
-1. **Scientific Computing Context**:
-   - EMUSES is neuroimaging analysis software
-   - Results must be reproducible and scientifically valid
-   - Performance matters for large brain datasets
-   - Users range from novice researchers to ML experts
-
-2. **Pipeline Architecture Understanding**:
-   - Context dictionary pattern for stage communication
-   - Optuna-based hyperparameter optimization
-   - Joblib for parallel processing
-   - Multiple output artifacts per stage
-
-3. **Key Dependencies and Constraints**:
-   - Python 3.11 target
-   - NumPy/SciPy scientific computing stack
-   - Scikit-learn for ML algorithms
-   - UMAP-learn for dimensionality reduction
-   - Optuna for hyperparameter optimization
-
-### **Code Quality Standards**
-
-- **Type Hints**: Use throughout (already established in codebase)
-- **Docstring Format**: NumPy-style docstrings (per `.copilot-instructions.md`)
-- **Error Handling**: Preserve scientific error context
-- **Testing**: pytest with good coverage of edge cases
-- **Performance**: Profile memory usage for large datasets
-
-### **Implementation Priorities**
-
-1. **Correctness First**: Results must match existing pipeline exactly
-2. **Backward Compatibility**: Never break existing user workflows
-3. **Scientific Integrity**: Preserve all statistical and ML validity
-4. **Usability**: Each interface serves its target user type well
-5. **Performance**: Maintain or improve existing performance characteristics
-
-This guide provides the comprehensive context needed for successful LAD-driven implementation of the EMUSES service architecture refactoring.
-
-### **Context Package for Copilot**
-
-For each LAD session, provide this complete context package to Copilot:
-
-```markdown
-**Feature draft** ⟶ [Include the session's feature draft from above]
-
-**Implementation Requirements from LAD Analysis:**
-
-[Include these sections from the guide for the specific session:]
-- Key Implementation Requirements
-- Critical Design Decisions for Implementer  
-- Pydantic Models/API Structure (if applicable)
-- Success Criteria Checklist
-
-**Context Files for Exploration:**
-[List the context files from the session's "Context Files to Open" section]
-
-Please implement according to this architectural guidance while exploring the codebase to understand current patterns and ensure 100% compatibility.
-```
-
-**Why this approach works:**
-- **Leverages our analysis** - Copilot gets the benefit of our architectural research
-- **Prevents rediscovery time** - No need to re-understand joint UMAP+HDBSCAN optimization
-- **Ensures correct design** - API structure and service layer match EMUSES patterns
-- **Still allows exploration** - Copilot examines code files for implementation details
-- **Maintains LAD flexibility** - Copilot can ask questions and suggest improvements
+**Current Status:**
+- Branch: `feat/foundation-fastapi-service`
+- All planning work committed to main
+- Ready for LAD Session 1 implementation
+- Start a new VS Code discussion with the context package above
+````
