@@ -242,16 +242,70 @@ optim_dict_raw_only = {
 }
 
 
-def load_optim_dict_predict(name):
+# Test configuration with reduced trials for fast integration testing
+optim_dict_test = {
+    "meta": {
+        "n_trials": 10,  # Reduced for integration testing
+        "description": "Fast test configuration for CI/integration tests"
+    },
+    "param": {
+        "model": {
+            "model_type": {"choices": ["kernel", "rf"]},  # Reduced model space
+            "kernel": {
+                "sigma": {"low": 0.01, "high": 0.3, "log": True},
+            },
+            "rf": {
+                "n_estimators": {"low": 50, "high": 200, "step": 50},  # Reduced range
+                "max_depth": {"low": 2, "high": 10},  # Reduced range
+            },
+        },
+        "features": {
+            "feat_type": {"choices": ["raw_only", "gwd"]},  # Simplified feature space
+            "sigma_gwd": {
+                "low": 0.05,
+                "high": 0.2,
+                "log": True,
+                "conditional_on": {"feat_type": ["gwd"]},
+            },
+            "poly_deg": {"choices": [1, 2]},
+            "use_raw": {
+                "choices": [True, False],
+                "conditional_on": {"feat_type": ["gwd"]},
+            },
+        },
+    },
+}
+
+# Test AE configuration with reduced trials
+optim_dict_ae_test = {
+    "meta": {
+        "n_trials": 5,  # Very few trials for fast testing
+        "description": "Fast autoencoder test configuration"
+    },
+    "param": {
+        "ae": {
+            "ae_type": {"choices": ["ae"]},  # Only basic AE for testing
+            "ae_hidden_dim": {"low": 8, "high": 32, "step": 8},  # Smaller range
+            "ae_lr": {"low": 1e-3, "high": 1e-2, "log": True},  # Narrower range
+            "ae_epochs": {"low": 20, "high": 50, "step": 10},  # Fewer epochs
+            "ae_batch_size": {"choices": [32]},  # Fixed batch size
+            "ae_weight_decay": {"low": 1e-5, "high": 1e-4, "log": True},
+        }
+    }
+}
+
+
+def load_optim_dict_predict(config_name=None):
     """
     Dynamically load a prediction optimization dictionary from this module.
 
-    The name should correspond to a variable in this module (e.g., 'optim_dict_predict', 'optim_dict_phase1').
+    The name should correspond to a variable in this module (e.g., 'optim_dict_predict', 'optim_dict_test').
     If name does not contain an underscore, the function simply returns the variable from this module.
     If name contains underscores, it tries to split and process similar to the UMAP optim_dict loader.
 
     Parameters:
-        name (str): Name of the prediction optimization dictionary to load.
+        config_name (str): Name of the prediction optimization dictionary to load.
+                          If None, returns the default optim_dict_predict.
 
     Returns:
         dict: The selected prediction optimization dictionary.
@@ -259,15 +313,19 @@ def load_optim_dict_predict(name):
     Raises:
         ValueError: If the variable is not found or if processing fails.
     """
+    # Return default if no name provided
+    if config_name is None:
+        return optim_dict_predict
+        
     globals_dict = globals()
 
     # First, check if the full name exists.
-    if name in globals_dict:
-        return globals_dict[name]
+    if config_name in globals_dict:
+        return globals_dict[config_name]
 
     # Otherwise, try to split at the last underscore.
-    if "_" in name:
-        base, param = name.rsplit("_", 1)
+    if "_" in config_name:
+        base, param = config_name.rsplit("_", 1)
         if base in globals_dict:
             obj = globals_dict[base]
             try:
@@ -283,8 +341,8 @@ def load_optim_dict_predict(name):
                 else:
                     return obj
             except Exception as e:
-                raise ValueError(f"Error processing {name}: {e}")
+                raise ValueError(f"Error processing {config_name}: {e}")
         else:
             raise ValueError(f"Variable '{base}' not found in optim_configs_predict.")
     else:
-        raise ValueError(f"Variable '{name}' not found in optim_configs_predict.")
+        raise ValueError(f"Variable '{config_name}' not found in optim_configs_predict.")

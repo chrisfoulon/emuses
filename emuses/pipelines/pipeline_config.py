@@ -20,7 +20,7 @@ LOG_QUEUE = mp.Queue(-1)
 @dataclass
 class PipelineConfig:
     # Direct parameter fields (replaces args.*)
-    output_folder_path: str
+    output_folder: str
     sigma: float = None
     fwhm: float = None
     # Other parameters with defaults as needed
@@ -39,7 +39,7 @@ class PipelineConfig:
     hdbscan_trials: int = 20  # Number of HDBSCAN optimization trials
 
     # Computed fields
-    output_folder: Path = field(init=False)
+    output_path: Path = field(init=False)
     umap_params: dict = field(default_factory=dict)
     heatmap_params: dict = field(default_factory=dict)
     prediction_params: dict = field(default_factory=dict)
@@ -51,31 +51,29 @@ class PipelineConfig:
         2. Direct parameters as kwargs
         """
         if len(args) == 1 and isinstance(args[0], argparse.Namespace):
-            # Convert namespace to kwargs
+            # Convert namespace to kwargs and merge with any existing kwargs
             namespace_dict = vars(args[0])
-            # Initialize with flattened args
-            self.__init__(**namespace_dict)
-            return
+            kwargs.update(namespace_dict)
 
-        # Standard dataclass initialization with direct parameters
+        # Set all the attributes directly (respecting dataclass defaults)
         for key, value in kwargs.items():
             setattr(self, key, value)
 
-        # Call post_init to set up derived fields
+        # Call post_init only once
         self.__post_init__()
 
     def __post_init__(self):
         # ------------------------------------------------------------------
         # Create / resolve output folder
         # ------------------------------------------------------------------
-        self.output_folder = Path(self.output_folder_path).resolve()
-        self.output_folder.mkdir(parents=True, exist_ok=True)
+        self.output_path = Path(self.output_folder).resolve()
+        self.output_path.mkdir(parents=True, exist_ok=True)
         self._configure_logging()
 
         # ------------------------------------------------------------------
         # Configure global logging (only once)
         # ------------------------------------------------------------------
-        log_path = self.output_folder / "log"
+        log_path = self.output_path / "log"
         log_path.mkdir(exist_ok=True)
 
         log_file = log_path / "pipeline.log"
@@ -119,7 +117,7 @@ class PipelineConfig:
         )
 
     def _configure_logging(self):
-        log_dir = self.output_folder / "log"
+        log_dir = self.output_path / "log"
         log_dir.mkdir(exist_ok=True)
         log_file = log_dir / "pipeline.log"
 
@@ -165,5 +163,5 @@ class PipelineConfig:
         from ..tools.model_io import ModelIOManager
 
         return ModelIOManager(
-            base_path=self.output_folder / "models", version=self.model_version
+            base_path=self.output_path / "models", version=self.model_version
         )

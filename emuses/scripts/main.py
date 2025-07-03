@@ -341,7 +341,7 @@ def add_enhanced_pipeline_arguments(parser):
     parser.add_argument(
         "--optuna_trials",
         type=int,
-        default=50,
+        default=60,  # Match PipelineConfig default, ~5 trials per model×feature combination
         help="Number of trials for Optuna optimization per model/feature set",
     )
     parser.add_argument(

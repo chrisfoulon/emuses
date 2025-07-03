@@ -261,7 +261,8 @@ class HeatmapStage(PipelineStage):
                 )
 
                 # Get AE optimization parameters from config
-                ae_trials = getattr(self.config, "ae_optuna_trials", 20)
+                from emuses.config.optim_configs_ae import optim_dict_ae
+                ae_trials = optim_dict_ae.get("meta", {}).get("n_trials", 30)
 
                 try:
                     from emuses.tools.ae_optuna import optimize_ae_pretraining

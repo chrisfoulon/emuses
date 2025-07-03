@@ -6,6 +6,10 @@ and training parameters for representation learning.
 """
 
 optim_dict_ae = {
+    "meta": {
+        "n_trials": 30,  # Default number of trials for AE optimization
+        "description": "Autoencoder optimization for feature extraction"
+    },
     "param": {
         "ae": {
             "ae_type": {"choices": ["ae", "improved_ae", "vae"]},
