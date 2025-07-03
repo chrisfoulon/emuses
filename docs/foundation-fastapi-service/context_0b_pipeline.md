@@ -98,117 +98,62 @@ Each stage needs a wrapper for independent execution:
 - Resource limits: max 4 processes, 8GB memory per job
 - Timeout limits: 2 hours for full pipeline, 30 minutes per stage
 
-**Context Preservation**:
-```python
-# Deep copy required to prevent corruption
-import copy
-context_copy = copy.deepcopy(original_context)
-# Serialize for inter-process communication
-import pickle
-context_bytes = pickle.dumps(context_copy)
-```
+## Stage Runner Implementation Details
 
-**Progress Callback Integration**:
-- Rate limited to max 1 update per second
-- Include current stage, progress percentage, ETA
-- Queue-based communication between processes
-- Update job metadata in real-time
+### Completed Stage Runners (Task 3)
 
-## Stage Runner Implementation Requirements
+**UMAPStageRunner**:
+- Validates UMAP parameters: n_components (2-50), n_neighbors (2-200), min_dist (0.0-1.0)
+- Resource monitoring with memory limit (8GB) and CPU limit (90%)
+- Progress tracking with rate limiting (1 update/second)
+- Artifact organization: best_umap_model.joblib, embeddings.npy, cluster files
+- Timeout: 30 minutes for UMAP optimization
 
-### UMAPStage Wrapper
-```python
-class UMAPStageRunner:
-    def __init__(self, job_manager: JobManager):
-        self.job_manager = job_manager
-        
-    async def run_stage(self, job_id: str, context: dict) -> dict:
-        # Validate parameters against stage requirements
-        # Apply resource limits (memory, CPU)
-        # Execute stage with progress tracking
-        # Update job status and artifacts
-```
+**HeatmapStageRunner**:
+- Validates parameters: cv_folds (2-20), test_size (0.1-0.5), max_iter (100-10000)
+- Progress tracking for nested cross-validation iterations
+- Artifact organization: model files, performance reports
+- Timeout: 30 minutes for multi-target prediction
 
-### Parameter Validation
-- Validate UMAP parameters: n_components, n_neighbors, min_dist
-- Check clustering parameters: min_cluster_size, min_samples
-- Verify Optuna optimization settings: n_trials, timeout
-- Ensure input data shapes and types are compatible
+**PredictionStageRunner**:
+- Validates test data and trained models availability
+- Progress tracking for model evaluation
+- Artifact organization: predictions.csv, evaluation_metrics.json
+- Timeout: 15 minutes for prediction evaluation
 
-### Resource Limits
-- Memory monitoring during execution
-- CPU time limits per optimization trial
-- Disk space limits for artifact storage
-- Process termination on resource exhaustion
+### Resource Monitoring Components
 
-## Background Pipeline Runner
+**ResourceMonitor**:
+- Memory usage monitoring (default 8GB limit)
+- CPU usage monitoring (default 90% limit)
+- Graceful resource limit enforcement
+- Exception handling for monitoring failures
 
-### Async Wrapper Requirements
-```python
-class PipelineRunner:
-    async def execute_pipeline(self, job_id: str, config: PipelineConfig) -> dict:
-        # Set up ProcessPoolExecutor with resource limits
-        # Load data and initialize context
-        # Execute stages with progress callbacks
-        # Handle errors and update job status
-        # Return final context with results
-```
+**ProgressTracker**:
+- Rate-limited progress updates (max 1 update/second)
+- Thread-safe progress reporting
+- Integration with JobManager status updates
+- Progress message formatting and stage tracking
 
-### Error Handling Patterns
-- Capture and log all exceptions
-- Update job status to FAILED with error message
-- Clean up partial artifacts on failure
-- Preserve context state for debugging
-- Implement retry logic for transient failures
+### Common Infrastructure
 
-### Progress Tracking Implementation
-```python
-def progress_callback(stage_name: str, progress: float, message: str):
-    # Rate limited updates (max 1/second)
-    # Update job metadata with current status
-    # Send real-time updates to API clients
-    # Include ETA calculations when possible
-```
+**BaseStageRunner**:
+- Context validation for required keys
+- Parameter validation with acceptable ranges
+- Path safety validation to prevent directory traversal
+- Async execution with monitoring and timeout support
+- Artifact organization with secure file handling
 
-## Integration Points for Next Sub-Plans
+## Level 2 API Reference
 
-### For 0c (Interface Layer) Updates Needed
-After this sub-plan completes, update `context_0c_interface.md` with:
-
-**PipelineRunner Interface**:
-- `async execute_pipeline(job_id, config)` method signature
-- Background execution patterns and ProcessPoolExecutor usage
-- Progress callback mechanisms and rate limiting
-- Context preservation patterns for API integration
-
-**Stage Runner Classes**:
-- UMAPStageRunner, HeatmapStageRunner, PredictionStageRunner APIs  
-- Parameter validation requirements for each stage
-- Resource limit configurations and monitoring
-- Artifact organization patterns for API serving
-
-**Background Processing Details**:
-- Process isolation and cleanup procedures
-- Memory management for large context dictionaries
-- Error handling and job status update patterns
-- Timeout handling and graceful termination
-
-### For 0d (Security Testing) Updates Needed
-After this sub-plan completes, update `context_0d_security.md` with:
-
-**Background Process Security**:
-- ProcessPoolExecutor resource limits and isolation
-- Process cleanup verification for security testing
-- Memory usage patterns for performance testing
-- Context serialization for memory spike detection
-
-**Resource Management**:
-- Memory monitoring and leak detection requirements
-- Process isolation verification for concurrent jobs
-- Resource cleanup after job completion
-- Timeout enforcement and process termination
-
-**Progress Callback Security**:
-- Rate limiting implementation details for load testing
-- Callback queue management and memory usage
-- Progress update frequency and resource impact
+| Class | Method | Purpose | Parameters |
+|-------|---------|---------|------------|
+| `UMAPStageRunner` | `run_stage(job_id, context)` | Execute UMAP stage with validation | job_id: str, context: dict |
+| `HeatmapStageRunner` | `run_stage(job_id, context)` | Execute heatmap stage with tracking | job_id: str, context: dict |
+| `PredictionStageRunner` | `run_stage(job_id, context)` | Execute prediction stage | job_id: str, context: dict |
+| `ResourceMonitor` | `start_monitoring()` | Begin resource usage monitoring | None |
+| `ResourceMonitor` | `check_resources()` | Check if limits exceeded | Returns: bool |
+| `ProgressTracker` | `update_progress(progress, message)` | Rate-limited progress update | progress: float, message: str |
+| `BaseStageRunner` | `_validate_context(context, keys)` | Validate context has required keys | context: dict, keys: list |
+| `BaseStageRunner` | `_validate_parameters(config, ranges)` | Validate parameters in ranges | config: object, ranges: dict |
+| `BaseStageRunner` | `_is_safe_path(path)` | Check path safety | path: Path, Returns: bool |

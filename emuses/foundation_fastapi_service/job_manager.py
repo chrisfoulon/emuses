@@ -391,3 +391,22 @@ class JobManager:
                 continue
 
         return cleaned_jobs
+
+    def get_job_directory(self, job_id: Union[str, UUID]) -> Path:
+        """Get the directory path for a job.
+
+        Args:
+            job_id: Job ID to get directory for
+
+        Returns:
+            Path: Path to job directory
+
+        Raises:
+            ValueError: If job_id is invalid
+        """
+        # Validate job ID
+        if not self.validate_job_id(job_id):
+            raise ValueError("Invalid job ID")
+
+        job_id_str = str(job_id)
+        return self.jobs_directory / job_id_str

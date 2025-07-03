@@ -7,11 +7,11 @@
 
 ## Tasks
 
-- [ ] Task 3 ║ tests/foundation-fastapi-service/test_stage_runners.py ║ Individual stage execution with context loading and artifact organization ║ M
-  - [ ] 3.1 UMAPStage wrapper with parameter validation and resource limits
-  - [ ] 3.2 HeatmapStage wrapper with optimization progress tracking
-  - [ ] 3.3 PredictionStage wrapper with test evaluation mode
-  - [ ] 3.4 Stage-specific artifact organization with secure file handling
+- [x] Task 3 ║ tests/foundation-fastapi-service/test_stage_runners.py ║ Individual stage execution with context loading and artifact organization ║ M
+  - [x] 3.1 UMAPStage wrapper with parameter validation and resource limits
+  - [x] 3.2 HeatmapStage wrapper with optimization progress tracking
+  - [x] 3.3 PredictionStage wrapper with test evaluation mode
+  - [x] 3.4 Stage-specific artifact organization with secure file handling
 
 - [ ] Task 4 ║ tests/foundation-fastapi-service/test_pipeline_runner.py ║ Background pipeline execution with context preservation and progress callbacks ║ L
   - [ ] 4.1 EMUSESPipeline async wrapper with ProcessPoolExecutor and resource limits
