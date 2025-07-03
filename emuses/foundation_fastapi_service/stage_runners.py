@@ -24,8 +24,15 @@ from emuses.foundation_fastapi_service.job_manager import JobManager
 class ResourceMonitor:
     """Monitor resource usage for stage execution"""
 
-    def __init__(self, memory_limit_gb: float = 8.0, cpu_percent_limit: float = 90.0):
-        self.memory_limit_bytes = memory_limit_gb * 1024 * 1024 * 1024
+    def __init__(self, memory_limit_ratio: float = 0.75, cpu_percent_limit: float = 90.0):
+        """Initialize resource monitor with system-proportional limits.
+
+        Args:
+            memory_limit_ratio: Fraction of total system memory to use (default: 75%)
+            cpu_percent_limit: Maximum CPU usage percentage (default: 90%)
+        """
+        total_memory = psutil.virtual_memory().total
+        self.memory_limit_bytes = int(total_memory * memory_limit_ratio)
         self.cpu_percent_limit = cpu_percent_limit
         self.monitoring = False
         self.exceeded_limits = False
@@ -109,19 +116,27 @@ class BaseStageRunner:
         if missing_keys:
             raise ValueError(f"Missing required context keys: {missing_keys}")
 
-    def _validate_parameters(self, config: Any, parameter_ranges: Dict[str, Any]) -> None:
-        """Validate stage parameters against acceptable ranges"""
-        for param_name, (min_val, max_val) in parameter_ranges.items():
+    def _validate_breaking_parameters(self, config: Any, breaking_checks: Dict[str, Callable]) -> None:
+        """Validate stage parameters against breaking conditions only.
+
+        Args:
+            config: Configuration object with parameters
+            breaking_checks: Dict mapping parameter names to validation functions
+                           that return True if value is valid, False if breaking
+        """
+        for param_name, check_func in breaking_checks.items():
             if hasattr(config, param_name):
                 value = getattr(config, param_name)
-                if not (min_val <= value <= max_val):
-                    raise ValueError(f"Parameter {param_name}={value} outside valid range [{min_val}, {max_val}]")
+                if not check_func(value):
+                    raise ValueError(f"Parameter {param_name}={value} would cause breaking behavior")
 
     async def _execute_with_monitoring(self, stage_instance, context: Dict[str, Any],
                                        progress_tracker: ProgressTracker,
-                                       timeout_seconds: int = 1800) -> Dict[str, Any]:
+                                       timeout_seconds: int = 1800,
+                                       memory_limit_ratio: float = 0.75,
+                                       cpu_percent_limit: float = 90.0) -> Dict[str, Any]:
         """Execute stage with resource monitoring and timeout"""
-        resource_monitor = ResourceMonitor()
+        resource_monitor = ResourceMonitor(memory_limit_ratio, cpu_percent_limit)
         resource_monitor.start_monitoring()
 
         try:
@@ -229,14 +244,14 @@ class UMAPStageRunner(BaseStageRunner):
 
         config = context["config"]
 
-        # Validate UMAP parameters
-        parameter_ranges = {
-            "n_components": (2, 50),
-            "n_neighbors": (2, 200),
-            "min_dist": (0.0, 1.0),
-            "min_cluster_size": (2, 1000)
+        # Validate only breaking parameters (not arbitrary ranges)
+        breaking_checks = {
+            "n_components": lambda x: isinstance(x, int) and x > 0,  # Must be positive integer
+            "n_neighbors": lambda x: isinstance(x, int) and x > 0,   # Must be positive integer
+            "min_dist": lambda x: isinstance(x, (int, float)) and x >= 0,  # Must be non-negative
+            "min_cluster_size": lambda x: isinstance(x, int) and x > 1,  # Must be > 1 for clustering
         }
-        self._validate_parameters(config, parameter_ranges)
+        self._validate_breaking_parameters(config, breaking_checks)
 
         # Create progress tracker
         progress_tracker = ProgressTracker(
@@ -316,13 +331,13 @@ class HeatmapStageRunner(BaseStageRunner):
 
         config = context["config"]
 
-        # Validate heatmap parameters
-        parameter_ranges = {
-            "cv_folds": (2, 20),
-            "test_size": (0.1, 0.5),
-            "max_iter": (100, 10000)
+        # Validate only breaking parameters (not arbitrary ranges)
+        breaking_checks = {
+            "cv_folds": lambda x: isinstance(x, int) and x >= 2,  # Must be at least 2 for CV
+            "test_size": lambda x: isinstance(x, (int, float)) and 0 < x < 1,  # Must be valid proportion
+            "max_iter": lambda x: isinstance(x, int) and x > 0,  # Must be positive integer
         }
-        self._validate_parameters(config, parameter_ranges)
+        self._validate_breaking_parameters(config, breaking_checks)
 
         # Create progress tracker
         progress_tracker = ProgressTracker(

@@ -58,3 +58,26 @@ After completing this sub-plan, update the following files with pipeline knowled
 - Background processes properly isolated and cleaned up
 - Context serialization handles large dictionaries efficiently
 - Stage execution runtime ≤ 30s for unit tests, ≤ 120s for integration
+
+## Parameter Validation Guidelines
+**CRITICAL**: Parameter validation should ONLY check for breaking values that would cause crashes or invalid states. DO NOT impose arbitrary "sensible" ranges.
+
+**What TO validate**:
+- Type checking (str, int, float, etc.)
+- Breaking negative values (e.g., n_components < 1)
+- Zero/null values that would crash algorithms
+- Data structure constraints (empty arrays, mismatched dimensions)
+
+**What NOT to validate**:
+- Arbitrary upper limits (e.g., n_neighbors < 200)
+- "Sensible" ranges (e.g., test_size between 0.1-0.5)
+- Performance-related limits unless they cause crashes
+- User preference parameters
+
+**Resource limits should be**:
+- Proportional to system resources (e.g., 75% of available memory)
+- Easily configurable via parameters
+- Default to reasonable system-based values
+- Never hardcoded to specific values like "8GB"
+
+**Example**: For UMAP n_neighbors, validate > 0, but don't set upper limit unless UMAP documentation specifies one.

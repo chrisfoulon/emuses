@@ -144,6 +144,33 @@ Each stage needs a wrapper for independent execution:
 - Async execution with monitoring and timeout support
 - Artifact organization with secure file handling
 
+## Parameter Validation Guidelines (IMPORTANT)
+
+**CRITICAL RULE**: Parameter validation should ONLY check for breaking values that would cause crashes or invalid states. DO NOT impose arbitrary "sensible" ranges that limit user flexibility.
+
+**What TO validate**:
+- Type checking (ensure parameters are correct type)
+- Breaking values (n_components < 1, negative values where positive required)
+- Zero/null values that would crash algorithms
+- Data structure constraints (empty arrays, dimension mismatches)
+
+**What NOT to validate**:
+- Arbitrary upper limits unless specified in library documentation
+- "Sensible" performance ranges (let users choose)
+- Preference parameters that don't break functionality
+
+**Resource Management Guidelines**:
+- Memory limits: Default to 75% of available system memory
+- CPU limits: Default to reasonable percentage (80-90%)
+- Make all limits easily configurable via constructor parameters
+- Never hardcode specific values like "8GB"
+
+**Example corrections**:
+- ❌ UMAP n_neighbors: (2, 200) - arbitrary upper limit
+- ✅ UMAP n_neighbors: > 0 - only check breaking values
+- ❌ Memory limit: 8GB hardcoded
+- ✅ Memory limit: 75% of psutil.virtual_memory().total
+
 ## Level 2 API Reference
 
 | Class | Method | Purpose | Parameters |
