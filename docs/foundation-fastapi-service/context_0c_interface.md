@@ -100,11 +100,47 @@ Comprehensive file upload validation and processing:
 ```
 
 ## Inherited from 0b Pipeline Integration
-- PipelineRunner async wrapper with ProcessPoolExecutor and resource limits
-- Stage-specific runner classes (UMAPStage, HeatmapStage, PredictionStage)
-- Background execution patterns and context preservation
-- Progress callback mechanisms with rate limiting
-- Resource management and cleanup procedures
+
+### PipelineRunner Async Interface
+The PipelineRunner provides async pipeline execution for API endpoints:
+
+**API Integration Pattern:**
+```python
+@app.post("/jobs/{job_id}/execute")
+async def execute_pipeline(job_id: str, context: Dict[str, Any]):
+    runner = PipelineRunner(job_manager)
+    try:
+        result = await runner.execute_pipeline(job_id, context)
+        return {"status": "success", "result": result}
+    except asyncio.TimeoutError:
+        return {"status": "error", "message": "Pipeline execution timeout"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+```
+
+**Background Execution Patterns:**
+- ProcessPoolExecutor integration for non-blocking execution
+- Job status updates through JobManager during execution
+- Progress callback rate limiting for API responsiveness
+- Timeout handling with configurable limits (default 1800s)
+
+**Context Serialization for API:**
+- Deep copy validation for context preservation
+- Pickle serialization for large data handling
+- Numpy array compatibility for ML pipeline data
+- Memory-efficient processing of contexts >100MB
+
+**Stage-Specific Runner Classes:**
+- `UMAPStageRunner`: UMAP dimensionality reduction with optimization tracking
+- `HeatmapStageRunner`: Heatmap generation with resource monitoring
+- `PredictionStageRunner`: Prediction pipeline with test evaluation mode
+- All runners inherit from `BaseStageRunner` with common validation and monitoring
+
+**Progress Callback Mechanisms:**
+- Rate-limited updates to prevent API bottlenecks
+- Stage-specific progress reporting
+- Real-time job status updates
+- WebSocket support for live progress streaming (future enhancement)
 
 ## FastAPI Endpoint Structure
 
@@ -281,3 +317,4 @@ POST /api/v1/jobs/{job_id}/artifacts
 - File upload abuse scenarios (oversized, malicious files)
 - Path traversal attempts in all file operations
 - UUID injection and enumeration attempts
+```

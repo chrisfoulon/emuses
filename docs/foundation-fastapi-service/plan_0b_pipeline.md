@@ -13,11 +13,11 @@
   - [x] 3.3 PredictionStage wrapper with test evaluation mode
   - [x] 3.4 Stage-specific artifact organization with secure file handling
 
-- [ ] Task 4 ║ tests/foundation-fastapi-service/test_pipeline_runner.py ║ Background pipeline execution with context preservation and progress callbacks ║ L
-  - [ ] 4.1 EMUSESPipeline async wrapper with ProcessPoolExecutor and resource limits
-  - [ ] 4.2 Context dictionary preservation with deep copy validation
-  - [ ] 4.3 Progress callback integration with rate limiting
-  - [ ] 4.4 Error handling and exception capture with job status updates
+- [x] Task 4 ║ tests/foundation-fastapi-service/test_pipeline_runner.py ║ Background pipeline execution with context preservation and progress callbacks ║ L
+  - [x] 4.1 EMUSESPipeline async wrapper with ProcessPoolExecutor and resource limits
+  - [x] 4.2 Context dictionary preservation with deep copy validation
+  - [x] 4.3 Progress callback integration with rate limiting
+  - [x] 4.4 Error handling and exception capture with job status updates
 
 ## Prerequisites from 0a
 - JobManager class with job lifecycle APIs

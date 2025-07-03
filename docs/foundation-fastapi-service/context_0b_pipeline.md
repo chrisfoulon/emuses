@@ -184,3 +184,49 @@ Each stage needs a wrapper for independent execution:
 | `BaseStageRunner` | `_validate_context(context, keys)` | Validate context has required keys | context: dict, keys: list |
 | `BaseStageRunner` | `_validate_parameters(config, ranges)` | Validate parameters in ranges | config: object, ranges: dict |
 | `BaseStageRunner` | `_is_safe_path(path)` | Check path safety | path: Path, Returns: bool |
+
+## Pipeline Runner Implementation (Task 4 - COMPLETED)
+
+### PipelineRunner Class API
+The PipelineRunner provides async pipeline execution with background processing:
+
+**Core Methods:**
+- `__init__(job_manager, max_workers=4, memory_limit_ratio=0.75, pipeline_timeout=1800)`: Initialize with resource limits
+- `execute_pipeline(job_id, context, progress_callback=None) -> Dict[str, Any]`: Execute pipeline asynchronously
+- `_execute_pipeline_stages(context, progress_callback) -> Dict[str, Any]`: Internal stage execution
+- `_create_progress_callback(job_id) -> Callable`: Create progress callback for job
+- `_serialize_context(context) -> bytes`: Serialize context for ProcessPoolExecutor
+- `_deserialize_context(data) -> Dict[str, Any]`: Deserialize context from ProcessPoolExecutor
+
+**Background Execution Pattern:**
+```python
+# ProcessPoolExecutor usage for isolation
+runner = PipelineRunner(job_manager, max_workers=4)
+with ProcessPoolExecutor(max_workers=runner.max_workers) as executor:
+    future = executor.submit(runner._run_pipeline_in_process, context, memory_limit_ratio)
+    result = await loop.run_in_executor(None, future.result)
+```
+
+**Context Preservation:**
+- Deep copy validation ensures original context remains unchanged
+- Pickle serialization for ProcessPoolExecutor communication
+- Handles large dictionaries (>100MB) efficiently
+- Numpy array preservation through pickle protocol
+
+**Progress Callback Integration:**
+- Rate-limited progress updates to prevent bottlenecks
+- Stage-specific progress tracking
+- Job status updates through JobManager
+- Timeout handling with configurable limits
+
+**Error Handling:**
+- Exception capture with job status updates
+- Timeout detection and cleanup
+- ProcessPoolExecutor resource cleanup
+- Graceful degradation on resource exhaustion
+
+**Resource Management:**
+- System-proportional memory limits (default 75% of available memory)
+- Configurable worker process limits
+- Pipeline timeout enforcement (default 1800 seconds)
+- Automatic cleanup of background processes
