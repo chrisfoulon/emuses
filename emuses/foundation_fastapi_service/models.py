@@ -5,7 +5,7 @@ including configuration models that inherit from the existing PipelineConfig,
 job management models, error responses, and file upload models.
 """
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 from typing import Optional, Union
 from uuid import UUID
 from datetime import datetime
@@ -43,9 +43,8 @@ class PipelineConfigRequest(BaseModel):
         description="Enable prediction/classification stage"
     )
 
-    class Config:
-        """Pydantic model configuration."""
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "input_file": "data/input.csv",
                 "scores_file": "data/scores.csv",
@@ -56,6 +55,7 @@ class PipelineConfigRequest(BaseModel):
                 "prediction_stage_enabled": True
             }
         }
+    )
 
 
 # Placeholder models for other tasks - to be implemented in subsequent tasks
@@ -75,9 +75,8 @@ class JobSubmissionRequest(BaseModel):
         description="Optional description of the job"
     )
 
-    class Config:
-        """Pydantic model configuration."""
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "pipeline_config": {
                     "input_file": "data/input.csv",
@@ -88,6 +87,7 @@ class JobSubmissionRequest(BaseModel):
                 "description": "Initial analysis of dataset A"
             }
         }
+    )
 
 
 class JobStatusResponse(BaseModel):
@@ -123,9 +123,8 @@ class JobStatusResponse(BaseModel):
         description="Current status message or error details"
     )
 
-    class Config:
-        """Pydantic model configuration."""
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "job_id": "550e8400-e29b-41d4-a716-446655440000",
                 "status": "RUNNING",
@@ -137,6 +136,7 @@ class JobStatusResponse(BaseModel):
                 "message": "Processing UMAP dimensionality reduction"
             }
         }
+    )
 
 
 class ErrorResponse(BaseModel):
@@ -153,9 +153,8 @@ class ErrorResponse(BaseModel):
         description="Request identifier for error tracking"
     )
 
-    class Config:
-        """Pydantic model configuration."""
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "error_code": "VALIDATION_ERROR",
                 "message": "Invalid input configuration",
@@ -163,6 +162,7 @@ class ErrorResponse(BaseModel):
                 "request_id": "req_123456789"
             }
         }
+    )
 
 
 class FileUploadModel(BaseModel):
@@ -181,9 +181,8 @@ class FileUploadModel(BaseModel):
         description="Form field name for the upload"
     )
 
-    class Config:
-        """Pydantic model configuration."""
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "filename": "data.csv",
                 "content_type": "text/csv",
@@ -191,3 +190,4 @@ class FileUploadModel(BaseModel):
                 "field_name": "input_file"
             }
         }
+    )

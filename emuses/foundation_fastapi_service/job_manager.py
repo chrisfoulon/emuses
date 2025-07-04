@@ -410,3 +410,275 @@ class JobManager:
 
         job_id_str = str(job_id)
         return self.jobs_directory / job_id_str
+
+    def create_job(self, config: Dict[str, Any], job_name: Optional[str] = None,
+                   description: Optional[str] = None) -> UUID:
+        """Create a new job with the given configuration.
+
+        Args:
+            config: Pipeline configuration dictionary
+            job_name: Optional human-readable job name
+            description: Optional job description
+
+        Returns:
+            UUID: Generated job ID
+
+        Raises:
+            ValueError: If configuration is invalid
+        """
+        # Generate job ID
+        job_id = self.generate_job_id()
+        
+        # Create job directory
+        job_dir = self.create_job_directory(job_id)
+        
+        # Create subdirectories
+        (job_dir / "input").mkdir(exist_ok=True)
+        (job_dir / "output").mkdir(exist_ok=True)
+        (job_dir / "logs").mkdir(exist_ok=True)
+        
+        # Save configuration
+        config_file = job_dir / "config.json"
+        with open(config_file, 'w') as f:
+            json.dump(config, f, indent=2)
+        
+        # Initialize job status
+        self.update_job_status(
+            job_id=job_id,
+            status="SUBMITTED",
+            message="Job submitted for processing",
+            current_stage=None,
+            progress=0.0
+        )
+        
+        # Save job metadata
+        metadata = {
+            "job_name": job_name,
+            "description": description,
+            "config": config,
+            "created_at": datetime.utcnow().isoformat() + "Z"
+        }
+        self.update_job_metadata(job_id, metadata)
+        
+        return job_id
+
+    def _count_enabled_stages(self, config: Dict[str, Any]) -> int:
+        """Count the number of enabled pipeline stages.
+
+        Args:
+            config: Pipeline configuration
+
+        Returns:
+            int: Number of enabled stages
+        """
+        count = 0
+        if config.get("umap_stage_enabled", True):
+            count += 1
+        if config.get("heatmap_stage_enabled", True):
+            count += 1
+        if config.get("prediction_stage_enabled", True):
+            count += 1
+        return count
+
+    def get_job_logs(self, job_id: Union[str, UUID]) -> List[str]:
+        """Get execution logs for a job.
+
+        Args:
+            job_id: Job ID to get logs for
+
+        Returns:
+            List[str]: List of log entries
+
+        Raises:
+            ValueError: If job not found
+        """
+        if not self.job_exists(job_id):
+            raise ValueError(f"Job {job_id} not found")
+        
+        job_dir = self.get_job_directory(job_id)
+        log_file = job_dir / "logs" / "execution.log"
+        
+        if not log_file.exists():
+            return []
+        
+        try:
+            with open(log_file, 'r') as f:
+                return [line.strip() for line in f.readlines()]
+        except Exception:
+            return []
+
+    def add_job_log(self, job_id: Union[str, UUID], message: str, level: str = "INFO") -> None:
+        """Add a log entry for a job.
+
+        Args:
+            job_id: Job ID to add log for
+            message: Log message
+            level: Log level (DEBUG, INFO, WARNING, ERROR)
+        """
+        if not self.job_exists(job_id):
+            return
+        
+        job_dir = self.get_job_directory(job_id)
+        log_file = job_dir / "logs" / "execution.log"
+        
+        timestamp = datetime.utcnow().isoformat() + "Z"
+        log_entry = f"{timestamp} {level}: {message}\n"
+        
+        try:
+            with open(log_file, 'a') as f:
+                f.write(log_entry)
+        except Exception:
+            pass  # Ignore logging errors
+
+    def cancel_job(self, job_id: Union[str, UUID]) -> bool:
+        """Cancel a job.
+
+        Args:
+            job_id: Job ID to cancel
+
+        Returns:
+            bool: True if job was cancelled, False if job was already completed
+
+        Raises:
+            ValueError: If job not found
+        """
+        if not self.job_exists(job_id):
+            raise ValueError(f"Job {job_id} not found")
+        
+        current_status = self.get_job_status(job_id)
+        
+        if current_status["status"] in ["COMPLETED", "FAILED", "CANCELLED"]:
+            return False
+        
+        # Update status to cancelled
+        self.update_job_status(
+            job_id=job_id,
+            status="CANCELLED",
+            message="Job cancelled by user",
+            completed_at=datetime.utcnow().isoformat() + "Z"
+        )
+        
+        self.add_job_log(job_id, "Job cancelled by user", "INFO")
+        
+        return True
+
+    def list_jobs(self, status: Optional[str] = None, limit: int = 50,
+                  offset: int = 0) -> List[Dict[str, Any]]:
+        """List jobs with optional filtering and pagination.
+
+        Args:
+            status: Optional status filter
+            limit: Maximum number of jobs to return
+            offset: Number of jobs to skip
+
+        Returns:
+            List[Dict[str, Any]]: List of job information
+        """
+        jobs = []
+        
+        # Get all job directories
+        if not self.jobs_directory.exists():
+            return []
+        
+        job_dirs = []
+        for item in self.jobs_directory.iterdir():
+            if item.is_dir():
+                try:
+                    UUID(item.name)  # Validate UUID format
+                    job_dirs.append(item)
+                except ValueError:
+                    continue
+        
+        # Sort by creation time (newest first)
+        def get_creation_time(job_dir):
+            try:
+                status_file = job_dir / "status.json"
+                if status_file.exists():
+                    with open(status_file, 'r') as f:
+                        status_data = json.load(f)
+                    return status_data.get("created_at", "")
+                return ""
+            except Exception:
+                return ""
+        
+        job_dirs.sort(key=get_creation_time, reverse=True)
+        
+        # Apply filtering and pagination
+        for job_dir in job_dirs:
+            job_id = UUID(job_dir.name)
+            
+            try:
+                job_status = self.get_job_status(job_id)
+                job_metadata = self.get_job_metadata(job_id)
+                
+                # Apply status filter
+                if status and job_status.get("status") != status:
+                    continue
+                
+                # Create job summary
+                job_info = {
+                    "job_id": job_id,
+                    "status": job_status.get("status"),
+                    "created_at": job_status.get("created_at"),
+                    "started_at": job_status.get("started_at"),
+                    "completed_at": job_status.get("completed_at"),
+                    "progress": job_status.get("progress"),
+                    "current_stage": job_status.get("current_stage"),
+                    "job_name": job_metadata.get("job_name"),
+                    "description": job_metadata.get("description")
+                }
+                
+                jobs.append(job_info)
+                
+            except Exception:
+                # Skip jobs with corrupt data
+                continue
+        
+        # Apply pagination
+        return jobs[offset:offset + limit]
+
+    def count_jobs(self, status: Optional[str] = None) -> int:
+        """Count jobs with optional status filtering.
+
+        Args:
+            status: Optional status filter
+
+        Returns:
+            int: Number of matching jobs
+        """
+        if not self.jobs_directory.exists():
+            return 0
+        
+        count = 0
+        for item in self.jobs_directory.iterdir():
+            if item.is_dir():
+                try:
+                    job_id = UUID(item.name)
+                    job_status = self.get_job_status(job_id)
+                    
+                    if status and job_status.get("status") != status:
+                        continue
+                    
+                    count += 1
+                except Exception:
+                    continue
+        
+        return count
+
+    def get_job_output_dir(self, job_id: Union[str, UUID]) -> Path:
+        """Get the output directory for a job.
+
+        Args:
+            job_id: Job ID to get output directory for
+
+        Returns:
+            Path: Path to job output directory
+
+        Raises:
+            ValueError: If job not found
+        """
+        if not self.job_exists(job_id):
+            raise ValueError(f"Job {job_id} not found")
+        
+        job_dir = self.get_job_directory(job_id)
+        return job_dir / "output"

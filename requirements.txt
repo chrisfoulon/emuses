@@ -22,3 +22,7 @@ pykrige
 narwhals
 xgboost
 kaleido
+fastapi
+uvicorn[standard]
+slowapi
+python-multipart
