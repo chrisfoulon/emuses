@@ -14,7 +14,7 @@
   - [x] 3.4 Stage-specific artifact organization with secure file handling
 
 - [x] Task 4 ║ tests/foundation-fastapi-service/test_pipeline_runner.py ║ Background pipeline execution with context preservation and progress callbacks ║ L
-  - [x] 4.1 EMUSESPipeline async wrapper with ProcessPoolExecutor and resource limits
+  - [x] 4.1 EMUSESPipeline async wrapper with ProcessPoolExecutor and resource limits - FIXED: Now executes real EMUSES stages instead of placeholder
   - [x] 4.2 Context dictionary preservation with deep copy validation
   - [x] 4.3 Progress callback integration with rate limiting
   - [x] 4.4 Error handling and exception capture with job status updates

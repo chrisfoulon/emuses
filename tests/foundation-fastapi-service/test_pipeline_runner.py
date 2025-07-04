@@ -234,6 +234,73 @@ class TestPipelineRunner:
         assert deserialized["large_matrix"].shape == (1000, 1000)
         assert deserialized["metadata"]["size"] == "large"
 
+    @pytest.mark.asyncio
+    async def test_real_pipeline_execution_creates_files(self, job_manager):
+        """Test that real pipeline execution creates actual output files"""
+        from emuses.foundation_fastapi_service.pipeline_runner import PipelineRunner
+        
+        # Create temporary directory for output
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            output_dir = Path(tmp_dir) / "output"
+            output_dir.mkdir(exist_ok=True)
+            
+            # Create realistic test data
+            np.random.seed(42)  # For reproducibility
+            n_samples, n_features = 50, 20  # Small for fast testing
+            
+            features = np.random.randn(n_samples, n_features)
+            targets = np.random.randn(n_samples, 2)
+            
+            # Create context with proper structure for EMUSES pipeline
+            context = {
+                'input_matrix': features,
+                'scores': targets,
+                'embedding_train_features': features,
+                'embedding_test_features': features[:10],  # Subset for test
+                # Prediction data that HeatmapStage expects
+                'prediction_train_features': features,
+                'prediction_train_labels': targets,  # This is what HeatmapStage needs
+                'config': {
+                    'output_folder': output_dir,
+                    'umap_trials': 2,  # Minimal for testing
+                    'hdbscan_trials': 1,
+                    'optuna_trials': 2,
+                    'prediction_optim_dict': 'optim_dict_test',
+                    'prefix': 'TEST'
+                },
+                'pipeline_metadata': {
+                    'start_time': 0,
+                    'stages_completed': [],
+                    'stages_runtime': {}
+                },
+                'output_format_info': []  # For HeatmapStage
+            }
+            
+            runner = PipelineRunner(job_manager)
+            job_id = str(uuid4())
+            
+            # Execute pipeline
+            result_context = await runner.execute_pipeline(job_id, context)
+            
+            # Verify pipeline was actually executed
+            assert result_context["pipeline_executed"] is True
+            assert "api_execution_timestamp" in result_context
+            
+            # Check that output files were created
+            output_files = list(output_dir.rglob("*"))
+            output_file_names = [f.name for f in output_files if f.is_file()]
+            
+            # Should have at least some output files from EMUSES pipeline
+            assert len(output_file_names) > 0, f"No output files created. Found: {output_file_names}"
+            
+            # Verify specific expected files based on EMUSES pipeline
+            # These might include: random_seeds.json, models, embeddings, etc.
+            expected_patterns = ["random_seeds.json"]  # Files that should always be created
+            
+            for pattern in expected_patterns:
+                matching_files = [f for f in output_file_names if pattern in f]
+                assert len(matching_files) > 0, f"Expected file pattern '{pattern}' not found in {output_file_names}"
+
 
 class TestPipelineRunnerResourceManagement:
     """Test resource management aspects of PipelineRunner"""

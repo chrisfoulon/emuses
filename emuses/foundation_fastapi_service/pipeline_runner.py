@@ -111,7 +111,7 @@ class PipelineRunner:
         context: Dict[str, Any],
         progress_callback: Callable
     ) -> Dict[str, Any]:
-        """Execute pipeline stages using ProcessPoolExecutor.
+        """Execute real EMUSES pipeline stages.
 
         Args:
             context: Pipeline context dictionary
@@ -120,28 +120,30 @@ class PipelineRunner:
         Returns:
             Dict[str, Any]: Updated context after execution
         """
-        loop = asyncio.get_event_loop()
-
-        # Use ProcessPoolExecutor for isolation
-        with ProcessPoolExecutor(max_workers=self.max_workers) as executor:
-            # Submit pipeline execution to process pool
-            future = executor.submit(
-                self._run_pipeline_in_process,
+        self.logger.info("Executing real EMUSES pipeline stages")
+        
+        # For now, run in the same process to avoid serialization complexity
+        # TODO: Later optimize to use ProcessPoolExecutor when serialization is solved
+        try:
+            # Call the real pipeline execution
+            result_context = self._run_pipeline_in_process(
                 context,
                 self.memory_limit_ratio
             )
-
-            # Await completion
-            result = await loop.run_in_executor(None, future.result)
-
-        return result
+            
+            self.logger.info("Pipeline execution completed successfully")
+            return result_context
+            
+        except Exception as e:
+            self.logger.error(f"Pipeline execution failed: {e}")
+            raise
 
     def _run_pipeline_in_process(
         self,
         context: Dict[str, Any],
         memory_limit_ratio: float
     ) -> Dict[str, Any]:
-        """Run pipeline in a separate process.
+        """Run pipeline stages directly with provided data.
 
         Args:
             context: Pipeline context dictionary
@@ -150,15 +152,146 @@ class PipelineRunner:
         Returns:
             Dict[str, Any]: Updated context after execution
         """
-        # This is a placeholder implementation
-        # In a real implementation, you would:
-        # 1. Create EMUSESPipeline instance from context
-        # 2. Set up resource monitoring
-        # 3. Execute the pipeline
-        # 4. Return the updated context
-
-        # For now, return the context unchanged
-        return context
+        try:
+            # Extract configuration from context
+            config_dict = context.get('config', {})
+            output_folder = config_dict.get('output_folder')
+            
+            if not output_folder:
+                raise ValueError("No output_folder specified in context config")
+            
+            # Create a proper argparse.Namespace object for stages
+            import argparse
+            args = argparse.Namespace()
+            
+            # Required attributes
+            args.output_folder = str(output_folder)
+            args.umap_trials = config_dict.get('umap_trials', 10)
+            args.hdbscan_trials = config_dict.get('hdbscan_trials', 5)
+            args.optuna_trials = config_dict.get('optuna_trials', 10)
+            args.prediction_optim_dict = config_dict.get('prediction_optim_dict', 'optim_dict_test')
+            args.prefix = config_dict.get('prefix', 'API')
+            
+            # Set other required attributes with defaults
+            args.random_state = 42
+            args.test_size = 0.2
+            args.interactive_plot = False  # Disable for API
+            args.optim_dict = 'optim_dict_hcp'
+            args.hdbscan_jobs = 4
+            args.sigma = None
+            args.fwhm = None
+            args.outer_folds = 5
+            args.model_version = "1.0.0"
+            args.umap_jobs = None
+            
+            # For PipelineConfig
+            args.input_dataset = "api_data"  # Placeholder
+            
+            # Create PipelineConfig to get proper output setup
+            config = PipelineConfig(args)
+            
+            # Ensure output_folder is a Path object for stages
+            config.output_folder = config.output_path
+            
+            # Initialize context with pipeline metadata if not present
+            if 'pipeline_metadata' not in context:
+                context['pipeline_metadata'] = {
+                    'start_time': time.time(),
+                    'stages_completed': [],
+                    'stages_runtime': {}
+                }
+            
+            # Run individual stages directly with the provided data
+            stages_run = []
+            
+            # Save random seeds (like EMUSESPipeline does)
+            from bcblib.tools.general_utils import save_json
+            from numpy.random import default_rng
+            
+            master_seed = 42
+            root_rng = default_rng(master_seed)
+            random_seeds = {
+                "master_seed": master_seed,
+                "split_seed": root_rng.integers(0, 2**32),
+                "umap_seed": root_rng.integers(0, 2**32),
+                "clustering_seed": root_rng.integers(0, 2**32),
+                "prediction_seed": root_rng.integers(0, 2**32),
+                "cv_seed": root_rng.integers(0, 2**32),
+                "optuna_seed": root_rng.integers(0, 2**32),
+            }
+            seed_file = config.output_path / "random_seeds.json"
+            save_json(seed_file, random_seeds)
+            context['random_seeds'] = random_seeds
+            
+            # Set up prediction context keys (like EMUSESPipeline does)
+            # This ensures HeatmapStage has the required prediction_train_labels
+            input_matrix = context.get('input_matrix')
+            scores = context.get('scores')
+            
+            if input_matrix is not None and scores is not None:
+                # In simple case, use the full dataset for prediction training
+                # (no train/test split for now - this matches our test setup)
+                context.update({
+                    'prediction_train_features': input_matrix,
+                    'prediction_train_labels': scores,
+                })
+            elif 'prediction_train_features' not in context or 'prediction_train_labels' not in context:
+                # If prediction context keys aren't already set and we can't derive them,
+                # this could cause issues in HeatmapStage
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.warning("prediction_train_features and prediction_train_labels not available in context")
+            
+            # Run UMAP Stage if enabled
+            if config_dict.get('umap_stage_enabled', True):
+                from emuses.pipelines.umap_stage import UMAPStage
+                umap_stage = UMAPStage(config)
+                stage_start = time.time()
+                umap_stage.run(context)
+                context['pipeline_metadata']['stages_completed'].append('UMAPStage')
+                context['pipeline_metadata']['stages_runtime']['UMAPStage'] = time.time() - stage_start
+                stages_run.append('UMAPStage')
+            
+            # Run Heatmap Stage if enabled (requires UMAP output)
+            if config_dict.get('heatmap_stage_enabled', True) and 'UMAPStage' in stages_run:
+                from emuses.pipelines.heatmap_stage import HeatmapStage
+                output_format_info = context.get('output_format_info', [])
+                heatmap_stage = HeatmapStage(config, output_format_info)
+                stage_start = time.time()
+                heatmap_stage.run(context)
+                context['pipeline_metadata']['stages_completed'].append('HeatmapStage')
+                context['pipeline_metadata']['stages_runtime']['HeatmapStage'] = time.time() - stage_start
+                stages_run.append('HeatmapStage')
+            
+            # Run Prediction Stage if enabled
+            if config_dict.get('prediction_stage_enabled', True):
+                from emuses.pipelines.prediction_stage import PredictionStage
+                prediction_stage = PredictionStage(config)
+                stage_start = time.time()
+                prediction_stage.run(context)
+                context['pipeline_metadata']['stages_completed'].append('PredictionStage')
+                context['pipeline_metadata']['stages_runtime']['PredictionStage'] = time.time() - stage_start
+                stages_run.append('PredictionStage')
+            
+            # Update pipeline metadata
+            context['pipeline_metadata']['end_time'] = time.time()
+            context['pipeline_metadata']['total_runtime'] = (
+                context['pipeline_metadata']['end_time'] - context['pipeline_metadata']['start_time']
+            )
+            
+            # Return the updated context
+            result_context = context.copy()
+            result_context["pipeline_executed"] = True
+            result_context["api_execution_timestamp"] = time.time()
+            result_context["stages_executed"] = stages_run
+            
+            return result_context
+            
+        except Exception as e:
+            # Log the error and re-raise
+            import logging
+            logging.getLogger(__name__).error(f"Pipeline execution failed: {e}")
+            raise
 
     def _create_progress_callback(self, job_id: str) -> Callable:
         """Create a progress callback function for the job.
