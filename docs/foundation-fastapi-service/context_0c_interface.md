@@ -3,6 +3,35 @@
 ## Focus Areas
 This context extends foundation and pipeline integration with FastAPI endpoint implementation. It covers HTTP request/response handling, input validation, and artifact management.
 
+## Updates from Pipeline Runner Implementation (Task 4 - COMPLETED)
+
+### PipelineRunner Integration for API Endpoints
+
+**Production-Ready Pipeline Execution**: The PipelineRunner now executes real EMUSES pipeline stages, enabling API endpoints to provide complete pipeline functionality.
+
+**Key Interface Patterns**:
+- **Async Execution**: API endpoints use `await pipeline_runner.execute_pipeline(job_id, context)`
+- **Real Artifact Creation**: API calls create all expected EMUSES outputs (models, embeddings, plots, metrics)
+- **Context Management**: API properly sets up prediction context keys before execution
+- **Background Processing**: ProcessPoolExecutor isolation with resource limits and timeouts
+
+**Progress Callback Integration**: Rate-limited progress updates suitable for API response
+```python
+async def run_pipeline_endpoint(request: PipelineConfigRequest):
+    # Real pipeline execution via PipelineRunner
+    context = await pipeline_runner.execute_pipeline(job_id, initial_context)
+    return JobStatusResponse(job_id=job_id, status="COMPLETED", ...)
+```
+
+**Error Handling Patterns**: Exception capture with job status updates
+```python
+try:
+    result = await pipeline_runner.execute_pipeline(job_id, context)
+except PipelineExecutionError as e:
+    job_manager.update_job_status(job_id, "FAILED", message=str(e))
+    raise HTTPException(status_code=500, detail=e.message)
+```
+
 ## Inherited from 0a Foundation
 
 ### Request/Response Model Schemas
