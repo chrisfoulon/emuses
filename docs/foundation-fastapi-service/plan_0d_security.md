@@ -24,6 +24,7 @@
   - [ ] 8.2 Python imports unchanged (from emuses.pipelines import EMUSESPipeline)
   - [ ] 8.3 Context pattern preservation (exact dictionary passing between stages)
   - [ ] 8.4 Computational result equivalence (API vs CLI produces identical outputs)
+  - [ ] 8.5 **API/CLI unification via EMUSESPipeline integration** - Refactor PipelineRunner to use EMUSESPipeline's preprocessing, context setup, and orchestration internally
 
 ## Complete System Context (from 0a, 0b, 0c)
 
@@ -34,6 +35,9 @@
 
 ### Pipeline Components (0b)  
 - **PipelineRunner**: Async wrapper, ProcessPoolExecutor, context preservation
+  - **EMUSESPipeline Integration**: Uses EMUSESPipeline internally for consistent data processing and context setup
+  - **Data Processing Alignment**: API now uses same preprocessing, normalization, and validation as CLI
+  - **Context Setup Unification**: Leverages EMUSESPipeline's comprehensive context initialization
 - **Stage Runners**: UMAPStage, HeatmapStage, PredictionStage wrappers
 - **Background Processing**: Progress callbacks, error handling, resource limits
 
@@ -97,6 +101,9 @@
 - Compare numerical outputs with precision requirements (1e-10)
 - Verify artifact generation produces identical results
 - Test context preservation through both execution paths
+- **EMUSESPipeline Integration Validation**: Ensure API uses identical data preprocessing, context setup, and stage orchestration as CLI
+- **Real-World Dataset Testing**: Validate complex datasets (HCP, synthetic) process identically through both interfaces
+- **Data Alignment Verification**: Test missing value handling, type coercion, and index alignment consistency
 
 ## Acceptance Criteria
 - Security tests pass OWASP compliance standards

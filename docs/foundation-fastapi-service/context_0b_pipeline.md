@@ -289,3 +289,186 @@ async with ProcessPoolExecutor(max_workers=self.max_workers) as executor:
 - Configurable worker process limits
 - Pipeline timeout enforcement (default 1800 seconds)
 - Automatic cleanup of background processes
+
+## EMUSESPipeline Integration Requirements (Task 4.5 - IDENTIFIED)
+
+### Current State vs Required State
+
+**Current API Architecture (Problematic)**:
+```python
+# PipelineRunner._run_pipeline_in_process() - Current Implementation
+# 1. Manual argparse.Namespace construction
+args = argparse.Namespace()
+args.output_folder = str(output_folder)
+args.umap_trials = config_dict.get('umap_trials', 10)
+# ... manual setup
+
+# 2. Manual context setup
+context.update({
+    'prediction_train_features': input_matrix,
+    'prediction_train_labels': scores,
+})
+
+# 3. Direct stage execution bypassing EMUSESPipeline orchestration
+umap_stage.run(context)
+heatmap_stage.run(context)  
+prediction_stage.run(context)
+```
+
+**Required API Architecture (EMUSESPipeline Integration)**:
+```python
+# PipelineRunner._run_pipeline_in_process() - Required Implementation
+# 1. Create EMUSESPipeline instance with API data
+pipeline = EMUSESPipeline(args_from_api_config)
+
+# 2. Set preprocessed data directly (API receives processed data)
+pipeline.input_matrix = context['input_matrix'] 
+pipeline.scores = context['scores']
+pipeline.dataset_type = context.get('dataset_type', 'matrix')
+
+# 3. Let EMUSESPipeline handle all orchestration, context setup, and preprocessing
+result_context = pipeline.run(progress_callback=api_progress_callback)
+return result_context
+```
+
+### Critical Benefits of EMUSESPipeline Integration
+
+**1. Data Preprocessing Alignment**
+- **Current Issue**: API bypasses `load_and_process_data()` logic
+- **Solution**: Use EMUSESPipeline's data loading, normalization, and validation
+- **Impact**: Consistent data handling for complex real-world datasets
+
+**2. Context Setup Completeness**  
+- **Current Issue**: Manual context setup with ~5 keys vs EMUSESPipeline's 15+ keys
+- **Solution**: Use EMUSESPipeline's `split_and_prepare_data()` and context initialization
+- **Impact**: All stages receive identical context structure as CLI
+
+**3. Random Seed Management**
+- **Current Issue**: Different random seed approach than CLI
+- **Solution**: Use EMUSESPipeline's component-specific seed generation
+- **Impact**: Reproducible results matching CLI exactly
+
+**4. Error Handling & Validation**
+- **Current Issue**: Limited data validation in API
+- **Solution**: Leverage EMUSESPipeline's comprehensive validation
+- **Impact**: Better error messages and data quality checks
+
+### Implementation Strategy
+
+**Phase 1: Direct Integration**
+```python
+class PipelineRunner:
+    async def _execute_pipeline_stages(self, context: Dict[str, Any], progress_callback: Callable):
+        """Execute pipeline using EMUSESPipeline for consistency with CLI."""
+        
+        # Convert API context to EMUSESPipeline args
+        args = self._context_to_args(context)
+        
+        # Create EMUSESPipeline instance
+        pipeline = EMUSESPipeline(args)
+        
+        # Set API-provided data directly
+        pipeline.input_matrix = context['input_matrix']
+        pipeline.scores = context['scores']
+        if 'labelled_input_matrix' in context:
+            pipeline.labelled_input_matrix = context['labelled_input_matrix']
+            
+        # Let EMUSESPipeline handle orchestration
+        result_context = pipeline.run(progress_callback=progress_callback)
+        
+        return result_context
+
+    def _context_to_args(self, context: Dict[str, Any]) -> argparse.Namespace:
+        """Convert API context to EMUSESPipeline args format."""
+        config_dict = context.get('config', {})
+        args = argparse.Namespace()
+        
+        # Map API config to EMUSESPipeline expected args
+        args.output_folder = str(config_dict.get('output_folder'))
+        args.umap_trials = config_dict.get('umap_trials', 10)
+        args.hdbscan_trials = config_dict.get('hdbscan_trials', 5)
+        # ... complete mapping
+        
+        return args
+```
+
+**Phase 2: Progress Callback Integration**
+```python
+def _create_emuses_progress_callback(self, api_progress_callback):
+    """Adapter between EMUSESPipeline and API progress callbacks."""
+    def emuses_callback(stage_name, progress, message):
+        # Convert EMUSESPipeline progress format to API format
+        api_progress_callback(progress, f"{stage_name}: {message}")
+    return emuses_callback
+```
+
+**Phase 3: Context Preservation**
+```python
+# Ensure API-specific context is preserved while using EMUSESPipeline
+def _merge_contexts(self, api_context, emuses_context):
+    """Merge API context with EMUSESPipeline context."""
+    # Preserve API job management data
+    merged = emuses_context.copy()
+    merged.update({
+        'job_id': api_context.get('job_id'),
+        'api_metadata': api_context.get('api_metadata', {}),
+        'pipeline_metadata': emuses_context.get('pipeline_metadata', {})
+    })
+    return merged
+```
+
+### Testing Requirements for Integration
+
+**1. Computational Equivalence Validation**
+```python
+def test_api_cli_identical_results():
+    """Verify API using EMUSESPipeline produces identical results to CLI."""
+    # Same dataset through both paths
+    cli_results = run_cli_pipeline(dataset)
+    api_results = run_api_pipeline_with_emuses_integration(dataset)
+    
+    # Assert numerical equivalence
+    assert_outputs_identical(cli_results, api_results, tolerance=1e-10)
+```
+
+**2. Real-World Dataset Validation**
+```python  
+def test_hcp_dataset_api_consistency():
+    """Test API handles complex real-world datasets identically to CLI."""
+    # Load HCP dataset
+    hcp_data = load_hcp_dataset()
+    
+    # Process through both interfaces
+    cli_artifacts = run_cli_with_hcp(hcp_data)
+    api_artifacts = run_api_with_hcp(hcp_data)
+    
+    # Verify identical artifacts and no data alignment issues
+    assert_artifacts_identical(cli_artifacts, api_artifacts)
+```
+
+**3. Context Completeness Validation**
+```python
+def test_context_completeness():
+    """Verify API context contains all keys expected by stages."""
+    api_context = run_api_pipeline_get_context()
+    cli_context = run_cli_pipeline_get_context()
+    
+    # Check all CLI context keys present in API context
+    assert set(cli_context.keys()).issubset(set(api_context.keys()))
+```
+
+### Migration Benefits
+
+**Immediate Benefits**:
+- ✅ Data alignment issues resolved (missing values, type coercion)
+- ✅ Identical preprocessing and validation between API and CLI  
+- ✅ Complete context setup for all stages
+- ✅ Consistent random seed management and reproducibility
+
+**Long-term Benefits**:
+- ✅ Simplified maintenance (single code path for core logic)
+- ✅ Automatic inheritance of CLI improvements and bug fixes
+- ✅ Reduced technical debt and architectural divergence
+- ✅ Confidence in API behavior matching CLI exactly
+
+---

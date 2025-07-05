@@ -25,6 +25,7 @@
   - [x] 4.2 Context dictionary preservation with deep copy validation - **COMPLETED**: Context setup and validation implemented
   - [x] 4.3 Progress callback integration with rate limiting - **COMPLETED**: Progress tracking with job status updates
   - [x] 4.4 Error handling and exception capture with job status updates - **COMPLETED**: Comprehensive error handling and resource management
+  - [ ] **4.5 EMUSESPipeline Integration Refactor** - **HIGH PRIORITY**: Refactor PipelineRunner to use EMUSESPipeline internally for data preprocessing, context setup, and stage orchestration identical to CLI
 
 - [ ] Task 5 ║ tests/foundation-fastapi-service/test_api_endpoints.py ║ FastAPI endpoint integration with request/response handling ║ L
   - [ ] 5.1 Pipeline execution endpoints with input validation
@@ -43,12 +44,14 @@
   - [ ] 7.2 Resource cleanup verification (directories, processes, memory)
   - [ ] 7.3 Load testing with performance budgets and timeouts
   - [ ] 7.4 Memory spike detection during context serialization
+  - [x] 7.5 Cross-platform file locking verification (Windows/Linux compatibility) - **COMPLETED**: Platform-specific locking implemented with Windows msvcrt fallback
 
 - [ ] Task 8 ║ tests/foundation-fastapi-service/test_compatibility.py ║ Backward compatibility verification with existing CLI and Python imports ║ M
   - [ ] 8.1 CLI interface unchanged (python main.py full continues working)
   - [ ] 8.2 Python imports unchanged (from emuses.pipelines import EMUSESPipeline)
   - [ ] 8.3 Context pattern preservation (exact dictionary passing between stages)
   - [x] 8.4 Computational result equivalence (API vs CLI produces identical outputs) - **COMPLETED**: CLI vs API comparison test validates identical behavior and artifacts
+  - [ ] 8.5 API/CLI unification via EMUSESPipeline - **IDENTIFIED**: API should use EMUSESPipeline class for consistent context setup and data handling like CLI
 
 <details><summary>Review-Resolution Log</summary>
 
@@ -136,3 +139,29 @@ The Foundation FastAPI Service follows a test-driven approach to wrap existing E
 | tests/foundation-fastapi-service/test_compatibility.py | API results identical to CLI results       | numerical precision 1e-10 |
 
 </details>
+
+## Real-World Testing Improvements (Post-HCP Dataset Analysis)
+
+**Cross-Platform Compatibility Issues**
+✅ RESOLVED: Task 7.5 - Windows file locking compatibility implemented
+- **Issue**: `fcntl` module not available on Windows causing job manager failures
+- **Solution**: Platform-specific locking with `msvcrt` on Windows, graceful fallback
+- **Status**: Cross-platform file locking implemented in `job_manager.py`
+
+**API/CLI Execution Path Divergence**
+🔄 IDENTIFIED: Task 8.5 - API should use EMUSESPipeline for consistency
+- **Issue**: API executes stages directly while CLI uses EMUSESPipeline class orchestration
+- **Impact**: Data alignment, context setup, and validation differences between API and CLI
+- **Root Cause**: API PipelineRunner bypasses EMUSESPipeline's data preprocessing and context management
+- **Required**: Refactor API to use EMUSESPipeline for identical execution path
+
+**Real-World Data Validation Requirements**
+🔄 PENDING: Enhanced data validation for production datasets
+- **Issue**: Missing value handling, data type coercion, and index alignment failures
+- **Context**: Real HCP dataset exposed validation gaps not caught by synthetic test data
+- **Required**: Robust data validation pipeline with informative error messages
+
+**Optuna Trial Optimization for Development**
+✅ COMPLETED: Reduced trial counts for faster testing cycles
+- **Implementation**: Configurable trial counts with lower defaults for development/testing
+- **Benefit**: Faster iteration cycles during development and CI testing

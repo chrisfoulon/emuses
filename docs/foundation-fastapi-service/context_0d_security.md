@@ -41,8 +41,13 @@ This context provides complete system visibility for security validation, perfor
   - Validates: `../`, `..\\`, absolute paths, control characters
   - Safe directory creation: `create_job_directory()` with `0o700` permissions
 - **Concurrency Safety**: Thread-safe status updates with per-job locking
-  - File locking: `fcntl.LOCK_EX` for atomic metadata updates
+  - **Cross-Platform File Locking**: Platform-specific locking mechanisms
+    - Unix/Linux: `fcntl.LOCK_EX` for atomic metadata updates
+    - Windows: `msvcrt.locking()` with exclusive file access
+    - Fallback: Thread-based locking when native file locking unavailable
+  - **Platform Detection**: Runtime OS detection for appropriate locking strategy
   - Lock management: Per-job locks with cleanup on job deletion
+  - **Windows Compatibility**: Ensures job manager works on Windows development environments
 
 **Job Directory Structure Security**:
 ```

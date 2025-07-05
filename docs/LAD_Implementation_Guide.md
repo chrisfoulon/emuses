@@ -744,148 +744,59 @@ Please implement according to this architectural guidance while exploring the co
 
 ---
 
-## Integration Testing & Real-World Validation
+## Critical Architectural Update: EMUSESPipeline Integration (Post-Real-World Testing)
 
-### **Real-World CLI Command for Integration Testing**
+**Status**: 🔄 **HIGH PRIORITY** - API/CLI unification required for production readiness
 
-The following command represents a comprehensive real-world use case that should be used as a gold standard for integration testing across all LAD sessions. This command exercises the complete EMUSES pipeline with realistic data paths and optimization parameters:
+**Problem Identified**: During real-world dataset testing (HCP dataset), we discovered that the API and CLI execute different code paths:
+- **CLI**: Uses `EMUSESPipeline` class for data preprocessing, context setup, and stage orchestration
+- **API**: Uses `PipelineRunner` that executes stages directly, bypassing EMUSESPipeline's logic
 
-```bash
-# Real-world integration test command  
-python "emuses/scripts/main.py" full \
-  "/gamma/GIN Dropbox/Chris Foulon/EMUSE/HCP_psy/is_it_running" \
-  "/gamma/GIN Dropbox/Chris Foulon/EMUSE/HCP_psy/selected_columns_data.csv" \
-  --columns_are_features \
-  --input_header 0 \
-  --input_index_column 0 \
-  -inorm robust \
-  --scores "/gamma/GIN Dropbox/Chris Foulon/EMUSE/HCP_psy/specific_columns_data.csv" \
-  --scores_header 0 \
-  --scores_index_column 0 \
-  --interactive_plot \
-  --umap_trials 1 \
-  --hdbscan_trials 1 \
-  --optim_dict optim_dict_hcp \
-  --hdbscan_jobs 16 \
-  --optuna_trials 10 \
-  --prediction_optim_dict optim_dict_test
+**Impact**: Data alignment issues, missing value handling differences, and context setup inconsistencies between API and CLI.
+
+**Required Solution**: Refactor `PipelineRunner` to use `EMUSESPipeline` internally while maintaining API-specific features (background execution, job management).
+
+### Implementation Requirements
+
+**Task 4.5: EMUSESPipeline Integration Refactor**
+```python
+# Current API Architecture (Problematic)
+class PipelineRunner:
+    def _run_pipeline_in_process(self, context):
+        # Manual args construction
+        args = argparse.Namespace()
+        # Manual context setup  
+        context.update({'prediction_train_features': ...})
+        # Direct stage execution
+        umap_stage.run(context)
+
+# Required API Architecture (EMUSESPipeline Integration)  
+class PipelineRunner:
+    def _run_pipeline_in_process(self, context):
+        # Use EMUSESPipeline for consistency
+        pipeline = EMUSESPipeline(args_from_context)
+        pipeline.input_matrix = context['input_matrix']
+        pipeline.scores = context['scores']
+        # Let EMUSESPipeline handle orchestration
+        return pipeline.run(progress_callback=api_callback)
 ```
 
-### **Original Real-World Command (Verified Working)**
+**Benefits of Integration**:
+- ✅ Identical data preprocessing and validation between API and CLI
+- ✅ Complete context setup with all 15+ keys that stages expect  
+- ✅ Consistent random seed management and reproducibility
+- ✅ Automatic inheritance of CLI improvements and bug fixes
+- ✅ Resolution of real-world dataset compatibility issues
 
-The following is the exact command that was provided as a reference for integration testing:
+**Files Requiring Updates**:
+- `emuses/foundation_fastapi_service/pipeline_runner.py` - Core integration refactor
+- `tests/foundation-fastapi-service/test_pipeline_runner.py` - Updated validation tests
+- `tests/integration/test_cli_vs_api_comparison.py` - Enhanced equivalence testing
 
-```bash
-python "/home/chrisfoulon/neuro_apps/emuses/emuses/scripts/main.py" full \
-  "/gamma/GIN Dropbox/Chris Foulon/EMUSE/HCP_psy/is_it_running" \
-  "/gamma/GIN Dropbox/Chris Foulon/EMUSE/HCP_psy/selected_columns_data.csv" \
-  --columns_are_features \
-  --input_header 0 \
-  --input_index_column 0 \
-  -inorm robust \
-  --scores "/gamma/GIN Dropbox/Chris Foulon/EMUSE/HCP_psy/specific_columns_data.csv" \
-  --scores_header 0 \
-  --scores_index_column 0 \
-  --interactive_plot \
-  --umap_trials 1 \
-  --hdbscan_trials 1 \
-  --optim_dict optim_dict_hcp \
-  --hdbscan_jobs 16 \
-  --prediction_optim_dict optim_dict_predict
-```
+**Testing Strategy**:
+- Real-world dataset validation (HCP, synthetic data)
+- Numerical equivalence testing (1e-10 tolerance)
+- Context completeness verification
+- Performance regression testing
 
-**Debugging Notes:**
-- ✅ **Command Structure**: Verified correct - uses `full` subcommand with proper positional arguments
-- ✅ **File Paths**: Properly quoted to handle spaces in directory names
-- ✅ **Arguments**: All parameters validated against the CLI parser
-- ⚠️ **Dependencies**: Requires the `PipelineConfig` bug fix (output_folder vs output_folder_path)
-- ✅ **Real Data**: Uses actual HCP psychology datasets with proper formatting
-
-This command demonstrates:
-- **Full Pipeline**: Uses the `full` subcommand for complete processing
-- **Real Data**: Processing actual HCP psychology data
-- **Feature Configuration**: `--columns_are_features` indicates CSV columns are features
-- **Normalization**: Uses robust normalization (`-inorm robust`)
-- **Optimization**: Limited trials for testing (`--umap_trials 1 --hdbscan_trials 1`)
-- **Parallel Processing**: High job count (`--hdbscan_jobs 16`) for performance
-- **Custom Configurations**: Uses specific optimization dictionaries
-
-### **Integration Test Requirements for Each LAD Session**
-
-**Session 1 (Foundation FastAPI Service):**
-- The FastAPI service must produce identical results to the CLI command above
-- All intermediate files, models, and outputs must match exactly
-- Performance metrics and optimization histories must be preserved
-- Test should run within reasonable time limits (< 30 minutes for CI)
-
-**Session 2 (Enhanced CLI with Typer):**
-- New Typer CLI must accept identical parameters and produce identical outputs
-- All existing argument parsing and validation must be preserved
-- Shell completion and help text must be comprehensive
-- Backward compatibility with existing scripts must be maintained
-
-**Session 3 (FastAPI Web Layer):**
-- REST API endpoints must handle the same data and parameters
-- File upload/download must support the CSV formats in the test command
-- Background task processing must handle the optimization workload
-- API responses must include all outputs from the CLI version
-
-**Session 4 (Streamlit GUI):**
-- Web interface must support uploading the same CSV files
-- Parameter configuration must match the CLI arguments
-- Results visualization must display all outputs from the test command
-- Download functionality must provide identical files to CLI
-
-**Session 5 (Production Readiness):**
-- The production service must handle the full optimization workload
-- Authentication and authorization must not interfere with processing
-- Database storage must preserve all results and metadata
-- Deployment must support the computational requirements
-
-### **Integration Test Data Characteristics**
-
-Based on the file paths, this test uses:
-- **Training Features**: `/features_train.csv` - High-dimensional feature matrix
-- **Test Features**: `/features_test.csv` - Hold-out test data
-- **Training Labels**: `/labels_train.csv` - Multi-target regression/classification labels
-- **Test Labels**: `/labels_test.csv` - Hold-out test labels
-- **Output Directory**: Structured output with all artifacts
-
-### **Performance Benchmarks**
-
-The integration test should establish baseline performance metrics:
-- **UMAP Optimization**: 10 trials × 5 HDBSCAN trials = 50 total evaluations
-- **Heatmap Optimization**: 3 outer folds × 10 trials = 30 cross-validation runs
-- **Prediction Inference**: Full test set evaluation
-- **Resource Usage**: Memory, CPU, and disk I/O profiles
-- **Processing Time**: End-to-end pipeline duration
-
-### **Validation Criteria**
-
-For each LAD session, the integration test must verify:
-1. **Numerical Consistency**: All floating-point outputs match within tolerance
-2. **File Structure**: Output directory structure and file naming conventions
-3. **Model Artifacts**: Saved models can be loaded and used for inference
-4. **Optimization Results**: Optuna study histories and best parameters
-5. **Performance Metrics**: CV scores, prediction accuracy, and error rates
-6. **Metadata Preservation**: All processing metadata and configuration
-
-### **Automated Testing Integration**
-
-```bash
-# Example integration test runner
-pytest tests/integration/test_real_world_pipeline.py::test_full_pipeline_compatibility -v --tb=short
-```
-
-This integration test should be:
-- **Executable in CI/CD**: Automated on every LAD session merge
-- **Deterministic**: Use fixed random seeds for reproducibility
-- **Comprehensive**: Cover all major code paths and edge cases
-- **Fast**: Optimized for CI environments (reduced trial counts if needed)
-- **Documented**: Clear failure modes and debugging instructions
-
-**Current Status:**
-- Branch: `feat/foundation-fastapi-service`
-- All planning work committed to main
-- Ready for LAD Session 1 implementation
-- Start a new VS Code discussion with the context package above
+---

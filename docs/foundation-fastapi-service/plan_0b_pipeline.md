@@ -18,6 +18,7 @@
   - [x] 4.2 Context dictionary preservation with deep copy validation - **COMPLETED**: Context setup ensures proper key initialization before stage execution
   - [x] 4.3 Progress callback integration with rate limiting - **COMPLETED**: Progress tracking implemented in PipelineRunner
   - [x] 4.4 Error handling and exception capture with job status updates - **COMPLETED**: Comprehensive error handling with job status management
+  - [ ] 4.5 **EMUSESPipeline Integration Refactor** - **IDENTIFIED**: Refactor PipelineRunner to use EMUSESPipeline internally for consistent data preprocessing, context setup, and stage orchestration identical to CLI execution path
 
 ## Prerequisites from 0a
 - JobManager class with job lifecycle APIs
