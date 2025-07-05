@@ -410,3 +410,76 @@ class PipelineRunner:
             Dict[str, Any]: Deserialized context dictionary
         """
         return pickle.loads(data)
+
+    def _create_emuses_progress_adapter(
+        self,
+        api_progress_callback: Optional[Callable],
+        job_id: str,
+        rate_limit_seconds: float = 1.0
+    ) -> Callable:
+        """Create progress callback adapter for EMUSESPipeline format.
+
+        This adapter converts between the API progress callback format and
+        EMUSESPipeline's expected progress callback format, with rate limiting
+        to prevent excessive callback frequency.
+
+        Args:
+            api_progress_callback: Original API progress callback function
+            job_id: Job identifier for status updates
+            rate_limit_seconds: Minimum seconds between progress updates
+
+        Returns:
+            Callable: Progress callback function compatible with EMUSESPipeline
+        """
+        import time
+
+        # Track last callback time for rate limiting
+        last_callback_time = {"time": 0.0}
+
+        def emuses_progress_callback(stage_name: str, progress: float, message: str = ""):
+            """Progress callback compatible with EMUSESPipeline format.
+
+            Args:
+                stage_name: Name of the pipeline stage
+                progress: Progress as float between 0.0 and 1.0
+                message: Optional progress message
+            """
+            current_time = time.time()
+
+            # Rate limiting - only call if enough time has passed
+            if current_time - last_callback_time["time"] >= rate_limit_seconds:
+                last_callback_time["time"] = current_time
+
+                # Update job status with progress information
+                progress_percent = int(progress * 100)
+                status_message = f"{stage_name}: {progress_percent}% - {message}" if message else f"{stage_name}: {progress_percent}%"
+
+                try:
+                    self.job_manager.update_job_status(
+                        job_id,
+                        "RUNNING",
+                        message=status_message
+                    )
+                except Exception as e:
+                    self.logger.warning(f"Failed to update job status: {e}")
+
+                # Call the original API callback if provided
+                if api_progress_callback is not None:
+                    try:
+                        # Call with EMUSESPipeline-style arguments
+                        api_progress_callback(
+                            stage_name=stage_name,
+                            progress=progress,
+                            message=message
+                        )
+                    except Exception:
+                        # Try alternative calling convention if the above fails
+                        try:
+                            api_progress_callback(stage_name, progress, message)
+                        except Exception as e:
+                            self.logger.warning(f"Progress callback failed: {e}")
+
+                # Log progress for debugging
+                self.logger.info(f"Job {job_id} - {stage_name}: {progress:.2%} - {message}")
+
+        return emuses_progress_callback
