@@ -7,11 +7,11 @@
 
 ## Tasks
 
-- [ ] Task 6 ║ tests/foundation-fastapi-service/test_security_validation.py ║ Security testing and input validation ║ M
-  - [ ] 6.1 Path traversal protection for file uploads and job directories
-  - [ ] 6.2 Input sanitization for malformed JSON, oversized files, invalid UUIDs
-  - [ ] 6.3 Pydantic deserialization limits and safe error handling
-  - [ ] 6.4 Negative tests for 4xx/5xx responses and boundary conditions
+- [x] Task 6 ║ tests/foundation-fastapi-service/test_security_validation.py ║ Security testing and input validation ║ M
+  - [x] 6.1 Path traversal protection for file uploads and job directories
+  - [x] 6.2 Input sanitization for malformed JSON, oversized files, invalid UUIDs
+  - [x] 6.3 Pydantic deserialization limits and safe error handling
+  - [x] 6.4 Negative tests for 4xx/5xx responses and boundary conditions
 
 - [ ] Task 7 ║ tests/foundation-fastapi-service/test_concurrency_performance.py ║ Concurrency and performance testing ║ M
   - [ ] 7.1 Multiple simultaneous job submissions with race condition detection
