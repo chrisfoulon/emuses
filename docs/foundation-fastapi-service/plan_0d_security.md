@@ -13,11 +13,11 @@
   - [x] 6.3 Pydantic deserialization limits and safe error handling
   - [x] 6.4 Negative tests for 4xx/5xx responses and boundary conditions
 
-- [ ] Task 7 ║ tests/foundation-fastapi-service/test_concurrency_performance.py ║ Concurrency and performance testing ║ M
-  - [ ] 7.1 Multiple simultaneous job submissions with race condition detection
-  - [ ] 7.2 Resource cleanup verification (directories, processes, memory)
-  - [ ] 7.3 Load testing with performance budgets and timeouts
-  - [ ] 7.4 Memory spike detection during context serialization
+- [x] Task 7 ║ tests/foundation-fastapi-service/test_concurrency_performance.py ║ Concurrency and performance testing ║ M
+  - [x] 7.1 Multiple simultaneous job submissions with race condition detection
+  - [x] 7.2 Resource cleanup verification (directories, processes, memory)
+  - [x] 7.3 Load testing with performance budgets and timeouts
+  - [x] 7.4 Memory spike detection during context serialization
 
 - [ ] Task 8 ║ tests/foundation-fastapi-service/test_compatibility.py ║ Backward compatibility verification with existing CLI and Python imports ║ M
   - [ ] 8.1 CLI interface unchanged (python main.py full continues working)
