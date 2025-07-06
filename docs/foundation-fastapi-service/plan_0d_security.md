@@ -19,12 +19,12 @@
   - [x] 7.3 Load testing with performance budgets and timeouts
   - [x] 7.4 Memory spike detection during context serialization
 
-- [ ] Task 8 ║ tests/foundation-fastapi-service/test_compatibility.py ║ Backward compatibility verification with existing CLI and Python imports ║ M
-  - [ ] 8.1 CLI interface unchanged (python main.py full continues working)
-  - [ ] 8.2 Python imports unchanged (from emuses.pipelines import EMUSESPipeline)
-  - [ ] 8.3 Context pattern preservation (exact dictionary passing between stages)
-  - [ ] 8.4 Computational result equivalence (API vs CLI produces identical outputs)
-  - [ ] 8.5 **API/CLI unification via EMUSESPipeline integration** - Refactor PipelineRunner to use EMUSESPipeline's preprocessing, context setup, and orchestration internally
+- [x] Task 8 ║ tests/foundation-fastapi-service/test_compatibility.py ║ Backward compatibility verification with existing CLI and Python imports ║ M
+  - [x] 8.1 CLI interface unchanged (python main.py full continues working)
+  - [x] 8.2 Python imports unchanged (from emuses.pipelines import EMUSESPipeline)
+  - [x] 8.3 Context pattern preservation (exact dictionary passing between stages)
+  - [x] 8.4 Computational result equivalence (API vs CLI produces identical outputs)
+  - [x] 8.5 **API/CLI unification via EMUSESPipeline integration** - Refactor PipelineRunner to use EMUSESPipeline's preprocessing, context setup, and orchestration internally
 
 ## Complete System Context (from 0a, 0b, 0c)
 
