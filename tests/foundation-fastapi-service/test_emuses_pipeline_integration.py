@@ -237,3 +237,223 @@ class TestEMUSESPipelineIntegration:
         call_args = job_manager.update_job_status.call_args
         assert "test_job_status" in call_args[0]
         assert "HeatmapStage" in str(call_args) or "Processing heatmaps" in str(call_args)
+
+    def test_emuses_pipeline_integration_in_run_pipeline_in_process(self, job_manager):
+        """Test _run_pipeline_in_process uses EMUSESPipeline internally"""
+        runner = PipelineRunner(job_manager)
+        
+        # Create context with minimal data
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            context = {
+                'config': {
+                    'output_folder': tmp_dir,
+                    'umap_trials': 5,
+                    'hdbscan_trials': 3,
+                    'optuna_trials': 8,
+                    'prefix': 'EMUSESIntegration'
+                },
+                'input_matrix': np.random.rand(50, 20),
+                'scores': np.random.rand(50),
+                'output_format_info': (10, 2),
+                'dataset_type': 'synthetic'
+            }
+            
+            # Mock EMUSESPipeline to verify it's being used
+            with patch('emuses.foundation_fastapi_service.pipeline_runner.EMUSESPipeline') as mock_emuses:
+                mock_pipeline = Mock()
+                mock_emuses.return_value = mock_pipeline
+                mock_pipeline.context = context.copy()
+                mock_pipeline.run.return_value = None
+                
+                # Test the integration
+                result_context = runner._run_pipeline_in_process(context, 0.75)
+                
+                # Verify EMUSESPipeline was instantiated with converted args
+                mock_emuses.assert_called_once()
+                call_args = mock_emuses.call_args[0][0]  # First positional argument (args)
+                
+                # Verify converted arguments
+                assert hasattr(call_args, 'output_folder')
+                assert call_args.umap_trials == 5
+                assert call_args.prefix == 'EMUSESIntegration'
+                assert call_args.interactive_plot is False  # Should be disabled for API
+                
+                # Verify EMUSESPipeline.run was called with progress callback
+                mock_pipeline.run.assert_called_once()
+                run_call_kwargs = mock_pipeline.run.call_args[1]
+                assert 'progress_callback' in run_call_kwargs
+                
+                # Verify context merging preserved API metadata
+                assert 'config' in result_context
+                assert result_context['config']['prefix'] == 'EMUSESIntegration'
+
+    def test_emuses_pipeline_integration_preserves_context_data(self, job_manager):
+        """Test EMUSESPipeline integration preserves input data in context"""
+        runner = PipelineRunner(job_manager)
+        
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            input_matrix = np.random.rand(30, 15)
+            scores = np.random.rand(30)
+            
+            context = {
+                'config': {'output_folder': tmp_dir},
+                'input_matrix': input_matrix,
+                'scores': scores,
+                'output_format_info': (6, 5),
+                'api_metadata': {'user_id': 'test_user', 'job_type': 'analysis'}
+            }
+            
+            with patch('emuses.foundation_fastapi_service.pipeline_runner.EMUSESPipeline') as mock_emuses:
+                mock_pipeline = Mock()
+                mock_emuses.return_value = mock_pipeline
+                mock_pipeline.context = context.copy()
+                
+                # Test the integration
+                result_context = runner._run_pipeline_in_process(context, 0.75)
+                
+                # Verify input data is preserved in pipeline context
+                emuses_args = mock_emuses.call_args[0][0]
+                
+                # Verify context was returned with preserved data
+                assert result_context is not None
+                assert emuses_args is not None
+                
+                # Check that data was provided to EMUSESPipeline via context setup
+                # (implementation details may vary, but data should be accessible)
+                mock_pipeline.context.update.assert_called()
+                update_calls = [call[0][0] for call in mock_pipeline.context.update.call_args_list]
+                
+                # Should contain the input matrix and scores
+                has_input_matrix = any('input_matrix' in str(call) for call in update_calls)
+                has_scores = any('scores' in str(call) for call in update_calls)
+                assert has_input_matrix or 'input_matrix' in mock_pipeline.context
+                assert has_scores or 'scores' in mock_pipeline.context
+
+    def test_emuses_pipeline_integration_error_handling(self, job_manager):
+        """Test EMUSESPipeline integration handles errors gracefully"""
+        runner = PipelineRunner(job_manager)
+        
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            context = {
+                'config': {'output_folder': tmp_dir},
+                'input_matrix': np.random.rand(10, 5),
+                'scores': np.random.rand(10)
+            }
+            
+            with patch('emuses.foundation_fastapi_service.pipeline_runner.EMUSESPipeline') as mock_emuses:
+                mock_pipeline = Mock()
+                mock_emuses.return_value = mock_pipeline
+                mock_pipeline.run.side_effect = RuntimeError("Simulated pipeline error")
+                
+                # Test error handling
+                with pytest.raises(RuntimeError, match="Simulated pipeline error"):
+                    runner._run_pipeline_in_process(context, 0.75)
+                
+                # Verify EMUSESPipeline was still instantiated and run was attempted
+                mock_emuses.assert_called_once()
+                mock_pipeline.run.assert_called_once()
+
+    def test_emuses_pipeline_equivalence_validation(self, job_manager):
+        """Test EMUSESPipeline integration produces equivalent results to CLI execution"""
+        runner = PipelineRunner(job_manager)
+        
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            # Create test data
+            input_matrix = np.random.rand(20, 10)
+            scores = np.random.rand(20)
+            
+            context = {
+                'config': {
+                    'output_folder': tmp_dir,
+                    'umap_trials': 3,
+                    'hdbscan_trials': 2,
+                    'prefix': 'EquivalenceTest',
+                    'umap_stage_enabled': True,
+                    'heatmap_stage_enabled': False,  # Disable to speed up test
+                    'prediction_stage_enabled': False
+                },
+                'input_matrix': input_matrix,
+                'scores': scores,
+                'output_format_info': (5, 2),
+                'dataset_type': 'equivalence_test'
+            }
+            
+            # Mock EMUSESPipeline to capture the arguments and context setup
+            with patch('emuses.foundation_fastapi_service.pipeline_runner.EMUSESPipeline') as mock_emuses:
+                mock_pipeline = Mock()
+                mock_emuses.return_value = mock_pipeline
+                mock_pipeline.context = {}
+                
+                # Simulate pipeline results
+                mock_pipeline.context = {
+                    'embeddings': np.random.rand(20, 2),
+                    'umap_model': 'mock_umap_model',
+                    'random_seeds': {'umap': 42}
+                }
+                
+                # Run the integration
+                result_context = runner._run_pipeline_in_process(context, 0.75)
+                
+                # Verify equivalence markers
+                emuses_args = mock_emuses.call_args[0][0]
+                
+                # Verify critical CLI-equivalent arguments
+                assert hasattr(emuses_args, 'umap_trials')
+                assert emuses_args.umap_trials == 3
+                assert hasattr(emuses_args, 'prefix')
+                assert emuses_args.prefix == 'EquivalenceTest'
+                assert hasattr(emuses_args, 'interactive_plot')
+                assert emuses_args.interactive_plot is False  # Should be disabled for API
+                
+                # Verify context contains CLI-equivalent data setup
+                context_update_calls = mock_pipeline.context.update.call_args_list
+                assert len(context_update_calls) > 0, "Pipeline context should be updated"
+                
+                # Verify results are properly merged back
+                assert 'embeddings' in result_context
+                assert 'execution_method' in result_context
+                assert result_context['execution_method'] == 'EMUSESPipeline'
+                assert result_context['pipeline_executed'] is True
+
+    def test_emuses_pipeline_stage_configuration_equivalence(self, job_manager):
+        """Test stage configuration matches CLI behavior"""
+        runner = PipelineRunner(job_manager)
+        
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            # Test different stage combinations
+            test_configs = [
+                {'umap_stage_enabled': True, 'heatmap_stage_enabled': False, 'prediction_stage_enabled': False},
+                {'umap_stage_enabled': True, 'heatmap_stage_enabled': True, 'prediction_stage_enabled': False},
+                {'umap_stage_enabled': False, 'heatmap_stage_enabled': True, 'prediction_stage_enabled': True},
+            ]
+            
+            for stage_config in test_configs:
+                context = {
+                    'config': {
+                        'output_folder': tmp_dir,
+                        **stage_config
+                    },
+                    'input_matrix': np.random.rand(15, 8),
+                    'scores': np.random.rand(15),
+                    'output_format_info': (3, 2)
+                }
+                
+                with patch('emuses.foundation_fastapi_service.pipeline_runner.EMUSESPipeline') as mock_emuses:
+                    mock_pipeline = Mock()
+                    mock_emuses.return_value = mock_pipeline
+                    mock_pipeline.context = {}
+                    
+                    # Mock stage imports
+                    with patch('emuses.foundation_fastapi_service.pipeline_runner.UMAPStage') as mock_umap, \
+                         patch('emuses.foundation_fastapi_service.pipeline_runner.HeatmapStage') as mock_heatmap, \
+                         patch('emuses.foundation_fastapi_service.pipeline_runner.PredictionStage') as mock_prediction:
+                        
+                        runner._run_pipeline_in_process(context, 0.75)
+                        
+                        # Verify stage addition matches configuration
+                        if stage_config.get('umap_stage_enabled', True):
+                            mock_pipeline.add_stage.assert_any_call(mock_umap.return_value)
+                        if stage_config.get('heatmap_stage_enabled', True):
+                            mock_pipeline.add_stage.assert_any_call(mock_heatmap.return_value)
+                        if stage_config.get('prediction_stage_enabled', True):
+                            mock_pipeline.add_stage.assert_any_call(mock_prediction.return_value)

@@ -190,5 +190,9 @@ logs/
 tensorboard_logs/
 wandb/
 
+# API Job Management (runtime data)
+api_jobs_hcp/
+**/api_jobs_*/
+
 # Jupyter Notebook outputs (optional, uncomment if you want to ignore outputs)
 # *.ipynb

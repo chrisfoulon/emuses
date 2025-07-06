@@ -332,7 +332,6 @@ class PredictionStage(PipelineStage):
                     output_folder=output_folder,
                     categorical=getattr(self.config, "classification", False),
                     show_plot=getattr(self.config, "show_plots", False),
-                    n_jobs=n_jobs,  # Pass the n_jobs parameter to control parallelism
                 )
             else:
                 # No test data, use cross-validation only

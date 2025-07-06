@@ -29,7 +29,7 @@ class EMUSESPipeline:
     def __init__(self, args):
         self.config = PipelineConfig(args)
         self.args = self.config  # For backward compatibility
-        self.output_folder = self.config.output_folder
+        self.output_folder = self.config.output_path  # Use Path object, not string
 
         # In classic mode, these come from the main dataset;
         # in label_dataset mode, the labelled dataset is processed separately.

@@ -13,10 +13,45 @@ import asyncio
 from pathlib import Path
 import pandas as pd
 import numpy as np
+import pytest
 
 # Add project root to path
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
+
+
+@pytest.fixture
+def temp_dir():
+    """Create a temporary directory for test files."""
+    with tempfile.TemporaryDirectory() as td:
+        yield Path(td)
+
+
+@pytest.fixture
+def test_data(temp_dir):
+    """Create test data files."""
+    return create_test_data(temp_dir)
+
+
+@pytest.fixture
+def features_file(test_data):
+    """Get the features file path."""
+    return test_data[0]
+
+
+@pytest.fixture
+def targets_file(test_data):
+    """Get the targets file path."""
+    return test_data[1]
+
+
+@pytest.fixture
+def output_dir(temp_dir):
+    """Create output directory."""
+    output_path = temp_dir / 'output'
+    output_path.mkdir(exist_ok=True)
+    return output_path
+
 
 def create_test_data(temp_dir):
     """Create minimal test data."""
@@ -37,6 +72,7 @@ def create_test_data(temp_dir):
     targets_df.to_csv(targets_file, index=False)
     
     return features_file, targets_file
+
 
 def test_cli_execution(features_file, targets_file, output_dir):
     """Test CLI execution."""
@@ -87,6 +123,7 @@ def test_cli_execution(features_file, targets_file, output_dir):
             'stdout': '',
             'stderr': f'Exception: {str(e)}'
         }
+
 
 async def test_api_execution(features_file, targets_file, output_dir):
     """Test API execution."""
@@ -142,6 +179,7 @@ async def test_api_execution(features_file, targets_file, output_dir):
             'message': f'API execution failed: {str(e)}'
         }
 
+
 def compare_outputs(cli_output_dir, api_output_dir):
     """Compare output directories."""
     cli_files = set()
@@ -160,6 +198,7 @@ def compare_outputs(cli_output_dir, api_output_dir):
         'cli_only': sorted(cli_files - api_files),
         'api_only': sorted(api_files - cli_files)
     }
+
 
 async def main():
     """Run the simple CLI vs API test."""
@@ -204,7 +243,7 @@ async def main():
             
             # Compare outputs
             comparison = compare_outputs(cli_output, api_output)
-            print(f"\nFile Comparison:")
+            print("\nFile Comparison:")
             print(f"   CLI files: {len(comparison['cli_files'])}")
             print(f"   API files: {len(comparison['api_files'])}")
             print(f"   Common: {len(comparison['common_files'])}")
@@ -217,13 +256,13 @@ async def main():
                 print(f"   API only: {comparison['api_only']}")
             
             # Overall result
-            print(f"\n🎯 Overall Result:")
+            print("\n🎯 Overall Result:")
             if cli_result['success'] and api_result['success']:
                 print("✅ Both CLI and API executions successful!")
             elif cli_result['success']:
                 print("⚠️  Only CLI execution successful")
             elif api_result['success']:
-                print("⚠️  Only API execution successful")  
+                print("⚠️  Only API execution successful")
             else:
                 print("❌ Both executions failed")
                 

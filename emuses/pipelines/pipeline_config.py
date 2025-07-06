@@ -68,6 +68,8 @@ class PipelineConfig:
         # ------------------------------------------------------------------
         self.output_path = Path(self.output_folder).resolve()
         self.output_path.mkdir(parents=True, exist_ok=True)
+        # Update output_folder to be the Path object for stage compatibility
+        self.output_folder = self.output_path
         self._configure_logging()
 
         # ------------------------------------------------------------------
