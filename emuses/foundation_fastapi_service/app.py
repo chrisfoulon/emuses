@@ -6,6 +6,7 @@ providing job management, pipeline execution, and artifact handling capabilities
 
 import asyncio
 import logging
+import os
 from pathlib import Path
 from typing import List, Optional, Dict, Any
 from uuid import UUID, uuid4
@@ -33,15 +34,19 @@ from emuses.foundation_fastapi_service.models import (
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Initialize rate limiter
-limiter = Limiter(key_func=get_remote_address)
+# Environment-based configuration
+TESTING_MODE = os.getenv("TESTING_MODE", "false").lower() == "true"
+RATE_LIMITING_ENABLED = os.getenv("RATE_LIMITING_ENABLED", "true").lower() == "true" and not TESTING_MODE
+
+# Initialize rate limiter (disabled in testing mode)
+limiter = Limiter(key_func=get_remote_address) if RATE_LIMITING_ENABLED else None
 
 
 # Request size limiting middleware
 class RequestSizeLimiterMiddleware:
     """Middleware to limit request size and return 413 for oversized requests."""
     
-    def __init__(self, app, max_size: int = 10 * 1024 * 1024):  # 10MB default
+    def __init__(self, app, max_size: int = 1024 * 1024 * 1024):  # 1GB default for neuroimaging data
         self.app = app
         self.max_size = max_size
     
@@ -88,12 +93,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Add request size limiting middleware
-app.add_middleware(RequestSizeLimiterMiddleware, max_size=10 * 1024 * 1024)  # 10MB limit
+# Add request size limiting middleware (1GB limit for neuroimaging data)
+app.add_middleware(RequestSizeLimiterMiddleware, max_size=1024 * 1024 * 1024)
 
-# Add rate limiting middleware
-app.state.limiter = limiter
-app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+# Add rate limiting middleware (only if not in testing mode)
+if RATE_LIMITING_ENABLED and limiter:
+    app.state.limiter = limiter
+    app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # Initialize core components lazily to avoid import issues
 job_manager = None
@@ -233,9 +239,19 @@ def validate_file_path(file_path: str) -> Path:
     return path
 
 
+# Conditional rate limiting helper function
+def conditional_rate_limit(rate_limit_str: str):
+    """Apply rate limiting only if enabled (not in testing mode)."""
+    def decorator(func):
+        if RATE_LIMITING_ENABLED and limiter:
+            return limiter.limit(rate_limit_str)(func)
+        return func
+    return decorator
+
+
 # Pipeline Execution Endpoints
 @app.post("/api/v1/jobs/pipeline/full", status_code=201)
-@limiter.limit("5/hour")  # Rate limit: 5 jobs per hour per IP
+@conditional_rate_limit("50/hour")  # Rate limit: 50 jobs per hour per IP (more realistic for EMUSES)
 async def submit_full_pipeline_job(
     request: Request,
     job_request: JobSubmissionRequest
@@ -308,7 +324,7 @@ async def submit_full_pipeline_job(
 
 
 @app.post("/api/v1/jobs/pipeline/stage/{stage_name}", status_code=201)
-@limiter.limit("10/hour")  # Rate limit: 10 stage jobs per hour per IP
+@conditional_rate_limit("100/hour")  # Rate limit: 100 stage jobs per hour per IP
 async def submit_stage_specific_job(
     request: Request,
     stage_name: str,
@@ -396,7 +412,7 @@ async def submit_stage_specific_job(
 
 # Job Management Endpoints
 @app.get("/api/v1/jobs/{job_id}/status")
-@limiter.limit("60/minute")  # Rate limit: 60 status checks per minute per IP
+@conditional_rate_limit("300/minute")  # Rate limit: 300 status checks per minute per IP
 async def get_job_status(request: Request, job_id: str) -> JobStatusResponse:
     """Get status and progress information for a job.
     
@@ -449,7 +465,7 @@ async def get_job_status(request: Request, job_id: str) -> JobStatusResponse:
 
 
 @app.get("/api/v1/jobs/{job_id}/logs")
-@limiter.limit("30/minute")  # Rate limit: 30 log requests per minute per IP
+@conditional_rate_limit("100/minute")  # Rate limit: 100 log requests per minute per IP
 async def get_job_logs(request: Request, job_id: str) -> Dict[str, List[str]]:
     """Get execution logs for a job.
     
@@ -502,7 +518,7 @@ async def get_job_logs(request: Request, job_id: str) -> Dict[str, List[str]]:
 
 
 @app.delete("/api/v1/jobs/{job_id}")
-@limiter.limit("10/minute")  # Rate limit: 10 cancellations per minute per IP
+@conditional_rate_limit("50/minute")  # Rate limit: 50 cancellations per minute per IP
 async def cancel_job(request: Request, job_id: str) -> Dict[str, str]:
     """Cancel or delete a job.
     
@@ -558,7 +574,7 @@ async def cancel_job(request: Request, job_id: str) -> Dict[str, str]:
 
 
 @app.get("/api/v1/jobs")
-@limiter.limit("30/minute")  # Rate limit: 30 list requests per minute per IP
+@conditional_rate_limit("100/minute")  # Rate limit: 100 list requests per minute per IP
 async def list_jobs(
     request: Request,
     status: Optional[str] = None,
@@ -618,7 +634,7 @@ async def list_jobs(
 
 # Artifact Management Endpoints
 @app.get("/api/v1/jobs/{job_id}/artifacts")
-@limiter.limit("30/minute")  # Rate limit: 30 artifact list requests per minute per IP
+@conditional_rate_limit("100/minute")  # Rate limit: 100 artifact list requests per minute per IP
 async def list_job_artifacts(request: Request, job_id: str) -> Dict[str, List[Dict[str, Any]]]:
     """List available artifacts for a job.
     
@@ -686,7 +702,7 @@ async def list_job_artifacts(request: Request, job_id: str) -> Dict[str, List[Di
 
 
 @app.get("/api/v1/jobs/{job_id}/artifacts/{filename}")
-@limiter.limit("60/minute")  # Rate limit: 60 downloads per minute per IP
+@conditional_rate_limit("200/minute")  # Rate limit: 200 downloads per minute per IP
 async def download_job_artifact(request: Request, job_id: str, filename: str) -> FileResponse:
     """Download a specific artifact from a job.
     

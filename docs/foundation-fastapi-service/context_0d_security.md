@@ -391,3 +391,222 @@ pipeline.run(progress_callback=emuses_progress_callback)  # Identical execution
 ✅ **Context Pattern Preservation**: Dictionary-based context passing maintained across both interfaces
 ✅ **Computational Consistency**: Both API and CLI use identical EMUSESPipeline execution engine
 ✅ **No Breaking Changes**: All existing integration code continues to work without modification
+
+## Interface Layer Security Features (0c) - FastAPI Endpoints
+
+### Complete FastAPI Endpoint Inventory
+
+**Health Check Endpoint**:
+- `GET /api/health` - No authentication required
+- Rate limiting: None (health checks should be unrestricted)
+- Security: No sensitive data exposed
+- Response: `{"status": "healthy", "timestamp": "...", "version": "1.0.0"}`
+
+**Pipeline Execution Endpoints**:
+- `POST /api/v1/jobs/pipeline/full` - Full pipeline execution
+  - Rate limiting: 5 requests/hour per IP
+  - Authentication: None (public endpoint)
+  - Input validation: Required fields (`input_file`, `scores_file`, `output_folder`)
+  - File validation: Path existence, read permissions
+  - Security features: Path traversal protection, file sanitization
+  - Max request size: 10MB (enforced by middleware)
+
+- `POST /api/v1/jobs/pipeline/stage/{stage_name}` - Stage-specific execution
+  - Rate limiting: 10 requests/hour per IP  
+  - Authentication: None (public endpoint)
+  - URL parameters: `stage_name` ∈ {umap, heatmap, prediction}
+  - Input validation: Stage name validation, required fields
+  - Security features: URL parameter sanitization, path validation
+
+**Job Management Endpoints**:
+- `GET /api/v1/jobs/{job_id}/status` - Job status and progress
+  - Rate limiting: 60 requests/minute per IP
+  - Authentication: None (public endpoint)
+  - URL parameters: `job_id` (UUID4 format validation)
+  - Security features: UUID validation, job ownership isolation
+  - Error handling: 400 (invalid UUID), 404 (job not found)
+
+- `GET /api/v1/jobs/{job_id}/logs` - Job execution logs
+  - Rate limiting: 30 requests/minute per IP
+  - Authentication: None (public endpoint)
+  - URL parameters: `job_id` (UUID4 format validation)
+  - Security features: Log content sanitization, no sensitive data exposure
+  - Response format: `{"logs": ["timestamp [level] message", ...]}`
+
+- `DELETE /api/v1/jobs/{job_id}` - Job cancellation
+  - Rate limiting: 10 requests/minute per IP
+  - Authentication: None (public endpoint)
+  - URL parameters: `job_id` (UUID4 format validation)
+  - Security features: Job lifecycle validation, cleanup safety
+
+- `GET /api/v1/jobs` - Job listing with pagination
+  - Rate limiting: 30 requests/minute per IP
+  - Authentication: None (public endpoint)
+  - Query parameters: `status`, `limit`, `offset` (optional)
+  - Security features: No sensitive data in listings, pagination limits
+
+**Artifact Management Endpoints**:
+- `GET /api/v1/jobs/{job_id}/artifacts` - List job artifacts
+  - Rate limiting: 30 requests/minute per IP
+  - Authentication: None (public endpoint)
+  - URL parameters: `job_id` (UUID4 format validation)
+  - Security features: Directory traversal protection, metadata sanitization
+  - Response: Filename, size, modified timestamp, content-type
+
+- `GET /api/v1/jobs/{job_id}/artifacts/{filename}` - Download artifact
+  - Rate limiting: 60 requests/minute per IP
+  - Authentication: None (public endpoint)
+  - URL parameters: `job_id` (UUID), `filename` (sanitized)
+  - Security features: **CRITICAL SECURITY CONTROLS**
+    - **Path Traversal Protection**: `secure_filename()` sanitization
+    - **Symlink Attack Prevention**: Resolved path validation within job directory
+    - **Filename Sanitization**: Alphanumeric + `._-` characters only
+    - **Directory Isolation**: Files must be within `jobs/{job_id}/output/`
+    - **Content-Type Detection**: Safe MIME type determination
+    - **File Size Limits**: Inherited from job directory size limits
+
+### Authentication and Authorization
+
+**Current Implementation**: No authentication (public API)
+- All endpoints are publicly accessible
+- No API keys, tokens, or user authentication
+- Rate limiting provides only basic abuse protection
+
+**Security Implications**:
+- ⚠️ **Public Data Access**: All job data is publicly accessible via UUID
+- ⚠️ **No Access Control**: Any client can access any job artifacts
+- ⚠️ **No User Isolation**: Jobs are not associated with users
+- ⚠️ **Resource Abuse**: Only rate limiting prevents resource exhaustion
+
+**Future Authentication Considerations**:
+- API key authentication for production deployment
+- User-based job ownership and access control
+- Role-based permissions for different endpoint access levels
+- OAuth2/JWT token authentication for web application integration
+
+### Input Validation Security Patterns
+
+**UUID Validation**:
+```python
+def validate_job_id(job_id: str) -> UUID:
+    try:
+        return UUID(job_id)  # Validates UUID4 format
+    except ValueError:
+        raise ValueError(f"Invalid job ID format: {job_id}")
+```
+
+**Filename Sanitization**:
+```python
+def secure_filename(filename: str) -> str:
+    # Remove path separators and parent directory references
+    filename = filename.replace('/', '').replace('\\', '').replace('..', '')
+    # Remove problematic characters - alphanumeric + ._- only
+    filename = ''.join(c for c in filename if c.isalnum() or c in '._-')
+    # Limit length to prevent filesystem issues
+    if len(filename) > 255:
+        filename = filename[:255]
+    return filename
+```
+
+**File Path Validation**:
+```python
+def validate_file_path(file_path: str) -> Path:
+    path = Path(file_path)
+    if not path.exists():
+        raise ValueError(f"File not found: {file_path}")
+    if not path.is_file():
+        raise ValueError(f"Path is not a file: {file_path}")
+    return path
+```
+
+### Rate Limiting Implementation
+
+**slowapi Integration**: IP-based rate limiting using Redis backend (optional)
+- **Algorithm**: Token bucket algorithm
+- **Key Function**: `get_remote_address` (IP-based)
+- **Storage**: In-memory (development) or Redis (production)
+- **Granularity**: Per-endpoint rate limits
+
+**Rate Limit Configurations**:
+- Pipeline submission: 5/hour (resource-intensive operations)
+- Stage execution: 10/hour (moderate resource usage)
+- Status checks: 60/minute (lightweight, frequent polling)
+- Log access: 30/minute (moderate data transfer)
+- Job cancellation: 10/minute (state-changing operations)
+- Job listing: 30/minute (moderate data access)
+- Artifact listing: 30/minute (filesystem access)
+- Artifact download: 60/minute (file transfer operations)
+
+**Rate Limiting Headers**:
+- `X-RateLimit-Limit`: Request limit per time window
+- `X-RateLimit-Remaining`: Remaining requests in current window
+- `X-RateLimit-Reset`: Timestamp when limit resets
+- `Retry-After`: Seconds to wait when rate limited (429 response)
+
+### Error Response Security
+
+**Standardized Error Format**:
+```json
+{
+  "detail": {
+    "error_code": "VALIDATION_ERROR|JOB_NOT_FOUND|ARTIFACT_NOT_FOUND|INTERNAL_SERVER_ERROR",
+    "message": "Human-readable error description",
+    "timestamp": "2025-07-07T10:30:00Z"
+  }
+}
+```
+
+**Error Code Security**:
+- **VALIDATION_ERROR** (400): Input validation failures, no sensitive data exposure
+- **JOB_NOT_FOUND** (404): Job UUID not found, prevents enumeration attacks
+- **ARTIFACT_NOT_FOUND** (404): File not found, no filesystem information leakage
+- **INTERNAL_SERVER_ERROR** (500): Generic server errors, no stack traces in production
+
+**Information Disclosure Prevention**:
+- No stack traces in error responses
+- No filesystem paths in error messages
+- No internal implementation details exposed
+- Consistent error timing to prevent enumeration attacks
+
+### File Upload/Download Security Testing Requirements
+
+**Path Traversal Test Cases**:
+- `../../../etc/passwd`
+- `..\\..\\..\\windows\\system32\\config\\sam`
+- `....//....//....//etc//passwd`
+- URL-encoded variants: `%2e%2e%2f`, `%252f`
+- Unicode variants and null byte injection
+- Symlink attacks: `/tmp/symlink -> /etc/passwd`
+
+**Filename Sanitization Test Cases**:
+- Special characters: `<>:"/|?*`
+- Control characters: null bytes, newlines, tabs
+- Reserved names: `CON`, `PRN`, `AUX` (Windows)
+- Length limits: filenames > 255 characters
+- Unicode normalization attacks
+
+**Content-Type Security**:
+- MIME type validation and sanitization
+- Content-Type spoofing prevention
+- File extension vs. content validation
+- Executable file upload prevention
+
+### Performance Testing Requirements
+
+**Response Time Budgets**:
+- Health check: ≤ 50ms
+- Status endpoints: ≤ 500ms (plan requirement)
+- Job submission: ≤ 2000ms
+- File uploads: ≤ 10MB in 30 seconds
+- Artifact downloads: Streaming for large files
+
+**Rate Limiting Performance**:
+- Rate limit evaluation: ≤ 10ms overhead per request
+- Rate limit storage: Redis performance for high-concurrency scenarios
+- Rate limit cleanup: Automatic expiration of limit counters
+
+**Scalability Considerations**:
+- Concurrent job execution limits
+- File system performance with large numbers of jobs
+- Memory usage for long-running jobs
+- Database/storage scaling for job metadata

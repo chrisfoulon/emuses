@@ -1,0 +1,23 @@
+{
+  "job_id": "9ea3c15f-1c87-4aaa-ad6b-40cb3fdd01cf",
+  "status": "FAILED",
+  "updated_at": "2025-07-07T19:21:53.157761",
+  "progress": 0.0,
+  "message": "Pipeline execution error: No output_folder specified in context config",
+  "job_name": "Sanitization Test",
+  "description": null,
+  "config": {
+    "input_file": "/tmp/test_stage_quhn8ppz/input.csv",
+    "scores_file": "/tmp/test_stage_quhn8ppz/scores.csv",
+    "output_folder": "/tmp/test_stage_output_ld8ieip2/sanitization_test",
+    "malicious_param": "&lt;script&gt;alert(&#x27;xss&#x27;)&lt;/script&gt;",
+    "path_traversal": "etc/passwd",
+    "sql_injection": "&#x27;; DROP TABLE users; --",
+    "umap_stage_enabled": true,
+    "heatmap_stage_enabled": false,
+    "prediction_stage_enabled": false
+  },
+  "created_at": "2025-07-07T17:21:51.647296Z",
+  "started_at": "2025-07-07T19:21:53.156777",
+  "completed_at": "2025-07-07T19:21:53.157770"
+}
