@@ -7,11 +7,13 @@
 
 ## Tasks
 
-- [x] Task 5 ║ tests/foundation-fastapi-service/test_api_endpoints.py ║ FastAPI endpoint integration with request/response handling ║ L
-  - [x] 5.1 Pipeline execution endpoints with input validation
-  - [x] 5.2 Stage-specific endpoints with parameter sanitization
-  - [x] 5.3 Job status and progress endpoints with rate limiting
-  - [x] 5.4 Artifact management endpoints with secure download paths
+- [ ] Task 5 ║ tests/foundation-fastapi-service/test_api_endpoints.py ║ FastAPI endpoint integration with request/response handling ║ L
+  - [ ] 5.1 **INTEGRATION TESTING**: Import real FastAPI app and test with mocked dependencies
+  - [ ] 5.2 Pipeline execution endpoints with input validation (test real routing, validation, serialization)
+  - [ ] 5.3 Stage-specific endpoints with parameter sanitization (test real FastAPI framework behavior)
+  - [ ] 5.4 Job status and progress endpoints with rate limiting (test real error handling)
+  - [ ] 5.5 Artifact management endpoints with secure download paths (test real file responses)
+  - [ ] 5.6 **FIX CURRENT ANTI-PATTERN**: Replace mock FastAPI app with real app integration testing
 
 ## Prerequisites from 0a & 0b
 - Pydantic models for requests/responses and error handling
