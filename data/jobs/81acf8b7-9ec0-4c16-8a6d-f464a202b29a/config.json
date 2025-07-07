@@ -1,9 +1,0 @@
-{
-  "input_file": "C:\\Users\\TOLHSA~1\\AppData\\Local\\Temp\\test_jobs_7ezlaqv0\\test_input.csv",
-  "scores_file": "C:\\Users\\TOLHSA~1\\AppData\\Local\\Temp\\test_jobs_7ezlaqv0\\test_scores.csv",
-  "output_folder": "C:\\Users\\TOLHSA~1\\AppData\\Local\\Temp\\test_jobs_7ezlaqv0\\output",
-  "prefix": "concurrent_job_0",
-  "umap_trials": 1,
-  "hdbscan_trials": 1,
-  "optuna_trials": 2
-}

@@ -36,6 +36,39 @@ logger = logging.getLogger(__name__)
 # Initialize rate limiter
 limiter = Limiter(key_func=get_remote_address)
 
+
+# Request size limiting middleware
+class RequestSizeLimiterMiddleware:
+    """Middleware to limit request size and return 413 for oversized requests."""
+    
+    def __init__(self, app, max_size: int = 10 * 1024 * 1024):  # 10MB default
+        self.app = app
+        self.max_size = max_size
+    
+    async def __call__(self, scope, receive, send):
+        if scope["type"] == "http":
+            # Check content-length header
+            headers = dict(scope.get("headers", []))
+            content_length_bytes = headers.get(b"content-length")
+            if content_length_bytes:
+                try:
+                    content_length = int(content_length_bytes.decode())
+                    if content_length > self.max_size:
+                        response = JSONResponse(
+                            status_code=413,
+                            content={
+                                "error_code": "PAYLOAD_TOO_LARGE",
+                                "message": f"Request payload exceeds maximum size of {self.max_size} bytes",
+                                "timestamp": datetime.utcnow().isoformat() + "Z"
+                            }
+                        )
+                        await response(scope, receive, send)
+                        return
+                except (ValueError, UnicodeDecodeError):
+                    pass  # Continue if header parsing fails
+        await self.app(scope, receive, send)
+
+
 # Initialize FastAPI app
 app = FastAPI(
     title="EMUSES Foundation FastAPI Service",
@@ -54,6 +87,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Add request size limiting middleware
+app.add_middleware(RequestSizeLimiterMiddleware, max_size=10 * 1024 * 1024)  # 10MB limit
 
 # Add rate limiting middleware
 app.state.limiter = limiter
@@ -753,6 +789,9 @@ async def health_check() -> Dict[str, str]:
         "version": "1.0.0"
     }
 
+
+# Add request size limiting middleware
+app.add_middleware(RequestSizeLimiterMiddleware, max_size=10 * 1024 * 1024)  # 10MB limit
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
