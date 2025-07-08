@@ -1,0 +1,48 @@
+/home/chrisfoulon/miniconda3/lib/python3.11/site-packages/pytest_asyncio/plugin.py:208: PytestDeprecationWarning: The configuration option "asyncio_default_fixture_loop_scope" is unset.
+The event loop scope for asynchronous fixtures will default to the fixture caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to function scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: "function", "class", "module", "package", "session"
+
+  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))
+============================= test session starts ==============================
+platform linux -- Python 3.11.5, pytest-8.3.3, pluggy-1.5.0 -- /home/chrisfoulon/miniconda3/bin/python
+cachedir: .pytest_cache
+rootdir: /home/chrisfoulon/neuro_apps/emuses
+configfile: pytest.ini
+plugins: cov-6.2.1, asyncio-1.0.0, anyio-4.9.0
+asyncio: mode=Mode.STRICT, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collecting ... collected 1 item
+
+tests/foundation-fastapi-service/test_compatibility.py::TestPythonImports::test_pipeline_context_pattern_runtime FAILED [100%]
+
+=================================== FAILURES ===================================
+___________ TestPythonImports.test_pipeline_context_pattern_runtime ____________
+tests/foundation-fastapi-service/test_compatibility.py:239: in test_pipeline_context_pattern_runtime
+    pipeline = EMUSESPipeline(args)
+emuses/pipelines/emuses_pipeline.py:60: in __init__
+    self.format_args()  # Initialize random state management
+emuses/pipelines/emuses_pipeline.py:139: in format_args
+    self.process_dataset(self.config.input_dataset, is_labelled=False)
+emuses/pipelines/emuses_pipeline.py:318: in process_dataset
+    index_col=args.input_index_column,
+E   AttributeError: 'PipelineConfig' object has no attribute 'input_index_column'
+
+During handling of the above exception, another exception occurred:
+tests/foundation-fastapi-service/test_compatibility.py:255: in test_pipeline_context_pattern_runtime
+    pytest.fail(f"Pipeline context pattern test failed: {e}")
+E   Failed: Pipeline context pattern test failed: 'PipelineConfig' object has no attribute 'input_index_column'
+=============================== warnings summary ===============================
+tests/foundation-fastapi-service/test_compatibility.py:510
+  /home/chrisfoulon/neuro_apps/emuses/tests/foundation-fastapi-service/test_compatibility.py:510: PytestUnknownMarkWarning: Unknown pytest.mark.compatibility - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html
+    pytest.mark.compatibility,
+
+tests/foundation-fastapi-service/test_compatibility.py:511
+  /home/chrisfoulon/neuro_apps/emuses/tests/foundation-fastapi-service/test_compatibility.py:511: PytestUnknownMarkWarning: Unknown pytest.mark.integration - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html
+    pytest.mark.integration
+
+tests/foundation-fastapi-service/test_compatibility.py::TestPythonImports::test_pipeline_context_pattern_runtime
+  /home/chrisfoulon/neuro_apps/BCBlib/bcblib/tools/nifti_utils.py:14: DeprecationWarning: Please use `center_of_mass` from the `scipy.ndimage` namespace, the `scipy.ndimage.measurements` namespace is deprecated.
+    from scipy.ndimage.measurements import center_of_mass
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/foundation-fastapi-service/test_compatibility.py::TestPythonImports::test_pipeline_context_pattern_runtime
+======================== 1 failed, 3 warnings in 2.50s =========================

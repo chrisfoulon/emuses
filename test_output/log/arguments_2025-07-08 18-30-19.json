@@ -1,0 +1,29 @@
+{
+    "output_folder": "/home/chrisfoulon/neuro_apps/emuses/test_output",
+    "input_dataset": "/home/chrisfoulon/neuro_apps/emuses/test_data/features_small.csv",
+    "scores": "/home/chrisfoulon/neuro_apps/emuses/test_data/scores_small.csv",
+    "prefix": "equiv_test",
+    "verbose": false,
+    "input_header": null,
+    "input_index_column": null,
+    "inputs_columns": null,
+    "columns_are_features": false,
+    "input_normalization": null,
+    "scores_header": null,
+    "scores_index_column": null,
+    "scores_are_rows": false,
+    "scores_normalization": null,
+    "scores_columns": null,
+    "correlation_method": "pearson",
+    "classification": false,
+    "output_path": "/home/chrisfoulon/neuro_apps/emuses/test_output",
+    "heatmap_params": {
+        "sigma": null,
+        "fwhm": null
+    },
+    "clustering_params": {
+        "hdbscan_approx_min_span_tree": true,
+        "hdbscan_core_dist_n_jobs": -1
+    },
+    "datetime": "2025-07-08 18:30:19"
+}

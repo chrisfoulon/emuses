@@ -39,6 +39,26 @@ class PipelineConfig:
     umap_trials: int = 50  # Number of UMAP optimization trials
     hdbscan_trials: int = 20  # Number of HDBSCAN optimization trials
 
+    # Dataset processing parameters
+    input_header: int = None  # Header row for spreadsheet data
+    input_index_column: int = None  # Index column for spreadsheet data
+    inputs_columns: list = None  # Columns to use from input data
+    columns_are_features: bool = False  # Whether columns represent features
+    input_normalization: str = None  # Input normalization method
+    recursive_input_file_search: bool = False  # Recursive file search
+    input_file_types: list = None  # Allowed input file types
+    arg_separator: str = ","  # Argument separator
+    bids_filters: dict = None  # BIDS dataset filters
+    filter_labelled_by_scores: bool = False  # Filter labeled data by scores
+    scores_column: str = None  # Column name for scores
+    scores_header: int = None  # Header row for scores data
+    scores_index_column: int = None  # Index column for scores data
+    scores_are_rows: bool = False  # Whether scores are organized as rows
+    scores_normalization: str = None  # Normalization method for scores
+    scores_columns: list = None  # Columns to use from scores data
+    correlation_method: str = "pearson"  # Method for correlation analysis
+    classification: bool = False  # Whether to use classification mode
+
     # Computed fields
     output_path: Path = field(init=False)
     umap_params: dict = field(default_factory=dict)

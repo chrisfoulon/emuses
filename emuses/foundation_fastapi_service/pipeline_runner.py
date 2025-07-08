@@ -102,8 +102,9 @@ class PipelineRunner:
 
         # Dataset and input configuration
         # Support both file-based (HCP-style) and direct data (API-style) execution
-        input_dataset = context.get('input_dataset')
-        scores_dataset = context.get('scores_dataset')
+        # Check for input_dataset at top level first, then in config
+        input_dataset = context.get('input_dataset') or config_dict.get('input_dataset')
+        scores_dataset = context.get('scores_dataset') or config_dict.get('scores')
         
         if input_dataset:
             # File-based execution (like CLI) - use actual file paths
@@ -127,6 +128,8 @@ class PipelineRunner:
                 args.scores_normalization = str(config_dict.get('scores_normalization', 'none'))  # Normalization for scores
                 args.correlation_method = str(config_dict.get('correlation_method', 'pearson'))  # Correlation method
                 args.classification = bool(config_dict.get('classification', False))  # Classification mode
+            else:
+                args.scores = None
         else:
             # Direct data execution (API-style) - use 'mnist' to bypass file validation
             # We'll override the context with our actual data after initialization
@@ -262,6 +265,17 @@ class PipelineRunner:
         except Exception as e:
             self.logger.error(f"Pipeline execution failed: {e}")
             raise
+
+    def _run_pipeline(
+        self,
+        context: Dict[str, Any],
+        memory_limit_ratio: float = None,
+        progress_callback: Optional[Callable] = None
+    ) -> Dict[str, Any]:
+        """Alias for _run_pipeline_in_process for backward compatibility."""
+        if memory_limit_ratio is None:
+            memory_limit_ratio = self.memory_limit_ratio
+        return self._run_pipeline_in_process(context, memory_limit_ratio, progress_callback)
 
     def _run_pipeline_in_process(
         self,
