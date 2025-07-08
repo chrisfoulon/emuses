@@ -191,3 +191,27 @@ class FileUploadModel(BaseModel):
             }
         }
     )
+
+
+class FileUploadResponse(BaseModel):
+    """Response model for file upload endpoints."""
+
+    file_id: str = Field(..., description="Unique identifier for the uploaded file")
+    filename: str = Field(..., description="Original filename")
+    file_path: str = Field(..., description="Server path to the uploaded file")
+    content_type: str = Field(..., description="MIME type of the file")
+    size: int = Field(..., description="File size in bytes")
+    upload_time: str = Field(..., description="ISO timestamp of upload")
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "file_id": "upload_123456_features.csv",
+                "filename": "patient_features.csv",
+                "file_path": "/tmp/emuses_uploads/job_123/features.csv",
+                "content_type": "text/csv",
+                "size": 1024000,
+                "upload_time": "2024-01-15T10:30:00Z"
+            }
+        }
+    )

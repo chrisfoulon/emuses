@@ -10,7 +10,7 @@ import os
 from pathlib import Path
 from typing import List, Optional, Dict, Any
 from uuid import UUID, uuid4
-from datetime import datetime
+from datetime import datetime, timezone
 import mimetypes
 
 from fastapi import FastAPI, HTTPException, File, UploadFile, Request, Depends
@@ -26,7 +26,8 @@ from emuses.foundation_fastapi_service.models import (
     JobSubmissionRequest,
     JobStatusResponse,
     ErrorResponse,
-    FileUploadModel
+    FileUploadModel,
+    FileUploadResponse
 )
 
 
@@ -64,7 +65,7 @@ class RequestSizeLimiterMiddleware:
                             content={
                                 "error_code": "PAYLOAD_TOO_LARGE",
                                 "message": f"Request payload exceeds maximum size of {self.max_size} bytes",
-                                "timestamp": datetime.utcnow().isoformat() + "Z"
+                                "timestamp": datetime.now(timezone.utc).isoformat() + "Z"
                             }
                         )
                         await response(scope, receive, send)
@@ -133,7 +134,7 @@ async def value_error_handler(request: Request, exc: ValueError):
         content={
             "error_code": "VALIDATION_ERROR",
             "message": str(exc),
-            "timestamp": datetime.utcnow().isoformat() + "Z"
+            "timestamp": datetime.now(timezone.utc).isoformat() + "Z"
         }
     )
 
@@ -146,7 +147,7 @@ async def file_not_found_handler(request: Request, exc: FileNotFoundError):
         content={
             "error_code": "ARTIFACT_NOT_FOUND",
             "message": str(exc),
-            "timestamp": datetime.utcnow().isoformat() + "Z"
+            "timestamp": datetime.now(timezone.utc).isoformat() + "Z"
         }
     )
 
@@ -160,7 +161,7 @@ async def general_exception_handler(request: Request, exc: Exception):
         content={
             "error_code": "SYSTEM_ERROR",
             "message": "An internal server error occurred",
-            "timestamp": datetime.utcnow().isoformat() + "Z"
+            "timestamp": datetime.now(timezone.utc).isoformat() + "Z"
         }
     )
 
@@ -303,9 +304,16 @@ async def submit_full_pipeline_job(
             description=job_request.description
         )
         
+        # Wrap config in the expected structure for pipeline runner
+        pipeline_context = {
+            'config': config,
+            'input_dataset': config.get('input_file'),
+            'scores_dataset': config.get('scores_file')
+        }
+        
         # Submit for background execution
         asyncio.create_task(
-            get_pipeline_runner().execute_pipeline(job_id, config)
+            get_pipeline_runner().execute_pipeline(job_id, pipeline_context)
         )
         
         # Return initial status
@@ -318,7 +326,7 @@ async def submit_full_pipeline_job(
             detail={
                 "error_code": "VALIDATION_ERROR",
                 "message": str(e),
-                "timestamp": datetime.utcnow().isoformat() + "Z"
+                "timestamp": datetime.now(timezone.utc).isoformat() + "Z"
             }
         )
 
@@ -390,9 +398,16 @@ async def submit_stage_specific_job(
             description=job_request.description
         )
         
+        # Wrap config in the expected structure for pipeline runner
+        pipeline_context = {
+            'config': config,
+            'input_dataset': config.get('input_file'),
+            'scores_dataset': config.get('scores_file')
+        }
+        
         # Submit for background execution
         asyncio.create_task(
-            get_pipeline_runner().execute_pipeline(job_id, config)
+            get_pipeline_runner().execute_pipeline(job_id, pipeline_context)
         )
         
         # Return initial status
@@ -450,7 +465,7 @@ async def get_job_status(request: Request, job_id: str) -> JobStatusResponse:
                 detail={
                     "error_code": "JOB_NOT_FOUND",
                     "message": str(e),
-                    "timestamp": datetime.utcnow().isoformat() + "Z"
+                    "timestamp": datetime.now(timezone.utc).isoformat() + "Z"
                 }
             )
         else:
@@ -615,7 +630,7 @@ async def list_jobs(
             detail={
                 "error_code": "VALIDATION_ERROR",
                 "message": f"Invalid status filter: {status}. Valid statuses: {valid_statuses}",
-                "timestamp": datetime.utcnow().isoformat() + "Z"
+                "timestamp": datetime.now(timezone.utc).isoformat() + "Z"
             }
         )
     
@@ -674,7 +689,7 @@ async def list_job_artifacts(request: Request, job_id: str) -> Dict[str, List[Di
                 artifacts.append({
                     "filename": file_path.name,
                     "size": stat.st_size,
-                    "modified_at": datetime.fromtimestamp(stat.st_mtime).isoformat() + "Z",
+                    "modified_at": datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc).isoformat() + "Z",
                     "content_type": mimetypes.guess_type(str(file_path))[0] or "application/octet-stream"
                 })
                 
@@ -784,8 +799,264 @@ async def download_job_artifact(request: Request, job_id: str, filename: str) ->
             detail={
                 "error_code": "ARTIFACT_NOT_FOUND",
                 "message": str(e),
-                "timestamp": datetime.utcnow().isoformat() + "Z"
+                "timestamp": datetime.now(timezone.utc).isoformat() + "Z"
             }
+        )
+
+
+# File Upload Endpoints - Task 9
+
+def create_upload_directory() -> Path:
+    """Create and return the upload directory path."""
+    upload_dir = Path("/tmp/emuses_uploads")
+    upload_dir.mkdir(parents=True, exist_ok=True)
+    return upload_dir
+
+
+def validate_csv_file(file: UploadFile) -> None:
+    """Validate that uploaded file is a valid CSV.
+    
+    Parameters
+    ----------
+    file : UploadFile
+        The uploaded file to validate
+        
+    Raises
+    ------
+    HTTPException
+        If file is not a valid CSV
+    """
+    if not file.content_type or "text/csv" not in file.content_type.lower():
+        if not file.filename or not file.filename.lower().endswith('.csv'):
+            raise HTTPException(
+                status_code=400,
+                detail="Only CSV files are allowed"
+            )
+
+
+def generate_upload_file_path(upload_dir: Path, filename: str, file_type: str) -> Path:
+    """Generate a unique file path for uploaded file.
+    
+    Parameters
+    ----------
+    upload_dir : Path
+        Base upload directory
+    filename : str
+        Original filename
+    file_type : str
+        Type of file (features, scores, labels)
+        
+    Returns
+    -------
+    Path
+        Unique file path for the upload
+    """
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S_%f")  # Include microseconds
+    file_id = f"{timestamp}_{file_type}"
+    safe_filename = secure_filename(filename)
+    
+    # Create job-specific subdirectory
+    job_dir = upload_dir / file_id
+    job_dir.mkdir(parents=True, exist_ok=True)
+    
+    return job_dir / safe_filename
+
+
+@app.post("/api/v1/upload/features", status_code=201)
+@conditional_rate_limit("10/minute")  # Rate limit: 10 uploads per minute per IP
+async def upload_features_file(
+    file: UploadFile = File(..., description="Features CSV file to upload"),
+    request: Request = None
+) -> FileUploadResponse:
+    """Upload features file for pipeline processing.
+    
+    Task 9.1: Features file upload endpoint with CSV validation and temporary storage
+    
+    Parameters
+    ----------
+    file : UploadFile
+        The features CSV file to upload
+    request : Request
+        FastAPI request object for rate limiting
+        
+    Returns
+    -------
+    FileUploadResponse
+        Information about the uploaded file
+    """
+    
+    try:
+        # Validate file
+        validate_csv_file(file)
+        
+        # Check file size (up to 1GB for neuroimaging data)
+        if file.size and file.size > 1024 * 1024 * 1024:  # 1GB
+            raise HTTPException(
+                status_code=413,
+                detail="File too large. Maximum size is 1GB."
+            )
+        
+        # Create upload directory and generate file path
+        upload_dir = create_upload_directory()
+        file_path = generate_upload_file_path(upload_dir, file.filename, "features")
+        
+        # Save uploaded file
+        content = await file.read()
+        with open(file_path, "wb") as f:
+            f.write(content)
+        
+        # Generate response
+        file_id = file_path.parent.name
+        upload_time = datetime.now(timezone.utc).isoformat() + "Z"
+        
+        return FileUploadResponse(
+            file_id=file_id,
+            filename=file.filename,
+            file_path=str(file_path),
+            content_type=file.content_type or "text/csv",
+            size=len(content),
+            upload_time=upload_time
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error uploading features file: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to upload features file: {str(e)}"
+        )
+
+
+@app.post("/api/v1/upload/scores", status_code=201)
+@conditional_rate_limit("10/minute")  # Rate limit: 10 uploads per minute per IP
+async def upload_scores_file(
+    file: UploadFile = File(..., description="Scores CSV file to upload"),
+    request: Request = None
+) -> FileUploadResponse:
+    """Upload scores file for pipeline processing.
+    
+    Task 9.2: Scores file upload endpoint with proper content-type validation
+    
+    Parameters
+    ----------
+    file : UploadFile
+        The scores CSV file to upload
+    request : Request
+        FastAPI request object for rate limiting
+        
+    Returns
+    -------
+    FileUploadResponse
+        Information about the uploaded file
+    """
+    
+    try:
+        # Validate file
+        validate_csv_file(file)
+        
+        # Check file size (up to 1GB for neuroimaging data)
+        if file.size and file.size > 1024 * 1024 * 1024:  # 1GB
+            raise HTTPException(
+                status_code=413,
+                detail="File too large. Maximum size is 1GB."
+            )
+        
+        # Create upload directory and generate file path
+        upload_dir = create_upload_directory()
+        file_path = generate_upload_file_path(upload_dir, file.filename, "scores")
+        
+        # Save uploaded file
+        content = await file.read()
+        with open(file_path, "wb") as f:
+            f.write(content)
+        
+        # Generate response
+        file_id = file_path.parent.name
+        upload_time = datetime.utcnow().isoformat() + "Z"
+        
+        return FileUploadResponse(
+            file_id=file_id,
+            filename=file.filename,
+            file_path=str(file_path),
+            content_type=file.content_type or "text/csv",
+            size=len(content),
+            upload_time=upload_time
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error uploading scores file: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to upload scores file: {str(e)}"
+        )
+
+
+@app.post("/api/v1/upload/labels", status_code=201)
+@conditional_rate_limit("10/minute")  # Rate limit: 10 uploads per minute per IP
+async def upload_labels_file(
+    file: UploadFile = File(..., description="Labels CSV file to upload (optional)"),
+    request: Request = None
+) -> FileUploadResponse:
+    """Upload labels file for supervised learning.
+    
+    Task 9.3: Optional labels file upload endpoint for supervised learning
+    
+    Parameters
+    ----------
+    file : UploadFile
+        The labels CSV file to upload
+    request : Request
+        FastAPI request object for rate limiting
+        
+    Returns
+    -------
+    FileUploadResponse
+        Information about the uploaded file
+    """
+    
+    try:
+        # Validate file
+        validate_csv_file(file)
+        
+        # Check file size (up to 1GB for neuroimaging data)
+        if file.size and file.size > 1024 * 1024 * 1024:  # 1GB
+            raise HTTPException(
+                status_code=413,
+                detail="File too large. Maximum size is 1GB."
+            )
+        
+        # Create upload directory and generate file path
+        upload_dir = create_upload_directory()
+        file_path = generate_upload_file_path(upload_dir, file.filename, "labels")
+        
+        # Save uploaded file
+        content = await file.read()
+        with open(file_path, "wb") as f:
+            f.write(content)
+        
+        # Generate response
+        file_id = file_path.parent.name
+        upload_time = datetime.utcnow().isoformat() + "Z"
+        
+        return FileUploadResponse(
+            file_id=file_id,
+            filename=file.filename,
+            file_path=str(file_path),
+            content_type=file.content_type or "text/csv",
+            size=len(content),
+            upload_time=upload_time
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error uploading labels file: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to upload labels file: {str(e)}"
         )
 
 
@@ -801,7 +1072,7 @@ async def health_check() -> Dict[str, str]:
     """
     return {
         "status": "healthy",
-        "timestamp": datetime.utcnow().isoformat() + "Z",
+        "timestamp": datetime.now(timezone.utc).isoformat() + "Z",
         "version": "1.0.0"
     }
 

@@ -55,6 +55,13 @@
   - [x] 8.4 Computational result equivalence (API vs CLI produces identical outputs) - **COMPLETED**: CLI vs API comparison test validates identical behavior and artifacts
   - [x] 8.5 API/CLI unification via EMUSESPipeline - **COMPLETED**: API uses EMUSESPipeline class for consistent context setup and data handling like CLI
 
+- [x] Task 9 ║ tests/foundation-fastapi-service/test_file_upload_endpoints.py ║ File upload endpoints for real-world API usage ║ M - **COMPLETED ✅**
+  - [x] 9.1 Features file upload endpoint with CSV validation and temporary storage
+  - [x] 9.2 Scores file upload endpoint with proper content-type validation  
+  - [x] 9.3 Optional labels file upload endpoint for supervised learning
+  - [x] 9.4 Integration with job submission endpoints to use uploaded files
+  - [x] 9.5 Temporary file cleanup and job-scoped file management
+
 <details><summary>Review-Resolution Log</summary>
 
 ### Issues Addressed
@@ -175,6 +182,15 @@ The Foundation FastAPI Service follows a test-driven approach to wrap existing E
 - **Issue**: Missing value handling, data type coercion, and index alignment failures
 - **Context**: Real HCP dataset exposed validation gaps not caught by synthetic test data
 - **Required**: Robust data validation pipeline with informative error messages
+
+**File Upload Endpoints Missing**
+✅ COMPLETE: Task 9 - File upload endpoints implemented with full testing
+- **Issue**: API expects files to already exist on server filesystem, blocking real-world usage  
+- **Impact**: Cannot test with real HCP data, requires manual file placement on server
+- **Root Cause**: Task 1.4 implemented `FileUploadModel` (Pydantic models) but not actual upload endpoints
+- **Required**: `POST /api/v1/upload/{features|scores|labels}` endpoints for complete Phase 0
+- **Status**: Sub-plan 0e created to address this critical gap
+- **LAD Compliance**: Minimal addition to existing foundation, maintains backward compatibility
 
 **Optuna Trial Optimization for Development**
 ✅ COMPLETED: Reduced trial counts for faster testing cycles
