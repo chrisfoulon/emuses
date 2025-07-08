@@ -221,18 +221,19 @@ class TestPythonImports:
         assert len(found_indicators) >= 2, f"Should find context pattern indicators, found: {found_indicators}"
 
     def test_pipeline_context_pattern_runtime(self):
-        """Test that pipeline preserves context dictionary passing pattern (skip if deps unavailable)."""
+        """Test that pipeline preserves context dictionary passing pattern using real test data."""
         try:
             from emuses.pipelines.emuses_pipeline import EMUSESPipeline
 
-            # Create a minimal args object for pipeline
+            # Create a minimal args object for pipeline with real test data
             class MinimalArgs:
                 def __init__(self):
                     self.output_folder = Path("test_output")
-                    self.input_dataset = "test_input"
-                    self.scores = None
+                    self.input_dataset = "test_data/features_small.csv"
+                    self.scores = "test_data/scores_small.csv"
                     self.prefix = "test"
                     self.verbose = False
+                    self.input_header = False  # CSV has no header row
 
             args = MinimalArgs()
             pipeline = EMUSESPipeline(args)
