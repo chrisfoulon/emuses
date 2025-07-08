@@ -65,7 +65,7 @@ def test_load_umap_model_existing_file(tmp_path):
     filename = tmp_path / "umap_model_joblib1.3.2.joblib"  # adjust joblib version if needed
     joblib.dump(dummy_model, filename)
 
-    loaded_model, filepath = load_umap_model(tmp_path, joblib_version="1.3.2")
+    loaded_model, filepath = load_umap_model(tmp_path, joblib_version_override="1.3.2")
     assert loaded_model is not None
     assert loaded_model["umap"] == "fake_model"
     assert filepath == filename
@@ -80,7 +80,7 @@ def test_load_umap_model_failing_file(tmp_path):
     local_joblib_version = joblib.__version__
 
     # Call the function to load the UMAP model
-    loaded_model, filepath = load_umap_model(tmp_path, joblib_version="1.3.2")
+    loaded_model, filepath = load_umap_model(tmp_path, joblib_version_override="1.3.2")
 
     # Check that loading failed and the function returns None
     assert loaded_model is None, "The loaded model should be None when the file cannot be loaded."

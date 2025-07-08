@@ -5,10 +5,11 @@ import atexit
 from dataclasses import dataclass, field
 import logging
 from logging.handlers import QueueHandler, QueueListener
+import multiprocessing as mp
 from pathlib import Path
 from datetime import datetime
 import sys
-import sys, multiprocessing as mp
+from typing import Union
 
 from bcblib.tools.general_utils import save_json
 import optuna
@@ -20,7 +21,7 @@ LOG_QUEUE = mp.Queue(-1)
 @dataclass
 class PipelineConfig:
     # Direct parameter fields (replaces args.*)
-    output_folder: str
+    output_folder: Union[str, Path]  # Will be converted to Path in __post_init__
     sigma: float = None
     fwhm: float = None
     # Other parameters with defaults as needed
@@ -49,11 +50,18 @@ class PipelineConfig:
         Flexible constructor that handles:
         1. Argparse.Namespace objects (flattens them)
         2. Direct parameters as kwargs
+        3. Other objects with attributes (flattens them)
         """
-        if len(args) == 1 and isinstance(args[0], argparse.Namespace):
-            # Convert namespace to kwargs and merge with any existing kwargs
-            namespace_dict = vars(args[0])
-            kwargs.update(namespace_dict)
+        if len(args) == 1:
+            if isinstance(args[0], argparse.Namespace):
+                # Convert namespace to kwargs and merge with any existing kwargs
+                namespace_dict = vars(args[0])
+                kwargs.update(namespace_dict)
+            else:
+                # Handle any object with attributes (like MinimalArgs)
+                if hasattr(args[0], '__dict__'):
+                    obj_dict = vars(args[0])
+                    kwargs.update(obj_dict)
 
         # Set all the attributes directly (respecting dataclass defaults)
         for key, value in kwargs.items():

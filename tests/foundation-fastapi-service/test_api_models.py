@@ -91,7 +91,8 @@ class TestPipelineConfigModels:
         original_config = PipelineConfig(**filtered_config)
         
         # Verify that the key field is properly mapped
-        assert original_config.output_folder == "results"
+        # Note: PipelineConfig converts output_folder to Path object in __post_init__
+        assert str(original_config.output_folder).endswith("results")
     
     def test_pipeline_config_request_stage_toggles(self):
         """Test that stage enable/disable flags work correctly."""

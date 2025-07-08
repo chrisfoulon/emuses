@@ -38,16 +38,22 @@ The original plan has been split into focused sub-plans:
 **Focus**: Comprehensive testing with complete system visibility  
 **Size**: 3 tasks, 12 sub-tasks ✅
 
+### 📁 Sub-Plan 0e: Upload Endpoints (Task 9)
+**File**: `plan_0e_upload.md`  
+**Context**: Extends `context_0c_interface.md`  
+**Focus**: File upload endpoints for real-world API usage  
+**Size**: 1 task, 5 sub-tasks ⚠️ **REQUIRED FOR PHASE 0 COMPLETION**
+
 ## Implementation Instructions
 
 **To begin implementation**, use the LAD 04 prompt with SUB_PLAN_ID parameter:
 
 ```
 Begin the next unchecked task now.
-SUB_PLAN_ID: 0a
+SUB_PLAN_ID: 0e
 ```
 
-**Execution Order**: 0a → 0b → 0c → 0d (dependency-ordered)
+**Execution Order**: 0a → 0b → 0c → 0d → **0e** (dependency-ordered)
 
 **Context Evolution**: Each sub-plan updates context files for subsequent sub-plans.
 

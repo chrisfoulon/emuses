@@ -1,0 +1,30 @@
+{
+  "job_id": "a64bb2a4-80c6-4e2b-9036-22de002f484b",
+  "status": "RUNNING",
+  "updated_at": "2025-07-07T19:50:33.787123",
+  "progress": 0.0,
+  "message": "Starting pipeline execution",
+  "job_name": "HCP Real-World API Test",
+  "description": "Testing HCP dataset through real API endpoints",
+  "config": {
+    "input_file": "/gamma/GIN Dropbox/Chris Foulon/EMUSE/HCP_psy/selected_columns_data.csv",
+    "scores_file": "/gamma/GIN Dropbox/Chris Foulon/EMUSE/HCP_psy/fluid_int_adj.csv",
+    "output_folder": "/gamma/GIN Dropbox/Chris Foulon/EMUSE/HCP_psy/is_it_running2_api",
+    "columns_are_features": true,
+    "input_header": 0,
+    "input_index_column": 0,
+    "input_normalization": "robust",
+    "scores_header": 0,
+    "scores_index_column": null,
+    "interactive_plot": true,
+    "umap_trials": 1,
+    "hdbscan_trials": 1,
+    "optim_dict": "optim_dict_hcp",
+    "hdbscan_jobs": 16,
+    "optuna_trials": 10,
+    "prediction_optim_dict": "optim_dict_predict",
+    "prefix": "HCP_API_Real_Test"
+  },
+  "created_at": "2025-07-07T17:50:31.754525Z",
+  "started_at": "2025-07-07T19:50:33.787135"
+}

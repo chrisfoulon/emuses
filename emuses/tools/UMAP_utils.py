@@ -1050,7 +1050,7 @@ def is_umap_file(umap_path):
     return str(umap_path).endswith(".joblib")
 
 
-def load_umap_model(base_path, prefix="", model_name="umap_model"):
+def load_umap_model(base_path, prefix="", model_name="umap_model", joblib_version_override=None):
     """
     Load a UMAP model using the enhanced model I/O system.
 
@@ -1062,6 +1062,8 @@ def load_umap_model(base_path, prefix="", model_name="umap_model"):
         Prefix for the UMAP model filename.
     model_name : str
         Base name of the model.
+    joblib_version_override : str, optional
+        Specific joblib version to use in filename. If None, uses current joblib version.
 
     Returns:
     --------
@@ -1105,13 +1107,12 @@ def load_umap_model(base_path, prefix="", model_name="umap_model"):
 
     # Fallback to legacy loading method
     current_joblib_version = joblib.__version__
-    if not joblib_version:
-        joblib_version = current_joblib_version
+    effective_joblib_version = joblib_version_override if joblib_version_override else current_joblib_version
 
     if prefix:
-        filename = f"{prefix}_{model_name}_joblib{joblib_version}.joblib"
+        filename = f"{prefix}_{model_name}_joblib{effective_joblib_version}.joblib"
     else:
-        filename = f"{model_name}_joblib{joblib_version}.joblib"
+        filename = f"{model_name}_joblib{effective_joblib_version}.joblib"
 
     filepath = base_path / filename
 
