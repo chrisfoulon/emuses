@@ -172,6 +172,7 @@ Thumbs.db
 
 # Project-specific
 output/
+test_output/
 data/models/
 data/results/
 data/temp/
