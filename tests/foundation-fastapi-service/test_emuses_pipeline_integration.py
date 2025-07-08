@@ -70,7 +70,7 @@ class TestEMUSESPipelineIntegration:
         
         # Verify args object is properly constructed
         assert isinstance(args, argparse.Namespace)
-        assert args.output_folder == sample_context['config']['output_folder']
+        assert str(args.output_folder) == sample_context['config']['output_folder']
         assert args.umap_trials == 15
         assert args.hdbscan_trials == 8
         assert args.optuna_trials == 20
