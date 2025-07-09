@@ -24,7 +24,9 @@ from emuses.foundation_fastapi_service.job_manager import JobManager
 class ResourceMonitor:
     """Monitor resource usage for stage execution"""
 
-    def __init__(self, memory_limit_ratio: float = 0.75, cpu_percent_limit: float = 90.0):
+    def __init__(
+        self, memory_limit_ratio: float = 0.75, cpu_percent_limit: float = 90.0
+    ):
         """Initialize resource monitor with system-proportional limits.
 
         Args:
@@ -73,8 +75,13 @@ class ResourceMonitor:
 class ProgressTracker:
     """Rate-limited progress tracking for stage execution"""
 
-    def __init__(self, job_manager: JobManager, job_id: str, stage_name: str,
-                 max_update_rate: float = 1.0):
+    def __init__(
+        self,
+        job_manager: JobManager,
+        job_id: str,
+        stage_name: str,
+        max_update_rate: float = 1.0,
+    ):
         self.job_manager = job_manager
         self.job_id = job_id
         self.stage_name = stage_name
@@ -99,7 +106,7 @@ class ProgressTracker:
             "RUNNING",
             progress=progress,
             current_stage=self.stage_name,
-            message=message
+            message=message,
         )
 
 
@@ -116,7 +123,9 @@ class BaseStageRunner:
         if missing_keys:
             raise ValueError(f"Missing required context keys: {missing_keys}")
 
-    def _validate_breaking_parameters(self, config: Any, breaking_checks: Dict[str, Callable]) -> None:
+    def _validate_breaking_parameters(
+        self, config: Any, breaking_checks: Dict[str, Callable]
+    ) -> None:
         """Validate stage parameters against breaking conditions only.
 
         Args:
@@ -128,13 +137,19 @@ class BaseStageRunner:
             if hasattr(config, param_name):
                 value = getattr(config, param_name)
                 if not check_func(value):
-                    raise ValueError(f"Parameter {param_name}={value} would cause breaking behavior")
+                    raise ValueError(
+                        f"Parameter {param_name}={value} would cause breaking behavior"
+                    )
 
-    async def _execute_with_monitoring(self, stage_instance, context: Dict[str, Any],
-                                       progress_tracker: ProgressTracker,
-                                       timeout_seconds: int = 1800,
-                                       memory_limit_ratio: float = 0.75,
-                                       cpu_percent_limit: float = 90.0) -> Dict[str, Any]:
+    async def _execute_with_monitoring(
+        self,
+        stage_instance,
+        context: Dict[str, Any],
+        progress_tracker: ProgressTracker,
+        timeout_seconds: int = 1800,
+        memory_limit_ratio: float = 0.75,
+        cpu_percent_limit: float = 90.0,
+    ) -> Dict[str, Any]:
         """Execute stage with resource monitoring and timeout"""
         resource_monitor = ResourceMonitor(memory_limit_ratio, cpu_percent_limit)
         resource_monitor.start_monitoring()
@@ -157,18 +172,19 @@ class BaseStageRunner:
             # Execute stage in thread pool
             with ThreadPoolExecutor(max_workers=1) as executor:
                 future = loop.run_in_executor(
-                    executor,
-                    stage_instance.run,
-                    context_copy,
-                    progress_queue
+                    executor, stage_instance.run, context_copy, progress_queue
                 )
 
                 # Wait for completion with timeout
                 try:
-                    result_context = await asyncio.wait_for(future, timeout=timeout_seconds)
+                    result_context = await asyncio.wait_for(
+                        future, timeout=timeout_seconds
+                    )
                 except asyncio.TimeoutError:
                     progress_task.cancel()
-                    raise TimeoutError(f"Stage execution exceeded {timeout_seconds} seconds")
+                    raise TimeoutError(
+                        f"Stage execution exceeded {timeout_seconds} seconds"
+                    )
 
             # Clean up progress monitoring
             progress_task.cancel()
@@ -180,14 +196,17 @@ class BaseStageRunner:
             if resource_monitor.exceeded_limits:
                 raise RuntimeError("Resource limits exceeded during stage execution")
 
-    async def _monitor_progress(self, progress_queue: asyncio.Queue,
-                                progress_tracker: ProgressTracker):
+    async def _monitor_progress(
+        self, progress_queue: asyncio.Queue, progress_tracker: ProgressTracker
+    ):
         """Monitor progress updates from stage execution"""
         try:
             while True:
                 try:
                     # Wait for progress update with timeout
-                    progress_data = await asyncio.wait_for(progress_queue.get(), timeout=1.0)
+                    progress_data = await asyncio.wait_for(
+                        progress_queue.get(), timeout=1.0
+                    )
                     if progress_data is None:  # Sentinel to stop monitoring
                         break
 
@@ -207,19 +226,19 @@ class BaseStageRunner:
         try:
             # Convert to string and check for obvious traversal attempts
             path_str = str(path)
-            if '..' in path_str:
+            if ".." in path_str:
                 return False
 
             # Resolve the path and check it doesn't escape expected boundaries
             resolved = path.resolve()
             # Check if resolved path contains parent directory traversals
             resolved_str = str(resolved)
-            if '..' in resolved_str:
+            if ".." in resolved_str:
                 return False
 
             # Additional check: path should not resolve to critical system directories
             # Allow temporary directories and user directories
-            system_dirs = ['/etc', '/usr', '/bin', '/sbin', '/root']
+            system_dirs = ["/etc", "/usr", "/bin", "/sbin", "/root"]
             if any(resolved_str.startswith(sys_dir) for sys_dir in system_dirs):
                 return False
 
@@ -246,17 +265,19 @@ class UMAPStageRunner(BaseStageRunner):
 
         # Validate only breaking parameters (not arbitrary ranges)
         breaking_checks = {
-            "n_components": lambda x: isinstance(x, int) and x > 0,  # Must be positive integer
-            "n_neighbors": lambda x: isinstance(x, int) and x > 0,   # Must be positive integer
-            "min_dist": lambda x: isinstance(x, (int, float)) and x >= 0,  # Must be non-negative
-            "min_cluster_size": lambda x: isinstance(x, int) and x > 1,  # Must be > 1 for clustering
+            "n_components": lambda x: isinstance(x, int)
+            and x > 0,  # Must be positive integer
+            "n_neighbors": lambda x: isinstance(x, int)
+            and x > 0,  # Must be positive integer
+            "min_dist": lambda x: isinstance(x, (int, float))
+            and x >= 0,  # Must be non-negative
+            "min_cluster_size": lambda x: isinstance(x, int)
+            and x > 1,  # Must be > 1 for clustering
         }
         self._validate_breaking_parameters(config, breaking_checks)
 
         # Create progress tracker
-        progress_tracker = ProgressTracker(
-            self.job_manager, job_id, "umap_stage"
-        )
+        progress_tracker = ProgressTracker(self.job_manager, job_id, "umap_stage")
 
         # Update initial status
         progress_tracker.update_progress(0.0, "Initializing UMAP stage")
@@ -281,9 +302,10 @@ class UMAPStageRunner(BaseStageRunner):
         except Exception as e:
             self.logger.error(f"UMAP stage failed for job {job_id}: {str(e)}")
             self.job_manager.update_job_status(
-                job_id, "FAILED",
+                job_id,
+                "FAILED",
                 current_stage="umap_stage",
-                message=f"UMAP stage error: {str(e)}"
+                message=f"UMAP stage error: {str(e)}",
             )
             raise
 
@@ -298,7 +320,7 @@ class UMAPStageRunner(BaseStageRunner):
             "best_umap_model.joblib",
             "embeddings.npy",
             "hdbscan_model.joblib",
-            "cluster_labels.npy"
+            "cluster_labels.npy",
         ]
 
         config = context.get("config")
@@ -311,7 +333,9 @@ class UMAPStageRunner(BaseStageRunner):
                 if source_file.exists():
                     dest_file = umap_output_dir / artifact
                     # Secure copy with path validation
-                    if self._is_safe_path(source_file) and self._is_safe_path(dest_file):
+                    if self._is_safe_path(source_file) and self._is_safe_path(
+                        dest_file
+                    ):
                         dest_file.write_bytes(source_file.read_bytes())
 
 
@@ -333,16 +357,17 @@ class HeatmapStageRunner(BaseStageRunner):
 
         # Validate only breaking parameters (not arbitrary ranges)
         breaking_checks = {
-            "cv_folds": lambda x: isinstance(x, int) and x >= 2,  # Must be at least 2 for CV
-            "test_size": lambda x: isinstance(x, (int, float)) and 0 < x < 1,  # Must be valid proportion
-            "max_iter": lambda x: isinstance(x, int) and x > 0,  # Must be positive integer
+            "cv_folds": lambda x: isinstance(x, int)
+            and x >= 2,  # Must be at least 2 for CV
+            "test_size": lambda x: isinstance(x, (int, float))
+            and 0 < x < 1,  # Must be valid proportion
+            "max_iter": lambda x: isinstance(x, int)
+            and x > 0,  # Must be positive integer
         }
         self._validate_breaking_parameters(config, breaking_checks)
 
         # Create progress tracker
-        progress_tracker = ProgressTracker(
-            self.job_manager, job_id, "heatmap_stage"
-        )
+        progress_tracker = ProgressTracker(self.job_manager, job_id, "heatmap_stage")
 
         # Update initial status
         progress_tracker.update_progress(0.0, "Initializing heatmap stage")
@@ -357,7 +382,9 @@ class HeatmapStageRunner(BaseStageRunner):
             )
 
             # Update completion status
-            progress_tracker.update_progress(1.0, "Heatmap stage completed successfully")
+            progress_tracker.update_progress(
+                1.0, "Heatmap stage completed successfully"
+            )
 
             # Organize artifacts
             await self._organize_heatmap_artifacts(job_id, result_context)
@@ -367,9 +394,10 @@ class HeatmapStageRunner(BaseStageRunner):
         except Exception as e:
             self.logger.error(f"Heatmap stage failed for job {job_id}: {str(e)}")
             self.job_manager.update_job_status(
-                job_id, "FAILED",
+                job_id,
+                "FAILED",
                 current_stage="heatmap_stage",
-                message=f"Heatmap stage error: {str(e)}"
+                message=f"Heatmap stage error: {str(e)}",
             )
             raise
 
@@ -386,9 +414,9 @@ class HeatmapStageRunner(BaseStageRunner):
             # Copy model files and performance reports
             for item in source_dir.rglob("*"):
                 if item.is_file() and (
-                    item.suffix in [".pkl", ".csv", ".json"] or
-                    "model" in item.name.lower() or
-                    "performance" in item.name.lower()
+                    item.suffix in [".pkl", ".csv", ".json"]
+                    or "model" in item.name.lower()
+                    or "performance" in item.name.lower()
                 ):
                     if self._is_safe_path(item):
                         # Maintain directory structure
@@ -415,9 +443,7 @@ class PredictionStageRunner(BaseStageRunner):
         config = context["config"]
 
         # Create progress tracker
-        progress_tracker = ProgressTracker(
-            self.job_manager, job_id, "prediction_stage"
-        )
+        progress_tracker = ProgressTracker(self.job_manager, job_id, "prediction_stage")
 
         # Update initial status
         progress_tracker.update_progress(0.0, "Initializing prediction stage")
@@ -432,7 +458,9 @@ class PredictionStageRunner(BaseStageRunner):
             )
 
             # Update completion status
-            progress_tracker.update_progress(1.0, "Prediction stage completed successfully")
+            progress_tracker.update_progress(
+                1.0, "Prediction stage completed successfully"
+            )
 
             # Organize artifacts
             await self._organize_prediction_artifacts(job_id, result_context)
@@ -442,13 +470,16 @@ class PredictionStageRunner(BaseStageRunner):
         except Exception as e:
             self.logger.error(f"Prediction stage failed for job {job_id}: {str(e)}")
             self.job_manager.update_job_status(
-                job_id, "FAILED",
+                job_id,
+                "FAILED",
                 current_stage="prediction_stage",
-                message=f"Prediction stage error: {str(e)}"
+                message=f"Prediction stage error: {str(e)}",
             )
             raise
 
-    async def _organize_prediction_artifacts(self, job_id: str, context: Dict[str, Any]):
+    async def _organize_prediction_artifacts(
+        self, job_id: str, context: Dict[str, Any]
+    ):
         """Organize prediction artifacts with secure file handling"""
         job_dir = self.job_manager.get_job_directory(job_id)
         prediction_output_dir = job_dir / "output" / "prediction"
@@ -462,7 +493,7 @@ class PredictionStageRunner(BaseStageRunner):
             prediction_files = [
                 "predictions.csv",
                 "evaluation_metrics.json",
-                "test_predictions.csv"
+                "test_predictions.csv",
             ]
 
             for filename in prediction_files:

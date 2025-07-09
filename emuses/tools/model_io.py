@@ -216,7 +216,7 @@ class ModelIOManager:
             logger.info(f"Successfully saved {model_type} model: {filepath}")
             if optuna_study:
                 logger.info(
-                    f"Optuna optimization: {optuna_study.n_trials} trials, best value: {optuna_study.best_value:.4f}"
+                    f"Optuna optimization: {len(optuna_study.trials)} trials, best value: {optuna_study.best_value:.4f}"
                 )
 
             return filepath

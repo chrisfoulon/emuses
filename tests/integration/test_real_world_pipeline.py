@@ -35,8 +35,8 @@ class RealWorldIntegrationTest:
     # Based on actual EMUSES production usage
     CLI_COMMAND_TEMPLATE = """
     python "{script_path}" full \
+      "{output_folder}" \
       "{features_train}" \
-      "{labels_train}" \
       --columns_are_features \
       --input_header 0 \
       --input_index_column 0 \
@@ -51,7 +51,6 @@ class RealWorldIntegrationTest:
       --hdbscan_jobs {hdbscan_jobs} \
       --optuna_trials {optuna_trials} \
       --prediction_optim_dict {prediction_optim_dict} \
-      --output_folder "{output_folder}" \
       --prefix "{prefix}"
     """
 

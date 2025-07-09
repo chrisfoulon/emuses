@@ -9,8 +9,11 @@ import numpy as np
 from pathlib import Path
 import subprocess
 import sys
+import pytest
 
-def create_test_data():
+
+@pytest.fixture
+def test_data():
     """Create synthetic test data that matches the expected format."""
     
     # Create temporary directory
@@ -24,7 +27,7 @@ def create_test_data():
     # Create features data
     features_data = np.random.randn(n_samples, n_features)
     features_df = pd.DataFrame(
-        features_data, 
+        features_data,
         columns=[f'feature_{i}' for i in range(n_features)]
     )
     features_df.index = [f'sample_{i}' for i in range(n_samples)]
@@ -48,7 +51,35 @@ def create_test_data():
     output_dir = temp_dir / 'output'
     output_dir.mkdir(exist_ok=True)
     
-    return temp_dir, features_file, scores_file, output_dir
+    yield temp_dir, features_file, scores_file, output_dir
+    
+    # Cleanup
+    import shutil
+    shutil.rmtree(temp_dir, ignore_errors=True)
+
+
+@pytest.fixture
+def features_file(test_data):
+    """Return features file path"""
+    return test_data[1]
+
+
+@pytest.fixture
+def scores_file(test_data):
+    """Return scores file path"""
+    return test_data[2]
+
+
+@pytest.fixture
+def output_dir(test_data):
+    """Return output directory path"""
+    return test_data[3]
+
+
+def create_test_data():
+    """Legacy function - use test_data fixture instead"""
+    pass
+
 
 def test_emuses_command(features_file, scores_file, output_dir):
     """Test the EMUSES command with synthetic data."""

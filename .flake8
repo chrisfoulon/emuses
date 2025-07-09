@@ -2,6 +2,9 @@
 # Maximum line length (increased from default 79 to 120)
 max-line-length = 120
 
+# Maximum cyclomatic complexity (LAD requirement)
+max-complexity = 10
+
 # Ignore common warnings that experienced developers often find too restrictive
 ignore = 
     # E203: whitespace before ':' (conflicts with black formatter)
@@ -20,7 +23,6 @@ ignore =
     W504
 
 # Additional configuration
-max-complexity = 15
 statistics = True
 count = True
 

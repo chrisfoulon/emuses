@@ -1,0 +1,23 @@
+{
+  "job_id": "3689995c-cbf6-4e8f-add4-dd1476adc2a1",
+  "status": "FAILED",
+  "updated_at": "2025-07-08T18:53:05.348065",
+  "progress": 0.0,
+  "message": "Pipeline execution error: cannot call `vectorize` on size 0 inputs unless `otypes` is set",
+  "job_name": "Sanitization Test",
+  "description": null,
+  "config": {
+    "input_file": "/tmp/test_stage_10b1psfd/input.csv",
+    "scores_file": "/tmp/test_stage_10b1psfd/scores.csv",
+    "output_folder": "/tmp/test_stage_output_mjnkxqdu/sanitization_test",
+    "malicious_param": "&lt;script&gt;alert(&#x27;xss&#x27;)&lt;/script&gt;",
+    "path_traversal": "etc/passwd",
+    "sql_injection": "&#x27;; DROP TABLE users; --",
+    "umap_stage_enabled": true,
+    "heatmap_stage_enabled": false,
+    "prediction_stage_enabled": false
+  },
+  "created_at": "2025-07-08T16:53:05.326738Z",
+  "started_at": "2025-07-08T18:53:05.327926",
+  "completed_at": "2025-07-08T18:53:05.348075"
+}

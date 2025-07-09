@@ -1,0 +1,11 @@
+{
+  "input_file": "/tmp/test_stage_twrvy91r/input.csv",
+  "scores_file": "/tmp/test_stage_twrvy91r/scores.csv",
+  "output_folder": "/tmp/test_stage_output_dagdu30t/sanitization_test",
+  "malicious_param": "<script>alert('xss')</script>",
+  "path_traversal": "../../../etc/passwd",
+  "sql_injection": "'; DROP TABLE users; --",
+  "umap_stage_enabled": true,
+  "heatmap_stage_enabled": false,
+  "prediction_stage_enabled": false
+}

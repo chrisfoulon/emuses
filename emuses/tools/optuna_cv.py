@@ -344,7 +344,7 @@ def analyze_cv_results(
             optuna_stats.append(
                 {
                     "fold": model["fold_index"],
-                    "n_trials": study_metadata.n_trials,
+                    "n_trials": len(study_metadata.trials),
                     "best_value": study_metadata.best_value,
                     "best_params": (
                         study_metadata.best_trial.params

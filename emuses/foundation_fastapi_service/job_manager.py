@@ -22,6 +22,7 @@ import platform
 # Platform-specific imports for file locking
 try:
     import fcntl
+
     PLATFORM_SUPPORTS_FCNTL = True
 except ImportError:
     # Windows doesn't have fcntl, we'll use alternative locking
@@ -57,7 +58,9 @@ def _unlock_file(file_handle):
 class JobManager:
     """Manages job lifecycle including creation, status tracking, and cleanup."""
 
-    def __init__(self, base_directory: Union[str, Path], cleanup_after_days: float = 7.0):
+    def __init__(
+        self, base_directory: Union[str, Path], cleanup_after_days: float = 7.0
+    ):
         """Initialize job manager with base directory and cleanup policy.
 
         Args:
@@ -129,11 +132,11 @@ class JobManager:
 
         # Check for path traversal attempts
         if (
-            ".." in job_id_str or
-            "/" in job_id_str or
-            "\\" in job_id_str or
-            ":" in job_id_str or
-            any(ord(c) < 32 for c in job_id_str)  # Control characters
+            ".." in job_id_str
+            or "/" in job_id_str
+            or "\\" in job_id_str
+            or ":" in job_id_str
+            or any(ord(c) < 32 for c in job_id_str)  # Control characters
         ):
             raise ValueError("Invalid job ID: contains illegal characters")
 
@@ -176,7 +179,7 @@ class JobManager:
         status: str,
         progress: Optional[float] = None,
         current_stage: Optional[str] = None,
-        message: Optional[str] = None
+        message: Optional[str] = None,
     ) -> None:
         """Update job status with concurrency protection.
 
@@ -207,11 +210,13 @@ class JobManager:
                     metadata = json.load(f)
 
             # Update status information
-            metadata.update({
-                "job_id": job_id_str,
-                "status": status,
-                "updated_at": datetime.now().isoformat()
-            })
+            metadata.update(
+                {
+                    "job_id": job_id_str,
+                    "status": status,
+                    "updated_at": datetime.now().isoformat(),
+                }
+            )
 
             if progress is not None:
                 metadata["progress"] = progress
@@ -260,7 +265,7 @@ class JobManager:
             return {
                 "job_id": job_id_str,
                 "status": "UNKNOWN",
-                "created_at": datetime.now().isoformat()
+                "created_at": datetime.now().isoformat(),
             }
 
         with open(metadata_file, "r") as f:
@@ -297,7 +302,7 @@ class JobManager:
         """
         if isinstance(value, str):
             # Remove null bytes and control characters
-            value = re.sub(r'[\x00-\x1f\x7f-\x9f]', '', value)
+            value = re.sub(r"[\x00-\x1f\x7f-\x9f]", "", value)
 
             # HTML escape to prevent XSS
             value = html.escape(value)
@@ -313,7 +318,9 @@ class JobManager:
         else:
             return value
 
-    def update_job_metadata(self, job_id: Union[str, UUID], metadata: Dict[str, Any]) -> None:
+    def update_job_metadata(
+        self, job_id: Union[str, UUID], metadata: Dict[str, Any]
+    ) -> None:
         """Update job metadata with sanitization.
 
         Args:
@@ -406,13 +413,14 @@ class JobManager:
 
                 # Check if job is completed and old enough
                 if (
-                    metadata.get("status") in ["COMPLETED", "FAILED", "CANCELLED"] and
-                    "completed_at" in metadata
+                    metadata.get("status") in ["COMPLETED", "FAILED", "CANCELLED"]
+                    and "completed_at" in metadata
                 ):
                     completed_at = datetime.fromisoformat(metadata["completed_at"])
                     if completed_at < cutoff_time:
                         # Remove job directory
                         import shutil
+
                         shutil.rmtree(job_dir)
                         cleaned_jobs.append(job_id)
 
@@ -445,8 +453,12 @@ class JobManager:
         job_id_str = str(job_id)
         return self.jobs_directory / job_id_str
 
-    def create_job(self, config: Dict[str, Any], job_name: Optional[str] = None,
-                   description: Optional[str] = None) -> UUID:
+    def create_job(
+        self,
+        config: Dict[str, Any],
+        job_name: Optional[str] = None,
+        description: Optional[str] = None,
+    ) -> UUID:
         """Create a new job with the given configuration.
 
         Args:
@@ -462,38 +474,38 @@ class JobManager:
         """
         # Generate job ID
         job_id = self.generate_job_id()
-        
+
         # Create job directory
         job_dir = self.create_job_directory(job_id)
-        
+
         # Create subdirectories
         (job_dir / "input").mkdir(exist_ok=True)
         (job_dir / "output").mkdir(exist_ok=True)
         (job_dir / "logs").mkdir(exist_ok=True)
-        
+
         # Save configuration
         config_file = job_dir / "config.json"
-        with open(config_file, 'w') as f:
+        with open(config_file, "w") as f:
             json.dump(config, f, indent=2)
-        
+
         # Initialize job status
         self.update_job_status(
             job_id=job_id,
             status="SUBMITTED",
             message="Job submitted for processing",
             current_stage=None,
-            progress=0.0
+            progress=0.0,
         )
-        
+
         # Save job metadata
         metadata = {
             "job_name": job_name,
             "description": description,
             "config": config,
-            "created_at": datetime.utcnow().isoformat() + "Z"
+            "created_at": datetime.utcnow().isoformat() + "Z",
         }
         self.update_job_metadata(job_id, metadata)
-        
+
         return job_id
 
     def _count_enabled_stages(self, config: Dict[str, Any]) -> int:
@@ -528,20 +540,22 @@ class JobManager:
         """
         if not self.job_exists(job_id):
             raise ValueError(f"Job {job_id} not found")
-        
+
         job_dir = self.get_job_directory(job_id)
         log_file = job_dir / "logs" / "execution.log"
-        
+
         if not log_file.exists():
             return []
-        
+
         try:
-            with open(log_file, 'r') as f:
+            with open(log_file, "r") as f:
                 return [line.strip() for line in f.readlines()]
         except Exception:
             return []
 
-    def add_job_log(self, job_id: Union[str, UUID], message: str, level: str = "INFO") -> None:
+    def add_job_log(
+        self, job_id: Union[str, UUID], message: str, level: str = "INFO"
+    ) -> None:
         """Add a log entry for a job.
 
         Args:
@@ -551,15 +565,15 @@ class JobManager:
         """
         if not self.job_exists(job_id):
             return
-        
+
         job_dir = self.get_job_directory(job_id)
         log_file = job_dir / "logs" / "execution.log"
-        
+
         timestamp = datetime.utcnow().isoformat() + "Z"
         log_entry = f"{timestamp} {level}: {message}\n"
-        
+
         try:
-            with open(log_file, 'a') as f:
+            with open(log_file, "a") as f:
                 f.write(log_entry)
         except Exception:
             pass  # Ignore logging errors
@@ -578,26 +592,77 @@ class JobManager:
         """
         if not self.job_exists(job_id):
             raise ValueError(f"Job {job_id} not found")
-        
+
         current_status = self.get_job_status(job_id)
-        
+
         if current_status["status"] in ["COMPLETED", "FAILED", "CANCELLED"]:
             return False
-        
+
         # Update status to cancelled
         self.update_job_status(
             job_id=job_id,
             status="CANCELLED",
             message="Job cancelled by user",
-            completed_at=datetime.utcnow().isoformat() + "Z"
+            completed_at=datetime.utcnow().isoformat() + "Z",
         )
-        
+
         self.add_job_log(job_id, "Job cancelled by user", "INFO")
-        
+
         return True
 
-    def list_jobs(self, status: Optional[str] = None, limit: int = 50,
-                  offset: int = 0) -> List[Dict[str, Any]]:
+    def _get_valid_job_dirs(self) -> List[Path]:
+        """Get all valid job directories sorted by creation time."""
+        if not self.jobs_directory.exists():
+            return []
+
+        job_dirs = []
+        for item in self.jobs_directory.iterdir():
+            if item.is_dir():
+                try:
+                    UUID(item.name)  # Validate UUID format
+                    job_dirs.append(item)
+                except ValueError:
+                    continue
+
+        # Sort by creation time (newest first)
+        def get_creation_time(job_dir):
+            try:
+                status_file = job_dir / "status.json"
+                if status_file.exists():
+                    with open(status_file, "r") as f:
+                        status_data = json.load(f)
+                    return status_data.get("created_at", "")
+                return ""
+            except Exception:
+                return ""
+
+        job_dirs.sort(key=get_creation_time, reverse=True)
+        return job_dirs
+
+    def _create_job_info(self, job_id: UUID) -> Optional[Dict[str, Any]]:
+        """Create job info dictionary for a single job."""
+        try:
+            job_status = self.get_job_status(job_id)
+            job_metadata = self.get_job_metadata(job_id)
+
+            return {
+                "job_id": job_id,
+                "status": job_status.get("status"),
+                "created_at": job_status.get("created_at"),
+                "started_at": job_status.get("started_at"),
+                "completed_at": job_status.get("completed_at"),
+                "progress": job_status.get("progress"),
+                "current_stage": job_status.get("current_stage"),
+                "job_name": job_metadata.get("job_name"),
+                "description": job_metadata.get("description"),
+            }
+        except Exception:
+            # Skip jobs with corrupt data
+            return None
+
+    def list_jobs(
+        self, status: Optional[str] = None, limit: int = 50, offset: int = 0
+    ) -> List[Dict[str, Any]]:
         """List jobs with optional filtering and pagination.
 
         Args:
@@ -609,67 +674,24 @@ class JobManager:
             List[Dict[str, Any]]: List of job information
         """
         jobs = []
-        
-        # Get all job directories
-        if not self.jobs_directory.exists():
-            return []
-        
-        job_dirs = []
-        for item in self.jobs_directory.iterdir():
-            if item.is_dir():
-                try:
-                    UUID(item.name)  # Validate UUID format
-                    job_dirs.append(item)
-                except ValueError:
-                    continue
-        
-        # Sort by creation time (newest first)
-        def get_creation_time(job_dir):
-            try:
-                status_file = job_dir / "status.json"
-                if status_file.exists():
-                    with open(status_file, 'r') as f:
-                        status_data = json.load(f)
-                    return status_data.get("created_at", "")
-                return ""
-            except Exception:
-                return ""
-        
-        job_dirs.sort(key=get_creation_time, reverse=True)
-        
+        job_dirs = self._get_valid_job_dirs()
+
         # Apply filtering and pagination
         for job_dir in job_dirs:
             job_id = UUID(job_dir.name)
-            
-            try:
-                job_status = self.get_job_status(job_id)
-                job_metadata = self.get_job_metadata(job_id)
-                
-                # Apply status filter
-                if status and job_status.get("status") != status:
-                    continue
-                
-                # Create job summary
-                job_info = {
-                    "job_id": job_id,
-                    "status": job_status.get("status"),
-                    "created_at": job_status.get("created_at"),
-                    "started_at": job_status.get("started_at"),
-                    "completed_at": job_status.get("completed_at"),
-                    "progress": job_status.get("progress"),
-                    "current_stage": job_status.get("current_stage"),
-                    "job_name": job_metadata.get("job_name"),
-                    "description": job_metadata.get("description")
-                }
-                
-                jobs.append(job_info)
-                
-            except Exception:
-                # Skip jobs with corrupt data
+            job_info = self._create_job_info(job_id)
+
+            if job_info is None:
                 continue
-        
+
+            # Apply status filter
+            if status and job_info.get("status") != status:
+                continue
+
+            jobs.append(job_info)
+
         # Apply pagination
-        return jobs[offset:offset + limit]
+        return jobs[offset : offset + limit]
 
     def count_jobs(self, status: Optional[str] = None) -> int:
         """Count jobs with optional status filtering.
@@ -682,21 +704,21 @@ class JobManager:
         """
         if not self.jobs_directory.exists():
             return 0
-        
+
         count = 0
         for item in self.jobs_directory.iterdir():
             if item.is_dir():
                 try:
                     job_id = UUID(item.name)
                     job_status = self.get_job_status(job_id)
-                    
+
                     if status and job_status.get("status") != status:
                         continue
-                    
+
                     count += 1
                 except Exception:
                     continue
-        
+
         return count
 
     def get_job_output_dir(self, job_id: Union[str, UUID]) -> Path:
@@ -713,6 +735,6 @@ class JobManager:
         """
         if not self.job_exists(job_id):
             raise ValueError(f"Job {job_id} not found")
-        
+
         job_dir = self.get_job_directory(job_id)
         return job_dir / "output"
