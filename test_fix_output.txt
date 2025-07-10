@@ -1,0 +1,53 @@
+/home/chrisfoulon/miniconda3/lib/python3.11/site-packages/pytest_asyncio/plugin.py:208: PytestDeprecationWarning: The configuration option "asyncio_default_fixture_loop_scope" is unset.
+The event loop scope for asynchronous fixtures will default to the fixture caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to function scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: "function", "class", "module", "package", "session"
+
+  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))
+============================= test session starts ==============================
+platform linux -- Python 3.11.5, pytest-8.3.3, pluggy-1.5.0 -- /home/chrisfoulon/miniconda3/bin/python
+cachedir: .pytest_cache
+rootdir: /home/chrisfoulon/neuro_apps/emuses
+configfile: pytest.ini
+plugins: cov-6.2.1, asyncio-1.0.0, anyio-4.9.0
+asyncio: mode=Mode.STRICT, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collecting ... collected 1 item
+
+tests/foundation_fastapi_service/test_file_upload_endpoints.py::TestFileUploadCleanup::test_upload_creates_job_scoped_directories FAILED [100%]
+
+=================================== FAILURES ===================================
+_______ TestFileUploadCleanup.test_upload_creates_job_scoped_directories _______
+
+self = <tests.foundation_fastapi_service.test_file_upload_endpoints.TestFileUploadCleanup object at 0x7fde80aab750>
+client = <starlette.testclient.TestClient object at 0x7fde7e7e2c90>
+sample_csv_content = 'feature1,feature2,feature3\n1.0,2.0,3.0\n4.0,5.0,6.0\n'
+
+    def test_upload_creates_job_scoped_directories(self, client, sample_csv_content):
+        """Test that uploads create job-scoped directories."""
+        files = {
+            "file": ("test.csv", sample_csv_content, "text/csv")
+        }
+    
+        response = client.post("/api/v1/upload/features", files=files)
+        assert response.status_code == 201
+    
+        data = response.json()
+        file_path = Path(data["file_path"])
+    
+        # Should be in a test-specific temporary directory (when in testing mode)
+>       assert "/tmp/emuses_test_uploads_" in str(file_path)
+E       AssertionError: assert '/tmp/emuses_test_uploads_' in '/tmp/emuses_uploads/20250710_102432_528534_features/test.csv'
+E        +  where '/tmp/emuses_uploads/20250710_102432_528534_features/test.csv' = str(PosixPath('/tmp/emuses_uploads/20250710_102432_528534_features/test.csv'))
+
+tests/foundation_fastapi_service/test_file_upload_endpoints.py:248: AssertionError
+=============================== warnings summary ===============================
+../../miniconda3/lib/python3.11/site-packages/starlette/formparsers.py:12
+  /home/chrisfoulon/miniconda3/lib/python3.11/site-packages/starlette/formparsers.py:12: PendingDeprecationWarning: Please use `import python_multipart` instead.
+    import multipart
+
+tests/foundation_fastapi_service/test_file_upload_endpoints.py::TestFileUploadCleanup::test_upload_creates_job_scoped_directories
+  /home/chrisfoulon/miniconda3/lib/python3.11/site-packages/httpx/_client.py:690: DeprecationWarning: The 'app' shortcut is now deprecated. Use the explicit style 'transport=WSGITransport(app=...)' instead.
+    warnings.warn(message, DeprecationWarning)
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/foundation_fastapi_service/test_file_upload_endpoints.py::TestFileUploadCleanup::test_upload_creates_job_scoped_directories
+======================== 1 failed, 2 warnings in 0.78s =========================

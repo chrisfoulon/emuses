@@ -194,6 +194,10 @@ wandb/
 # API Job Management (runtime data)
 api_jobs_hcp/
 **/api_jobs_*/
+data/jobs/
+data/
+results/
+test_output/
 
 # Jupyter Notebook outputs (optional, uncomment if you want to ignore outputs)
 # *.ipynb

@@ -112,13 +112,53 @@ job_manager = None
 pipeline_runner = None
 
 
+class StorageDirectoryFactory:
+    """Factory for creating appropriate storage directories based on environment."""
+    
+    @staticmethod
+    def create_job_storage() -> Path:
+        """Create appropriate job storage directory based on environment."""
+        import tempfile
+        
+        # Check testing mode dynamically
+        testing_mode = os.getenv("TESTING_MODE", "false").lower() == "true"
+        
+        # In testing mode, use temporary directory
+        if testing_mode:
+            return Path(tempfile.mkdtemp(prefix="emuses_test_jobs_"))
+        
+        # For development/production, use environment variable or default
+        job_storage = os.getenv("EMUSES_JOB_STORAGE")
+        if job_storage:
+            return Path(job_storage)
+        
+        # Default to user's local data directory in development
+        # In production, this should be set via EMUSES_JOB_STORAGE env var
+        return Path.home() / ".local" / "share" / "emuses" / "jobs"
+    
+    @staticmethod
+    def create_upload_directory() -> Path:
+        """Create appropriate upload directory based on environment."""
+        import tempfile
+        
+        # Check testing mode dynamically
+        testing_mode = os.getenv("TESTING_MODE", "false").lower() == "true"
+        
+        if testing_mode:
+            return Path(tempfile.mkdtemp(prefix="emuses_test_uploads_"))
+        
+        upload_dir = Path("/tmp/emuses_uploads")
+        upload_dir.mkdir(parents=True, exist_ok=True)
+        return upload_dir
+
+
 def get_job_manager():
     """Get or create the job manager instance."""
     global job_manager
     if job_manager is None:
         from emuses.foundation_fastapi_service.job_manager import JobManager
 
-        job_manager = JobManager(base_directory="./data")
+        job_manager = JobManager(base_directory=StorageDirectoryFactory.create_job_storage())
     return job_manager
 
 
@@ -826,9 +866,7 @@ async def download_job_artifact(
 
 def create_upload_directory() -> Path:
     """Create and return the upload directory path."""
-    upload_dir = Path("/tmp/emuses_uploads")
-    upload_dir.mkdir(parents=True, exist_ok=True)
-    return upload_dir
+    return StorageDirectoryFactory.create_upload_directory()
 
 
 def validate_csv_file(file: UploadFile) -> None:

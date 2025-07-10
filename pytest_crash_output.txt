@@ -1,0 +1,292 @@
+/home/chrisfoulon/miniconda3/lib/python3.11/site-packages/pytest_asyncio/plugin.py:208: PytestDeprecationWarning: The configuration option "asyncio_default_fixture_loop_scope" is unset.
+The event loop scope for asynchronous fixtures will default to the fixture caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to function scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: "function", "class", "module", "package", "session"
+
+  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))
+============================= test session starts ==============================
+platform linux -- Python 3.11.5, pytest-8.3.3, pluggy-1.5.0 -- /home/chrisfoulon/miniconda3/bin/python
+cachedir: .pytest_cache
+rootdir: /home/chrisfoulon/neuro_apps/emuses
+configfile: pytest.ini
+plugins: cov-6.2.1, asyncio-1.0.0, anyio-4.9.0
+asyncio: mode=Mode.STRICT, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collecting ... collected 167 items
+
+tests/foundation_fastapi_service/test_api_endpoints.py::test_deprecation_notice PASSED [  0%]
+tests/foundation_fastapi_service/test_api_endpoints_integration.py::TestRealFastAPIIntegration::test_real_app_pipeline_submission_with_mocked_dependencies PASSED [  1%]
+tests/foundation_fastapi_service/test_api_endpoints_integration.py::TestRealFastAPIIntegration::test_real_app_validation_error_handling PASSED [  1%]
+tests/foundation_fastapi_service/test_api_endpoints_integration.py::TestRealFastAPIIntegration::test_real_app_stage_specific_endpoint PASSED [  2%]
+tests/foundation_fastapi_service/test_api_endpoints_integration.py::TestRealFastAPIIntegration::test_real_app_job_status_endpoint PASSED [  2%]
+tests/foundation_fastapi_service/test_api_endpoints_integration.py::TestRealFastAPIIntegration::test_real_app_health_endpoint PASSED [  3%]
+tests/foundation_fastapi_service/test_api_endpoints_integration.py::TestRealFastAPIIntegration::test_real_app_error_serialization PASSED [  4%]
+tests/foundation_fastapi_service/test_api_endpoints_integration.py::TestRealFastAPIIntegration::test_real_app_invalid_uuid_handling PASSED [  4%]
+tests/foundation_fastapi_service/test_api_endpoints_integration.py::TestPipelineExecutionEndpoints::test_pipeline_full_execution_comprehensive_validation PASSED [  5%]
+tests/foundation_fastapi_service/test_api_endpoints_integration.py::TestPipelineExecutionEndpoints::test_pipeline_execution_required_field_validation PASSED [  5%]
+tests/foundation_fastapi_service/test_api_endpoints_integration.py::TestPipelineExecutionEndpoints::test_pipeline_execution_file_existence_validation PASSED [  6%]
+tests/foundation_fastapi_service/test_api_endpoints_integration.py::TestPipelineExecutionEndpoints::test_pipeline_execution_parameter_type_validation PASSED [  7%]
+tests/foundation_fastapi_service/test_api_endpoints_integration.py::TestPipelineExecutionEndpoints::test_pipeline_execution_json_malformed_request PASSED [  7%]
+tests/foundation_fastapi_service/test_api_endpoints_integration.py::TestPipelineExecutionEndpoints::test_pipeline_execution_response_serialization PASSED [  8%]
+tests/foundation_fastapi_service/test_api_endpoints_integration.py::TestStageSpecificEndpoints::test_stage_specific_endpoint_valid_stages PASSED [  8%]
+tests/foundation_fastapi_service/test_api_endpoints_integration.py::TestStageSpecificEndpoints::test_stage_specific_endpoint_invalid_stage_names PASSED [  9%]
+tests/foundation_fastapi_service/test_api_endpoints_integration.py::TestStageSpecificEndpoints::test_stage_specific_endpoint_parameter_sanitization PASSED [ 10%]
+tests/foundation_fastapi_service/test_api_endpoints_integration.py::TestStageSpecificEndpoints::test_stage_specific_endpoint_parameter_validation PASSED [ 10%]
+tests/foundation_fastapi_service/test_api_endpoints_integration.py::TestStageSpecificEndpoints::test_stage_specific_endpoint_missing_required_fields PASSED [ 11%]
+tests/foundation_fastapi_service/test_api_endpoints_integration.py::TestStageSpecificEndpoints::test_stage_specific_endpoint_url_parameter_validation PASSED [ 11%]
+tests/foundation_fastapi_service/test_api_endpoints_integration.py::TestJobStatusAndProgressEndpoints::test_job_status_endpoint_valid_job PASSED [ 12%]
+tests/foundation_fastapi_service/test_api_endpoints_integration.py::TestJobStatusAndProgressEndpoints::test_job_status_endpoint_invalid_job_id PASSED [ 13%]
+tests/foundation_fastapi_service/test_api_endpoints_integration.py::TestJobStatusAndProgressEndpoints::test_job_status_endpoint_nonexistent_job PASSED [ 13%]
+tests/foundation_fastapi_service/test_api_endpoints_integration.py::TestJobStatusAndProgressEndpoints::test_job_logs_endpoint_valid_job PASSED [ 14%]
+tests/foundation_fastapi_service/test_api_endpoints_integration.py::TestJobStatusAndProgressEndpoints::test_job_logs_endpoint_invalid_job_id PASSED [ 14%]
+tests/foundation_fastapi_service/test_api_endpoints_integration.py::TestJobStatusAndProgressEndpoints::test_job_endpoints_error_handling PASSED [ 15%]
+tests/foundation_fastapi_service/test_api_endpoints_integration.py::TestJobStatusAndProgressEndpoints::test_job_status_progress_tracking PASSED [ 16%]
+tests/foundation_fastapi_service/test_api_endpoints_integration.py::TestJobStatusAndProgressEndpoints::test_job_endpoints_rate_limiting_behavior PASSED [ 16%]
+tests/foundation_fastapi_service/test_api_endpoints_integration.py::TestJobStatusAndProgressEndpoints::test_job_status_response_serialization PASSED [ 17%]
+tests/foundation_fastapi_service/test_api_endpoints_integration.py::TestArtifactManagementEndpoints::test_list_job_artifacts_success PASSED [ 17%]
+tests/foundation_fastapi_service/test_api_endpoints_integration.py::TestArtifactManagementEndpoints::test_list_job_artifacts_invalid_job_id PASSED [ 18%]
+tests/foundation_fastapi_service/test_api_endpoints_integration.py::TestArtifactManagementEndpoints::test_list_job_artifacts_nonexistent_job PASSED [ 19%]
+tests/foundation_fastapi_service/test_api_endpoints_integration.py::TestArtifactManagementEndpoints::test_download_artifact_success PASSED [ 19%]
+tests/foundation_fastapi_service/test_api_endpoints_integration.py::TestArtifactManagementEndpoints::test_download_artifact_security_path_traversal PASSED [ 20%]
+tests/foundation_fastapi_service/test_api_endpoints_integration.py::TestArtifactManagementEndpoints::test_download_artifact_filename_sanitization PASSED [ 20%]
+tests/foundation_fastapi_service/test_api_endpoints_integration.py::TestArtifactManagementEndpoints::test_download_artifact_nonexistent_file PASSED [ 21%]
+tests/foundation_fastapi_service/test_api_endpoints_integration.py::TestArtifactManagementEndpoints::test_download_artifact_invalid_job_id PASSED [ 22%]
+tests/foundation_fastapi_service/test_api_endpoints_integration.py::TestArtifactManagementEndpoints::test_artifact_endpoints_rate_limiting_behavior PASSED [ 22%]
+tests/foundation_fastapi_service/test_api_endpoints_integration.py::TestArtifactManagementEndpoints::test_artifact_content_type_detection PASSED [ 23%]
+tests/foundation_fastapi_service/test_api_endpoints_integration.py::TestArtifactManagementEndpoints::test_artifact_symlink_security PASSED [ 23%]
+tests/foundation_fastapi_service/test_api_models.py::TestPipelineConfigModels::test_pipeline_config_request_valid_classic_mode PASSED [ 24%]
+tests/foundation_fastapi_service/test_api_models.py::TestPipelineConfigModels::test_pipeline_config_request_valid_label_dataset_mode PASSED [ 25%]
+tests/foundation_fastapi_service/test_api_models.py::TestPipelineConfigModels::test_pipeline_config_request_missing_required_fields PASSED [ 25%]
+tests/foundation_fastapi_service/test_api_models.py::TestPipelineConfigModels::test_pipeline_config_request_inherits_from_pipeline_config PASSED [ 26%]
+tests/foundation_fastapi_service/test_api_models.py::TestPipelineConfigModels::test_pipeline_config_request_stage_toggles PASSED [ 26%]
+tests/foundation_fastapi_service/test_api_models.py::TestJobSubmissionAndStatusModels::test_job_submission_request_valid PASSED [ 27%]
+tests/foundation_fastapi_service/test_api_models.py::TestJobSubmissionAndStatusModels::test_job_status_response_valid PASSED [ 28%]
+tests/foundation_fastapi_service/test_api_models.py::TestErrorResponseModels::test_error_response_valid PASSED [ 28%]
+tests/foundation_fastapi_service/test_api_models.py::TestFileUploadModels::test_file_upload_model_valid PASSED [ 29%]
+tests/foundation_fastapi_service/test_compatibility.py::TestCLIInterface::test_cli_main_script_exists PASSED [ 29%]
+tests/foundation_fastapi_service/test_compatibility.py::TestCLIInterface::test_cli_module_execution PASSED [ 30%]
+tests/foundation_fastapi_service/test_compatibility.py::TestCLIInterface::test_cli_help_command PASSED [ 31%]
+tests/foundation_fastapi_service/test_compatibility.py::TestCLIInterface::test_cli_full_command_structure PASSED [ 31%]
+tests/foundation_fastapi_service/test_compatibility.py::TestPythonImports::test_emuses_pipeline_import_structure PASSED [ 32%]
+tests/foundation_fastapi_service/test_compatibility.py::TestPythonImports::test_emuses_pipeline_import_attempt PASSED [ 32%]
+tests/foundation_fastapi_service/test_compatibility.py::TestPythonImports::test_pipeline_context_pattern_structure PASSED [ 33%]
+tests/foundation_fastapi_service/test_compatibility.py::TestPythonImports::test_pipeline_context_pattern_runtime PASSED [ 34%]
+tests/foundation_fastapi_service/test_compatibility.py::TestComputationalEquivalence::test_data_preprocessing_equivalence PASSED [ 34%]
+tests/foundation_fastapi_service/test_compatibility.py::TestComputationalEquivalence::test_context_preservation_through_stages PASSED [ 35%]
+tests/foundation_fastapi_service/test_compatibility.py::TestAPIUnification::test_pipeline_runner_structure PASSED [ 35%]
+tests/foundation_fastapi_service/test_compatibility.py::TestAPIUnification::test_pipeline_runner_uses_emuses_pipeline PASSED [ 36%]
+tests/foundation_fastapi_service/test_compatibility.py::TestAPIUnification::test_consistent_data_processing_pathway PASSED [ 37%]
+tests/foundation_fastapi_service/test_compatibility.py::TestRealWorldDatasetCompatibility::test_missing_value_handling_consistency PASSED [ 37%]
+tests/foundation_fastapi_service/test_compatibility.py::TestRealWorldDatasetCompatibility::test_type_coercion_consistency PASSED [ 38%]
+tests/foundation_fastapi_service/test_compatibility.py::TestRealWorldDatasetCompatibility::test_cli_argument_structure PASSED [ 38%]
+tests/foundation_fastapi_service/test_concurrency_performance.py::TestConcurrentJobSubmission::test_multiple_simultaneous_job_submissions PASSED [ 39%]
+tests/foundation_fastapi_service/test_concurrency_performance.py::TestConcurrentJobSubmission::test_concurrent_job_status_access PASSED [ 40%]
+tests/foundation_fastapi_service/test_concurrency_performance.py::TestConcurrentJobSubmission::test_job_directory_isolation PASSED [ 40%]
+tests/foundation_fastapi_service/test_concurrency_performance.py::TestResourceCleanup::test_memory_usage_during_job_processing PASSED [ 41%]
+tests/foundation_fastapi_service/test_concurrency_performance.py::TestResourceCleanup::test_process_cleanup_after_job_completion PASSED [ 41%]
+tests/foundation_fastapi_service/test_concurrency_performance.py::TestResourceCleanup::test_directory_cleanup_verification PASSED [ 42%]
+tests/foundation_fastapi_service/test_concurrency_performance.py::TestLoadTesting::test_sustained_load_performance PASSED [ 43%]
+tests/foundation_fastapi_service/test_concurrency_performance.py::TestLoadTesting::test_response_time_under_concurrent_load PASSED [ 43%]
+tests/foundation_fastapi_service/test_concurrency_performance.py::TestMemorySpike::test_context_serialization_memory_usage PASSED [ 44%]
+tests/foundation_fastapi_service/test_concurrency_performance.py::TestMemorySpike::test_system_memory_monitoring PASSED [ 44%]
+tests/foundation_fastapi_service/test_emuses_pipeline_integration.py::TestEMUSESPipelineIntegration::test_context_to_emuses_args_converter PASSED [ 45%]
+tests/foundation_fastapi_service/test_emuses_pipeline_integration.py::TestEMUSESPipelineIntegration::test_context_to_emuses_args_with_missing_config PASSED [ 46%]
+tests/foundation_fastapi_service/test_emuses_pipeline_integration.py::TestEMUSESPipelineIntegration::test_context_to_emuses_args_preserves_data_references PASSED [ 46%]
+tests/foundation_fastapi_service/test_emuses_pipeline_integration.py::TestEMUSESPipelineIntegration::test_context_to_emuses_args_type_safety PASSED [ 47%]
+tests/foundation_fastapi_service/test_emuses_pipeline_integration.py::TestEMUSESPipelineIntegration::test_context_to_emuses_args_path_handling PASSED [ 47%]
+tests/foundation_fastapi_service/test_emuses_pipeline_integration.py::TestEMUSESPipelineIntegration::test_progress_callback_adapter_for_emuses_pipeline PASSED [ 48%]
+tests/foundation_fastapi_service/test_emuses_pipeline_integration.py::TestEMUSESPipelineIntegration::test_progress_callback_adapter_with_rate_limiting PASSED [ 49%]
+tests/foundation_fastapi_service/test_emuses_pipeline_integration.py::TestEMUSESPipelineIntegration::test_progress_callback_adapter_handles_none_callback PASSED [ 49%]
+tests/foundation_fastapi_service/test_emuses_pipeline_integration.py::TestEMUSESPipelineIntegration::test_progress_callback_adapter_job_status_integration PASSED [ 50%]
+tests/foundation_fastapi_service/test_emuses_pipeline_integration.py::TestEMUSESPipelineIntegration::test_emuses_pipeline_integration_in_run_pipeline_in_process PASSED [ 50%]
+tests/foundation_fastapi_service/test_emuses_pipeline_integration.py::TestEMUSESPipelineIntegration::test_emuses_pipeline_integration_preserves_context_data PASSED [ 51%]
+tests/foundation_fastapi_service/test_emuses_pipeline_integration.py::TestEMUSESPipelineIntegration::test_emuses_pipeline_integration_error_handling PASSED [ 52%]
+tests/foundation_fastapi_service/test_emuses_pipeline_integration.py::TestEMUSESPipelineIntegration::test_emuses_pipeline_equivalence_validation PASSED [ 52%]
+tests/foundation_fastapi_service/test_emuses_pipeline_integration.py::TestEMUSESPipelineIntegration::test_emuses_pipeline_stage_configuration_equivalence PASSED [ 53%]
+tests/foundation_fastapi_service/test_file_upload_endpoints.py::TestFileUploadEndpoints::test_upload_features_file_success PASSED [ 53%]
+tests/foundation_fastapi_service/test_file_upload_endpoints.py::TestFileUploadEndpoints::test_upload_scores_file_success PASSED [ 54%]
+tests/foundation_fastapi_service/test_file_upload_endpoints.py::TestFileUploadEndpoints::test_upload_labels_file_success PASSED [ 55%]
+tests/foundation_fastapi_service/test_file_upload_endpoints.py::TestFileUploadEndpoints::test_upload_non_csv_file_rejected PASSED [ 55%]
+tests/foundation_fastapi_service/test_file_upload_endpoints.py::TestFileUploadEndpoints::test_upload_csv_file_without_content_type PASSED [ 56%]
+tests/foundation_fastapi_service/test_file_upload_endpoints.py::TestFileUploadEndpoints::test_upload_oversized_file_rejected PASSED [ 56%]
+tests/foundation_fastapi_service/test_file_upload_endpoints.py::TestFileUploadEndpoints::test_upload_creates_unique_file_paths PASSED [ 57%]
+tests/foundation_fastapi_service/test_file_upload_endpoints.py::TestFileUploadEndpoints::test_upload_secure_filename_handling PASSED [ 58%]
+tests/foundation_fastapi_service/test_file_upload_endpoints.py::TestFileUploadIntegration::test_uploaded_file_integration_with_job_submission PASSED [ 58%]
+tests/foundation_fastapi_service/test_file_upload_endpoints.py::TestFileUploadCleanup::test_upload_creates_job_scoped_directories FAILED [ 59%]
+tests/foundation_fastapi_service/test_file_upload_endpoints.py::TestFileUploadCleanup::test_file_cleanup_preserves_job_isolation PASSED [ 59%]
+tests/foundation_fastapi_service/test_file_upload_endpoints.py::TestFileUploadSecurity::test_upload_rate_limiting_respected PASSED [ 60%]
+tests/foundation_fastapi_service/test_file_upload_endpoints.py::TestFileUploadSecurity::test_upload_file_validation_prevents_malicious_content PASSED [ 61%]
+tests/foundation_fastapi_service/test_job_manager.py::TestUUIDGeneration::test_generate_job_id_returns_valid_uuid PASSED [ 61%]
+tests/foundation_fastapi_service/test_job_manager.py::TestUUIDGeneration::test_generate_job_id_entropy_check PASSED [ 62%]
+tests/foundation_fastapi_service/test_job_manager.py::TestUUIDGeneration::test_job_id_validation PASSED [ 62%]
+tests/foundation_fastapi_service/test_job_manager.py::TestJobDirectoryStructure::test_create_job_directory_structure PASSED [ 63%]
+tests/foundation_fastapi_service/test_job_manager.py::TestJobDirectoryStructure::test_path_traversal_protection PASSED [ 64%]
+tests/foundation_fastapi_service/test_job_manager.py::TestJobDirectoryStructure::test_job_directory_permissions PASSED [ 64%]
+tests/foundation_fastapi_service/test_job_manager.py::TestJobStatusPersistence::test_job_status_persistence PASSED [ 65%]
+tests/foundation_fastapi_service/test_job_manager.py::TestJobStatusPersistence::test_concurrent_status_updates PASSED [ 65%]
+tests/foundation_fastapi_service/test_job_manager.py::TestJobStatusPersistence::test_status_update_with_invalid_job_id PASSED [ 66%]
+tests/foundation_fastapi_service/test_job_manager.py::TestJobMetadataTracking::test_job_metadata_sanitization PASSED [ 67%]
+tests/foundation_fastapi_service/test_job_manager.py::TestJobMetadataTracking::test_job_cleanup_policies PASSED [ 67%]
+tests/foundation_fastapi_service/test_job_manager.py::TestJobMetadataTracking::test_job_metadata_tracking_comprehensive PASSED [ 68%]
+tests/foundation_fastapi_service/test_pipeline_runner.py::TestPipelineRunner::test_pipeline_runner_initialization PASSED [ 68%]
+tests/foundation_fastapi_service/test_pipeline_runner.py::TestPipelineRunner::test_pipeline_runner_context_preservation PASSED [ 69%]
+tests/foundation_fastapi_service/test_pipeline_runner.py::TestPipelineRunner::test_pipeline_runner_process_pool_executor PASSED [ 70%]
+tests/foundation_fastapi_service/test_pipeline_runner.py::TestPipelineRunner::test_pipeline_runner_progress_callback_integration PASSED [ 70%]
+tests/foundation_fastapi_service/test_pipeline_runner.py::TestPipelineRunner::test_pipeline_runner_error_handling PASSED [ 71%]
+tests/foundation_fastapi_service/test_pipeline_runner.py::TestPipelineRunner::test_pipeline_runner_timeout_handling PASSED [ 71%]
+tests/foundation_fastapi_service/test_pipeline_runner.py::TestPipelineRunner::test_context_serialization_validation PASSED [ 72%]
+tests/foundation_fastapi_service/test_pipeline_runner.py::TestPipelineRunner::test_context_serialization_large_data PASSED [ 73%]
+tests/foundation_fastapi_service/test_pipeline_runner.py::TestPipelineRunner::test_real_pipeline_execution_creates_files PASSED [ 73%]
+tests/foundation_fastapi_service/test_pipeline_runner.py::TestPipelineRunnerResourceManagement::test_pipeline_runner_resource_limits PASSED [ 74%]
+tests/foundation_fastapi_service/test_pipeline_runner.py::TestPipelineRunnerResourceManagement::test_pipeline_runner_cleanup PASSED [ 74%]
+tests/foundation_fastapi_service/test_security_validation.py::TestPathTraversalProtection::test_job_directory_creation_protection PASSED [ 75%]
+tests/foundation_fastapi_service/test_security_validation.py::TestPathTraversalProtection::test_artifact_download_path_protection PASSED [ 76%]
+tests/foundation_fastapi_service/test_security_validation.py::TestPathTraversalProtection::test_file_upload_path_protection PASSED [ 76%]
+tests/foundation_fastapi_service/test_security_validation.py::TestInputSanitization::test_malformed_json_handling PASSED [ 77%]
+tests/foundation_fastapi_service/test_security_validation.py::TestInputSanitization::test_oversized_payload_handling PASSED [ 77%]
+tests/foundation_fastapi_service/test_security_validation.py::TestInputSanitization::test_invalid_uuid_handling PASSED [ 78%]
+tests/foundation_fastapi_service/test_security_validation.py::TestInputSanitization::test_pydantic_deserialization_limits PASSED [ 79%]
+tests/foundation_fastapi_service/test_security_validation.py::TestNegativeResponses::test_missing_required_fields PASSED [ 79%]
+tests/foundation_fastapi_service/test_security_validation.py::TestNegativeResponses::test_nonexistent_job_operations PASSED [ 80%]
+tests/foundation_fastapi_service/test_security_validation.py::TestNegativeResponses::test_unsupported_http_methods PASSED [ 80%]
+tests/foundation_fastapi_service/test_security_validation.py::TestNegativeResponses::test_error_message_security PASSED [ 81%]
+tests/foundation_fastapi_service/test_security_validation.py::TestNegativeResponses::test_request_size_limits PASSED [ 82%]
+tests/foundation_fastapi_service/test_security_validation.py::TestConcurrencySecurityAspects::test_race_condition_job_creation PASSED [ 82%]
+tests/foundation_fastapi_service/test_stage_runners.py::TestResourceMonitor::test_resource_monitor_initialization PASSED [ 83%]
+tests/foundation_fastapi_service/test_stage_runners.py::TestResourceMonitor::test_resource_monitor_custom_limits PASSED [ 83%]
+tests/foundation_fastapi_service/test_stage_runners.py::TestResourceMonitor::test_resource_monitor_start_stop PASSED [ 84%]
+tests/foundation_fastapi_service/test_stage_runners.py::TestResourceMonitor::test_resource_monitor_check_resources_ok PASSED [ 85%]
+tests/foundation_fastapi_service/test_stage_runners.py::TestResourceMonitor::test_resource_monitor_check_resources_memory_exceeded PASSED [ 85%]
+tests/foundation_fastapi_service/test_stage_runners.py::TestResourceMonitor::test_resource_monitor_check_resources_cpu_exceeded PASSED [ 86%]
+tests/foundation_fastapi_service/test_stage_runners.py::TestResourceMonitor::test_resource_monitor_check_resources_exception PASSED [ 86%]
+tests/foundation_fastapi_service/test_stage_runners.py::TestProgressTracker::test_progress_tracker_initialization PASSED [ 87%]
+tests/foundation_fastapi_service/test_stage_runners.py::TestProgressTracker::test_progress_tracker_update_progress PASSED [ 88%]
+tests/foundation_fastapi_service/test_stage_runners.py::TestProgressTracker::test_progress_tracker_rate_limiting PASSED [ 88%]
+tests/foundation_fastapi_service/test_stage_runners.py::TestBaseStageRunner::test_base_stage_runner_initialization PASSED [ 89%]
+tests/foundation_fastapi_service/test_stage_runners.py::TestBaseStageRunner::test_validate_context_success PASSED [ 89%]
+tests/foundation_fastapi_service/test_stage_runners.py::TestBaseStageRunner::test_validate_context_missing_keys PASSED [ 90%]
+tests/foundation_fastapi_service/test_stage_runners.py::TestBaseStageRunner::test_validate_breaking_parameters_success PASSED [ 91%]
+tests/foundation_fastapi_service/test_stage_runners.py::TestBaseStageRunner::test_validate_breaking_parameters_failure PASSED [ 91%]
+tests/foundation_fastapi_service/test_stage_runners.py::TestBaseStageRunner::test_is_safe_path_valid PASSED [ 92%]
+tests/foundation_fastapi_service/test_stage_runners.py::TestBaseStageRunner::test_is_safe_path_traversal_attempt PASSED [ 92%]
+tests/foundation_fastapi_service/test_stage_runners.py::TestUMAPStageRunner::test_umap_stage_runner_initialization PASSED [ 93%]
+tests/foundation_fastapi_service/test_stage_runners.py::TestUMAPStageRunner::test_umap_stage_runner_missing_context PASSED [ 94%]
+tests/foundation_fastapi_service/test_stage_runners.py::TestUMAPStageRunner::test_umap_stage_runner_invalid_parameters PASSED [ 94%]
+tests/foundation_fastapi_service/test_stage_runners.py::TestUMAPStageRunner::test_umap_stage_runner_successful_execution PASSED [ 95%]
+tests/foundation_fastapi_service/test_stage_runners.py::TestUMAPStageRunner::test_umap_stage_runner_execution_failure PASSED [ 95%]
+tests/foundation_fastapi_service/test_stage_runners.py::TestUMAPStageRunner::test_umap_organize_artifacts PASSED [ 96%]
+tests/foundation_fastapi_service/test_stage_runners.py::TestHeatmapStageRunner::test_heatmap_stage_runner_initialization PASSED [ 97%]
+tests/foundation_fastapi_service/test_stage_runners.py::TestHeatmapStageRunner::test_heatmap_stage_runner_missing_context PASSED [ 97%]
+tests/foundation_fastapi_service/test_stage_runners.py::TestHeatmapStageRunner::test_heatmap_stage_runner_invalid_parameters PASSED [ 98%]
+tests/foundation_fastapi_service/test_stage_runners.py::TestPredictionStageRunner::test_prediction_stage_runner_initialization PASSED [ 98%]
+tests/foundation_fastapi_service/test_stage_runners.py::TestPredictionStageRunner::test_prediction_stage_runner_missing_context PASSED [ 99%]
+tests/foundation_fastapi_service/test_stage_runners.py::TestPredictionStageRunner::test_prediction_stage_runner_successful_execution PASSED [100%]Exception ignored in: <coroutine object Queue.get at 0x7f2084313d80>
+Traceback (most recent call last):
+  File "/home/chrisfoulon/miniconda3/lib/python3.11/asyncio/queues.py", line 160, in get
+    getter.cancel()  # Just in case getter is not done yet.
+    ^^^^^^^^^^^^^^^
+  File "/home/chrisfoulon/miniconda3/lib/python3.11/asyncio/base_events.py", line 761, in call_soon
+    self._check_closed()
+  File "/home/chrisfoulon/miniconda3/lib/python3.11/asyncio/base_events.py", line 519, in _check_closed
+    raise RuntimeError('Event loop is closed')
+RuntimeError: Event loop is closed
+Task was destroyed but it is pending!
+task: <Task cancelling name='Task-3072' coro=<BaseStageRunner._monitor_progress() running at /home/chrisfoulon/neuro_apps/emuses/emuses/foundation_fastapi_service/stage_runners.py:207> wait_for=<Future finished result=None>>
+Task was destroyed but it is pending!
+task: <Task pending name='Task-3060' coro=<BaseStageRunner._monitor_progress() running at /home/chrisfoulon/neuro_apps/emuses/emuses/foundation_fastapi_service/stage_runners.py:207> wait_for=<Future pending cb=[Task.task_wakeup()]>>
+--- Logging error ---
+
+
+=================================== FAILURES ===================================
+_______ TestFileUploadCleanup.test_upload_creates_job_scoped_directories _______
+
+self = <tests.foundation_fastapi_service.test_file_upload_endpoints.TestFileUploadCleanup object at 0x7f2225323890>
+client = <starlette.testclient.TestClient object at 0x7f2134b4f690>
+sample_csv_content = 'feature1,feature2,feature3\n1.0,2.0,3.0\n4.0,5.0,6.0\n'
+
+    def test_upload_creates_job_scoped_directories(self, client, sample_csv_content):
+        """Test that uploads create job-scoped directories."""
+        files = {
+            "file": ("test.csv", sample_csv_content, "text/csv")
+        }
+    
+        response = client.post("/api/v1/upload/features", files=files)
+        assert response.status_code == 201
+    
+        data = response.json()
+        file_path = Path(data["file_path"])
+    
+        # Should be in a job-specific subdirectory
+>       assert "/tmp/emuses_uploads/" in str(file_path)
+E       AssertionError: assert '/tmp/emuses_uploads/' in '/tmp/emuses_test_uploads_u7i20s71/20250710_101725_090359_features/test.csv'
+E        +  where '/tmp/emuses_test_uploads_u7i20s71/20250710_101725_090359_features/test.csv' = str(PosixPath('/tmp/emuses_test_uploads_u7i20s71/20250710_101725_090359_features/test.csv'))
+
+tests/foundation_fastapi_service/test_file_upload_endpoints.py:248: AssertionError
+------------------------------ Captured log call -------------------------------
+INFO     httpx:_client.py:1038 HTTP Request: POST http://testserver/api/v1/upload/features "HTTP/1.1 201 Created"
+--------------------------- Captured stdout teardown ---------------------------
+HTTP Request: POST http://testserver/api/v1/upload/features "HTTP/1.1 201 Created"
+=============================== warnings summary ===============================
+../../miniconda3/lib/python3.11/site-packages/starlette/formparsers.py:12
+   /home/chrisfoulon/miniconda3/lib/python3.11/site-packages/starlette/formparsers.py:12: PendingDeprecationWarning:Please use `import python_multipart` instead.
+
+tests/foundation_fastapi_service/test_compatibility.py:468
+   /home/chrisfoulon/neuro_apps/emuses/tests/foundation_fastapi_service/test_compatibility.py:468: PytestUnknownMarkWarning:Unknown pytest.mark.compatibility - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html
+
+tests/foundation_fastapi_service/test_compatibility.py:469
+   /home/chrisfoulon/neuro_apps/emuses/tests/foundation_fastapi_service/test_compatibility.py:469: PytestUnknownMarkWarning:Unknown pytest.mark.integration - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html
+
+../BCBlib/bcblib/tools/nifti_utils.py:14
+   /home/chrisfoulon/neuro_apps/BCBlib/bcblib/tools/nifti_utils.py:14: DeprecationWarning:Please use `center_of_mass` from the `scipy.ndimage` namespace, the `scipy.ndimage.measurements` namespace is deprecated.
+
+../../miniconda3/lib/python3.11/site-packages/umap/__init__.py:36
+   /home/chrisfoulon/miniconda3/lib/python3.11/site-packages/umap/__init__.py:36: DeprecationWarning:pkg_resources is deprecated as an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html
+
+../../miniconda3/lib/python3.11/site-packages/pkg_resources/__init__.py:2871
+   /home/chrisfoulon/miniconda3/lib/python3.11/site-packages/pkg_resources/__init__.py:2871: DeprecationWarning:Deprecated call to `pkg_resources.declare_namespace('ruamel')`.
+  Implementing implicit namespace packages (as specified in PEP 420) is preferred to `pkg_resources.declare_namespace`. See https://setuptools.pypa.io/en/latest/references/keywords.html#keyword-namespace-packages
+
+tests/foundation_fastapi_service/test_api_endpoints_integration.py: 33 warnings
+tests/foundation_fastapi_service/test_concurrency_performance.py: 10 warnings
+tests/foundation_fastapi_service/test_file_upload_endpoints.py: 13 warnings
+   /home/chrisfoulon/miniconda3/lib/python3.11/site-packages/httpx/_client.py:690: DeprecationWarning:The 'app' shortcut is now deprecated. Use the explicit style 'transport=WSGITransport(app=...)' instead.
+
+tests/foundation_fastapi_service/test_api_endpoints_integration.py::TestPipelineExecutionEndpoints::test_pipeline_execution_json_malformed_request
+   /home/chrisfoulon/miniconda3/lib/python3.11/site-packages/httpx/_content.py:204: DeprecationWarning:Use 'content=<...>' to upload raw bytes/text content.
+
+tests/foundation_fastapi_service/test_pipeline_runner.py::TestPipelineRunner::test_real_pipeline_execution_creates_files
+  /home/chrisfoulon/miniconda3/lib/python3.11/site-packages/umap/umap_.py:1943: UserWarning:
+  
+  n_jobs value -1 overridden to 1 by setting random_state. Use no seed for parallelism.
+
+tests/foundation_fastapi_service/test_security_validation.py: 13 warnings
+  /home/chrisfoulon/miniconda3/lib/python3.11/site-packages/httpx/_client.py:690: DeprecationWarning:
+  
+  The 'app' shortcut is now deprecated. Use the explicit style 'transport=WSGITransport(app=...)' instead.
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/foundation_fastapi_service/test_file_upload_endpoints.py::TestFileUploadCleanup::test_upload_creates_job_scoped_directories
+============ 1 failed, 166 passed, 77 warnings in 364.67s (0:06:04) ============
+Traceback (most recent call last):
+  File "/home/chrisfoulon/miniconda3/lib/python3.11/logging/__init__.py", line 1114, in emit
+    self.flush()
+  File "/home/chrisfoulon/miniconda3/lib/python3.11/logging/__init__.py", line 1094, in flush
+    self.stream.flush()
+ValueError: I/O operation on closed file.
+Call stack:
+  File "/home/chrisfoulon/miniconda3/lib/python3.11/threading.py", line 995, in _bootstrap
+    self._bootstrap_inner()
+  File "/home/chrisfoulon/miniconda3/lib/python3.11/threading.py", line 1038, in _bootstrap_inner
+    self.run()
+  File "/home/chrisfoulon/miniconda3/lib/python3.11/threading.py", line 975, in run
+    self._target(*self._args, **self._kwargs)
+Message: "Task was destroyed but it is pending!\ntask: <Task pending name='Task-3061' coro=<Queue.get() done, defined at /home/chrisfoulon/miniconda3/lib/python3.11/asyncio/queues.py:149> wait_for=<Future cancelled> cb=[_release_waiter(<Future pendi...ask_wakeup()]>)() at /home/chrisfoulon/miniconda3/lib/python3.11/asyncio/tasks.py:421]>"
+Arguments: None
+Exception in thread Thread-26 (_monitor):
+Traceback (most recent call last):
+Exception in thread Thread-83 (_monitor):
+Fatal Python error: _enter_buffered_busy: could not acquire lock for <_io.BufferedWriter name='<stderr>'> at interpreter shutdown, possibly due to daemon threads
+Python runtime state: finalizing (tstate=0x00000000008a1a98)
+
+Current thread 0x00007f23673f15c0 (most recent call first):
+  <no Python frame>
+
+Extension modules: numpy.core._multiarray_umath, numpy.core._multiarray_tests, numpy.linalg._umath_linalg, numpy.fft._pocketfft_internal, numpy.random._common, numpy.random.bit_generator, numpy.random._bounded_integers, numpy.random._mt19937, numpy.random.mtrand, numpy.random._philox, numpy.random._pcg64, numpy.random._sfc64, numpy.random._generator, pyarrow.lib, pandas._libs.tslibs.np_datetime, pandas._libs.tslibs.dtypes, pandas._libs.tslibs.base, pandas._libs.tslibs.nattype, pandas._libs.tslibs.timezones, pandas._libs.tslibs.ccalendar, pandas._libs.tslibs.fields, pandas._libs.tslibs.timedeltas, pandas._libs.tslibs.tzconversion, pandas._libs.tslibs.timestamps, pandas._libs.properties, pandas._libs.tslibs.offsets, pandas._libs.tslibs.strptime, pandas._libs.tslibs.parsing, pandas._libs.tslibs.conversion, pandas._libs.tslibs.period, pandas._libs.tslibs.vectorized, pandas._libs.ops_dispatch, pandas._libs.missing, pandas._libs.hashtable, pandas._libs.algos, pandas._libs.interval, pandas._libs.lib, pandas._libs.ops, pyarrow._compute, pandas._libs.arrays, pandas._libs.tslib, pandas._libs.sparse, pandas._libs.indexing, pandas._libs.index, pandas._libs.internals, pandas._libs.join, pandas._libs.writers, pandas._libs.window.aggregations, pandas._libs.window.indexers, pandas._libs.reshape, pandas._libs.groupby, pandas._libs.json, pandas._libs.parsers, pandas._libs.testing, _cffi_backend, zstandard.backend_c, psutil._psutil_linux, psutil._psutil_posix, sklearn.__check_build._check_build, scipy._lib._ccallback_c, scipy.sparse._sparsetools, _csparsetools, scipy.sparse._csparsetools, scipy.sparse.linalg._isolve._iterative, scipy.linalg._fblas, scipy.linalg._flapack, scipy.linalg.cython_lapack, scipy.linalg._cythonized_array_utils, scipy.linalg._solve_toeplitz, scipy.linalg._decomp_lu_cython, scipy.linalg._matfuncs_sqrtm_triu, scipy.linalg.cython_blas, scipy.linalg._matfuncs_expm, scipy.linalg._decomp_update, scipy.linalg._flinalg, scipy.sparse.linalg._dsolve._superlu, scipy.sparse.linalg._eigen.arpack._arpack, scipy.sparse.csgraph._tools, scipy.sparse.csgraph._shortest_path, scipy.sparse.csgraph._traversal, scipy.sparse.csgraph._min_spanning_tree, scipy.sparse.csgraph._flow, scipy.sparse.csgraph._matching, scipy.sparse.csgraph._reordering, lz4._version, lz4.frame._frame, scipy.special._ufuncs_cxx, scipy.special._ufuncs, scipy.special._specfun, scipy.special._comb, scipy.special._ellip_harm_2, scipy.spatial._ckdtree, scipy._lib.messagestream, scipy.spatial._qhull, scipy.spatial._voronoi, scipy.spatial._distance_wrap, scipy.spatial._hausdorff, scipy.spatial.transform._rotation, scipy.ndimage._nd_image, _ni_label, scipy.ndimage._ni_label, scipy.optimize._minpack2, scipy.optimize._group_columns, scipy.optimize._trlib._trlib, scipy.optimize._lbfgsb, _moduleTNC, scipy.optimize._moduleTNC, scipy.optimize._cobyla, scipy.optimize._slsqp, scipy.optimize._minpack, scipy.optimize._lsq.givens_elimination, scipy.optimize._zeros, scipy.optimize.__nnls, scipy.optimize._highs.cython.src._highs_wrapper, scipy.optimize._highs._highs_wrapper, scipy.optimize._highs.cython.src._highs_constants, scipy.optimize._highs._highs_constants, scipy.linalg._interpolative, scipy.optimize._bglu_dense, scipy.optimize._lsap, scipy.optimize._direct, scipy.integrate._odepack, scipy.integrate._quadpack, scipy.integrate._vode, scipy.integrate._dop, scipy.integrate._lsoda, scipy.special.cython_special, scipy.stats._stats, scipy.stats.beta_ufunc, scipy.stats._boost.beta_ufunc, scipy.stats.binom_ufunc, scipy.stats._boost.binom_ufunc, scipy.stats.nbinom_ufunc, scipy.stats._boost.nbinom_ufunc, scipy.stats.hypergeom_ufunc, scipy.stats._boost.hypergeom_ufunc, scipy.stats.ncf_ufunc, scipy.stats._boost.ncf_ufunc, scipy.stats.ncx2_ufunc, scipy.stats._boost.ncx2_ufunc, scipy.stats.nct_ufunc, scipy.stats._boost.nct_ufunc, scipy.stats.skewnorm_ufunc, scipy.stats._boost.skewnorm_ufunc, scipy.stats.invgauss_ufunc, scipy.stats._boost.invgauss_ufunc, scipy.interpolate._fitpack, scipy.interpolate.dfitpack, scipy.interpolate._bspl, scipy.interpolate._ppoly, scipy.interpolate.interpnd, scipy.interpolate._rbfinterp_pythran, scipy.interpolate._rgi_cython, scipy.stats._biasedurn, scipy.stats._levy_stable.levyst, scipy.stats._stats_pythran, scipy._lib._uarray._uarray, scipy.stats._statlib, scipy.stats._sobol, scipy.stats._qmc_cy, scipy.stats._mvn, scipy.stats._rcont.rcont, sklearn.utils._isfinite, sklearn.utils.murmurhash, sklearn.utils._openmp_helpers, sklearn.metrics.cluster._expected_mutual_info_fast, sklearn.utils._logistic_sigmoid, sklearn.utils.sparsefuncs_fast, sklearn.preprocessing._csr_polynomial_expansion, sklearn.preprocessing._target_encoder_fast, sklearn.metrics._dist_metrics, sklearn.metrics._pairwise_distances_reduction._datasets_pair, sklearn.utils._cython_blas, sklearn.metrics._pairwise_distances_reduction._base, sklearn.metrics._pairwise_distances_reduction._middle_term_computer, sklearn.utils._heap, sklearn.utils._sorting, sklearn.metrics._pairwise_distances_reduction._argkmin, sklearn.metrics._pairwise_distances_reduction._argkmin_classmode, sklearn.utils._vector_sentinel, sklearn.metrics._pairwise_distances_reduction._radius_neighbors, sklearn.metrics._pairwise_fast, sklearn.utils._random, matplotlib._c_internal_utils, PIL._imaging, matplotlib._path, kiwisolver._cext, matplotlib._image, matplotlib.backends._tkagg, scipy.signal._sigtools, scipy.signal._max_len_seq_inner, scipy.signal._upfirdn_apply, scipy.signal._spline, scipy.signal._sosfilt, scipy.signal._spectral, scipy.signal._peak_finding_utils, sklearn.neighbors._partition_nodes, sklearn.neighbors._ball_tree, sklearn.neighbors._kd_tree, sklearn.utils._seq_dataset, sklearn.linear_model._cd_fast, sklearn._loss._loss, sklearn.utils.arrayfuncs, sklearn.svm._liblinear, sklearn.svm._libsvm, sklearn.svm._libsvm_sparse, sklearn.utils._weight_vector, sklearn.linear_model._sgd_fast, sklearn.linear_model._sag_fast, sklearn.decomposition._online_lda_fast, sklearn.decomposition._cdnmf_fast, scipy.io.matlab._mio_utils, scipy.io.matlab._streams, scipy.io.matlab._mio5_utils, sklearn.feature_extraction._hashing_fast, sklearn.utils._fast_dict, sklearn.cluster._hierarchical_fast, sklearn.cluster._k_means_common, sklearn.cluster._k_means_elkan, sklearn.cluster._k_means_lloyd, sklearn.cluster._k_means_minibatch, sklearn.cluster._dbscan_inner, sklearn.cluster._hdbscan._tree, sklearn.cluster._hdbscan._linkage, sklearn.cluster._hdbscan._reachability, sklearn._isotonic, sklearn.tree._utils, sklearn.tree._tree, sklearn.tree._splitter, sklearn.tree._criterion, sklearn.neighbors._quad_tree, sklearn.manifold._barnes_hut_tsne, sklearn.manifold._utils, scipy.cluster._vq, scipy.cluster._hierarchy, scipy.cluster._optimal_leaf_ordering, sqlalchemy.cyextension.collections, sqlalchemy.cyextension.immutabledict, sqlalchemy.cyextension.processors, sqlalchemy.cyextension.resultproxy, sqlalchemy.cyextension.util, greenlet._greenlet, yaml._yaml, sklearn.datasets._svmlight_format_fast, hdbscan.dist_metrics, hdbscan._hdbscan_linkage, hdbscan._hdbscan_tree, hdbscan._hdbscan_reachability, hdbscan._hdbscan_boruvka, hdbscan._prediction_utils, numba.core.typeconv._typeconv, numba._helperlib, numba._dynfunc, numba._dispatcher, numba.core.runtime._nrt_python, numba.np.ufunc._internal, numba.experimental.jitclass._box, sklearn.ensemble._gradient_boosting, sklearn.ensemble._hist_gradient_boosting.common, sklearn.ensemble._hist_gradient_boosting._gradient_boosting, sklearn.ensemble._hist_gradient_boosting._binning, sklearn.ensemble._hist_gradient_boosting._bitset, sklearn.ensemble._hist_gradient_boosting.histogram, sklearn.ensemble._hist_gradient_boosting._predictor, sklearn.ensemble._hist_gradient_boosting.splitting, sklearn.ensemble._hist_gradient_boosting.utils, markupsafe._speedups, google._upb._message, GPy.util.linalg_cython, GPy.kern.src.stationary_cython, GPy.kern.src.coregionalize_cython, GPy.util.choleskies_cython, scipy.fftpack.convolve, tornado.speedups, msgpack._cmsgpack, lz4.block._block, torch._C, torch._C._fft, torch._C._linalg, torch._C._nested, torch._C._nn, torch._C._sparse, torch._C._special, lxml._elementpath, lxml.etree (total: 285)
