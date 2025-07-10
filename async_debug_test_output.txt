@@ -1,0 +1,21 @@
+============================= test session starts ==============================
+platform linux -- Python 3.11.5, pytest-8.3.3, pluggy-1.5.0 -- /home/chrisfoulon/miniconda3/bin/python
+cachedir: .pytest_cache
+rootdir: /home/chrisfoulon/neuro_apps/emuses
+configfile: pytest.ini
+plugins: cov-6.2.1, asyncio-1.0.0, anyio-4.9.0
+asyncio: mode=Mode.STRICT, asyncio_default_fixture_loop_scope=function, asyncio_default_test_loop_scope=function
+collecting ... collected 1 item
+
+tests/foundation_fastapi_service/test_stage_runners.py::TestHeatmapStageRunner::test_heatmap_stage_runner_missing_context PASSED
+
+=============================== warnings summary ===============================
+../../miniconda3/lib/python3.11/site-packages/umap/__init__.py:36
+   /home/chrisfoulon/miniconda3/lib/python3.11/site-packages/umap/__init__.py:36: DeprecationWarning:pkg_resources is deprecated as an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html
+
+../../miniconda3/lib/python3.11/site-packages/pkg_resources/__init__.py:2871
+   /home/chrisfoulon/miniconda3/lib/python3.11/site-packages/pkg_resources/__init__.py:2871: DeprecationWarning:Deprecated call to `pkg_resources.declare_namespace('ruamel')`.
+  Implementing implicit namespace packages (as specified in PEP 420) is preferred to `pkg_resources.declare_namespace`. See https://setuptools.pypa.io/en/latest/references/keywords.html#keyword-namespace-packages
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+======================== 1 passed, 2 warnings in 9.93s =========================

@@ -1,0 +1,36 @@
+============================= test session starts ==============================
+platform linux -- Python 3.11.5, pytest-8.3.3, pluggy-1.5.0 -- /home/chrisfoulon/miniconda3/bin/python
+cachedir: .pytest_cache
+rootdir: /home/chrisfoulon/neuro_apps/emuses
+configfile: pytest.ini
+plugins: cov-6.2.1, asyncio-1.0.0, anyio-4.9.0
+asyncio: mode=Mode.STRICT, asyncio_default_fixture_loop_scope=function, asyncio_default_test_loop_scope=function
+collecting ... collected 2 items
+
+tests/foundation_fastapi_service/test_stage_runners.py::TestUMAPStageRunner::test_umap_stage_runner_successful_execution PASSED
+tests/foundation_fastapi_service/test_stage_runners.py::TestUMAPStageRunner::test_umap_stage_runner_execution_failure PASSED
+
+=============================== warnings summary ===============================
+../../miniconda3/lib/python3.11/site-packages/umap/__init__.py:36
+   /home/chrisfoulon/miniconda3/lib/python3.11/site-packages/umap/__init__.py:36: DeprecationWarning:pkg_resources is deprecated as an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html
+
+../../miniconda3/lib/python3.11/site-packages/pkg_resources/__init__.py:2871
+   /home/chrisfoulon/miniconda3/lib/python3.11/site-packages/pkg_resources/__init__.py:2871: DeprecationWarning:Deprecated call to `pkg_resources.declare_namespace('ruamel')`.
+  Implementing implicit namespace packages (as specified in PEP 420) is preferred to `pkg_resources.declare_namespace`. See https://setuptools.pypa.io/en/latest/references/keywords.html#keyword-namespace-packages
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+======================== 2 passed, 2 warnings in 9.90s =========================
+Task was destroyed but it is pending!
+task: <Task pending name='Task-6' coro=<BaseStageRunner._monitor_progress() done, defined at /home/chrisfoulon/neuro_apps/emuses/emuses/foundation_fastapi_service/stage_runners.py:217> wait_for=<Future pending cb=[Task.task_wakeup()]>>
+Exception ignored in: <coroutine object Queue.get at 0x7f9d713234c0>
+Traceback (most recent call last):
+  File "/home/chrisfoulon/miniconda3/lib/python3.11/asyncio/queues.py", line 160, in get
+    getter.cancel()  # Just in case getter is not done yet.
+    ^^^^^^^^^^^^^^^
+  File "/home/chrisfoulon/miniconda3/lib/python3.11/asyncio/base_events.py", line 761, in call_soon
+    self._check_closed()
+  File "/home/chrisfoulon/miniconda3/lib/python3.11/asyncio/base_events.py", line 519, in _check_closed
+    raise RuntimeError('Event loop is closed')
+RuntimeError: Event loop is closed
+Task was destroyed but it is pending!
+task: <Task pending name='Task-7' coro=<Queue.get() done, defined at /home/chrisfoulon/miniconda3/lib/python3.11/asyncio/queues.py:149> wait_for=<Future cancelled> cb=[_release_waiter(<Future pendi...ask_wakeup()]>)() at /home/chrisfoulon/miniconda3/lib/python3.11/asyncio/tasks.py:421]>

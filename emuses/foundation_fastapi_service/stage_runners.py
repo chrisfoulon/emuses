@@ -181,17 +181,43 @@ class BaseStageRunner:
                         future, timeout=timeout_seconds
                     )
                 except asyncio.TimeoutError:
+                    # Send sentinel to stop monitoring gracefully
+                    await progress_queue.put(None)
                     progress_task.cancel()
+                    # Await the cancelled task to ensure cleanup
+                    try:
+                        await progress_task
+                    except asyncio.CancelledError:
+                        pass  # Expected when task is cancelled
                     raise TimeoutError(
                         f"Stage execution exceeded {timeout_seconds} seconds"
                     )
 
-            # Clean up progress monitoring
-            progress_task.cancel()
-
             return result_context
 
         finally:
+            # Clean up progress monitoring gracefully
+            try:
+                await progress_queue.put(None)  # Send sentinel to stop monitoring
+
+                # Wait for progress task to complete naturally or cancel if needed
+                try:
+                    await asyncio.wait_for(progress_task, timeout=1.0)
+                except asyncio.TimeoutError:
+                    # Progress task didn't finish naturally, cancel it
+                    progress_task.cancel()
+                    try:
+                        await progress_task
+                    except asyncio.CancelledError:
+                        pass  # Expected when task is cancelled
+            except Exception:
+                # If cleanup fails, still cancel the task
+                progress_task.cancel()
+                try:
+                    await progress_task
+                except asyncio.CancelledError:
+                    pass  # Expected when task is cancelled
+
             resource_monitor.stop_monitoring()
             if resource_monitor.exceeded_limits:
                 raise RuntimeError("Resource limits exceeded during stage execution")
