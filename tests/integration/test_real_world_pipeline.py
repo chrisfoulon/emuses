@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import Dict, List, Any, Optional
 import json
 import pickle
+import glob
 
 
 class RealWorldIntegrationTest:
@@ -218,21 +219,38 @@ class RealWorldIntegrationTest:
         """
         validations = {}
 
-        # Expected output files based on EMUSES pipeline
-        expected_files = [
-            'umap_model.pkl',
-            'hdbscan_model.pkl',
-            'embedding_train_coords.csv',
-            'embedding_test_coords.csv',
-            'cluster_labels.csv',
-            'prediction_results.json',
-            'cv_scores.csv',
-            'optimization_history.json'
-        ]
+        # Expected output files based on actual EMUSES pipeline structure
+        # The pipeline uses prefix-based naming and .npy/.joblib formats
+        prefix = f"{self.params['prefix']}_"
+        
+        expected_files = {
+            # UMAP stage outputs (with prefix)
+            'umap_model': "best_umap_model*.joblib",
+            'hdbscan_model': f"{prefix}hdbscan_model*.joblib",
+            'embedding_train_coords': f"{prefix}embeddings.npy",
+            'cluster_labels': f"{prefix}cluster_labels.npy",
+            'embedding_test_coords': "test_embeddings.npy",
+            
+            # Core pipeline outputs
+            'random_seeds': "random_seeds.json",
+            'command_record': "command.txt",
+            
+            # Directory-based outputs
+            'split_dataset_dir': "split_dataset",
+            'performance_dir': "prediction_performance"
+        }
 
-        for expected_file in expected_files:
-            file_path = output_dir / expected_file
-            validations[expected_file] = file_path.exists()
+        # Check for specific files
+        for key, pattern in expected_files.items():
+            if pattern.endswith('/'):  # Directory
+                dir_path = output_dir / pattern.rstrip('/')
+                validations[key] = dir_path.exists() and dir_path.is_dir()
+            elif '*' in pattern:  # Glob pattern
+                matches = list(output_dir.glob(pattern))
+                validations[key] = len(matches) > 0
+            else:  # Exact file
+                file_path = output_dir / pattern
+                validations[key] = file_path.exists()
 
         return validations
 
@@ -338,9 +356,9 @@ class TestCLIIntegration:
         validations = integration_test_suite.validate_output_structure(data_files['output_folder'])
 
         # Check that key outputs exist
-        assert validations.get('embedding_train_coords.csv', False), "Missing training embeddings"
-        assert validations.get('embedding_test_coords.csv', False), "Missing test embeddings"
-        assert validations.get('cluster_labels.csv', False), "Missing cluster labels"
+        assert validations.get('embedding_train_coords', False), "Missing training embeddings"
+        assert validations.get('embedding_test_coords', False), "Missing test embeddings"
+        assert validations.get('cluster_labels', False), "Missing cluster labels"
 
     def test_output_file_formats(self, integration_test_suite):
         """Test that output files have correct formats and can be loaded."""

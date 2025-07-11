@@ -55,10 +55,30 @@ class RequestSizeLimiterMiddleware:
     def __init__(
         self, app, max_size: int = 1024 * 1024 * 1024
     ):  # 1GB default for neuroimaging data
+        """Initialize request size limiter middleware.
+
+        Parameters
+        ----------
+        app : FastAPI
+            The FastAPI application instance
+        max_size : int, optional
+            Maximum allowed request size in bytes (default: 1GB for neuroimaging data)
+        """
         self.app = app
         self.max_size = max_size
 
     async def __call__(self, scope, receive, send):
+        """Process ASGI request and check size limits.
+
+        Parameters
+        ----------
+        scope : dict
+            ASGI scope containing request metadata
+        receive : callable
+            ASGI receive callable for getting request body
+        send : callable
+            ASGI send callable for sending responses
+        """
         if scope["type"] == "http":
             # Check content-length header
             headers = dict(scope.get("headers", []))
@@ -117,39 +137,39 @@ pipeline_runner = None
 
 class StorageDirectoryFactory:
     """Factory for creating appropriate storage directories based on environment."""
-    
+
     @staticmethod
     def create_job_storage() -> Path:
         """Create appropriate job storage directory based on environment."""
         import tempfile
-        
+
         # Check testing mode dynamically
         testing_mode = os.getenv("TESTING_MODE", "false").lower() == "true"
-        
+
         # In testing mode, use temporary directory
         if testing_mode:
             return Path(tempfile.mkdtemp(prefix="emuses_test_jobs_"))
-        
+
         # For development/production, use environment variable or default
         job_storage = os.getenv("EMUSES_JOB_STORAGE")
         if job_storage:
             return Path(job_storage)
-        
+
         # Default to user's local data directory in development
         # In production, this should be set via EMUSES_JOB_STORAGE env var
         return Path.home() / ".local" / "share" / "emuses" / "jobs"
-    
+
     @staticmethod
     def create_upload_directory() -> Path:
         """Create appropriate upload directory based on environment."""
         import tempfile
-        
+
         # Check testing mode dynamically
         testing_mode = os.getenv("TESTING_MODE", "false").lower() == "true"
-        
+
         if testing_mode:
             return Path(tempfile.mkdtemp(prefix="emuses_test_uploads_"))
-        
+
         upload_dir = Path("/tmp/emuses_uploads")
         upload_dir.mkdir(parents=True, exist_ok=True)
         return upload_dir
@@ -161,7 +181,9 @@ def get_job_manager():
     if job_manager is None:
         from emuses.foundation_fastapi_service.job_manager import JobManager
 
-        job_manager = JobManager(base_directory=StorageDirectoryFactory.create_job_storage())
+        job_manager = JobManager(
+            base_directory=StorageDirectoryFactory.create_job_storage()
+        )
     return job_manager
 
 
@@ -295,6 +317,18 @@ def conditional_rate_limit(rate_limit_str: str):
     """Apply rate limiting only if enabled (not in testing mode)."""
 
     def decorator(func):
+        """Conditional decorator for rate limiting.
+
+        Parameters
+        ----------
+        func : callable
+            The function to potentially apply rate limiting to
+
+        Returns
+        -------
+        callable
+            The function with or without rate limiting applied
+        """
         if RATE_LIMITING_ENABLED and limiter:
             return limiter.limit(rate_limit_str)(func)
         return func

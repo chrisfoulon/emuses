@@ -82,6 +82,19 @@ class ProgressTracker:
         stage_name: str,
         max_update_rate: float = 1.0,
     ):
+        """Initialize progress tracker with rate limiting.
+
+        Parameters
+        ----------
+        job_manager : JobManager
+            The job manager instance for updating job progress
+        job_id : str
+            Unique identifier for the job being tracked
+        stage_name : str
+            Name of the pipeline stage being executed
+        max_update_rate : float, optional
+            Maximum updates per second to prevent flooding (default: 1.0)
+        """
         self.job_manager = job_manager
         self.job_id = job_id
         self.stage_name = stage_name
@@ -114,6 +127,13 @@ class BaseStageRunner:
     """Base class for stage runners with common functionality"""
 
     def __init__(self, job_manager: JobManager):
+        """Initialize base stage runner.
+
+        Parameters
+        ----------
+        job_manager : JobManager
+            The job manager instance for tracking job status and progress
+        """
         self.job_manager = job_manager
         self.logger = logging.getLogger(self.__class__.__name__)
 
@@ -277,6 +297,13 @@ class UMAPStageRunner(BaseStageRunner):
     """Runner for UMAP dimensionality reduction and clustering stage"""
 
     def __init__(self, job_manager: JobManager):
+        """Initialize UMAP stage runner.
+
+        Parameters
+        ----------
+        job_manager : JobManager
+            The job manager instance for tracking job status and progress
+        """
         super().__init__(job_manager)
 
     async def run_stage(self, job_id: str, context: Dict[str, Any]) -> Dict[str, Any]:
@@ -369,6 +396,13 @@ class HeatmapStageRunner(BaseStageRunner):
     """Runner for heatmap multi-target prediction stage"""
 
     def __init__(self, job_manager: JobManager):
+        """Initialize heatmap stage runner.
+
+        Parameters
+        ----------
+        job_manager : JobManager
+            The job manager instance for tracking job status and progress
+        """
         super().__init__(job_manager)
 
     async def run_stage(self, job_id: str, context: Dict[str, Any]) -> Dict[str, Any]:
@@ -456,6 +490,13 @@ class PredictionStageRunner(BaseStageRunner):
     """Runner for prediction and test evaluation stage"""
 
     def __init__(self, job_manager: JobManager):
+        """Initialize prediction stage runner.
+
+        Parameters
+        ----------
+        job_manager : JobManager
+            The job manager instance for tracking job status and progress
+        """
         super().__init__(job_manager)
 
     async def run_stage(self, job_id: str, context: Dict[str, Any]) -> Dict[str, Any]:

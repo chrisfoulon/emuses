@@ -626,6 +626,18 @@ class JobManager:
 
         # Sort by creation time (newest first)
         def get_creation_time(job_dir):
+            """Get the creation time of a job from its status file.
+
+            Parameters
+            ----------
+            job_dir : Path
+                Path to the job directory
+
+            Returns
+            -------
+            str
+                ISO timestamp string of job creation, empty string if not found
+            """
             try:
                 status_file = job_dir / "status.json"
                 if status_file.exists():
