@@ -13,6 +13,9 @@ from uuid import UUID, uuid4
 from datetime import datetime, timezone
 import mimetypes
 
+# Explicit import for Starlette form parser compatibility
+import python_multipart
+
 from fastapi import FastAPI, HTTPException, File, UploadFile, Request, Depends
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
