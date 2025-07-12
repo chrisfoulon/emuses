@@ -1,25 +1,5 @@
 # Global Copilot Instructions
 
-Coding & formatting
-* Follow PEP 8; run Black.
-* Use type hints everywhere.
-* External dependencies limited to numpy, pandas, requests.
-* Target Python 3.11.
-
-Testing & linting
-* Write pytest unit tests mirroring module paths.
-* Run flake8 with `--max-complexity=10`; keep complexity ≤ 10.
-* Every function/class **must** include a **NumPy-style docstring** (Sections: Parameters, Returns, Raises, Examples).
-
-Commits
-* Use Conventional Commits. Example:  
-  `feat(pipeline-filter): add ROI masking helper`
-* Keep body as bullet list of sub-tasks completed.
-
-Docs
-* High-level docs live under `docs/` and are organised in three nested levels using `<details>` tags.
-# Global Copilot Instructions
-
 * Prioritize **minimal scope**: only edit code directly implicated by the failing test.  
 * Protect existing functionality: do **not** delete or refactor code outside the immediate test context.
 * Before deleting any code, follow the "Coverage & Code Safety" guidelines below.
@@ -34,9 +14,45 @@ Coding & formatting
 * Target Python 3.11.
 
 Testing & linting
-* Write pytest unit tests mirroring module paths.
+* Write tests using component-appropriate strategy (see Testing Strategy below).
 * Run flake8 with `--max-complexity=10`; keep complexity ≤ 10.
 * Every function/class **must** include a **NumPy-style docstring** (Sections: Parameters, Returns, Raises, Examples).
+
+## Testing Strategy by Component Type
+
+**API Endpoints & Web Services:**
+* Use **integration testing** - import the real FastAPI/Django/Flask app
+* Mock only external dependencies (databases, external APIs, file systems)
+* Test actual HTTP routing, validation, serialization, and error handling
+* Verify real request/response behavior and framework integration
+
+**Business Logic & Algorithms:**
+* Use **unit testing** - mock all dependencies completely
+* Test logic in complete isolation, focus on edge cases
+* Maximize test speed and reliability
+* Test pure business logic without framework concerns
+
+**Data Processing & Utilities:**
+* Use **unit testing** with minimal dependencies
+* Use test data fixtures for predictable inputs
+* Focus on input/output correctness and error handling
+
+## Regression Prevention
+
+**Before making changes:**
+* Run full test suite to establish baseline: `pytest -q --tb=short`
+* Identify dependencies: `grep -r "function_name" . --include="*.py"`
+* Understand impact scope before modifications
+
+**During development:**
+* Run affected tests after each change: `pytest -q tests/test_modified_module.py`
+* Preserve public API interfaces or update all callers
+* Make minimal changes focused on the failing test
+
+**Before commit:**
+* Run full test suite: `pytest -q --tb=short`
+* Verify no regressions introduced
+* Ensure test coverage maintained or improved
 
 ## Code Quality Setup (One-time per project)
 
