@@ -4,6 +4,8 @@
 
 This guide provides step-by-step instructions for each LAD session, including specific feature descriptions, context files, and implementation priorities aligned with the [EMUSES Service Architecture Plan](./EMUSES_Service_Architecture_Plan.md).
 
+> **📝 Terminology Note**: This guide uses "Session" terminology (Session 1, 2, 3, etc.) consistently throughout. Some older documentation may reference "Phase 0" - this refers to "Session 1" and has been harmonized.
+
 ---
 
 ## LAD Session Overview

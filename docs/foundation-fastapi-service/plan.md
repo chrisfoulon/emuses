@@ -42,7 +42,7 @@ The original plan has been split into focused sub-plans:
 **File**: `plan_0e_upload.md`  
 **Context**: Extends `context_0c_interface.md`  
 **Focus**: File upload endpoints for real-world API usage  
-**Size**: 1 task, 5 sub-tasks ⚠️ **REQUIRED FOR PHASE 0 COMPLETION**
+**Size**: 1 task, 5 sub-tasks ⚠️ **REQUIRED FOR SESSION 1 COMPLETION**
 
 ## Implementation Instructions
 

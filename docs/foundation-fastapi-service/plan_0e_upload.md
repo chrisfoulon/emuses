@@ -1,7 +1,7 @@
 # File Upload Sub-Plan 0e: Upload Endpoints for Real-World API
 
 ## Sub-Plan Scope
-**Focus**: File upload endpoints to complete Phase 0 foundation
+**Focus**: File upload endpoints to complete Session 1 foundation
 **Dependencies**: Sub-plan 0a (models completed), 0c (interface layer completed)
 **Enables**: Real-world API usage with HCP and other neuroimaging datasets
 
@@ -32,7 +32,7 @@
 After completing this sub-plan, the following context files will need updates:
 
 ### EMUSES_Service_Architecture_Plan.md Updates
-- Mark Phase 0 as **100% complete** with upload endpoints
+- Mark Session 1 as **100% complete** with upload endpoints
 - Update API completeness assessment from "server-side only" to "full real-world API"
 - Document that HCP real-world example now works end-to-end
 
@@ -89,7 +89,7 @@ POST /api/v1/upload/labels (optional)
 
 ### Rationale
 <reasoning>
-This sub-plan addresses the critical gap preventing real-world API usage. The FastAPI foundation is architecturally complete but missing file upload endpoints essential for a production API. Since Task 1.4 only implemented Pydantic models (not endpoints), and all other tasks are complete, a focused sub-plan 0e provides the minimal addition needed to complete Phase 0 without reopening completed work.
+This sub-plan addresses the critical gap preventing real-world API usage. The FastAPI foundation is architecturally complete but missing file upload endpoints essential for a production API. Since Task 1.4 only implemented Pydantic models (not endpoints), and all other tasks are complete, a focused sub-plan 0e provides the minimal addition needed to complete Session 1 without reopening completed work.
 </reasoning>
 
 ### Resources
