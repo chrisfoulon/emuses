@@ -22,6 +22,47 @@ class SecurityError(Exception):
     pass
 
 
+def _check_command_injection_in_path(path_str: str) -> None:
+    """
+    Check for command injection patterns in a path.
+    
+    Parameters
+    ----------
+    path_str : str
+        The path string to check
+        
+    Raises
+    ------
+    ValueError
+        If command injection patterns are detected
+    """
+    # Command injection patterns that shouldn't appear in legitimate paths
+    injection_patterns = [
+        ";",
+        "&&",
+        "||",
+        "|",
+        "&",
+        "$(",
+        "`",
+        "$(",
+        "${",
+        "</script>",
+        "<script>",
+    ]
+    
+    # Check for URL-encoded injection attempts
+    try:
+        decoded_path = urllib.parse.unquote(path_str)
+    except Exception:
+        decoded_path = path_str
+    
+    # Check both original and decoded paths
+    for pattern in injection_patterns:
+        if pattern in path_str or pattern in decoded_path:
+            raise ValueError(f"Command injection pattern detected in path: {pattern}")
+
+
 def _check_directory_traversal(path_str: str) -> None:
     """
     Check for directory traversal patterns in a path.
@@ -113,8 +154,8 @@ def validate_path(path_str: str) -> str:
     """
     Validate a path string for security vulnerabilities.
     
-    This function checks for directory traversal attacks and other path-based
-    security issues while preserving legitimate path formats.
+    This function checks for directory traversal attacks, command injection attempts,
+    and other path-based security issues while preserving legitimate path formats.
 
     Parameters
     ----------
@@ -131,7 +172,7 @@ def validate_path(path_str: str) -> str:
     SecurityError
         If the path contains directory traversal attempts or other security issues
     ValueError
-        If the path is empty or None
+        If the path is empty, None, or contains injection attempts
 
     Examples
     --------
@@ -152,6 +193,9 @@ def validate_path(path_str: str) -> str:
         "input_matrix",
     ]:
         return path_str
+    
+    # Check for command injection patterns in paths
+    _check_command_injection_in_path(path_str)
     
     # Check for directory traversal patterns
     _check_directory_traversal(path_str)
@@ -224,7 +268,16 @@ def sanitize_input(input_str: str) -> str:
         "$(",
         "`",
         "| del",
+        "| nc",
+        "| cat",
+        "| wget",
+        "| curl",
         "& rmdir",
+        "& del",
+        "& rm",
+        "|| format",
+        "&& rm",
+        "&& del",
         "</script>",
         "<script>",
         "<>",  # HTML/XML injection
