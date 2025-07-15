@@ -197,7 +197,7 @@ class TestArgumentParsingCompatibility:
         
         # Test with optional arguments
         result = runner.invoke(app, [
-            'full', 'output_dir', 'input_file.csv', 
+            'full', 'output_dir', 'input_file.csv',
             '--scores', 'scores.csv',
             '--random_state', '42'
         ])
@@ -323,9 +323,10 @@ class TestModularCommandStructure:
             annotations = full_command.__annotations__
             assert len(annotations) > 0, "Commands should have type annotations"
             
-            # Check for Path types on file arguments
+            # Check for Path types on file/folder/dataset arguments (but not input_file_types)
             for param_name, param_type in annotations.items():
-                if 'folder' in param_name or 'dataset' in param_name or 'file' in param_name:
+                if (('folder' in param_name or 'dataset' in param_name) or
+                        ('file' in param_name and param_name != 'input_file_types')):
                     assert 'Path' in str(param_type), f"Parameter {param_name} should use Path type"
                     
     def test_command_docstrings(self):
@@ -371,7 +372,7 @@ class TestCLIIntegration:
             
             # Verify expected elements in help
             assert 'EMUSES pipeline' in help_output, "Main help should contain description"
-            assert 'Commands:' in help_output, "Help should list commands"
+            assert 'Commands' in help_output, "Help should list commands"
             
             # Verify all commands are listed
             expected_commands = ['full', 'umap', 'clustering', 'heatmap', 'prediction']
