@@ -47,8 +47,8 @@ class TestRealTimeProgressUpdater:
         task_id = progress_updater.add_task("Test Task", total=100)
         
         # Update progress in real-time
-        progress_updater.update_progress(task_id, advance=10)
-        progress_updater.update_progress(task_id, advance=20)
+        progress_updater.update_task_progress(task_id, advance=10)
+        progress_updater.update_task_progress(task_id, advance=20)
         
         # Verify progress state
         assert progress_updater.get_task_progress(task_id) == 30
@@ -64,7 +64,7 @@ class TestRealTimeProgressUpdater:
         
         # Should fall back to simple text output
         task_id = progress_updater.add_task("Fallback Task", total=100)
-        progress_updater.update_progress(task_id, advance=50)
+        progress_updater.update_task_progress(task_id, advance=50)
         
         # Should still track progress internally
         assert progress_updater.get_task_progress(task_id) == 50
@@ -76,7 +76,7 @@ class TestRealTimeProgressUpdater:
         # Rapid updates should be rate-limited
         start_time = time.time()
         for i in range(100):
-            progress_updater.update_progress(task_id, advance=1)
+            progress_updater.update_task_progress(task_id, advance=1)
         
         # Should not cause excessive console updates
         assert progress_updater.console.print.call_count < 100
@@ -88,9 +88,9 @@ class TestRealTimeProgressUpdater:
         task3 = progress_updater.add_task("Task 3", total=50)
         
         # Update different tasks
-        progress_updater.update_progress(task1, advance=25)
-        progress_updater.update_progress(task2, advance=100)
-        progress_updater.update_progress(task3, advance=50)
+        progress_updater.update_task_progress(task1, advance=25)
+        progress_updater.update_task_progress(task2, advance=100)
+        progress_updater.update_task_progress(task3, advance=50)
         
         # Verify individual progress
         assert progress_updater.get_task_progress(task1) == 25
@@ -102,12 +102,12 @@ class TestRealTimeProgressUpdater:
         """Test smooth transitions between pipeline stages."""
         # Start with data loading stage
         load_task = progress_updater.add_task("Loading Data", total=100)
-        progress_updater.update_progress(load_task, advance=100)
+        progress_updater.update_task_progress(load_task, advance=100)
         progress_updater.complete_task(load_task)
         
         # Transition to processing stage
         process_task = progress_updater.add_task("Processing", total=200)
-        progress_updater.update_progress(process_task, advance=50)
+        progress_updater.update_task_progress(process_task, advance=50)
         
         # Verify stage transition
         assert progress_updater.is_task_complete(load_task)
@@ -119,16 +119,16 @@ class TestRealTimeProgressUpdater:
         
         # Test invalid task ID
         with pytest.raises(ValueError, match="Invalid task ID"):
-            progress_updater.update_progress("invalid_id", advance=10)
+            progress_updater.update_task_progress("invalid_id", advance=10)
         
         # Test negative progress
         with pytest.raises(ValueError, match="Progress cannot be negative"):
-            progress_updater.update_progress(task_id, advance=-10)
+            progress_updater.update_task_progress(task_id, advance=-10)
 
     def test_progress_cleanup_on_completion(self, progress_updater):
         """Test that progress resources are cleaned up on completion."""
         task_id = progress_updater.add_task("Cleanup Task", total=100)
-        progress_updater.update_progress(task_id, advance=100)
+        progress_updater.update_task_progress(task_id, advance=100)
         progress_updater.complete_task(task_id)
         
         # Should clean up resources
@@ -139,7 +139,7 @@ class TestRealTimeProgressUpdater:
         # Create many short-lived tasks
         for i in range(100):
             task_id = progress_updater.add_task(f"Task {i}", total=10)
-            progress_updater.update_progress(task_id, advance=10)
+            progress_updater.update_task_progress(task_id, advance=10)
             progress_updater.complete_task(task_id)
         
         # Should not accumulate completed tasks
