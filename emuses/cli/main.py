@@ -18,6 +18,7 @@ Security:
 """
 
 import typer
+from typing import Union
 from typing import Optional, List, Annotated
 from pathlib import Path
 import urllib.parse
@@ -58,7 +59,7 @@ class ScoresNormalization(str, Enum):
     zero_max = "zero-max"
 
 
-def secure_path_resolver(path_str: str) -> Path | str:
+def secure_path_resolver(path_str: str) -> Union[Path, str]:
     """
     Secure path resolver that handles paths with spaces, different formats,
     and protects against directory traversal attacks.
