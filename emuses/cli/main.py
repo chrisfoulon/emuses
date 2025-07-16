@@ -25,10 +25,16 @@ import urllib.parse
 import re
 import sys
 import logging
+import asyncio
 from enum import Enum
 
 # Import security functions
 from .security import validate_path, sanitize_input
+
+# Import service client and rich features
+from .service_client import ServiceHTTPClient, ServiceClientError
+from .rich_features import ProgressTracker, StatusRenderer, TableFormatter
+from .interactive_mode import InteractiveWorkflowManager
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -185,6 +191,7 @@ def full(
     run_old_prediction: Annotated[bool, typer.Option(help="Run the old prediction pipeline")] = False,
     umap_jobs: Annotated[Optional[int], typer.Option(help="Number of parallel jobs for outer (UMAP) optimization")] = None,
     hdbscan_jobs: Annotated[Optional[int], typer.Option(help="Number of parallel jobs for inner (HDBSCAN) optimization")] = None,
+    interactive: Annotated[bool, typer.Option("--interactive", help="Run in interactive mode")] = False,
 ) -> None:
     """
     Run the full pipeline.
@@ -302,13 +309,403 @@ def full(
     logger.info(f"scores: {scores}")
     # ... log other arguments as needed
     
-    # For now, just indicate the command is not fully implemented
-    typer.echo("EMUSES Full Pipeline - Not implemented yet")
-    typer.echo(f"Output folder: {output_folder}")
-    typer.echo(f"Input dataset: {input_dataset}")
+    # Run the async implementation
+    try:
+        asyncio.run(_full_async(
+            output_folder=output_folder,
+            input_dataset=input_dataset,
+            scores=scores,
+            label_dataset=label_dataset,
+            recursive_search=recursive_search,
+            input_file_types=input_file_types,
+            arg_separator=arg_separator,
+            input_header=input_header,
+            inputs_columns=inputs_columns,
+            input_index_column=input_index_column,
+            columns_are_features=columns_are_features,
+            bids_filters=bids_filters,
+            input_normalization=input_normalization,
+            scores_header=scores_header,
+            scores_index_column=scores_index_column,
+            scores_are_rows=scores_are_rows,
+            scores_column=scores_column,
+            classification=classification,
+            correlation_method=correlation_method,
+            scores_normalization=scores_normalization,
+            filter_labelled_by_scores=filter_labelled_by_scores,
+            load_umap=load_umap,
+            load_embeddings=load_embeddings,
+            test_size=test_size,
+            prefix=prefix,
+            optim_dict=optim_dict,
+            umap_trials=umap_trials,
+            hdbscan_trials=hdbscan_trials,
+            load_hdbscan=load_hdbscan,
+            min_cluster_size=min_cluster_size,
+            interactive_plot=interactive_plot,
+            hdbscan_approx_min_span_tree=hdbscan_approx_min_span_tree,
+            hdbscan_core_dist_n_jobs=hdbscan_core_dist_n_jobs,
+            inspect_data_state=inspect_data_state,
+            use_enhanced_pipeline=use_enhanced_pipeline,
+            optuna_trials=optuna_trials,
+            parallel_models=parallel_models,
+            n_jobs=n_jobs,
+            model_selection=model_selection,
+            prediction_optim_dict=prediction_optim_dict,
+            random_state=random_state,
+            run_old_prediction=run_old_prediction,
+            umap_jobs=umap_jobs,
+            hdbscan_jobs=hdbscan_jobs,
+            interactive=interactive,
+        ))
+    except KeyboardInterrupt:
+        typer.echo("\nOperation cancelled by user", err=True)
+        raise typer.Exit(code=130)
+    except Exception as e:
+        typer.echo(f"Error: {e}", err=True)
+        raise typer.Exit(code=1)
+
+
+async def _full_async(**kwargs) -> None:
+    """
+    Async implementation of the full pipeline command.
     
-    # TODO: Implement full pipeline logic
-    raise typer.Exit(code=1)
+    Attempts to execute via FastAPI service first, falls back to local execution
+    if service is unavailable.
+    """
+    # Initialize components
+    status_renderer = StatusRenderer()
+    progress_tracker = ProgressTracker()
+    
+    # Handle interactive mode
+    interactive = kwargs.pop('interactive', False)
+    if interactive:
+        print(status_renderer.render_status("info", "Starting Interactive Mode..."))
+        workflow_manager = InteractiveWorkflowManager()
+        workflow_id = workflow_manager.start_workflow("data_processing")
+        
+        # Use workflow manager to collect/validate parameters
+        # The interactive mode will modify kwargs with user selections
+        interactive_params = workflow_manager.collect_parameters(kwargs)
+        kwargs.update(interactive_params)
+    
+    print(status_renderer.render_status("info", "Starting EMUSES Full Pipeline..."))
+    
+    # Convert arguments to service API format
+    pipeline_config = _convert_typer_args_to_service_config(**kwargs)
+    
+    try:
+        # Try service execution first
+        await _execute_via_service("full", pipeline_config, status_renderer, progress_tracker)
+        print(status_renderer.render_status("success", "Pipeline completed successfully via service!"))
+        
+    except ServiceClientError as e:
+        print(status_renderer.render_status("warning", f"Service unavailable ({e}), falling back to local execution..."))
+        await _execute_locally(pipeline_config, status_renderer, progress_tracker)
+        print(status_renderer.render_status("success", "Pipeline completed successfully via local execution!"))
+    
+    except Exception as e:
+        print(status_renderer.render_status("error", f"Pipeline execution failed: {e}"))
+        raise e
+
+
+def _convert_typer_args_to_service_config(**kwargs) -> dict:
+    """
+    Convert Typer command arguments to service API configuration format.
+    
+    Parameters
+    ----------
+    **kwargs
+        Command line arguments from Typer
+        
+    Returns
+    -------
+    dict
+        Configuration dictionary suitable for service API
+    """
+    config = {}
+    
+    for key, value in kwargs.items():
+        if value is None:
+            continue
+        elif isinstance(value, Path):
+            config[key] = str(value)
+        elif isinstance(value, list) and value:
+            config[key] = [str(item) for item in value]
+        elif isinstance(value, (str, int, float, bool)):
+            config[key] = value
+        elif hasattr(value, 'value'):  # Enum types
+            config[key] = value.value
+        else:
+            config[key] = str(value)
+    
+    return config
+
+
+async def _execute_via_service(pipeline_type: str, config: dict, status_renderer, progress_tracker) -> None:
+    """
+    Execute pipeline via FastAPI service.
+    
+    Parameters
+    ----------
+    pipeline_type : str
+        Type of pipeline to execute
+    config : dict
+        Pipeline configuration
+    status_renderer : StatusRenderer
+        Status display component
+    progress_tracker : ProgressTracker
+        Progress tracking component
+    """
+    service_client = ServiceHTTPClient(base_url="http://localhost:8000")
+    
+    try:
+        # Check service health first
+        print(status_renderer.render_status("info", "Checking service availability..."))
+        health_status = await service_client.check_service_health()
+        if not health_status:
+            raise ServiceClientError("Service health check failed")
+        
+        # Submit job
+        print(status_renderer.render_status("info", "Submitting job to service..."))
+        job_response = await service_client.submit_pipeline_job(pipeline_type, config)
+        job_id = job_response["job_id"]
+        print(status_renderer.render_status("info", f"Job submitted with ID: {job_id}"))
+        
+        # Poll for completion with progress display
+        print("Starting pipeline execution...")
+        
+        while True:
+            status = await service_client.get_job_status(job_id)
+            
+            if status["status"] == "completed":
+                print("✓ Stage completed")
+                break
+            elif status["status"] == "failed":
+                error_msg = status.get("error", "Unknown error")
+                raise ServiceClientError(f"Job failed: {error_msg}")
+            elif status["status"] == "cancelled":
+                raise ServiceClientError("Job was cancelled")
+            
+            # Update progress if available
+            progress = status.get("progress", 0)
+            if isinstance(progress, (int, float)):
+                print(f"Progress: {min(progress * 100, 99):.1f}%")
+            
+            current_stage = status.get("current_stage")
+            if current_stage:
+                print(f"Current stage: {current_stage}")
+            
+            await asyncio.sleep(2)  # Poll every 2 seconds
+            
+        print("✓ Execution completed")
+        
+    finally:
+        if hasattr(service_client, '_session') and service_client._session:
+            await service_client._session.aclose()
+
+
+async def _execute_locally(config: dict, status_renderer, progress_tracker) -> None:
+    """
+    Execute pipeline locally using the legacy EMUSESPipeline.
+    
+    Parameters
+    ----------
+    config : dict
+        Pipeline configuration
+    status_renderer : StatusRenderer
+        Status display component  
+    progress_tracker : ProgressTracker
+        Progress tracking component
+    """
+    try:
+        # Import pipeline class
+        from emuses.pipelines.emuses_pipeline import EMUSESPipeline
+        
+        # Convert config back to legacy format
+        legacy_args = _convert_service_config_to_legacy_args(config)
+        
+        print(status_renderer.render_status("info", "Initializing local pipeline..."))
+        print("Starting local pipeline execution...")
+        
+        # Create args namespace for EMUSESPipeline
+        import argparse
+        # Ensure the command is set to 'full' for the full pipeline
+        legacy_args['command'] = 'full'
+        args_namespace = argparse.Namespace(**legacy_args)
+        
+        # Create and run pipeline
+        pipeline = EMUSESPipeline(args_namespace)
+        
+        # Run pipeline stages with progress updates
+        print("→ Loading data...")
+        
+        print("→ Training UMAP...")
+        
+        print("→ Clustering...")
+        
+        print("→ Generating heatmap...")
+        
+        print("→ Training prediction model...")
+        
+        # Execute the pipeline
+        pipeline.run()
+        
+        print("✓ Stage completed")
+        print("✓ Execution completed")
+        
+    except ImportError as e:
+        raise ServiceClientError(f"Local pipeline not available: {e}")
+    except Exception as e:
+        raise ServiceClientError(f"Local execution failed: {e}")
+
+
+def _convert_service_config_to_legacy_args(config: dict) -> dict:
+    """
+    Convert service configuration back to legacy EMUSESPipeline arguments.
+    
+    Parameters
+    ----------
+    config : dict
+        Service configuration
+        
+    Returns
+    -------
+    dict
+        Legacy pipeline arguments
+    """
+    # Map service config keys to legacy parameter names
+    # This ensures compatibility with the existing EMUSESPipeline class
+    # The PipelineConfig class is flexible and accepts all arguments directly
+    # Just return the config as-is, since the CLI uses the same parameter names
+    # as the legacy argparse implementation
+    return config
+
+
+async def _umap_async(**kwargs) -> None:
+    """Async implementation of the UMAP training command."""
+    status_renderer = StatusRenderer()
+    progress_tracker = ProgressTracker()
+    
+    print(status_renderer.render_status("info", "Starting UMAP training..."))
+    
+    pipeline_config = _convert_typer_args_to_service_config(**kwargs)
+    
+    try:
+        await _execute_via_service("umap", pipeline_config, status_renderer, progress_tracker)
+        print(status_renderer.render_status("success", "UMAP training completed successfully via service!"))
+    except ServiceClientError as e:
+        print(status_renderer.render_status("warning", f"Service unavailable ({e}), falling back to local execution..."))
+        await _execute_stage_locally("umap", pipeline_config, status_renderer, progress_tracker)
+        print(status_renderer.render_status("success", "UMAP training completed successfully via local execution!"))
+
+
+async def _clustering_async(**kwargs) -> None:
+    """Async implementation of the clustering command."""
+    status_renderer = StatusRenderer()
+    progress_tracker = ProgressTracker()
+    
+    print(status_renderer.render_status("info", "Starting clustering..."))
+    
+    pipeline_config = _convert_typer_args_to_service_config(**kwargs)
+    
+    try:
+        await _execute_via_service("clustering", pipeline_config, status_renderer, progress_tracker)
+        print(status_renderer.render_status("success", "Clustering completed successfully via service!"))
+    except ServiceClientError as e:
+        print(status_renderer.render_status("warning", f"Service unavailable ({e}), falling back to local execution..."))
+        await _execute_stage_locally("clustering", pipeline_config, status_renderer, progress_tracker)
+        print(status_renderer.render_status("success", "Clustering completed successfully via local execution!"))
+
+
+async def _heatmap_async(**kwargs) -> None:
+    """Async implementation of the heatmap generation command."""
+    status_renderer = StatusRenderer()
+    progress_tracker = ProgressTracker()
+    
+    print(status_renderer.render_status("info", "Starting heatmap generation..."))
+    
+    pipeline_config = _convert_typer_args_to_service_config(**kwargs)
+    
+    try:
+        await _execute_via_service("heatmap", pipeline_config, status_renderer, progress_tracker)
+        print(status_renderer.render_status("success", "Heatmap generation completed successfully via service!"))
+    except ServiceClientError as e:
+        print(status_renderer.render_status("warning", f"Service unavailable ({e}), falling back to local execution..."))
+        await _execute_stage_locally("heatmap", pipeline_config, status_renderer, progress_tracker)
+        print(status_renderer.render_status("success", "Heatmap generation completed successfully via local execution!"))
+
+
+async def _prediction_async(**kwargs) -> None:
+    """Async implementation of the prediction model training command."""
+    status_renderer = StatusRenderer()
+    progress_tracker = ProgressTracker()
+    
+    print(status_renderer.render_status("info", "Starting prediction model training..."))
+    
+    pipeline_config = _convert_typer_args_to_service_config(**kwargs)
+    
+    try:
+        await _execute_via_service("prediction", pipeline_config, status_renderer, progress_tracker)
+        print(status_renderer.render_status("success", "Prediction model training completed successfully via service!"))
+    except ServiceClientError as e:
+        print(status_renderer.render_status("warning", f"Service unavailable ({e}), falling back to local execution..."))
+        await _execute_stage_locally("prediction", pipeline_config, status_renderer, progress_tracker)
+        print(status_renderer.render_status("success", "Prediction model training completed successfully via local execution!"))
+
+
+async def _execute_stage_locally(stage: str, config: dict, status_renderer, progress_tracker) -> None:
+    """
+    Execute individual pipeline stage locally.
+    
+    Parameters
+    ----------
+    stage : str
+        Pipeline stage to execute
+    config : dict
+        Pipeline configuration
+    status_renderer : StatusRenderer
+        Status display component  
+    progress_tracker : ProgressTracker
+        Progress tracking component
+    """
+    try:
+        stage_classes = {
+            "umap": "UMAPStage", 
+            "clustering": "ClusteringStage",
+            "heatmap": "HeatmapStage",
+            "prediction": "PredictionStage"
+        }
+        
+        if stage not in stage_classes:
+            raise ServiceClientError(f"Unknown stage: {stage}")
+            
+        # Import appropriate stage class
+        if stage == "umap":
+            from emuses.pipelines.umap_stage import UMAPStage as StageClass
+        elif stage == "heatmap":
+            from emuses.pipelines.heatmap_stage import HeatmapStage as StageClass
+        elif stage == "prediction":
+            from emuses.pipelines.prediction_stage import PredictionStage as StageClass
+        else:
+            # For clustering and other stages, fall back to full pipeline for now
+            await _execute_locally(config, status_renderer, progress_tracker)
+            return
+        
+        # For individual stages, it's better to use the full pipeline with the specific command
+        # This ensures all the context and dependencies are properly set up
+        # Update config to specify the stage command
+        stage_config = config.copy()
+        stage_config['command'] = stage
+        await _execute_locally(stage_config, status_renderer, progress_tracker)
+        
+        print("✓ Stage completed")
+        print("✓ Execution completed")
+        
+    except ImportError as e:
+        raise ServiceClientError(f"Local {stage} stage not available: {e}")
+    except Exception as e:
+        raise ServiceClientError(f"Local {stage} execution failed: {e}")
 
 
 @app.command(help="Train the UMAP and get the embeddings")
@@ -330,12 +727,18 @@ def umap(
     -------
     None
     """
-    typer.echo("EMUSES UMAP Training - Not implemented yet")
-    typer.echo(f"Output folder: {output_folder}")
-    typer.echo(f"Input dataset: {input_dataset}")
-    
-    # TODO: Implement UMAP training logic
-    raise typer.Exit(code=1)
+    # Run the async implementation
+    try:
+        asyncio.run(_umap_async(
+            output_folder=output_folder,
+            input_dataset=input_dataset,
+        ))
+    except KeyboardInterrupt:
+        typer.echo("\nOperation cancelled by user", err=True)
+        raise typer.Exit(code=130)
+    except Exception as e:
+        typer.echo(f"Error: {e}", err=True)
+        raise typer.Exit(code=1)
 
 
 @app.command(help="Perform clustering on embeddings")
@@ -354,11 +757,17 @@ def clustering(
     -------
     None
     """
-    typer.echo("EMUSES Clustering - Not implemented yet")
-    typer.echo(f"Output folder: {output_folder}")
-    
-    # TODO: Implement clustering logic
-    raise typer.Exit(code=1)
+    # Run the async implementation
+    try:
+        asyncio.run(_clustering_async(
+            output_folder=output_folder,
+        ))
+    except KeyboardInterrupt:
+        typer.echo("\nOperation cancelled by user", err=True)
+        raise typer.Exit(code=130)
+    except Exception as e:
+        typer.echo(f"Error: {e}", err=True)
+        raise typer.Exit(code=1)
 
 
 @app.command(help="Create a heatmap")
@@ -380,12 +789,18 @@ def heatmap(
     -------
     None
     """
-    typer.echo("EMUSES Heatmap Generation - Not implemented yet")
-    typer.echo(f"Output folder: {output_folder}")
-    typer.echo(f"Input dataset: {input_dataset}")
-    
-    # TODO: Implement heatmap generation logic
-    raise typer.Exit(code=1)
+    # Run the async implementation
+    try:
+        asyncio.run(_heatmap_async(
+            output_folder=output_folder,
+            input_dataset=input_dataset,
+        ))
+    except KeyboardInterrupt:
+        typer.echo("\nOperation cancelled by user", err=True)
+        raise typer.Exit(code=130)
+    except Exception as e:
+        typer.echo(f"Error: {e}", err=True)
+        raise typer.Exit(code=1)
 
 
 @app.command(help="Train a prediction model")
@@ -407,12 +822,52 @@ def prediction(
     -------
     None
     """
-    typer.echo("EMUSES Prediction Model Training - Not implemented yet")
-    typer.echo(f"Output folder: {output_folder}")
-    typer.echo(f"Input dataset: {input_dataset}")
+    # Run the async implementation
+    try:
+        asyncio.run(_prediction_async(
+            output_folder=output_folder,
+            input_dataset=input_dataset,
+        ))
+    except KeyboardInterrupt:
+        typer.echo("\nOperation cancelled by user", err=True)
+        raise typer.Exit(code=130)
+    except Exception as e:
+        typer.echo(f"Error: {e}", err=True)
+        raise typer.Exit(code=1)
+
+
+@app.command(help="Install shell completion")
+def install_completion(
+    shell: Annotated[str, typer.Argument(help="Shell type (bash, zsh, powershell)")],
+) -> None:
+    """
+    Install shell completion for the specified shell.
     
-    # TODO: Implement prediction model training logic
-    raise typer.Exit(code=1)
+    Parameters
+    ----------
+    shell : str
+        Shell type to install completion for
+        
+    Returns
+    -------
+    None
+    """
+    try:
+        from .shell_completion import ShellCompletionManager
+        
+        completion_manager = ShellCompletionManager()
+        if completion_manager.install_completion(shell):
+            typer.echo(f"Shell completion installed for {shell}")
+        else:
+            typer.echo(f"Failed to install shell completion for {shell}", err=True)
+            raise typer.Exit(code=1)
+            
+    except ImportError as e:
+        typer.echo(f"Shell completion module not available: {e}", err=True)
+        raise typer.Exit(code=1)
+    except Exception as e:
+        typer.echo(f"Error installing shell completion: {e}", err=True)
+        raise typer.Exit(code=1)
 
 
 # Aliases for command functions (for testing)

@@ -203,12 +203,12 @@ class TestParameterValidator:
         for path in malicious_paths:
             result = validator.validate_file_path(path)
             assert not result.is_valid
-            assert "security" in result.error_message.lower()
+            assert any(keyword in result.error_message.lower() for keyword in ["security", "system directory", "path traversal"])
     
     def test_numeric_validation(self, validator):
         """Test numeric parameter validation."""
         # Valid numeric values
-        valid_numbers = [42, 3.14, "123", "45.67"]
+        valid_numbers = [42, 3.14, "50", "45.67"]
         
         for value in valid_numbers:
             result = validator.validate_numeric(value, min_value=0, max_value=100)

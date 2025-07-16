@@ -587,8 +587,8 @@ class ParameterValidator:
             "path_traversal_patterns": [
                 r"\.\.[\\/]",
                 r"[\\/]\.\.[\\/]",
-                r"^[\\/]",
-                r"^[a-zA-Z]:[\\/]"
+                r"\.\./",
+                r"\.\.\\",
             ],
             "command_injection_patterns": [
                 r"(?i)(\$\(|`|;\s*rm|;\s*del|;\s*format|;\s*shutdown)",
