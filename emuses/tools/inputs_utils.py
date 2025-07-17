@@ -308,7 +308,7 @@ def spreadsheet_to_input_df(
         df = df.transpose()
 
     # Filter columns if a list is provided
-    if filter_columns_list is not None:
+    if filter_columns_list is not None and len(filter_columns_list) > 0:
         df = df[filter_columns_list]
 
     # Filter rows if a list is provided

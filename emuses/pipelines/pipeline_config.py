@@ -59,6 +59,31 @@ class PipelineConfig:
     correlation_method: str = "pearson"  # Method for correlation analysis
     classification: bool = False  # Whether to use classification mode
 
+    # Additional CLI parameters that may be missing
+    scores: str = None  # Path to scores file
+    label_dataset: str = None  # Path to separate labelled dataset
+    recursive_search: bool = False  # Search recursively in input dataset folder
+    load_umap: str = None  # Path to pre-trained UMAP model
+    load_embeddings: str = None  # Path to precomputed embeddings
+    test_size: float = 0.2  # Test size for splitting dataset
+    optim_dict: str = "optim_dict_default"  # Name of optim_dict
+    load_hdbscan: str = None  # Path to pre-trained HDBSCAN model
+    min_cluster_size: int = 5  # Minimum cluster size
+    interactive_plot: bool = False  # Create interactive clustering plots
+    hdbscan_approx_min_span_tree: bool = True  # HDBSCAN approximation setting
+    hdbscan_core_dist_n_jobs: int = -1  # Number of parallel jobs for HDBSCAN
+    inspect_data_state: bool = False  # Inspect data state before training
+    use_enhanced_pipeline: bool = False  # Use enhanced pipeline with Optuna
+    parallel_models: bool = False  # Train models in parallel
+    n_jobs: int = -1  # Number of parallel jobs for model training
+    model_selection: list = None  # List of models to try
+    prediction_optim_dict: str = "optim_dict_predict"  # Prediction optim_dict name
+    random_state: int = 42  # Master random seed
+    run_old_prediction: bool = False  # Run old prediction pipeline
+
+    # Additional required fields
+    input_dataset: str = None  # Input dataset path
+
     # Computed fields
     output_path: Path = field(init=False)
     umap_params: dict = field(default_factory=dict)

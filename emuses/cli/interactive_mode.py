@@ -894,7 +894,7 @@ class SecureFilePicker:
         
         # Check file size
         if not self.is_file_size_valid(file_path):
-            typer.echo(f"File size exceeds maximum allowed size")
+            typer.echo("File size exceeds maximum allowed size")
             return False
         
         # Check file permissions
