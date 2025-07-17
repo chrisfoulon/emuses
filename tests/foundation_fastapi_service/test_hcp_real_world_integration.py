@@ -28,7 +28,7 @@ def hcp_file_paths():
 
     return {
         "features_file": base_path / "selected_columns_data.csv",
-        "scores_file": base_path / "fluid_int_adj.csv",
+        "scores": base_path / "fluid_int_adj.csv",
     }
 
 
@@ -116,8 +116,8 @@ class TestHCPRealWorldIntegration:
 
         job_request = {
             "pipeline_config": {
-                "input_file": str(file_paths["features_file"]),
-                "scores_file": str(file_paths["scores_file"]),
+                "input_dataset": str(file_paths["features_file"]),
+                "scores": str(file_paths["scores"]),
                 "output_folder": output_folder,
                 "columns_are_features": True,
                 "input_header": 0,

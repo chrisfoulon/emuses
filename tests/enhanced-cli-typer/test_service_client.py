@@ -253,7 +253,7 @@ class TestJobSubmissionMethods:
         job_request = {
             "pipeline_type": "full",
             "features_file": "/path/to/features.csv",
-            "scores_file": "/path/to/scores.csv",
+            "scores": "/path/to/scores.csv",
             "output_folder": "/path/to/output",
             "parameters": {
                 "umap_trials": 10,
@@ -290,7 +290,7 @@ class TestJobSubmissionMethods:
         for stage in stage_types:
             job_request = {
                 "stage": stage,
-                "input_file": f"/path/to/{stage}_input.csv",
+                "input_dataset": f"/path/to/{stage}_input.csv",
                 "parameters": {"test_param": "value"}
             }
 
@@ -695,7 +695,7 @@ class TestServiceStartupShutdown:
             # Job submission should raise appropriate error in offline mode
             with pytest.raises(ServiceClientError, match="Service is in offline mode"):
                 await client.submit_pipeline_job("full", {
-                    "input_file": "test.csv",
+                    "input_dataset": "test.csv",
                     "output_folder": "/tmp/test"
                 })
 

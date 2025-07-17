@@ -44,15 +44,15 @@ class TestRealFastAPIIntegration:
         
         # Create temporary test files
         cls.test_dir = Path(tempfile.mkdtemp())
-        cls.input_file = cls.test_dir / "test_input.csv"
-        cls.scores_file = cls.test_dir / "test_scores.csv"
+        cls.input_dataset = cls.test_dir / "test_input.csv"
+        cls.scores = cls.test_dir / "test_scores.csv"
         cls.labels_file = cls.test_dir / "test_labels.csv"
         cls.test_output_dir = cls.test_dir / "output"
         cls.test_output_dir.mkdir(parents=True, exist_ok=True)
         
         # Create test CSV files
-        cls.input_file.write_text("id,name,value\n1,test,42\n2,test2,43\n")
-        cls.scores_file.write_text("id,score\n1,0.5\n2,0.6\n")
+        cls.input_dataset.write_text("id,name,value\n1,test,42\n2,test2,43\n")
+        cls.scores.write_text("id,score\n1,0.5\n2,0.6\n")
         cls.labels_file.write_text("id,label\n1,A\n2,B\n")
     
     @classmethod
@@ -97,9 +97,9 @@ class TestRealFastAPIIntegration:
         
         # Prepare valid request
         config = {
-            "input_file": str(self.input_file),
-            "scores_file": str(self.scores_file),
-            "label_dataset_file": str(self.labels_file),
+            "input_dataset": str(self.input_dataset),
+            "scores": str(self.scores),
+            "label_dataset": str(self.labels_file),
             "output_folder": str(self.test_output_dir / "job_001"),
             "umap_stage_enabled": True,
             "heatmap_stage_enabled": True,
@@ -134,9 +134,9 @@ class TestRealFastAPIIntegration:
         
         # Test missing required field
         invalid_config = {
-            "scores_file": str(self.scores_file),
+            "scores": str(self.scores),
             "output_folder": str(self.test_output_dir / "job_002"),
-            # Missing input_file
+            # Missing input_dataset
         }
         
         request_data = {
@@ -153,7 +153,7 @@ class TestRealFastAPIIntegration:
         assert "detail" in response_data
         error_detail = response_data["detail"]
         assert error_detail["error_code"] == "VALIDATION_ERROR"
-        assert "input_file" in error_detail["message"]
+        assert "input_dataset" in error_detail["message"]
         assert "timestamp" in error_detail
 
     @patch('emuses.foundation_fastapi_service.app.get_job_manager')
@@ -183,8 +183,8 @@ class TestRealFastAPIIntegration:
         }
         
         config = {
-            "input_file": str(self.input_file),
-            "scores_file": str(self.scores_file),
+            "input_dataset": str(self.input_dataset),
+            "scores": str(self.scores),
             "output_folder": str(self.test_output_dir / "umap_job")
         }
         
@@ -287,8 +287,8 @@ class TestPipelineExecutionEndpoints:
         self.test_output_dir = Path(tempfile.mkdtemp(prefix='test_pipeline_output_'))
         
         # Create comprehensive test files
-        self.input_file = self.test_data_dir / "input.csv"
-        self.scores_file = self.test_data_dir / "scores.csv"
+        self.input_dataset = self.test_data_dir / "input.csv"
+        self.scores = self.test_data_dir / "scores.csv"
         self.labels_file = self.test_data_dir / "labels.csv"
         self.large_file = self.test_data_dir / "large_input.csv"
         
@@ -297,11 +297,11 @@ class TestPipelineExecutionEndpoints:
             'feature1': [1, 2, 3, 4, 5],
             'feature2': [2.1, 3.2, 4.3, 5.4, 6.5],
             'feature3': [0.1, 0.2, 0.3, 0.4, 0.5]
-        }).to_csv(self.input_file, index=False)
+        }).to_csv(self.input_dataset, index=False)
         
         pd.DataFrame({
             'score': [0.1, 0.2, 0.3, 0.4, 0.5]
-        }).to_csv(self.scores_file, index=False)
+        }).to_csv(self.scores, index=False)
         
         pd.DataFrame({
             'label': ['A', 'B', 'A', 'B', 'A']
@@ -349,9 +349,9 @@ class TestPipelineExecutionEndpoints:
         
         # Test valid comprehensive configuration
         config = {
-            "input_file": str(self.input_file),
-            "scores_file": str(self.scores_file),
-            "label_dataset_file": str(self.labels_file),
+            "input_dataset": str(self.input_dataset),
+            "scores": str(self.scores),
+            "label_dataset": str(self.labels_file),
             "output_folder": str(self.test_output_dir / "comprehensive_job"),
             "umap_stage_enabled": True,
             "heatmap_stage_enabled": True,
@@ -398,9 +398,9 @@ class TestPipelineExecutionEndpoints:
         mock_job_manager = Mock()
         mock_job_manager_func.return_value = mock_job_manager
         
-        # Test missing input_file
+        # Test missing input_dataset
         config_missing_input = {
-            "scores_file": str(self.scores_file),
+            "scores": str(self.scores),
             "output_folder": str(self.test_output_dir / "missing_input"),
         }
         
@@ -412,11 +412,11 @@ class TestPipelineExecutionEndpoints:
         assert response.status_code == 400
         error_detail = response.json()["detail"]
         assert error_detail["error_code"] == "VALIDATION_ERROR"
-        assert "input_file is required" in error_detail["message"]
+        assert "input_dataset is required" in error_detail["message"]
         
-        # Test missing scores_file
+        # Test missing scores
         config_missing_scores = {
-            "input_file": str(self.input_file),
+            "input_dataset": str(self.input_dataset),
             "output_folder": str(self.test_output_dir / "missing_scores"),
         }
         
@@ -428,12 +428,12 @@ class TestPipelineExecutionEndpoints:
         assert response.status_code == 400
         error_detail = response.json()["detail"]
         assert error_detail["error_code"] == "VALIDATION_ERROR"
-        assert "scores_file is required" in error_detail["message"]
+        assert "scores is required" in error_detail["message"]
         
         # Test missing output_folder
         config_missing_output = {
-            "input_file": str(self.input_file),
-            "scores_file": str(self.scores_file),
+            "input_dataset": str(self.input_dataset),
+            "scores": str(self.scores),
         }
         
         response = self.client.post("/api/v1/jobs/pipeline/full", json={
@@ -455,8 +455,8 @@ class TestPipelineExecutionEndpoints:
         with patch('slowapi.util.get_remote_address', return_value="192.168.1.100"):
             # Test non-existent input file
             config_bad_input = {
-                "input_file": "/nonexistent/path/input.csv",
-                "scores_file": str(self.scores_file),
+                "input_dataset": "/nonexistent/path/input.csv",
+                "scores": str(self.scores),
                 "output_folder": str(self.test_output_dir / "bad_input"),
             }
             
@@ -472,8 +472,8 @@ class TestPipelineExecutionEndpoints:
             
             # Test non-existent scores file
             config_bad_scores = {
-                "input_file": str(self.input_file),
-                "scores_file": "/nonexistent/path/scores.csv",
+                "input_dataset": str(self.input_dataset),
+                "scores": "/nonexistent/path/scores.csv",
                 "output_folder": str(self.test_output_dir / "bad_scores"),
             }
             
@@ -514,8 +514,8 @@ class TestPipelineExecutionEndpoints:
             
             # Test invalid parameter types
             config_invalid_types = {
-                "input_file": str(self.input_file),
-                "scores_file": str(self.scores_file),
+                "input_dataset": str(self.input_dataset),
+                "scores": str(self.scores),
                 "output_folder": str(self.test_output_dir / "invalid_types"),
                 "umap_stage_enabled": "not_a_boolean",  # Should be boolean
                 "heatmap_stage_enabled": True,
@@ -589,8 +589,8 @@ class TestPipelineExecutionEndpoints:
             }
             
             config = {
-                "input_file": str(self.input_file),
-                "scores_file": str(self.scores_file),
+                "input_dataset": str(self.input_dataset),
+                "scores": str(self.scores),
                 "output_folder": str(self.test_output_dir / "serialization_test"),
                 "umap_stage_enabled": True,
                 "heatmap_stage_enabled": True,
@@ -641,19 +641,19 @@ class TestStageSpecificEndpoints:
         self.test_output_dir = Path(tempfile.mkdtemp(prefix='test_stage_output_'))
         
         # Create test files
-        self.input_file = self.test_data_dir / "input.csv"
-        self.scores_file = self.test_data_dir / "scores.csv"
+        self.input_dataset = self.test_data_dir / "input.csv"
+        self.scores = self.test_data_dir / "scores.csv"
         
         # Create valid CSV files
         pd.DataFrame({
             'feature1': [1, 2, 3, 4, 5],
             'feature2': [2.1, 3.2, 4.3, 5.4, 6.5],
             'feature3': [0.1, 0.2, 0.3, 0.4, 0.5]
-        }).to_csv(self.input_file, index=False)
+        }).to_csv(self.input_dataset, index=False)
         
         pd.DataFrame({
             'score': [0.1, 0.2, 0.3, 0.4, 0.5]
-        }).to_csv(self.scores_file, index=False)
+        }).to_csv(self.scores, index=False)
 
         # Create test client with real app
         self.client = TestClient(app)
@@ -694,8 +694,8 @@ class TestStageSpecificEndpoints:
         
         for stage_name in valid_stages:
             config = {
-                "input_file": str(self.input_file),
-                "scores_file": str(self.scores_file),
+                "input_dataset": str(self.input_dataset),
+                "scores": str(self.scores),
                 "output_folder": str(self.test_output_dir / f"{stage_name}_job"),
             }
             
@@ -729,8 +729,8 @@ class TestStageSpecificEndpoints:
         
         for stage_name in invalid_stages:
             config = {
-                "input_file": str(self.input_file),
-                "scores_file": str(self.scores_file),
+                "input_dataset": str(self.input_dataset),
+                "scores": str(self.scores),
                 "output_folder": str(self.test_output_dir / f"{stage_name}_job"),
             }
             
@@ -753,8 +753,8 @@ class TestStageSpecificEndpoints:
         
         # Test with potentially malicious parameters
         config = {
-            "input_file": str(self.input_file),
-            "scores_file": str(self.scores_file),
+            "input_dataset": str(self.input_dataset),
+            "scores": str(self.scores),
             "output_folder": str(self.test_output_dir / "sanitization_test"),
             # Add potentially malicious parameters
             "malicious_param": "<script>alert('xss')</script>",
@@ -803,8 +803,8 @@ class TestStageSpecificEndpoints:
         
         # Test with stage-specific parameters
         config = {
-            "input_file": str(self.input_file),
-            "scores_file": str(self.scores_file),
+            "input_dataset": str(self.input_dataset),
+            "scores": str(self.scores),
             "output_folder": str(self.test_output_dir / "validation_test"),
             "umap_parameters": {
                 "n_neighbors": 15,
@@ -844,9 +844,9 @@ class TestStageSpecificEndpoints:
         # Mock the remote address to use a unique IP for this test
         mock_get_remote_address.return_value = "192.168.2.5"
         
-        # Test missing input_file
+        # Test missing input_dataset
         config_missing_input = {
-            "scores_file": str(self.scores_file),
+            "scores": str(self.scores),
             "output_folder": str(self.test_output_dir / "missing_input"),
         }
         
@@ -858,11 +858,11 @@ class TestStageSpecificEndpoints:
         assert response.status_code == 400
         error_detail = response.json()["detail"]
         assert error_detail["error_code"] == "VALIDATION_ERROR"
-        assert "input_file is required" in error_detail["message"]
+        assert "input_dataset is required" in error_detail["message"]
         
-        # Test missing scores_file
+        # Test missing scores
         config_missing_scores = {
-            "input_file": str(self.input_file),
+            "input_dataset": str(self.input_dataset),
             "output_folder": str(self.test_output_dir / "missing_scores"),
         }
         
@@ -874,7 +874,7 @@ class TestStageSpecificEndpoints:
         assert response.status_code == 400
         error_detail = response.json()["detail"]
         assert error_detail["error_code"] == "VALIDATION_ERROR"
-        assert "scores_file is required" in error_detail["message"]
+        assert "scores is required" in error_detail["message"]
 
     @patch('emuses.foundation_fastapi_service.app.get_remote_address')
     def test_stage_specific_endpoint_url_parameter_validation(self, mock_get_remote_address):
@@ -887,8 +887,8 @@ class TestStageSpecificEndpoints:
         
         for stage_name in url_encoded_stages:
             config = {
-                "input_file": str(self.input_file),
-                "scores_file": str(self.scores_file),
+                "input_dataset": str(self.input_dataset),
+                "scores": str(self.scores),
                 "output_folder": str(self.test_output_dir / "url_test"),
             }
             

@@ -382,7 +382,7 @@ async def _full_async(**kwargs) -> None:
     if interactive:
         print(status_renderer.render_status("info", "Starting Interactive Mode..."))
         workflow_manager = InteractiveWorkflowManager()
-        workflow_id = workflow_manager.start_workflow("data_processing")
+        workflow_manager.start_workflow("data_processing")
         
         # Use workflow manager to collect/validate parameters
         # The interactive mode will modify kwargs with user selections
@@ -428,6 +428,10 @@ def _convert_typer_args_to_service_config(**kwargs) -> dict:
     for key, value in kwargs.items():
         if value is None:
             continue
+        elif isinstance(value, list) and len(value) == 0:
+            # Convert empty lists to None for backward compatibility with legacy CLI
+            # Legacy CLI returns None for missing list arguments, not empty lists
+            config[key] = None
         elif isinstance(value, Path):
             config[key] = str(value)
         elif isinstance(value, list) and value:
@@ -468,7 +472,13 @@ async def _execute_via_service(pipeline_type: str, config: dict, status_renderer
         
         # Submit job
         print(status_renderer.render_status("info", "Submitting job to service..."))
-        job_response = await service_client.submit_pipeline_job(pipeline_type, config)
+        # Wrap config in JobSubmissionRequest format
+        job_request = {
+            "pipeline_config": config,
+            "job_name": f"CLI Pipeline - {pipeline_type}",
+            "description": f"Pipeline execution via CLI for {pipeline_type}"
+        }
+        job_response = await service_client.submit_pipeline_job(pipeline_type, job_request)
         job_id = job_response["job_id"]
         print(status_renderer.render_status("info", f"Job submitted with ID: {job_id}"))
         
@@ -888,8 +898,13 @@ def _main(*args, **kwargs):
     return app(*args, **kwargs)
 
 
+def main():
+    """Main entry point for the CLI application."""
+    app()
+
+
 app.main = _main
 
 
 if __name__ == "__main__":
-    app()
+    main()

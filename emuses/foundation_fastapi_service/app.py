@@ -371,18 +371,18 @@ async def submit_full_pipeline_job(
         config = job_request.pipeline_config
 
         # Validate required fields
-        if "input_file" not in config:
-            raise ValueError("input_file is required")
-        if "scores_file" not in config:
-            raise ValueError("scores_file is required")
+        if "input_dataset" not in config:
+            raise ValueError("input_dataset is required")
+        if "scores" not in config:
+            raise ValueError("scores is required")
         if "output_folder" not in config:
             raise ValueError("output_folder is required")
 
         # Validate file paths exist
-        validate_file_path(config["input_file"])
-        validate_file_path(config["scores_file"])
-        if config.get("label_dataset_file"):
-            validate_file_path(config["label_dataset_file"])
+        validate_file_path(config["input_dataset"])
+        validate_file_path(config["scores"])
+        if config.get("label_dataset"):
+            validate_file_path(config["label_dataset"])
 
         # Create job
         job_id = get_job_manager().create_job(
@@ -394,8 +394,8 @@ async def submit_full_pipeline_job(
         # Wrap config in the expected structure for pipeline runner
         pipeline_context = {
             "config": config,
-            "input_dataset": config.get("input_file"),
-            "scores_dataset": config.get("scores_file"),
+            "input_dataset": config.get("input_dataset"),
+            "scores_dataset": config.get("scores"),
         }
 
         # Submit for background execution
@@ -465,16 +465,16 @@ async def submit_stage_specific_job(
         config["prediction_stage_enabled"] = stage_name == "prediction"
 
         # Validate required fields
-        if "input_file" not in config:
-            raise ValueError("input_file is required")
-        if "scores_file" not in config:
-            raise ValueError("scores_file is required")
+        if "input_dataset" not in config:
+            raise ValueError("input_dataset is required")
+        if "scores" not in config:
+            raise ValueError("scores is required")
         if "output_folder" not in config:
             raise ValueError("output_folder is required")
 
         # Validate file paths exist
-        validate_file_path(config["input_file"])
-        validate_file_path(config["scores_file"])
+        validate_file_path(config["input_dataset"])
+        validate_file_path(config["scores"])
 
         # Create job
         job_id = get_job_manager().create_job(
@@ -486,8 +486,8 @@ async def submit_stage_specific_job(
         # Wrap config in the expected structure for pipeline runner
         pipeline_context = {
             "config": config,
-            "input_dataset": config.get("input_file"),
-            "scores_dataset": config.get("scores_file"),
+            "input_dataset": config.get("input_dataset"),
+            "scores_dataset": config.get("scores"),
         }
 
         # Submit for background execution
