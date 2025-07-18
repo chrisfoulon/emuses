@@ -27,6 +27,7 @@ import sys
 import logging
 import asyncio
 from enum import Enum
+from fastapi.testclient import TestClient
 
 # Import security functions
 from .security import validate_path, sanitize_input
@@ -192,6 +193,7 @@ def full(
     umap_jobs: Annotated[Optional[int], typer.Option(help="Number of parallel jobs for outer (UMAP) optimization")] = None,
     hdbscan_jobs: Annotated[Optional[int], typer.Option(help="Number of parallel jobs for inner (HDBSCAN) optimization")] = None,
     interactive: Annotated[bool, typer.Option("--interactive", help="Run in interactive mode")] = False,
+    use_service: Annotated[bool, typer.Option("--service", help="Use remote service for execution")] = False,
 ) -> None:
     """
     Run the full pipeline.
@@ -357,6 +359,7 @@ def full(
             umap_jobs=umap_jobs,
             hdbscan_jobs=hdbscan_jobs,
             interactive=interactive,
+            use_service=use_service,
         ))
     except KeyboardInterrupt:
         typer.echo("\nOperation cancelled by user", err=True)
@@ -370,8 +373,7 @@ async def _full_async(**kwargs) -> None:
     """
     Async implementation of the full pipeline command.
     
-    Attempts to execute via FastAPI service first, falls back to local execution
-    if service is unavailable.
+    Executes locally by default, or via FastAPI service if --service flag is used.
     """
     # Initialize components
     status_renderer = StatusRenderer()
@@ -379,6 +381,8 @@ async def _full_async(**kwargs) -> None:
     
     # Handle interactive mode
     interactive = kwargs.pop('interactive', False)
+    use_service = kwargs.pop('use_service', False)
+    
     if interactive:
         print(status_renderer.render_status("info", "Starting Interactive Mode..."))
         workflow_manager = InteractiveWorkflowManager()
@@ -394,19 +398,26 @@ async def _full_async(**kwargs) -> None:
     # Convert arguments to service API format
     pipeline_config = _convert_typer_args_to_service_config(**kwargs)
     
-    try:
-        # Try service execution first
-        await _execute_via_service("full", pipeline_config, status_renderer, progress_tracker)
-        print(status_renderer.render_status("success", "Pipeline completed successfully via service!"))
-        
-    except ServiceClientError as e:
-        print(status_renderer.render_status("warning", f"Service unavailable ({e}), falling back to local execution..."))
-        await _execute_locally(pipeline_config, status_renderer, progress_tracker)
-        print(status_renderer.render_status("success", "Pipeline completed successfully via local execution!"))
-    
-    except Exception as e:
-        print(status_renderer.render_status("error", f"Pipeline execution failed: {e}"))
-        raise e
+    if use_service:
+        # User explicitly requested service execution
+        try:
+            await _execute_via_service("full", pipeline_config, status_renderer, progress_tracker)
+            print(status_renderer.render_status("success", "Pipeline completed successfully via service!"))
+        except ServiceClientError as e:
+            print(status_renderer.render_status("warning", f"Service unavailable ({e}), falling back to local execution..."))
+            await _execute_locally(pipeline_config, status_renderer, progress_tracker)
+            print(status_renderer.render_status("success", "Pipeline completed successfully via local execution!"))
+        except Exception as e:
+            print(status_renderer.render_status("error", f"Pipeline execution failed: {e}"))
+            raise e
+    else:
+        # Default to local execution
+        try:
+            await _execute_locally(pipeline_config, status_renderer, progress_tracker)
+            print(status_renderer.render_status("success", "Pipeline completed successfully via local execution!"))
+        except Exception as e:
+            print(status_renderer.render_status("error", f"Pipeline execution failed: {e}"))
+            raise e
 
 
 def _convert_typer_args_to_service_config(**kwargs) -> dict:
@@ -515,59 +526,262 @@ async def _execute_via_service(pipeline_type: str, config: dict, status_renderer
             await service_client._session.aclose()
 
 
+def create_fastapi_app():
+    """
+    Create FastAPI app instance for TestClient usage.
+    
+    Returns
+    -------
+    FastAPI
+        Configured FastAPI application instance
+    """
+    try:
+        # Import the FastAPI app creation function
+        from emuses.api.main import create_app
+        return create_app()
+    except ImportError as e:
+        raise ServiceClientError(f"FastAPI service not available: {e}")
+
+
 async def _execute_locally(config: dict, status_renderer, progress_tracker) -> None:
     """
-    Execute pipeline locally using the legacy EMUSESPipeline.
-    
+    Execute pipeline locally using TestClient to maintain service consistency.
+
+    This function attempts to create an in-process FastAPI service using TestClient
+    for consistency with remote execution. If FastAPI service is not available,
+    it falls back to direct EMUSESPipeline execution.
+
     Parameters
     ----------
     config : dict
         Pipeline configuration
     status_renderer : StatusRenderer
-        Status display component  
+        Status display component
     progress_tracker : ProgressTracker
         Progress tracking component
     """
     try:
-        # Import pipeline class
+        print(status_renderer.render_status("info", "Initializing local service..."))
+
+        # Try TestClient approach first
+        client = _create_local_testclient()
+
+        print(status_renderer.render_status("info", "Starting local pipeline execution via TestClient..."))
+
+        # Submit job and get job ID
+        job_id = await _submit_local_job(client, config, status_renderer)
+
+        # Poll for completion
+        await _poll_local_job_completion(client, job_id)
+
+        print("✓ Execution completed")
+
+    except ServiceClientError as e:
+        if "FastAPI service not available" in str(e):
+            print(status_renderer.render_status("warning", "FastAPI service not available, falling back to direct pipeline execution..."))
+            await _execute_legacy_pipeline(config, status_renderer, progress_tracker)
+        else:
+            raise e
+    except Exception as e:
+        raise ServiceClientError(f"Local execution failed: {e}")
+
+
+def _create_local_testclient() -> TestClient:
+    """
+    Create TestClient instance with FastAPI app.
+
+    Returns
+    -------
+    TestClient
+        Configured TestClient instance
+    """
+    app = create_fastapi_app()
+    return TestClient(app)
+
+
+async def _submit_local_job(client: TestClient, config: dict, status_renderer) -> str:
+    """
+    Submit job to local TestClient service.
+
+    Parameters
+    ----------
+    client : TestClient
+        TestClient instance
+    config : dict
+        Pipeline configuration
+    status_renderer : StatusRenderer
+        Status display component
+
+    Returns
+    -------
+    str
+        Job ID
+    """
+    pipeline_type = config.get('command', 'full')
+
+    job_request = {
+        "pipeline_config": config,
+        "job_name": f"CLI Pipeline - {pipeline_type}",
+        "description": f"Local pipeline execution via TestClient for {pipeline_type}"
+    }
+
+    print(status_renderer.render_status("info", "Submitting job to local service..."))
+    job_endpoint = f"/api/v1/jobs/pipeline/{pipeline_type}"
+    response = client.post(job_endpoint, json=job_request)
+
+    if response.status_code != 200:
+        raise ServiceClientError(f"Job submission failed: {response.status_code} - {response.text}")
+
+    job_data = response.json()
+    job_id = job_data["job_id"]
+    print(status_renderer.render_status("info", f"Job submitted with ID: {job_id}"))
+
+    return job_id
+
+
+async def _poll_local_job_completion(client: TestClient, job_id: str) -> None:
+    """
+    Poll local job until completion.
+
+    Parameters
+    ----------
+    client : TestClient
+        TestClient instance
+    job_id : str
+        Job ID to poll
+    """
+    print("Starting pipeline execution...")
+
+    while True:
+        status_data = _get_local_job_status(client, job_id)
+
+        if status_data["status"] == "completed":
+            print("✓ Stage completed")
+            break
+        elif status_data["status"] == "failed":
+            error_msg = status_data.get("error", "Unknown error")
+            raise ServiceClientError(f"Job failed: {error_msg}")
+        elif status_data["status"] == "cancelled":
+            raise ServiceClientError("Job was cancelled")
+
+        _display_job_progress(status_data)
+        await asyncio.sleep(2)  # Poll every 2 seconds
+
+
+def _get_local_job_status(client: TestClient, job_id: str) -> dict:
+    """
+    Get job status from local TestClient service.
+
+    Parameters
+    ----------
+    client : TestClient
+        TestClient instance
+    job_id : str
+        Job ID
+
+    Returns
+    -------
+    dict
+        Job status data
+    """
+    status_endpoint = f"/api/v1/jobs/{job_id}/status"
+    status_response = client.get(status_endpoint)
+
+    if status_response.status_code != 200:
+        raise ServiceClientError(f"Status check failed: {status_response.status_code}")
+
+    return status_response.json()
+
+
+def _display_job_progress(status_data: dict) -> None:
+    """
+    Display job progress information.
+
+    Parameters
+    ----------
+    status_data : dict
+        Job status data
+    """
+    progress = status_data.get("progress", 0)
+    if isinstance(progress, (int, float)):
+        print(f"Progress: {min(progress * 100, 99):.1f}%")
+
+    current_stage = status_data.get("current_stage")
+    if current_stage:
+        print(f"Current stage: {current_stage}")
+
+
+async def _execute_legacy_pipeline(config: dict, status_renderer, progress_tracker) -> None:
+    """
+    Execute pipeline using legacy EMUSESPipeline as fallback.
+
+    This function provides backward compatibility when FastAPI service
+    is not available by using the original EMUSESPipeline implementation.
+
+    Parameters
+    ----------
+    config : dict
+        Pipeline configuration
+    status_renderer : StatusRenderer
+        Status display component
+    progress_tracker : ProgressTracker
+        Progress tracking component
+    """
+    try:
+        # Import pipeline and stage classes
         from emuses.pipelines.emuses_pipeline import EMUSESPipeline
-        
+        from emuses.pipelines.umap_stage import UMAPStage
+        from emuses.pipelines.heatmap_stage import HeatmapStage
+        from emuses.pipelines.prediction_stage import PredictionStage
+
         # Convert config back to legacy format
         legacy_args = _convert_service_config_to_legacy_args(config)
-        
-        print(status_renderer.render_status("info", "Initializing local pipeline..."))
-        print("Starting local pipeline execution...")
-        
+
+        print(status_renderer.render_status("info", "Initializing legacy pipeline..."))
+        print("Starting legacy pipeline execution...")
+
         # Create args namespace for EMUSESPipeline
         import argparse
         # Ensure the command is set to 'full' for the full pipeline
         legacy_args['command'] = 'full'
+        # Set random state for reproducibility
+        legacy_args['random_state'] = legacy_args.get('random_state', 42)
         args_namespace = argparse.Namespace(**legacy_args)
-        
-        # Create and run pipeline
+
+        # Create pipeline instance
         pipeline = EMUSESPipeline(args_namespace)
+
+        # Add stages based on command (following the original scripts/main.py logic)
+        stages_to_add = []
+        command = legacy_args.get('command', 'full')
         
-        # Run pipeline stages with progress updates
-        print("→ Loading data...")
-        
-        print("→ Training UMAP...")
-        
-        print("→ Clustering...")
-        
-        print("→ Generating heatmap...")
-        
-        print("→ Training prediction model...")
-        
-        # Execute the pipeline
+        if command in ["umap", "full", "prediction"]:
+            stages_to_add.append(UMAPStage(pipeline.config))
+        if command in ["heatmap", "full"]:
+            stages_to_add.append(
+                HeatmapStage(
+                    pipeline.config,
+                    output_format_info=pipeline.context.get("output_format_info"),
+                )
+            )
+        if command in ["prediction", "full"]:
+            stages_to_add.append(PredictionStage(pipeline.config))
+
+        # Add the stages to the pipeline
+        for stage in stages_to_add:
+            pipeline.add_stage(stage)
+
+        print(f"✓ Added {len(stages_to_add)} stages to pipeline: {[stage.__class__.__name__ for stage in stages_to_add]}")
+
+        # Execute the pipeline (this will handle all stages and progress internally)
         pipeline.run()
-        
-        print("✓ Stage completed")
-        print("✓ Execution completed")
-        
+
+        print("✓ Pipeline execution completed successfully!")
+
     except ImportError as e:
-        raise ServiceClientError(f"Local pipeline not available: {e}")
+        raise ServiceClientError(f"Legacy pipeline not available: {e}")
     except Exception as e:
-        raise ServiceClientError(f"Local execution failed: {e}")
+        raise ServiceClientError(f"Legacy execution failed: {e}")
 
 
 def _convert_service_config_to_legacy_args(config: dict) -> dict:
@@ -690,21 +904,8 @@ async def _execute_stage_locally(stage: str, config: dict, status_renderer, prog
         if stage not in stage_classes:
             raise ServiceClientError(f"Unknown stage: {stage}")
             
-        # Import appropriate stage class
-        if stage == "umap":
-            from emuses.pipelines.umap_stage import UMAPStage as StageClass
-        elif stage == "heatmap":
-            from emuses.pipelines.heatmap_stage import HeatmapStage as StageClass
-        elif stage == "prediction":
-            from emuses.pipelines.prediction_stage import PredictionStage as StageClass
-        else:
-            # For clustering and other stages, fall back to full pipeline for now
-            await _execute_locally(config, status_renderer, progress_tracker)
-            return
-        
-        # For individual stages, it's better to use the full pipeline with the specific command
+        # For individual stages, fall back to full pipeline execution
         # This ensures all the context and dependencies are properly set up
-        # Update config to specify the stage command
         stage_config = config.copy()
         stage_config['command'] = stage
         await _execute_locally(stage_config, status_renderer, progress_tracker)
