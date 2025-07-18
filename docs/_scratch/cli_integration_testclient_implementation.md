@@ -1,18 +1,18 @@
-# CLI TestClient Integration Implementation Prompt
+# CLI TestClient Integration Implementation - Updated LAD Plan
 
 **Context**: Enhanced CLI requires TestClient integration for unified service architecture
 
 ## 🎯 GOAL
 Replace the current dual-execution architecture (HTTP service + direct pipeline fallback) with a unified TestClient-based approach that maintains service architecture benefits for both remote and local execution.
 
-## 📍 CURRENT STATE (Critical Assessment)
+## 📍 CURRENT STATE ASSESSMENT
 
 ### ✅ What EXISTS and WORKS:
 - **Enhanced CLI**: `emuses/cli/main.py` - **FULLY IMPLEMENTED** with service-first architecture
-- **Service client**: `emuses/cli/service_client.py` - ServiceHTTPClient with circuit breaker, retry logic
-- **FastAPI service**: `emuses/foundation_fastapi_service/app.py` - Complete REST API with job management
-- **Rich features**: `emuses/cli/rich_features.py` - Progress tracking, status rendering, table formatting
-- **Interactive mode**: `emuses/cli/interactive_mode.py` - Workflow management and parameter validation
+- **Service Client**: `emuses/cli/service_client.py` - ServiceHTTPClient with circuit breaker, retry logic
+- **FastAPI Service**: `emuses/foundation_fastapi_service/app.py` - Complete REST API with job management
+- **Rich Features**: `emuses/cli/rich_features.py` - Progress tracking, status rendering, table formatting
+- **Interactive Mode**: `emuses/cli/interactive_mode.py` - Workflow management and parameter validation
 - **Job Management**: Full job lifecycle with persistence and cleanup
 - **Legacy Compatibility**: 100% backward compatibility maintained
 
@@ -22,7 +22,7 @@ Replace the current dual-execution architecture (HTTP service + direct pipeline 
 - **Service dependency**: Users must manage external service for full functionality
 - **Architecture complexity**: Two different execution flows to maintain
 
-## 🏗️ ARCHITECTURE OVERVIEW
+## 🏗️ PROPOSED ARCHITECTURE
 
 ### Current Architecture:
 ```
@@ -37,12 +37,6 @@ CLI Command → ServiceHTTPClient → Remote FastAPI → Pipeline Runner
      ↓                                 ↓
 Local Execution → TestClient → In-Process FastAPI → Pipeline Runner
 ```
-
-### Key Files:
-- **`emuses/cli/main.py`**: CLI commands (FULLY IMPLEMENTED, needs TestClient integration)
-- **`emuses/cli/service_client.py`**: HTTP client (COMPLETE, may need TestClient wrapper)
-- **`emuses/foundation_fastapi_service/app.py`**: Service endpoints (COMPLETE, TestClient-ready)
-- **`emuses/scripts/main.py`**: Legacy reference (FUNCTIONAL)
 
 ## 🔧 IMPLEMENTATION TASKS (LAD-Compliant)
 
@@ -136,11 +130,15 @@ class LocalServiceClient:
         """Get job status from local service."""
         response = self.client.get(f"/api/v1/jobs/{job_id}/status")
         return response.json()
+    
+    async def check_service_health(self) -> bool:
+        """Check local service health."""
+        try:
+            response = self.client.get("/api/health")
+            return response.status_code == 200
+        except Exception:
+            return False
 ```
-
-#### Task 1.3: Validate TestClient Integration
-**Scope**: Ensure TestClient behaves identically to HTTP service
-**Tests**: Compare local vs remote execution results
 
 ### PHASE 2: Integration and Testing (MEDIUM PRIORITY)
 
@@ -154,7 +152,7 @@ async def _full_async(**kwargs) -> None:
     status_renderer = StatusRenderer()
     progress_tracker = ProgressTracker()
     
-    # Handle interactive mode (already implemented)
+    # Handle interactive mode
     if kwargs.get('interactive', False):
         # Interactive mode logic remains the same
         pass
@@ -198,6 +196,7 @@ async def test_service_consistency():
     local_result = await _execute_locally(test_config, status_renderer, progress_tracker)
     remote_result = await _execute_via_service("full", test_config, status_renderer, progress_tracker)
     # Compare job responses and outputs
+    assert local_result["job_id"] != remote_result["job_id"]  # Different IDs
     assert local_result["status"] == remote_result["status"]  # Same status
 ```
 
@@ -213,17 +212,13 @@ async def test_service_consistency():
 
 ## 🚨 CRITICAL IMPLEMENTATION NOTES
 
-### 1. TestClient Usage Pattern
+### 1. Service Startup Pattern
 ```python
 # TestClient automatically handles service startup
 from fastapi.testclient import TestClient
 from emuses.foundation_fastapi_service.app import app
 
 client = TestClient(app)  # Service is ready immediately
-
-# Submit job using same API as remote service
-job_request = {"pipeline_config": config, "job_name": "CLI Local Pipeline"}
-response = client.post("/api/v1/jobs/pipeline/full", json=job_request)
 ```
 
 ### 2. Job Storage Configuration
@@ -302,8 +297,6 @@ pytest tests/enhanced-cli-typer/test_integration.py -v
 
 ## 📋 IMPLEMENTATION CHECKLIST
 
-Use this checklist to track progress:
-
 ### Phase 1 - Core TestClient Integration:
 - [ ] Replace `_execute_locally()` with TestClient implementation
 - [ ] Add proper error handling for TestClient operations
@@ -324,6 +317,26 @@ Use this checklist to track progress:
 - [ ] User experience testing
 - [ ] Final integration validation
 
+## 🎯 BENEFITS ACHIEVED
+
+### For Users:
+- **Simplified setup**: No service management required
+- **Consistent behavior**: Same CLI experience regardless of execution mode
+- **Better error messages**: Structured responses from service architecture
+- **Offline capability**: Works without network connectivity
+
+### For Developers:
+- **Unified architecture**: Single service-based execution path
+- **Easier testing**: Test service integration without external dependencies
+- **Better debugging**: Service logs available for local execution
+- **Cleaner code**: Eliminates dual execution paths
+
+### For Operations:
+- **Reduced complexity**: No external service dependencies
+- **Better monitoring**: Unified job tracking and logging
+- **Simplified deployment**: Single executable with all capabilities
+- **Enhanced reliability**: In-process execution reduces failure points
+
 ## 🚫 COMMON PITFALLS TO AVOID
 
 1. **Don't bypass TestClient**: Always use TestClient for local execution
@@ -339,20 +352,6 @@ Use this checklist to track progress:
 **Start with Phase 1 Task 1.1** - Replace the `_execute_locally()` function first. This establishes the TestClient pattern and validates the approach works.
 
 **Success metric**: User can run `python -m emuses.cli.main full output_dir input.csv` without any external service and see identical behavior to the current implementation, but with better error handling and consistency.
-
-## 🎯 BENEFITS ACHIEVED
-
-### For Users:
-- **Simplified setup**: No service management required
-- **Consistent behavior**: Same CLI experience regardless of execution mode
-- **Better error messages**: Structured responses from service architecture
-- **Offline capability**: Works without network connectivity
-
-### For Developers:
-- **Unified architecture**: Single service-based execution path
-- **Easier testing**: Test service integration without external dependencies
-- **Better debugging**: Service logs available for local execution
-- **Cleaner code**: Eliminates dual execution paths
 
 ---
 

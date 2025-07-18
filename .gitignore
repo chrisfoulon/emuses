@@ -198,6 +198,7 @@ data/jobs/
 data/
 results/
 test_output/
+output_dir/
 
 # Jupyter Notebook outputs (optional, uncomment if you want to ignore outputs)
 # *.ipynb
