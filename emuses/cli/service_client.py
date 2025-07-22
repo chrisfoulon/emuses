@@ -20,6 +20,7 @@ from typing import Dict, Any, Optional, Union
 from urllib.parse import urljoin, urlparse
 import httpx
 from dataclasses import dataclass
+from fastapi.testclient import TestClient
 
 
 logger = logging.getLogger(__name__)
@@ -1285,3 +1286,200 @@ class ServiceHTTPClient:
         adaptive_timeout = min(adaptive_timeout, config['max_timeout'])
 
         return adaptive_timeout
+
+
+class LocalServiceClient:
+    """
+    TestClient-based service client for local execution.
+    
+    This class provides the same interface as ServiceHTTPClient but uses
+    FastAPI TestClient for in-process execution, maintaining service
+    consistency while eliminating external service dependencies.
+    """
+    
+    def __init__(self, api_version: str = "v1"):
+        """
+        Initialize the local service client.
+        
+        Parameters
+        ----------
+        api_version : str, optional
+            API version to use, by default "v1"
+        """
+        self.api_version = api_version
+        self._client: Optional[TestClient] = None
+        self._app = None
+        
+    def _ensure_client(self) -> TestClient:
+        """
+        Ensure TestClient is created and configured.
+        
+        Returns
+        -------
+        TestClient
+            Configured TestClient instance
+        """
+        if self._client is None:
+            # Import and create FastAPI app
+            try:
+                from emuses.api.main import create_app
+                self._app = create_app()
+                self._client = TestClient(self._app)
+            except ImportError as e:
+                raise ServiceClientError(f"FastAPI service not available: {e}")
+                
+        return self._client
+    
+    async def submit_pipeline_job(
+        self,
+        pipeline_type: str,
+        job_request: Dict[str, Any],
+        files: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        """
+        Submit a pipeline job to the local service.
+        
+        Parameters
+        ----------
+        pipeline_type : str
+            Type of pipeline ('full', 'umap', 'clustering', 'heatmap', 'prediction')
+        job_request : Dict[str, Any]
+            Job configuration and parameters
+        files : Optional[Dict[str, Any]], optional
+            Files to upload with the job
+            
+        Returns
+        -------
+        Dict[str, Any]
+            Job submission response with job_id and status
+            
+        Raises
+        ------
+        ValueError
+            If job request is invalid or pipeline type is not supported
+        ServiceClientError
+            If the service returns an error response
+        """
+        # Validate inputs
+        self._validate_job_request(job_request)
+        self._validate_pipeline_type(pipeline_type)
+        
+        # Get TestClient
+        client = self._ensure_client()
+        
+        # Construct API endpoint
+        endpoint = f"/api/{self.api_version}/jobs/pipeline/{pipeline_type}"
+        
+        # Make request
+        response = client.post(endpoint, json=job_request)
+        
+        if response.status_code != 200:
+            raise ServiceClientError(f"Job submission failed: {response.status_code} - {response.text}")
+            
+        return response.json()
+    
+    async def get_job_status(
+        self,
+        job_id: str,
+        use_cache: bool = False
+    ) -> Dict[str, Any]:
+        """
+        Get the status of a job.
+        
+        Parameters
+        ----------
+        job_id : str
+            Unique identifier for the job
+        use_cache : bool, optional
+            Whether to use cached status (not implemented for local client)
+            
+        Returns
+        -------
+        Dict[str, Any]
+            Job status information including status, progress, timestamps
+            
+        Raises
+        ------
+        ValueError
+            If job_id is empty or None
+        ServiceClientError
+            If the service returns an error response
+        """
+        if not job_id or not job_id.strip():
+            raise ValueError("Job ID cannot be empty")
+            
+        # Get TestClient
+        client = self._ensure_client()
+        
+        # Construct API endpoint
+        endpoint = f"/api/{self.api_version}/jobs/{job_id}/status"
+        
+        # Make request
+        response = client.get(endpoint)
+        
+        if response.status_code != 200:
+            raise ServiceClientError(f"Status check failed: {response.status_code} - {response.text}")
+            
+        return response.json()
+    
+    async def check_service_health(self) -> bool:
+        """
+        Check if the local service is healthy.
+        
+        Returns
+        -------
+        bool
+            True if service is healthy, False otherwise
+        """
+        try:
+            # Get TestClient
+            client = self._ensure_client()
+            
+            # Make health check request
+            response = client.get("/api/health")
+            
+            return response.status_code == 200
+            
+        except Exception as e:
+            logger.warning(f"Local service health check failed: {e}")
+            return False
+    
+    def _validate_job_request(self, job_request: Optional[Dict[str, Any]]) -> None:
+        """
+        Validate job request parameters.
+        
+        Parameters
+        ----------
+        job_request : Optional[Dict[str, Any]]
+            Job request to validate
+            
+        Raises
+        ------
+        ValueError
+            If job request is None or empty
+        """
+        if job_request is None:
+            raise ValueError("Job request cannot be None")
+        if not job_request:
+            raise ValueError("Job request cannot be empty")
+    
+    def _validate_pipeline_type(self, pipeline_type: str) -> None:
+        """
+        Validate pipeline type.
+        
+        Parameters
+        ----------
+        pipeline_type : str
+            Pipeline type to validate
+            
+        Raises
+        ------
+        ValueError
+            If pipeline type is not supported
+        """
+        valid_types = ["full", "umap", "clustering", "heatmap", "prediction"]
+        if pipeline_type not in valid_types:
+            raise ValueError(
+                f"Invalid pipeline type '{pipeline_type}'. "
+                f"Must be one of: {', '.join(valid_types)}"
+            )

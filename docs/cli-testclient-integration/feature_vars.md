@@ -28,9 +28,10 @@ INTEGRATION_PATTERN=TestClient + FastAPI app
 ## Architecture Variables
 ```bash
 CURRENT_ARCHITECTURE=Service-first with direct pipeline fallback
-TARGET_ARCHITECTURE=Service-first with TestClient local execution
-EXECUTION_MODES=remote_service,local_testclient
+TARGET_ARCHITECTURE=Auto-start service with optional remote execution
+EXECUTION_MODES=auto_start_local,remote_service
 SERVICE_CONSISTENCY=UNIFIED
+SCALABILITY_VISION=EMUSES Hub platform
 ```
 
 ## Testing Variables
@@ -59,9 +60,10 @@ COMPATIBILITY_RISK=MINIMAL
 
 ## Success Variables
 ```bash
-SUCCESS_CRITERIA=Same API interface for local and remote execution
-ACCEPTANCE_TESTS=TestClient executes full pipeline,Job management works locally,Error handling consistent
-VALIDATION_APPROACH=Compare local vs remote execution results
+SUCCESS_CRITERIA=Auto-start service with unified execution path
+ACCEPTANCE_TESTS=Auto-start service works,TestClient executes full pipeline,Remote service option available
+VALIDATION_APPROACH=Compare auto-start vs remote execution results
+SCALABILITY_GOALS=Support EMUSES Hub,HPC integration,Model marketplace
 ```
 
 ## Documentation Variables

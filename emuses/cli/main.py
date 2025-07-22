@@ -27,7 +27,13 @@ import sys
 import logging
 import asyncio
 from enum import Enum
-from fastapi.testclient import TestClient
+import threading
+import time
+import requests
+import uvicorn
+from multiprocessing import Process
+import os
+import signal
 
 # Import security functions
 from .security import validate_path, sanitize_input
@@ -70,7 +76,7 @@ def secure_path_resolver(path_str: str) -> Union[Path, str]:
     """
     Secure path resolver that handles paths with spaces, different formats,
     and protects against directory traversal attacks.
-    
+
     This function replaces the legacy resolve_path() with enhanced security.
 
     Parameters
@@ -98,16 +104,16 @@ def secure_path_resolver(path_str: str) -> Union[Path, str]:
         "input_matrix",
     ]:
         return path_str
-    
+
     # Validate path for security
     validated_path = validate_path(path_str)
-    
+
     # URL decode the path safely
     try:
         decoded_path = urllib.parse.unquote(validated_path)
     except Exception:
         decoded_path = validated_path
-    
+
     # Create Path object and resolve
     try:
         path = Path(decoded_path)
@@ -119,7 +125,7 @@ def secure_path_resolver(path_str: str) -> Union[Path, str]:
 def create_typer_app() -> typer.Typer:
     """
     Create and configure the main Typer application.
-    
+
     Returns
     -------
     typer.Typer
@@ -134,7 +140,7 @@ def create_typer_app() -> typer.Typer:
         rich_markup_mode="rich",
         pretty_exceptions_enable=True,
     )
-    
+
     return app
 
 
@@ -197,7 +203,7 @@ def full(
 ) -> None:
     """
     Run the full pipeline.
-    
+
     This command executes the complete EMUSES pipeline including UMAP training,
     clustering, heatmap generation, and prediction model training.
 
@@ -310,7 +316,7 @@ def full(
     logger.info(f"input_dataset: {input_dataset}")
     logger.info(f"scores: {scores}")
     # ... log other arguments as needed
-    
+
     # Run the async implementation
     try:
         asyncio.run(_full_async(
@@ -372,70 +378,63 @@ def full(
 async def _full_async(**kwargs) -> None:
     """
     Async implementation of the full pipeline command.
-    
+
     Executes locally by default, or via FastAPI service if --service flag is used.
     """
     # Initialize components
     status_renderer = StatusRenderer()
     progress_tracker = ProgressTracker()
-    
+
     # Handle interactive mode
     interactive = kwargs.pop('interactive', False)
     use_service = kwargs.pop('use_service', False)
-    
+
     if interactive:
         print(status_renderer.render_status("info", "Starting Interactive Mode..."))
         workflow_manager = InteractiveWorkflowManager()
         workflow_manager.start_workflow("data_processing")
-        
+
         # Use workflow manager to collect/validate parameters
         # The interactive mode will modify kwargs with user selections
         interactive_params = workflow_manager.collect_parameters(kwargs)
         kwargs.update(interactive_params)
-    
+
     print(status_renderer.render_status("info", "Starting EMUSES Full Pipeline..."))
-    
+
     # Convert arguments to service API format
     pipeline_config = _convert_typer_args_to_service_config(**kwargs)
-    
-    if use_service:
-        # User explicitly requested service execution
-        try:
-            await _execute_via_service("full", pipeline_config, status_renderer, progress_tracker)
-            print(status_renderer.render_status("success", "Pipeline completed successfully via service!"))
-        except ServiceClientError as e:
-            print(status_renderer.render_status("warning", f"Service unavailable ({e}), falling back to local execution..."))
-            await _execute_locally(pipeline_config, status_renderer, progress_tracker)
-            print(status_renderer.render_status("success", "Pipeline completed successfully via local execution!"))
-        except Exception as e:
-            print(status_renderer.render_status("error", f"Pipeline execution failed: {e}"))
-            raise e
-    else:
-        # Default to local execution
-        try:
-            await _execute_locally(pipeline_config, status_renderer, progress_tracker)
-            print(status_renderer.render_status("success", "Pipeline completed successfully via local execution!"))
-        except Exception as e:
-            print(status_renderer.render_status("error", f"Pipeline execution failed: {e}"))
-            raise e
+
+    # Unified service execution - no more dual architecture
+    try:
+        if use_service:
+            # Connect to remote service
+            await _execute_via_remote_service("full", pipeline_config, status_renderer, progress_tracker)
+        else:
+            # Auto-start local service
+            await _execute_via_unified_service(pipeline_config, status_renderer, progress_tracker)
+
+        print(status_renderer.render_status("success", "Pipeline completed successfully!"))
+    except Exception as e:
+        print(status_renderer.render_status("error", f"Pipeline execution failed: {e}"))
+        raise e
 
 
 def _convert_typer_args_to_service_config(**kwargs) -> dict:
     """
     Convert Typer command arguments to service API configuration format.
-    
+
     Parameters
     ----------
     **kwargs
         Command line arguments from Typer
-        
+
     Returns
     -------
     dict
         Configuration dictionary suitable for service API
     """
     config = {}
-    
+
     for key, value in kwargs.items():
         if value is None:
             continue
@@ -453,14 +452,14 @@ def _convert_typer_args_to_service_config(**kwargs) -> dict:
             config[key] = value.value
         else:
             config[key] = str(value)
-    
+
     return config
 
 
-async def _execute_via_service(pipeline_type: str, config: dict, status_renderer, progress_tracker) -> None:
+async def _execute_via_remote_service(pipeline_type: str, config: dict, status_renderer, progress_tracker) -> None:
     """
-    Execute pipeline via FastAPI service.
-    
+    Execute pipeline via remote FastAPI service.
+
     Parameters
     ----------
     pipeline_type : str
@@ -473,14 +472,14 @@ async def _execute_via_service(pipeline_type: str, config: dict, status_renderer
         Progress tracking component
     """
     service_client = ServiceHTTPClient(base_url="http://localhost:8000")
-    
+
     try:
         # Check service health first
         print(status_renderer.render_status("info", "Checking service availability..."))
         health_status = await service_client.check_service_health()
         if not health_status:
             raise ServiceClientError("Service health check failed")
-        
+
         # Submit job
         print(status_renderer.render_status("info", "Submitting job to service..."))
         # Wrap config in JobSubmissionRequest format
@@ -492,13 +491,13 @@ async def _execute_via_service(pipeline_type: str, config: dict, status_renderer
         job_response = await service_client.submit_pipeline_job(pipeline_type, job_request)
         job_id = job_response["job_id"]
         print(status_renderer.render_status("info", f"Job submitted with ID: {job_id}"))
-        
+
         # Poll for completion with progress display
         print("Starting pipeline execution...")
-        
+
         while True:
             status = await service_client.get_job_status(job_id)
-            
+
             if status["status"] == "completed":
                 print("✓ Stage completed")
                 break
@@ -507,20 +506,20 @@ async def _execute_via_service(pipeline_type: str, config: dict, status_renderer
                 raise ServiceClientError(f"Job failed: {error_msg}")
             elif status["status"] == "cancelled":
                 raise ServiceClientError("Job was cancelled")
-            
+
             # Update progress if available
             progress = status.get("progress", 0)
             if isinstance(progress, (int, float)):
                 print(f"Progress: {min(progress * 100, 99):.1f}%")
-            
+
             current_stage = status.get("current_stage")
             if current_stage:
                 print(f"Current stage: {current_stage}")
-            
+
             await asyncio.sleep(2)  # Poll every 2 seconds
-            
+
         print("✓ Execution completed")
-        
+
     finally:
         if hasattr(service_client, '_session') and service_client._session:
             await service_client._session.aclose()
@@ -529,7 +528,7 @@ async def _execute_via_service(pipeline_type: str, config: dict, status_renderer
 def create_fastapi_app():
     """
     Create FastAPI app instance for TestClient usage.
-    
+
     Returns
     -------
     FastAPI
@@ -543,13 +542,13 @@ def create_fastapi_app():
         raise ServiceClientError(f"FastAPI service not available: {e}")
 
 
-async def _execute_locally(config: dict, status_renderer, progress_tracker) -> None:
+async def _execute_via_unified_service(config: dict, status_renderer, progress_tracker) -> None:
     """
-    Execute pipeline locally using TestClient to maintain service consistency.
+    Execute pipeline via unified auto-start service architecture.
 
-    This function attempts to create an in-process FastAPI service using TestClient
-    for consistency with remote execution. If FastAPI service is not available,
-    it falls back to direct EMUSESPipeline execution.
+    This function eliminates the dual execution path by always using the FastAPI service.
+    If no service is running, it auto-starts one locally. This provides consistent
+    behavior and eliminates legacy fallback complexity.
 
     Parameters
     ----------
@@ -560,267 +559,159 @@ async def _execute_locally(config: dict, status_renderer, progress_tracker) -> N
     progress_tracker : ProgressTracker
         Progress tracking component
     """
+    service_process = None
+    service_url = "http://localhost:8000"
+
     try:
-        print(status_renderer.render_status("info", "Initializing local service..."))
+        print(status_renderer.render_status("info", "Auto-starting local EMUSES service..."))
 
-        # Try TestClient approach first
-        client = _create_local_testclient()
+        # Start local service
+        service_process = _start_local_service(port=8000)
+        if not service_process:
+            raise ServiceClientError("Failed to start local service")
 
-        print(status_renderer.render_status("info", "Starting local pipeline execution via TestClient..."))
+        # Wait for service to be ready
+        print(status_renderer.render_status("info", "Waiting for service to be ready..."))
+        if not _wait_for_service_ready(service_url, timeout=30):
+            raise ServiceClientError("Service failed to become ready within timeout")
 
-        # Submit job and get job ID
-        job_id = await _submit_local_job(client, config, status_renderer)
+        print(status_renderer.render_status("success", "Local service started successfully!"))
 
-        # Poll for completion
-        await _poll_local_job_completion(client, job_id)
+        # Execute via the service (determine pipeline type from config)
+        pipeline_type = config.get('command', 'full')
+        await _execute_via_remote_service(pipeline_type, config, status_renderer, progress_tracker)
 
-        print("✓ Execution completed")
+    finally:
+        # Always clean up the service
+        if service_process:
+            print(status_renderer.render_status("info", "Shutting down local service..."))
+            _stop_local_service(service_process)
 
-    except ServiceClientError as e:
-        if "FastAPI service not available" in str(e):
-            print(status_renderer.render_status("warning", "FastAPI service not available, falling back to direct pipeline execution..."))
-            await _execute_legacy_pipeline(config, status_renderer, progress_tracker)
+
+def _start_local_service(port: int = 8000) -> Optional[Process]:
+    """
+    Start local FastAPI service in background process.
+
+    Parameters
+    ----------
+    port : int, optional
+        Port to run service on, by default 8000
+
+    Returns
+    -------
+    Optional[Process]
+        Service process if successful, None if failed
+    """
+    try:
+        def run_service():
+            """Run the FastAPI service."""
+            try:
+                logger.info(f"Starting FastAPI service on port {port}...")
+                from emuses.api.main import create_app
+                app = create_app()
+                logger.info("FastAPI app created successfully")
+                # Use info level to see startup messages
+                uvicorn.run(app, host="127.0.0.1", port=port, log_level="info")
+            except Exception as e:
+                logger.error(f"Service failed to start: {e}")
+                import traceback
+                traceback.print_exc()
+
+        # Start service in background process
+        service_process = Process(target=run_service, daemon=True)
+        service_process.start()
+
+        # Give the process more time to start up
+        time.sleep(2)
+
+        if service_process.is_alive():
+            logger.info(f"Service process started successfully (PID: {service_process.pid})")
+            return service_process
         else:
-            raise e
+            logger.error("Service process died immediately after startup")
+            return None
+
     except Exception as e:
-        raise ServiceClientError(f"Local execution failed: {e}")
+        logger.error(f"Failed to start service: {e}")
+        import traceback
+        traceback.print_exc()
+        return None
 
 
-def _create_local_testclient() -> TestClient:
+def _stop_local_service(service_process: Process) -> None:
     """
-    Create TestClient instance with FastAPI app.
-
-    Returns
-    -------
-    TestClient
-        Configured TestClient instance
-    """
-    app = create_fastapi_app()
-    return TestClient(app)
-
-
-async def _submit_local_job(client: TestClient, config: dict, status_renderer) -> str:
-    """
-    Submit job to local TestClient service.
+    Stop local FastAPI service process.
 
     Parameters
     ----------
-    client : TestClient
-        TestClient instance
-    config : dict
-        Pipeline configuration
-    status_renderer : StatusRenderer
-        Status display component
-
-    Returns
-    -------
-    str
-        Job ID
-    """
-    pipeline_type = config.get('command', 'full')
-
-    job_request = {
-        "pipeline_config": config,
-        "job_name": f"CLI Pipeline - {pipeline_type}",
-        "description": f"Local pipeline execution via TestClient for {pipeline_type}"
-    }
-
-    print(status_renderer.render_status("info", "Submitting job to local service..."))
-    job_endpoint = f"/api/v1/jobs/pipeline/{pipeline_type}"
-    response = client.post(job_endpoint, json=job_request)
-
-    if response.status_code != 200:
-        raise ServiceClientError(f"Job submission failed: {response.status_code} - {response.text}")
-
-    job_data = response.json()
-    job_id = job_data["job_id"]
-    print(status_renderer.render_status("info", f"Job submitted with ID: {job_id}"))
-
-    return job_id
-
-
-async def _poll_local_job_completion(client: TestClient, job_id: str) -> None:
-    """
-    Poll local job until completion.
-
-    Parameters
-    ----------
-    client : TestClient
-        TestClient instance
-    job_id : str
-        Job ID to poll
-    """
-    print("Starting pipeline execution...")
-
-    while True:
-        status_data = _get_local_job_status(client, job_id)
-
-        if status_data["status"] == "completed":
-            print("✓ Stage completed")
-            break
-        elif status_data["status"] == "failed":
-            error_msg = status_data.get("error", "Unknown error")
-            raise ServiceClientError(f"Job failed: {error_msg}")
-        elif status_data["status"] == "cancelled":
-            raise ServiceClientError("Job was cancelled")
-
-        _display_job_progress(status_data)
-        await asyncio.sleep(2)  # Poll every 2 seconds
-
-
-def _get_local_job_status(client: TestClient, job_id: str) -> dict:
-    """
-    Get job status from local TestClient service.
-
-    Parameters
-    ----------
-    client : TestClient
-        TestClient instance
-    job_id : str
-        Job ID
-
-    Returns
-    -------
-    dict
-        Job status data
-    """
-    status_endpoint = f"/api/v1/jobs/{job_id}/status"
-    status_response = client.get(status_endpoint)
-
-    if status_response.status_code != 200:
-        raise ServiceClientError(f"Status check failed: {status_response.status_code}")
-
-    return status_response.json()
-
-
-def _display_job_progress(status_data: dict) -> None:
-    """
-    Display job progress information.
-
-    Parameters
-    ----------
-    status_data : dict
-        Job status data
-    """
-    progress = status_data.get("progress", 0)
-    if isinstance(progress, (int, float)):
-        print(f"Progress: {min(progress * 100, 99):.1f}%")
-
-    current_stage = status_data.get("current_stage")
-    if current_stage:
-        print(f"Current stage: {current_stage}")
-
-
-async def _execute_legacy_pipeline(config: dict, status_renderer, progress_tracker) -> None:
-    """
-    Execute pipeline using legacy EMUSESPipeline as fallback.
-
-    This function provides backward compatibility when FastAPI service
-    is not available by using the original EMUSESPipeline implementation.
-
-    Parameters
-    ----------
-    config : dict
-        Pipeline configuration
-    status_renderer : StatusRenderer
-        Status display component
-    progress_tracker : ProgressTracker
-        Progress tracking component
+    service_process : Process
+        Service process to stop
     """
     try:
-        # Import pipeline and stage classes
-        from emuses.pipelines.emuses_pipeline import EMUSESPipeline
-        from emuses.pipelines.umap_stage import UMAPStage
-        from emuses.pipelines.heatmap_stage import HeatmapStage
-        from emuses.pipelines.prediction_stage import PredictionStage
+        if service_process and service_process.is_alive():
+            service_process.terminate()
+            service_process.join(timeout=5)
 
-        # Convert config back to legacy format
-        legacy_args = _convert_service_config_to_legacy_args(config)
+            if service_process.is_alive():
+                service_process.kill()  # Force kill if needed
+                service_process.join()
 
-        print(status_renderer.render_status("info", "Initializing legacy pipeline..."))
-        print("Starting legacy pipeline execution...")
-
-        # Create args namespace for EMUSESPipeline
-        import argparse
-        # Ensure the command is set to 'full' for the full pipeline
-        legacy_args['command'] = 'full'
-        # Set random state for reproducibility
-        legacy_args['random_state'] = legacy_args.get('random_state', 42)
-        args_namespace = argparse.Namespace(**legacy_args)
-
-        # Create pipeline instance
-        pipeline = EMUSESPipeline(args_namespace)
-
-        # Add stages based on command (following the original scripts/main.py logic)
-        stages_to_add = []
-        command = legacy_args.get('command', 'full')
-        
-        if command in ["umap", "full", "prediction"]:
-            stages_to_add.append(UMAPStage(pipeline.config))
-        if command in ["heatmap", "full"]:
-            stages_to_add.append(
-                HeatmapStage(
-                    pipeline.config,
-                    output_format_info=pipeline.context.get("output_format_info"),
-                )
-            )
-        if command in ["prediction", "full"]:
-            stages_to_add.append(PredictionStage(pipeline.config))
-
-        # Add the stages to the pipeline
-        for stage in stages_to_add:
-            pipeline.add_stage(stage)
-
-        print(f"✓ Added {len(stages_to_add)} stages to pipeline: {[stage.__class__.__name__ for stage in stages_to_add]}")
-
-        # Execute the pipeline (this will handle all stages and progress internally)
-        pipeline.run()
-
-        print("✓ Pipeline execution completed successfully!")
-
-    except ImportError as e:
-        raise ServiceClientError(f"Legacy pipeline not available: {e}")
     except Exception as e:
-        raise ServiceClientError(f"Legacy execution failed: {e}")
+        print(f"Error stopping service: {e}")
 
 
-def _convert_service_config_to_legacy_args(config: dict) -> dict:
+def _wait_for_service_ready(service_url: str, timeout: int = 30) -> bool:
     """
-    Convert service configuration back to legacy EMUSESPipeline arguments.
-    
+    Wait for service to become ready.
+
     Parameters
     ----------
-    config : dict
-        Service configuration
-        
+    service_url : str
+        Service URL to check
+    timeout : int, optional
+        Timeout in seconds, by default 30
+
     Returns
     -------
-    dict
-        Legacy pipeline arguments
+    bool
+        True if service is ready, False if timeout
     """
-    # Map service config keys to legacy parameter names
-    # This ensures compatibility with the existing EMUSESPipeline class
-    # The PipelineConfig class is flexible and accepts all arguments directly
-    # Just return the config as-is, since the CLI uses the same parameter names
-    # as the legacy argparse implementation
-    return config
+    start_time = time.time()
+
+    while (time.time() - start_time) < timeout:
+        try:
+            # Use correct health endpoint path
+            response = requests.get(f"{service_url}/api/health", timeout=2)
+            if response.status_code == 200:
+                return True
+        except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as e:
+            # Add debug logging for connection issues
+            logger.debug(f"Health check failed: {e}")
+
+        time.sleep(0.5)
+
+    logger.error(f"Service health check timed out after {timeout} seconds")
+    return False
+
+
+# Legacy functions removed - unified service architecture only
 
 
 async def _umap_async(**kwargs) -> None:
     """Async implementation of the UMAP training command."""
     status_renderer = StatusRenderer()
     progress_tracker = ProgressTracker()
-    
+
     print(status_renderer.render_status("info", "Starting UMAP training..."))
-    
+
     pipeline_config = _convert_typer_args_to_service_config(**kwargs)
-    
+
     try:
-        await _execute_via_service("umap", pipeline_config, status_renderer, progress_tracker)
+        await _execute_via_remote_service("umap", pipeline_config, status_renderer, progress_tracker)
         print(status_renderer.render_status("success", "UMAP training completed successfully via service!"))
     except ServiceClientError as e:
         print(status_renderer.render_status("warning", f"Service unavailable ({e}), falling back to local execution..."))
-        await _execute_stage_locally("umap", pipeline_config, status_renderer, progress_tracker)
+        await _execute_via_unified_service(pipeline_config, status_renderer, progress_tracker)
         print(status_renderer.render_status("success", "UMAP training completed successfully via local execution!"))
 
 
@@ -828,17 +719,17 @@ async def _clustering_async(**kwargs) -> None:
     """Async implementation of the clustering command."""
     status_renderer = StatusRenderer()
     progress_tracker = ProgressTracker()
-    
+
     print(status_renderer.render_status("info", "Starting clustering..."))
-    
+
     pipeline_config = _convert_typer_args_to_service_config(**kwargs)
-    
+
     try:
-        await _execute_via_service("clustering", pipeline_config, status_renderer, progress_tracker)
+        await _execute_via_remote_service("clustering", pipeline_config, status_renderer, progress_tracker)
         print(status_renderer.render_status("success", "Clustering completed successfully via service!"))
     except ServiceClientError as e:
         print(status_renderer.render_status("warning", f"Service unavailable ({e}), falling back to local execution..."))
-        await _execute_stage_locally("clustering", pipeline_config, status_renderer, progress_tracker)
+        await _execute_via_unified_service(pipeline_config, status_renderer, progress_tracker)
         print(status_renderer.render_status("success", "Clustering completed successfully via local execution!"))
 
 
@@ -846,17 +737,17 @@ async def _heatmap_async(**kwargs) -> None:
     """Async implementation of the heatmap generation command."""
     status_renderer = StatusRenderer()
     progress_tracker = ProgressTracker()
-    
+
     print(status_renderer.render_status("info", "Starting heatmap generation..."))
-    
+
     pipeline_config = _convert_typer_args_to_service_config(**kwargs)
-    
+
     try:
-        await _execute_via_service("heatmap", pipeline_config, status_renderer, progress_tracker)
+        await _execute_via_remote_service("heatmap", pipeline_config, status_renderer, progress_tracker)
         print(status_renderer.render_status("success", "Heatmap generation completed successfully via service!"))
     except ServiceClientError as e:
         print(status_renderer.render_status("warning", f"Service unavailable ({e}), falling back to local execution..."))
-        await _execute_stage_locally("heatmap", pipeline_config, status_renderer, progress_tracker)
+        await _execute_via_unified_service(pipeline_config, status_renderer, progress_tracker)
         print(status_renderer.render_status("success", "Heatmap generation completed successfully via local execution!"))
 
 
@@ -864,24 +755,24 @@ async def _prediction_async(**kwargs) -> None:
     """Async implementation of the prediction model training command."""
     status_renderer = StatusRenderer()
     progress_tracker = ProgressTracker()
-    
+
     print(status_renderer.render_status("info", "Starting prediction model training..."))
-    
+
     pipeline_config = _convert_typer_args_to_service_config(**kwargs)
-    
+
     try:
-        await _execute_via_service("prediction", pipeline_config, status_renderer, progress_tracker)
+        await _execute_via_remote_service("prediction", pipeline_config, status_renderer, progress_tracker)
         print(status_renderer.render_status("success", "Prediction model training completed successfully via service!"))
     except ServiceClientError as e:
         print(status_renderer.render_status("warning", f"Service unavailable ({e}), falling back to local execution..."))
-        await _execute_stage_locally("prediction", pipeline_config, status_renderer, progress_tracker)
+        await _execute_via_unified_service(pipeline_config, status_renderer, progress_tracker)
         print(status_renderer.render_status("success", "Prediction model training completed successfully via local execution!"))
 
 
 async def _execute_stage_locally(stage: str, config: dict, status_renderer, progress_tracker) -> None:
     """
     Execute individual pipeline stage locally.
-    
+
     Parameters
     ----------
     stage : str
@@ -889,30 +780,30 @@ async def _execute_stage_locally(stage: str, config: dict, status_renderer, prog
     config : dict
         Pipeline configuration
     status_renderer : StatusRenderer
-        Status display component  
+        Status display component
     progress_tracker : ProgressTracker
         Progress tracking component
     """
     try:
         stage_classes = {
-            "umap": "UMAPStage", 
+            "umap": "UMAPStage",
             "clustering": "ClusteringStage",
             "heatmap": "HeatmapStage",
             "prediction": "PredictionStage"
         }
-        
+
         if stage not in stage_classes:
             raise ServiceClientError(f"Unknown stage: {stage}")
-            
+
         # For individual stages, fall back to full pipeline execution
         # This ensures all the context and dependencies are properly set up
         stage_config = config.copy()
         stage_config['command'] = stage
-        await _execute_locally(stage_config, status_renderer, progress_tracker)
-        
+        await _execute_via_unified_service(stage_config, status_renderer, progress_tracker)
+
         print("✓ Stage completed")
         print("✓ Execution completed")
-        
+
     except ImportError as e:
         raise ServiceClientError(f"Local {stage} stage not available: {e}")
     except Exception as e:
@@ -926,7 +817,7 @@ def umap(
 ) -> None:
     """
     Train the UMAP and get the embeddings.
-    
+
     Parameters
     ----------
     output_folder : Path
@@ -958,7 +849,7 @@ def clustering(
 ) -> None:
     """
     Perform clustering on embeddings.
-    
+
     Parameters
     ----------
     output_folder : Path
@@ -988,7 +879,7 @@ def heatmap(
 ) -> None:
     """
     Create a heatmap.
-    
+
     Parameters
     ----------
     output_folder : Path
@@ -1021,7 +912,7 @@ def prediction(
 ) -> None:
     """
     Train a prediction model.
-    
+
     Parameters
     ----------
     output_folder : Path
@@ -1053,26 +944,26 @@ def install_completion(
 ) -> None:
     """
     Install shell completion for the specified shell.
-    
+
     Parameters
     ----------
     shell : str
         Shell type to install completion for
-        
+
     Returns
     -------
     None
     """
     try:
         from .shell_completion import ShellCompletionManager
-        
+
         completion_manager = ShellCompletionManager()
         if completion_manager.install_completion(shell):
             typer.echo(f"Shell completion installed for {shell}")
         else:
             typer.echo(f"Failed to install shell completion for {shell}", err=True)
             raise typer.Exit(code=1)
-            
+
     except ImportError as e:
         typer.echo(f"Shell completion module not available: {e}", err=True)
         raise typer.Exit(code=1)
