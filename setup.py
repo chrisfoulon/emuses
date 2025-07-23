@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="emuses",
-    version="0.6",
+    version="0.7.0",
     packages=find_packages(),
     entry_points={
         "console_scripts": [
@@ -10,31 +10,59 @@ setup(
         ],
     },
     install_requires=[
+        # Core Python packages
         "numpy",
         "pandas",
         "Pillow",
         "scikit-learn",
         "scipy",
         "tqdm",
-        "nibabel",
-        "nilearn",
         "joblib",
-        "statsmodels",
-        "mne",
-        "umap-learn",
         "matplotlib",
         "seaborn",
-        "bcblib",
-        "hdbscan",
-        "pytest",
+        
+        # Neuroimaging packages
+        "nibabel",
+        "nilearn",
+        "mne",
         "pybids",
+        "bcblib",
+        
+        # Machine Learning packages
+        "umap-learn",
+        "hdbscan",
+        "xgboost",
+        "statsmodels",
+        "pykrige",
+        "gpy",
+        "optuna",
+        "optuna-integration[sklearn]",
+        "torch",
+        "lightgbm",
+        
+        # Web Framework & API packages (Critical for service)
+        "fastapi",
+        "uvicorn",
+        "slowapi",
+        "python-multipart",
+        
+        # CLI packages (Critical for CLI)
+        "typer",
+        "requests",
+        "httpx",
+        "psutil",
+        
+        # Visualization & UI packages
         "plotly",
         "streamlit",
-        "pykrige",
-        "narwhals",
-        "xgboost",
         "kaleido",
-        "gpy",
+        
+        # Development & Testing packages
+        "pytest",
+        "pytest-asyncio",
+        
+        # Data processing packages
+        "narwhals",
         "optuna-dashboard",
     ],
 )

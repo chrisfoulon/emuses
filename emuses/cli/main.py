@@ -10,11 +10,17 @@ Key Features:
 - Secure path handling with directory traversal protection
 - Interactive mode for novice users
 - FastAPI service integration
+- Command logging for easy rerun
 
 Security:
 - Input sanitization and validation
 - Path traversal protection
 - Command injection prevention
+
+TODO: Investigate whether command functions (full, umap, clustering, heatmap, prediction)
+are necessary boilerplate or serve a specific purpose. They currently duplicate the same
+pattern of calling save_command_to_output_folder() and their respective async functions.
+Consider refactoring to reduce duplication while maintaining functionality.
 """
 
 import typer
@@ -70,6 +76,73 @@ class ScoresNormalization(str, Enum):
     zscore = "zscore"
     min_max = "min-max"
     zero_max = "zero-max"
+
+
+def save_command_to_output_folder(output_folder: Path) -> None:
+    """
+    Save the executed command to the output folder for easy rerun.
+    
+    Parameters
+    ----------
+    output_folder : Path
+        Output folder path
+    """
+    try:
+        # Ensure output folder exists
+        output_folder.mkdir(parents=True, exist_ok=True)
+        
+        # Get the original command from sys.argv
+        command = ' '.join(sys.argv)
+        
+        # Save command to command.txt
+        command_file = output_folder / "command.txt"
+        with open(command_file, 'w', encoding='utf-8') as f:
+            f.write(f"# EMUSES Pipeline Command\n")
+            f.write(f"# Generated on: {time.strftime('%Y-%m-%d %H:%M:%S')}\n")
+            f.write(f"# To rerun: {command}\n")
+            f.write(f"# Or use: emuses --rerun \"{output_folder}\"\n\n")
+            f.write(command + "\n")
+        
+        logger.info(f"Command saved to: {command_file}")
+        
+    except Exception as e:
+        logger.warning(f"Failed to save command to output folder: {e}")
+
+
+def load_command_from_folder(folder_path: Path) -> str:
+    """
+    Load a previously saved command from an output folder.
+    
+    Parameters
+    ----------
+    folder_path : Path
+        Path to folder containing command.txt
+        
+    Returns
+    -------
+    str
+        The command string to execute
+        
+    Raises
+    ------
+    FileNotFoundError
+        If command.txt doesn't exist in the folder
+    """
+    command_file = folder_path / "command.txt"
+    
+    if not command_file.exists():
+        raise FileNotFoundError(f"No command.txt found in {folder_path}")
+    
+    with open(command_file, 'r', encoding='utf-8') as f:
+        lines = f.readlines()
+    
+    # Find the actual command line (last non-comment line)
+    for line in reversed(lines):
+        line = line.strip()
+        if line and not line.startswith('#'):
+            return line
+    
+    raise ValueError(f"No valid command found in {command_file}")
 
 
 def secure_path_resolver(path_str: str) -> Union[Path, str]:
@@ -147,6 +220,46 @@ def create_typer_app() -> typer.Typer:
 # Create the main application instance
 app = create_typer_app()
 
+
+@app.callback()
+def main_callback(
+    rerun: Annotated[Optional[Path], typer.Option("--rerun", help="Rerun command from output folder")] = None,
+) -> None:
+    """
+    EMUSES main callback to handle global options like --rerun.
+    """
+    if rerun:
+        try:
+            # Load and execute the saved command
+            command = load_command_from_folder(rerun)
+            typer.echo(f"Rerunning command from {rerun}:")
+            typer.echo(f"  {command}")
+            
+            # Parse and execute the command
+            import shlex
+            import subprocess
+            
+            # Remove 'emuses' from the beginning since we're already in the app
+            command_parts = shlex.split(command)
+            if command_parts and command_parts[0] == 'emuses':
+                command_parts = command_parts[1:]
+            
+            # Execute the command by updating sys.argv and re-running
+            original_argv = sys.argv.copy()
+            sys.argv = ['emuses'] + command_parts
+            
+            try:
+                app(command_parts)
+            finally:
+                sys.argv = original_argv
+                
+        except FileNotFoundError as e:
+            typer.echo(f"Error: {e}", err=True)
+            raise typer.Exit(code=1)
+        except Exception as e:
+            typer.echo(f"Error rerunning command: {e}", err=True)
+            raise typer.Exit(code=1)
+
 # Add name attribute for test compatibility
 app.name = "emuses"
 
@@ -159,45 +272,45 @@ def full(
     scores: Annotated[Optional[Path], typer.Option(help="Path to scores file associated with the dataset")] = None,
     label_dataset: Annotated[Optional[Path], typer.Option(help="Path to a separate labelled dataset")] = None,
     recursive_search: Annotated[bool, typer.Option("--recursive-input-file-search", help="Search recursively in the input dataset folder")] = False,
-    input_file_types: Annotated[Optional[List[str]], typer.Option(help="File types to search for in the input dataset folder")] = None,
-    arg_separator: Annotated[str, typer.Option(help="Separator for the input dataset list")] = ",",
-    input_header: Annotated[Optional[int], typer.Option(help="Header for the spreadsheet input dataset")] = None,
-    inputs_columns: Annotated[Optional[List[str]], typer.Option(help="List of columns for inputs in the scores file")] = None,
-    input_index_column: Annotated[Optional[int], typer.Option(help="Index column for the spreadsheet input dataset")] = None,
+    input_file_types: Annotated[Optional[List[str]], typer.Option("--input_file_types", help="File types to search for in the input dataset folder")] = None,
+    arg_separator: Annotated[str, typer.Option("--arg_separator", help="Separator for the input dataset list")] = ",",
+    input_header: Annotated[Optional[int], typer.Option("--input_header", help="Header for the spreadsheet input dataset")] = None,
+    inputs_columns: Annotated[Optional[List[str]], typer.Option("--inputs_columns", help="List of columns for inputs in the scores file")] = None,
+    input_index_column: Annotated[Optional[int], typer.Option("--input_index_column", help="Index column for the spreadsheet input dataset")] = None,
     columns_are_features: Annotated[bool, typer.Option("--columns_are_features", help="Columns are features in the spreadsheet input dataset")] = False,
     bids_filters: Annotated[Optional[List[str]], typer.Option(help="BIDS filters for the input dataset")] = None,
-    input_normalization: Annotated[InputNormalization, typer.Option("-inorm", "--input-normalization", help="Normalization method for input data")] = InputNormalization.none,
-    scores_header: Annotated[Optional[int], typer.Option(help="Header for the scores spreadsheet")] = None,
-    scores_index_column: Annotated[Optional[int], typer.Option(help="Index column for the scores spreadsheet")] = None,
-    scores_are_rows: Annotated[bool, typer.Option(help="Scores are in the columns of the spreadsheet input dataset")] = False,
-    scores_column: Annotated[Optional[List[str]], typer.Option(help="Column(s) for scores in the scores file")] = None,
+    input_normalization: Annotated[InputNormalization, typer.Option("-inorm", "--input_normalization", help="Normalization method for input data")] = InputNormalization.none,
+    scores_header: Annotated[Optional[int], typer.Option("--scores_header", help="Header for the scores spreadsheet")] = None,
+    scores_index_column: Annotated[Optional[int], typer.Option("--scores_index_column", help="Index column for the scores spreadsheet")] = None,
+    scores_are_rows: Annotated[bool, typer.Option("--scores_are_rows", help="Scores are in the columns of the spreadsheet input dataset")] = False,
+    scores_column: Annotated[Optional[List[str]], typer.Option("--scores_column", help="Column(s) for scores in the scores file")] = None,
     classification: Annotated[bool, typer.Option(help="Scores are integer classes in one column")] = False,
-    correlation_method: Annotated[CorrelationMethod, typer.Option(help="Method to use for correlation calculation")] = CorrelationMethod.pearson,
-    scores_normalization: Annotated[ScoresNormalization, typer.Option("-snorm", "--scores-normalization", help="Normalization method for scores data")] = ScoresNormalization.none,
-    filter_labelled_by_scores: Annotated[bool, typer.Option(help="Filter the labelled dataset to only keep files referenced in the scores file")] = False,
+    correlation_method: Annotated[CorrelationMethod, typer.Option("--correlation_method", help="Method to use for correlation calculation")] = CorrelationMethod.pearson,
+    scores_normalization: Annotated[ScoresNormalization, typer.Option("-snorm", "--scores_normalization", help="Normalization method for scores data")] = ScoresNormalization.none,
+    filter_labelled_by_scores: Annotated[bool, typer.Option("--filter_labelled_by_scores", help="Filter the labelled dataset to only keep files referenced in the scores file")] = False,
     load_umap: Annotated[Optional[str], typer.Option(help="Path to a pre-trained UMAP model")] = None,
     load_embeddings: Annotated[Optional[str], typer.Option(help="Path to precomputed embeddings")] = None,
-    test_size: Annotated[float, typer.Option(help="Test size for splitting the dataset")] = 0.2,
+    test_size: Annotated[float, typer.Option("--test_size", help="Test size for splitting the dataset")] = 0.2,
     prefix: Annotated[str, typer.Option(help="Prefix for the output path names")] = "",
-    optim_dict: Annotated[str, typer.Option(help="Name of an optim_dict in optim_configs.py")] = "optim_dict_default",
-    umap_trials: Annotated[int, typer.Option(help="Number of outer (UMAP) optimization trials")] = 50,
-    hdbscan_trials: Annotated[int, typer.Option(help="Number of inner (HDBSCAN) optimization trials")] = 20,
+    optim_dict: Annotated[str, typer.Option("--optim_dict", help="Name of an optim_dict in optim_configs.py")] = "optim_dict_default",
+    umap_trials: Annotated[int, typer.Option("--umap_trials", help="Number of outer (UMAP) optimization trials")] = 50,
+    hdbscan_trials: Annotated[int, typer.Option("--hdbscan_trials", help="Number of inner (HDBSCAN) optimization trials")] = 20,
     load_hdbscan: Annotated[Optional[str], typer.Option(help="Path to a pre-trained HDBSCAN model")] = None,
-    min_cluster_size: Annotated[int, typer.Option(help="Minimum cluster size")] = 5,
+    min_cluster_size: Annotated[int, typer.Option("--min_cluster_size", help="Minimum cluster size")] = 5,
     interactive_plot: Annotated[bool, typer.Option("--interactive_plot", help="Option to create interactive clustering plots")] = False,
-    hdbscan_approx_min_span_tree: Annotated[bool, typer.Option(help="When set to False, ensures reproducibility but with much longer runtime")] = True,
-    hdbscan_core_dist_n_jobs: Annotated[int, typer.Option(help="Number of parallel jobs for core distance computation in HDBSCAN")] = -1,
-    inspect_data_state: Annotated[bool, typer.Option(help="Inspect data state before model training (for debugging)")] = False,
-    use_enhanced_pipeline: Annotated[bool, typer.Option(help="Use the enhanced pipeline with Optuna optimization for model selection")] = False,
-    optuna_trials: Annotated[int, typer.Option(help="Number of trials for Optuna optimization per model/feature set")] = 60,
-    parallel_models: Annotated[bool, typer.Option(help="Train models in parallel across different feature sets")] = False,
-    n_jobs: Annotated[int, typer.Option(help="Number of parallel jobs for model training (-1 uses all cores)")] = -1,
-    model_selection: Annotated[Optional[List[str]], typer.Option(help="List of models to try. Options: gp, rf, gb, kr, xgb, lgb, et, svr")] = None,
-    prediction_optim_dict: Annotated[str, typer.Option(help="Name of a prediction optim_dict in optim_configs_predict.py")] = "optim_dict_predict",
+    hdbscan_approx_min_span_tree: Annotated[bool, typer.Option("--hdbscan_approx_min_span_tree", help="When set to False, ensures reproducibility but with much longer runtime")] = True,
+    hdbscan_core_dist_n_jobs: Annotated[int, typer.Option("--hdbscan_core_dist_n_jobs", help="Number of parallel jobs for core distance computation in HDBSCAN")] = -1,
+    inspect_data_state: Annotated[bool, typer.Option("--inspect_data_state", help="Inspect data state before model training (for debugging)")] = False,
+    use_enhanced_pipeline: Annotated[bool, typer.Option("--use_enhanced_pipeline", help="Use the enhanced pipeline with Optuna optimization for model selection")] = False,
+    optuna_trials: Annotated[int, typer.Option("--optuna_trials", help="Number of trials for Optuna optimization per model/feature set")] = 60,
+    parallel_models: Annotated[bool, typer.Option("--parallel_models", help="Train models in parallel across different feature sets")] = False,
+    n_jobs: Annotated[int, typer.Option("--n_jobs", help="Number of parallel jobs for model training (-1 uses all cores)")] = -1,
+    model_selection: Annotated[Optional[List[str]], typer.Option("--model_selection", help="List of models to try. Options: gp, rf, gb, kr, xgb, lgb, et, svr")] = None,
+    prediction_optim_dict: Annotated[str, typer.Option("--prediction_optim_dict", help="Name of a prediction optim_dict in optim_configs_predict.py")] = "optim_dict_predict",
     random_state: Annotated[int, typer.Option("--random_state", help="Master random seed for reproducibility")] = 42,
-    run_old_prediction: Annotated[bool, typer.Option(help="Run the old prediction pipeline")] = False,
-    umap_jobs: Annotated[Optional[int], typer.Option(help="Number of parallel jobs for outer (UMAP) optimization")] = None,
-    hdbscan_jobs: Annotated[Optional[int], typer.Option(help="Number of parallel jobs for inner (HDBSCAN) optimization")] = None,
+    run_old_prediction: Annotated[bool, typer.Option("--run_old_prediction", help="Run the old prediction pipeline")] = False,
+    umap_jobs: Annotated[Optional[int], typer.Option("--umap_jobs", help="Number of parallel jobs for outer (UMAP) optimization")] = None,
+    hdbscan_jobs: Annotated[Optional[int], typer.Option("--hdbscan_jobs", help="Number of parallel jobs for inner (HDBSCAN) optimization")] = None,
     interactive: Annotated[bool, typer.Option("--interactive", help="Run in interactive mode")] = False,
     use_service: Annotated[bool, typer.Option("--service", help="Use remote service for execution")] = False,
 ) -> None:
@@ -309,6 +422,9 @@ def full(
     SecurityError
         If security constraints are violated
     """
+    # Save command for easy rerun
+    save_command_to_output_folder(output_folder)
+    
     # Log arguments for debugging (preserve legacy behavior)
     logger.info("Arguments:")
     logger.info("command: full")
@@ -456,7 +572,7 @@ def _convert_typer_args_to_service_config(**kwargs) -> dict:
     return config
 
 
-async def _execute_via_remote_service(pipeline_type: str, config: dict, status_renderer, progress_tracker) -> None:
+async def _execute_via_remote_service(pipeline_type: str, config: dict, status_renderer, progress_tracker, service_url: str = "http://localhost:8000") -> None:
     """
     Execute pipeline via remote FastAPI service.
 
@@ -470,8 +586,10 @@ async def _execute_via_remote_service(pipeline_type: str, config: dict, status_r
         Status display component
     progress_tracker : ProgressTracker
         Progress tracking component
+    service_url : str, optional
+        Base URL of the service, by default "http://localhost:8000"
     """
-    service_client = ServiceHTTPClient(base_url="http://localhost:8000")
+    service_client = ServiceHTTPClient(base_url=service_url)
 
     try:
         # Check service health first
@@ -488,18 +606,24 @@ async def _execute_via_remote_service(pipeline_type: str, config: dict, status_r
             "job_name": f"CLI Pipeline - {pipeline_type}",
             "description": f"Pipeline execution via CLI for {pipeline_type}"
         }
+        
         job_response = await service_client.submit_pipeline_job(pipeline_type, job_request)
         job_id = job_response["job_id"]
         print(status_renderer.render_status("info", f"Job submitted with ID: {job_id}"))
 
         # Poll for completion with progress display
         print("Starting pipeline execution...")
+        
+        start_time = time.time()
+        last_progress = -1
+        poll_count = 0
 
         while True:
+            poll_count += 1
             status = await service_client.get_job_status(job_id)
 
             if status["status"] == "completed":
-                print("✓ Stage completed")
+                print("✓ Pipeline completed successfully")
                 break
             elif status["status"] == "failed":
                 error_msg = status.get("error", "Unknown error")
@@ -507,14 +631,21 @@ async def _execute_via_remote_service(pipeline_type: str, config: dict, status_r
             elif status["status"] == "cancelled":
                 raise ServiceClientError("Job was cancelled")
 
-            # Update progress if available
+            # Update progress if available (only if changed significantly)
             progress = status.get("progress", 0)
             if isinstance(progress, (int, float)):
-                print(f"Progress: {min(progress * 100, 99):.1f}%")
+                progress_pct = min(progress * 100, 99)
+                if abs(progress_pct - last_progress) >= 5 or poll_count % 15 == 0:  # Show every 5% or every 30 seconds
+                    print(f"Progress: {progress_pct:.1f}%")
+                    last_progress = progress_pct
 
             current_stage = status.get("current_stage")
             if current_stage:
                 print(f"Current stage: {current_stage}")
+
+            # Check for timeout (30 minutes max)
+            if time.time() - start_time > 1800:
+                raise ServiceClientError("Pipeline execution timed out after 30 minutes")
 
             await asyncio.sleep(2)  # Poll every 2 seconds
 
@@ -560,13 +691,20 @@ async def _execute_via_unified_service(config: dict, status_renderer, progress_t
         Progress tracking component
     """
     service_process = None
-    service_url = "http://localhost:8000"
-
+    
     try:
         print(status_renderer.render_status("info", "Auto-starting local EMUSES service..."))
 
+        # Find available port for service
+        from emuses.cli.service_manager import ServiceManager
+        service_manager = ServiceManager()
+        available_port = service_manager.find_available_port()
+        service_url = f"http://localhost:{available_port}"
+        
+        print(status_renderer.render_status("info", f"Starting FastAPI service on port {available_port}..."))
+        
         # Start local service
-        service_process = _start_local_service(port=8000)
+        service_process = _start_local_service(port=available_port)
         if not service_process:
             raise ServiceClientError("Failed to start local service")
 
@@ -579,7 +717,7 @@ async def _execute_via_unified_service(config: dict, status_renderer, progress_t
 
         # Execute via the service (determine pipeline type from config)
         pipeline_type = config.get('command', 'full')
-        await _execute_via_remote_service(pipeline_type, config, status_renderer, progress_tracker)
+        await _execute_via_remote_service(pipeline_type, config, status_renderer, progress_tracker, service_url)
 
     finally:
         # Always clean up the service
@@ -829,6 +967,9 @@ def umap(
     -------
     None
     """
+    # Save command for easy rerun
+    save_command_to_output_folder(output_folder)
+    
     # Run the async implementation
     try:
         asyncio.run(_umap_async(
@@ -859,6 +1000,9 @@ def clustering(
     -------
     None
     """
+    # Save command for easy rerun
+    save_command_to_output_folder(output_folder)
+    
     # Run the async implementation
     try:
         asyncio.run(_clustering_async(
@@ -891,6 +1035,9 @@ def heatmap(
     -------
     None
     """
+    # Save command for easy rerun
+    save_command_to_output_folder(output_folder)
+    
     # Run the async implementation
     try:
         asyncio.run(_heatmap_async(
@@ -924,6 +1071,9 @@ def prediction(
     -------
     None
     """
+    # Save command for easy rerun
+    save_command_to_output_folder(output_folder)
+    
     # Run the async implementation
     try:
         asyncio.run(_prediction_async(
@@ -992,6 +1142,15 @@ def _main(*args, **kwargs):
 
 def main():
     """Main entry point for the CLI application."""
+    # Quick dependency check on startup (fast, non-blocking)
+    try:
+        from emuses.utils.dependency_check import validate_on_cli_startup
+        validate_on_cli_startup(show_warnings=True)
+    except ImportError:
+        # If our own utils can't be imported, we have bigger problems
+        # but don't block the CLI from trying to run
+        pass
+    
     app()
 
 

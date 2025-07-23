@@ -304,12 +304,59 @@ def validate_file_path(file_path: str) -> Path:
     ValueError
         If file path does not exist or is not accessible
     """
-    path = Path(file_path)
+    # Convert Windows paths to WSL paths if necessary
+    converted_path = _convert_windows_path_to_wsl(file_path)
+    path = Path(converted_path)
+    
     if not path.exists():
-        raise ValueError(f"File not found: {file_path}")
+        raise ValueError(f"File not found: {file_path} (tried: {converted_path})")
     if not path.is_file():
-        raise ValueError(f"Path is not a file: {file_path}")
+        raise ValueError(f"Path is not a file: {file_path} (tried: {converted_path})")
     return path
+
+
+def _convert_windows_path_to_wsl(file_path: str) -> str:
+    """Convert Windows path to WSL path if needed.
+    
+    Only performs conversion in WSL environment to avoid breaking
+    other deployment scenarios.
+    
+    Parameters
+    ----------
+    file_path : str
+        Original file path (may be Windows or Linux format)
+        
+    Returns
+    -------
+    str
+        Path converted to WSL format if necessary
+    """
+    import os
+    
+    # Only convert if we're in WSL environment
+    if not (os.path.exists('/mnt/c') or 'microsoft' in os.uname().release.lower()):
+        return file_path
+    
+    # Clean up any combined paths that got corrupted
+    # Handle case where working directory got prepended to Windows path
+    if '/mnt/c/Users/' in file_path and ':\\' in file_path:
+        # Extract just the Windows path part after the last occurrence of drive letter pattern
+        import re
+        match = re.search(r'([A-Za-z]):\\([^"]*)', file_path)
+        if match:
+            drive_letter = match.group(1).lower()
+            rest_of_path = match.group(2).replace('\\', '/')
+            return f"/mnt/{drive_letter}/{rest_of_path}"
+    
+    # Check if it's a Windows path (contains drive letter)
+    if len(file_path) >= 3 and file_path[1] == ':' and file_path[2] == '\\':
+        # Convert Windows path like "S:\folder\file.txt" to "/mnt/s/folder/file.txt"
+        drive_letter = file_path[0].lower()
+        rest_of_path = file_path[3:].replace('\\', '/')
+        return f"/mnt/{drive_letter}/{rest_of_path}"
+    
+    # Already in Linux/WSL format or relative path
+    return file_path
 
 
 # Conditional rate limiting helper function
@@ -384,18 +431,27 @@ async def submit_full_pipeline_job(
         if config.get("label_dataset"):
             validate_file_path(config["label_dataset"])
 
-        # Create job
+        # Create job with original config (for logging/tracking)
         job_id = get_job_manager().create_job(
             config=config,
             job_name=job_request.job_name,
             description=job_request.description,
         )
 
-        # Wrap config in the expected structure for pipeline runner
+        # Create a converted copy of config for pipeline execution only
+        pipeline_config = config.copy()
+        pipeline_config["input_dataset"] = _convert_windows_path_to_wsl(config["input_dataset"])
+        pipeline_config["scores"] = _convert_windows_path_to_wsl(config["scores"])
+        if pipeline_config.get("output_folder"):
+            pipeline_config["output_folder"] = _convert_windows_path_to_wsl(config["output_folder"])
+        if pipeline_config.get("label_dataset"):
+            pipeline_config["label_dataset"] = _convert_windows_path_to_wsl(config["label_dataset"])
+
+        # Wrap converted config in the expected structure for pipeline runner
         pipeline_context = {
-            "config": config,
-            "input_dataset": config.get("input_dataset"),
-            "scores_dataset": config.get("scores"),
+            "config": pipeline_config,  # Use converted paths for pipeline
+            "input_dataset": pipeline_config.get("input_dataset"),
+            "scores_dataset": pipeline_config.get("scores"),
         }
 
         # Submit for background execution

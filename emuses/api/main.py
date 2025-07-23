@@ -31,6 +31,16 @@ def create_app() -> FastAPI:
     >>> response = client.get("/api/health")
     >>> assert response.status_code == 200
     """
+    # Quick check for service-specific dependencies
+    try:
+        from emuses.utils.dependency_check import validate_for_service_mode
+        if not validate_for_service_mode():
+            # Still try to import and return the app, but user was warned
+            pass
+    except ImportError:
+        # Our utils can't be imported, but don't block service startup
+        pass
+    
     # Import the pre-configured FastAPI app from the foundation service
     from emuses.foundation_fastapi_service.app import app
     

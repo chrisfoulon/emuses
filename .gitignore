@@ -202,3 +202,11 @@ output_dir/
 
 # Jupyter Notebook outputs (optional, uncomment if you want to ignore outputs)
 # *.ipynb
+coverage_html/
+
+# Prevent misplaced output folders from corrupted paths
+# Windows path patterns that might get created in wrong locations
+*:\*
+*GIN Dropbox*
+*/new_cli_test/
+*/HCP_psy/*

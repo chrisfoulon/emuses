@@ -1,6 +1,72 @@
-# Overview of the Predictive Modeling Tool
+# EMUSES - Predictive Modeling Tool
 
-This project aims to develop a tool that models the relationship between input data and variables of interest, focusing on interpretability and predictive capabilities. The tool consists of several interconnected modules that facilitate data import, dimensionality reduction, and predictive modeling in a continuous latent space. Below, I'll describe the structure of the project, the key components, and how each part works together to achieve the overall goal.
+This project aims to develop a tool that models the relationship between input data and variables of interest, focusing on interpretability and predictive capabilities. The tool consists of several interconnected modules that facilitate data import, dimensionality reduction, and predictive modeling in a continuous latent space.
+
+## 📦 Installation
+
+### Recommended Installation (Complete Dependencies)
+
+For the best experience and to ensure all features work correctly:
+
+```bash
+# Clone the repository
+git clone <repository-url>
+cd emuses
+
+# Install all dependencies
+pip install -r requirements.txt
+
+# Install EMUSES in development mode
+pip install -e .
+
+# Validate installation
+python validate_deps.py
+```
+
+### Alternative Installation (Setup.py Only)
+
+```bash
+pip install -e .
+```
+
+**Note**: If you encounter missing dependencies, install them manually:
+```bash
+pip install fastapi uvicorn typer slowapi python-multipart requests httpx psutil
+```
+
+### Verify Installation
+
+EMUSES automatically checks critical dependencies when you use it, but you can run a comprehensive validation:
+
+```bash
+# Comprehensive validation (optional)
+python validate_deps.py
+
+# Or just try using EMUSES - it will warn you if anything is missing
+python -m emuses.cli --help
+```
+
+## 🚀 Quick Start
+
+### Using the CLI
+```bash
+# Run full pipeline
+python -m emuses.cli full output_folder input_dataset.csv
+
+# Individual stages
+python -m emuses.cli umap output_folder input_dataset.csv
+python -m emuses.cli heatmap output_folder embeddings.npy --scores scores.csv
+```
+
+### Using the API Service
+```bash
+# Start the service
+uvicorn emuses.api.main:create_app --factory --host 127.0.0.1 --port 8000 --reload
+
+# Access API documentation at: http://127.0.0.1:8000/api/docs
+```
+
+## 📋 Overview
 
 ## Key Components
 

@@ -109,6 +109,34 @@ class ServiceManager:
         except Exception:
             return False
     
+    def find_available_port(self, host: str = "127.0.0.1", start_port: int = 8000, max_attempts: int = 100) -> int:
+        """
+        Find an available port starting from start_port.
+        
+        Parameters
+        ----------
+        host : str, optional
+            Host address to check, by default "127.0.0.1"
+        start_port : int, optional
+            Starting port number, by default 8000
+        max_attempts : int, optional
+            Maximum number of ports to try, by default 100
+            
+        Returns
+        -------
+        int
+            Available port number
+            
+        Raises
+        ------
+        RuntimeError
+            If no available port is found within max_attempts
+        """
+        for port in range(start_port, start_port + max_attempts):
+            if self.is_port_available(host, port):
+                return port
+        raise RuntimeError(f"No available port found in range {start_port}-{start_port + max_attempts - 1}")
+    
     def find_service_process(self) -> Optional[psutil.Process]:
         """
         Find existing service process by port.
