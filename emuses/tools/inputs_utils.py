@@ -365,7 +365,40 @@ def spreadsheet_to_input_df(
     # Remove columns that couldn't be converted
     if columns_to_remove:
         print(f"Removed unprocessable object columns: {columns_to_remove}")
+
+        # Provide helpful warning about common header/index issues
+        if header is None:
+            print("⚠️  WARNING: No header row specified (header=None).")
+            print("   If your file has column names in the first row, try adding: --input_header 0 (for input files) or --scores_header 0 (for scores files)")
+
+        if index_col is None and len(columns_to_remove) > 0:
+            print("⚠️  WARNING: No index column specified (index_col=None).")
+            print("   If your file has row labels/IDs in the first column, try adding: --input_index_column 0 (for input files) or --scores_index_column 0 (for scores files)")
+
+        # Check if we're removing many columns (likely a header/formatting issue)
+        if len(columns_to_remove) > 10:
+            print("⚠️  WARNING: Many columns were removed - this might indicate a formatting issue.")
+            print("   Common causes:")
+            print("   - Header row not properly specified (use --input_header 0 or --scores_header 0)")
+            print("   - Index column not properly specified (use --input_index_column 0 or --scores_index_column 0)")
+            print("   - Wrong file format or encoding")
+
         df.drop(columns=columns_to_remove, inplace=True)
+
+    # Check if we have any data left after removing unprocessable columns
+    if df.empty or df.shape[1] == 0:
+        raise ValueError(
+            "❌ ERROR: No numeric data remaining after processing the file.\n"
+            "🔧 LIKELY CAUSES:\n"
+            "   - Header row not properly specified\n"
+            "   - Index column not properly specified\n"
+            "   - File contains only text data or headers\n"
+            "💡 SOLUTIONS:\n"
+            "   - Add --input_header 0 (for input files) or --scores_header 0 (for scores files) if your file has headers\n"
+            "   - Add --input_index_column 0 (for input files) or --scores_index_column 0 (for scores files) if your file has row labels\n"
+            "   - Check that your file contains numeric data\n"
+            "📝 EXAMPLE: emuses full ... --input_header 0 --input_index_column 0"
+        )
 
     # Check if all remaining columns are numeric, datetime, or timedelta
     remaining_string_columns = [
@@ -458,6 +491,16 @@ def prepare_scores(scores, match_length=None):
     If match_length is provided, checks that scores has at least that many rows.
     If there are more rows than match_length, only the first match_length observations are kept.
     """
+    # Check for empty scores array (common when headers aren't handled correctly)
+    if scores.size == 0:
+        raise ValueError(
+            "❌ ERROR: No numeric data found in scores file after processing.\n"
+            "🔧 LIKELY CAUSE: Header row not properly specified.\n"
+            "💡 SOLUTION: Add --scores_header 0 to your command if your scores file has a header row.\n"
+            "             Also consider --scores_index_column 0 if your file has row labels in the first column.\n"
+            "📝 EXAMPLE: emuses full ... --scores /path/to/scores.csv --scores_header 0"
+        )
+
     scores = np.vectorize(float)(scores)
     print(f"Scores shape: {scores.shape}")
     if scores.ndim == 1:

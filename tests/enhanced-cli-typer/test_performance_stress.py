@@ -32,7 +32,7 @@ from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch, call
 from contextlib import asynccontextmanager
 
-from emuses.cli.main import app, _full_async, _execute_via_service
+from emuses.cli.main import app, _full_async, _execute_via_remote_service
 from emuses.cli.service_client import ServiceHTTPClient, ServiceClientError
 from emuses.cli.rich_features import ProgressTracker, StatusRenderer
 

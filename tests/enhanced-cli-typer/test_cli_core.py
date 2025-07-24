@@ -47,10 +47,10 @@ class TestTyperApplicationStructure:
         assert isinstance(app, typer.Typer), "App should be a Typer instance"
         
     def test_command_registration(self):
-        """Test that all five commands are properly registered."""
+        """Test that all commands are properly registered."""
         # This test defines the command structure requirement
         
-        expected_commands = ['full', 'umap', 'clustering', 'heatmap', 'prediction']
+        expected_commands = ['full', 'umap', 'clustering', 'heatmap', 'prediction', 'rerun']
         
         # Test will fail until commands are implemented
         assert app is not None, "Typer app not implemented yet"

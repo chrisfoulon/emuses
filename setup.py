@@ -6,7 +6,7 @@ setup(
     packages=find_packages(),
     entry_points={
         "console_scripts": [
-            "emuses=emuses.scripts.main:main",
+            "emuses=emuses.cli.main:main",
         ],
     },
     install_requires=[

@@ -11,7 +11,7 @@ from unittest.mock import Mock, patch, MagicMock
 from pathlib import Path
 
 # Import modules to test
-from emuses.cli.main import _execute_locally
+from emuses.cli.main import _execute_stage_locally
 from emuses.cli.service_client import ServiceHTTPClient, ServiceClientError
 
 

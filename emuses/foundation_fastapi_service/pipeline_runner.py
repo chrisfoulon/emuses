@@ -257,8 +257,10 @@ class PipelineRunner:
             )
             raise
         except Exception as e:
+            # Ensure we have a meaningful error message for job status
+            error_msg = str(e) if str(e) else f"{type(e).__name__}: Unknown error during pipeline execution"
             self.job_manager.update_job_status(
-                job_id, "FAILED", message=f"Pipeline execution error: {str(e)}"
+                job_id, "FAILED", message=f"Pipeline execution error: {error_msg}"
             )
             raise
 
@@ -288,7 +290,14 @@ class PipelineRunner:
             return result_context
 
         except Exception as e:
-            self.logger.error(f"Pipeline execution failed: {e}")
+            import traceback
+            error_msg = str(e) if str(e) else f"{type(e).__name__} (no error message)"
+            self.logger.error(f"Pipeline execution failed: {error_msg}")
+            self.logger.debug(f"Full traceback:\n{traceback.format_exc()}")
+            
+            # Ensure we always have a meaningful error message
+            if not str(e):
+                raise RuntimeError(f"Pipeline stage execution failed: {type(e).__name__} occurred") from e
             raise
 
     def _run_pipeline(
@@ -385,8 +394,17 @@ class PipelineRunner:
             return result_context
 
         except Exception as e:
-            # Log the error and re-raise
-            self.logger.error(f"EMUSESPipeline execution failed: {e}")
+            # Log the error with full traceback and re-raise with preserved context
+            import traceback
+            error_msg = str(e) if str(e) else f"{type(e).__name__} (no message)"
+            full_traceback = traceback.format_exc()
+            
+            self.logger.error(f"EMUSESPipeline execution failed: {error_msg}")
+            self.logger.error(f"Full traceback:\n{full_traceback}")
+            
+            # Re-raise with enhanced error message if original is empty
+            if not str(e):
+                raise RuntimeError(f"Pipeline execution failed: {type(e).__name__} occurred during stage execution") from e
             raise
 
     def _merge_pipeline_context(

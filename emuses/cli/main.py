@@ -40,6 +40,7 @@ import uvicorn
 from multiprocessing import Process
 import os
 import signal
+import subprocess
 
 # Import security functions
 from .security import validate_path, sanitize_input
@@ -81,7 +82,7 @@ class ScoresNormalization(str, Enum):
 def save_command_to_output_folder(output_folder: Path) -> None:
     """
     Save the executed command to the output folder for easy rerun.
-    
+
     Parameters
     ----------
     output_folder : Path
@@ -90,21 +91,21 @@ def save_command_to_output_folder(output_folder: Path) -> None:
     try:
         # Ensure output folder exists
         output_folder.mkdir(parents=True, exist_ok=True)
-        
+
         # Get the original command from sys.argv
         command = ' '.join(sys.argv)
-        
+
         # Save command to command.txt
         command_file = output_folder / "command.txt"
         with open(command_file, 'w', encoding='utf-8') as f:
-            f.write(f"# EMUSES Pipeline Command\n")
+            f.write("# EMUSES Pipeline Command\n")
             f.write(f"# Generated on: {time.strftime('%Y-%m-%d %H:%M:%S')}\n")
             f.write(f"# To rerun: {command}\n")
-            f.write(f"# Or use: emuses --rerun \"{output_folder}\"\n\n")
+            f.write(f"# Or use: emuses rerun \"{output_folder}\"\n\n")
             f.write(command + "\n")
-        
+
         logger.info(f"Command saved to: {command_file}")
-        
+
     except Exception as e:
         logger.warning(f"Failed to save command to output folder: {e}")
 
@@ -112,36 +113,36 @@ def save_command_to_output_folder(output_folder: Path) -> None:
 def load_command_from_folder(folder_path: Path) -> str:
     """
     Load a previously saved command from an output folder.
-    
+
     Parameters
     ----------
     folder_path : Path
         Path to folder containing command.txt
-        
+
     Returns
     -------
     str
         The command string to execute
-        
+
     Raises
     ------
     FileNotFoundError
         If command.txt doesn't exist in the folder
     """
     command_file = folder_path / "command.txt"
-    
+
     if not command_file.exists():
         raise FileNotFoundError(f"No command.txt found in {folder_path}")
-    
+
     with open(command_file, 'r', encoding='utf-8') as f:
         lines = f.readlines()
-    
+
     # Find the actual command line (last non-comment line)
     for line in reversed(lines):
         line = line.strip()
         if line and not line.startswith('#'):
             return line
-    
+
     raise ValueError(f"No valid command found in {command_file}")
 
 
@@ -221,44 +222,55 @@ def create_typer_app() -> typer.Typer:
 app = create_typer_app()
 
 
-@app.callback()
-def main_callback(
-    rerun: Annotated[Optional[Path], typer.Option("--rerun", help="Rerun command from output folder")] = None,
+@app.command()
+def rerun(
+    output_folder: Annotated[Path, typer.Argument(help="Output folder containing command.txt file")]
 ) -> None:
     """
-    EMUSES main callback to handle global options like --rerun.
+    Rerun a previously executed command from its output folder.
+
+    This command reads the saved command from command.txt in the specified
+    output folder and executes it again with the same parameters.
+
+    Parameters
+    ----------
+    output_folder : Path
+        Path to output folder containing the command.txt file
+
+    Raises
+    ------
+    typer.Exit
+        With code 1 if the command file is not found or execution fails
     """
-    if rerun:
-        try:
-            # Load and execute the saved command
-            command = load_command_from_folder(rerun)
-            typer.echo(f"Rerunning command from {rerun}:")
-            typer.echo(f"  {command}")
-            
-            # Parse and execute the command
-            import shlex
-            import subprocess
-            
-            # Remove 'emuses' from the beginning since we're already in the app
-            command_parts = shlex.split(command)
-            if command_parts and command_parts[0] == 'emuses':
-                command_parts = command_parts[1:]
-            
-            # Execute the command by updating sys.argv and re-running
-            original_argv = sys.argv.copy()
-            sys.argv = ['emuses'] + command_parts
-            
-            try:
-                app(command_parts)
-            finally:
-                sys.argv = original_argv
-                
-        except FileNotFoundError as e:
-            typer.echo(f"Error: {e}", err=True)
-            raise typer.Exit(code=1)
-        except Exception as e:
-            typer.echo(f"Error rerunning command: {e}", err=True)
-            raise typer.Exit(code=1)
+    try:
+        # Load and execute the saved command
+        command = load_command_from_folder(output_folder)
+        typer.echo(f"Rerunning command from {output_folder}:")
+        typer.echo(f"  {command}")
+
+        # Parse and execute the command
+        import shlex
+
+        # Remove 'emuses' from the beginning since we're already in the app
+        command_parts = shlex.split(command)
+        if command_parts and command_parts[0] == 'emuses':
+            command_parts = command_parts[1:]
+
+        # Execute in subprocess to prevent infinite recursion
+        result = subprocess.run(
+            [sys.executable, '-m', 'emuses.cli'] + command_parts,
+            check=False
+        )
+        if result.returncode != 0:
+            raise typer.Exit(code=result.returncode)
+
+    except FileNotFoundError as e:
+        typer.echo(f"Error: {e}", err=True)
+        raise typer.Exit(code=1)
+    except Exception as e:
+        typer.echo(f"Error rerunning command: {e}", err=True)
+        raise typer.Exit(code=1)
+
 
 # Add name attribute for test compatibility
 app.name = "emuses"
@@ -424,7 +436,7 @@ def full(
     """
     # Save command for easy rerun
     save_command_to_output_folder(output_folder)
-    
+
     # Log arguments for debugging (preserve legacy behavior)
     logger.info("Arguments:")
     logger.info("command: full")
@@ -606,14 +618,14 @@ async def _execute_via_remote_service(pipeline_type: str, config: dict, status_r
             "job_name": f"CLI Pipeline - {pipeline_type}",
             "description": f"Pipeline execution via CLI for {pipeline_type}"
         }
-        
+
         job_response = await service_client.submit_pipeline_job(pipeline_type, job_request)
         job_id = job_response["job_id"]
         print(status_renderer.render_status("info", f"Job submitted with ID: {job_id}"))
 
         # Poll for completion with progress display
         print("Starting pipeline execution...")
-        
+
         start_time = time.time()
         last_progress = -1
         poll_count = 0
@@ -691,7 +703,7 @@ async def _execute_via_unified_service(config: dict, status_renderer, progress_t
         Progress tracking component
     """
     service_process = None
-    
+
     try:
         print(status_renderer.render_status("info", "Auto-starting local EMUSES service..."))
 
@@ -700,9 +712,9 @@ async def _execute_via_unified_service(config: dict, status_renderer, progress_t
         service_manager = ServiceManager()
         available_port = service_manager.find_available_port()
         service_url = f"http://localhost:{available_port}"
-        
+
         print(status_renderer.render_status("info", f"Starting FastAPI service on port {available_port}..."))
-        
+
         # Start local service
         service_process = _start_local_service(port=available_port)
         if not service_process:
@@ -969,7 +981,7 @@ def umap(
     """
     # Save command for easy rerun
     save_command_to_output_folder(output_folder)
-    
+
     # Run the async implementation
     try:
         asyncio.run(_umap_async(
@@ -1002,7 +1014,7 @@ def clustering(
     """
     # Save command for easy rerun
     save_command_to_output_folder(output_folder)
-    
+
     # Run the async implementation
     try:
         asyncio.run(_clustering_async(
@@ -1037,7 +1049,7 @@ def heatmap(
     """
     # Save command for easy rerun
     save_command_to_output_folder(output_folder)
-    
+
     # Run the async implementation
     try:
         asyncio.run(_heatmap_async(
@@ -1073,7 +1085,7 @@ def prediction(
     """
     # Save command for easy rerun
     save_command_to_output_folder(output_folder)
-    
+
     # Run the async implementation
     try:
         asyncio.run(_prediction_async(
@@ -1150,7 +1162,7 @@ def main():
         # If our own utils can't be imported, we have bigger problems
         # but don't block the CLI from trying to run
         pass
-    
+
     app()
 
 
