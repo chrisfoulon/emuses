@@ -30,7 +30,7 @@ from emuses.tools.models_utils import build_estimator, build_feature_union
 # ---------------------------------------------------------------
 
 
-def _objective_factory(X, y, task: str, inner_cv, optim_dict, pretrained_ae=None):
+def _objective_factory(X, y, task: str, inner_cv, optim_dict, pretrained_ae=None, n_jobs=-1):
     """Return an Optuna objective that samples the *conditional* space."""
     # Use appropriate scoring metric based on the task
     if task == "clf":
@@ -51,15 +51,24 @@ def _objective_factory(X, y, task: str, inner_cv, optim_dict, pretrained_ae=None
 
         # 2 ─ build feature transformer + estimator
         feats = build_feature_union(params["features"], pretrained_ae=pretrained_ae)
-        est = build_estimator(params["model"], task)
+        est = build_estimator(params["model"], task, n_jobs)
 
         # 3 ─ cross-validate
         pipe = Pipeline([("feat", feats), ("est", est)])
 
         try:
-            scores = cross_val_score(
-                pipe, X, y, cv=inner_cv, scoring=scoring, n_jobs=-1
-            )
+            # Suppress sklearn 1.8 Pipeline fitted state warnings during cross-validation
+            # This prevents FutureWarning from becoming NotFittedError in sklearn 1.8+
+            with warnings.catch_warnings():
+                warnings.filterwarnings(
+                    "ignore",
+                    category=FutureWarning,
+                    message=".*Pipeline instance is not fitted yet.*",
+                    module="sklearn.pipeline"
+                )
+                scores = cross_val_score(
+                    pipe, X, y, cv=inner_cv, scoring=scoring, n_jobs=n_jobs
+                )
             # Store individual CV scores in trial for metadata
             trial.set_user_attr("cv_scores", scores.tolist())
             trial.set_user_attr("cv_mean", scores.mean())
@@ -87,6 +96,7 @@ def nested_optuna_cv(
     output_folder: str = None,
     optim_dict=None,
     pretrained_ae=None,
+    n_jobs: int = -1,
 ):
     """
     Fully nested CV:
@@ -155,7 +165,7 @@ def nested_optuna_cv(
 
         optimization_start = time.time()
         study.optimize(
-            _objective_factory(X_tr, y_tr, task, inner_cv, optim_dict, pretrained_ae),
+            _objective_factory(X_tr, y_tr, task, inner_cv, optim_dict, pretrained_ae, n_jobs),
             n_trials=n_trials,
             show_progress_bar=False,
         )
@@ -177,7 +187,7 @@ def nested_optuna_cv(
                         best_params["features"], pretrained_ae=pretrained_ae
                     ),
                 ),
-                ("est", build_estimator(best_params["model"], task)),
+                ("est", build_estimator(best_params["model"], task, n_jobs)),
             ]
         ).fit(X_tr, y_tr)
 

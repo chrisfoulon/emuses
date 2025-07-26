@@ -181,7 +181,7 @@ class ServiceHTTPClient:
     def __init__(
         self,
         base_url: str = "http://localhost:8000",
-        timeout: float = 30.0,
+        timeout: Optional[float] = None,
         max_retries: int = 3,
         pool_connections: int = 20,
         pool_maxsize: int = 100,
@@ -244,8 +244,8 @@ class ServiceHTTPClient:
             If any parameter is invalid
         """
         # Validate parameters
-        if timeout <= 0:
-            raise ValueError("timeout must be positive")
+        if timeout is not None and timeout < 0:
+            raise ValueError("timeout must be non-negative or None for unlimited")
         if max_retries < 0:
             raise ValueError("max_retries must be non-negative")
         if circuit_breaker_threshold <= 0:
@@ -321,7 +321,7 @@ class ServiceHTTPClient:
 
             self._session = httpx.AsyncClient(
                 limits=limits,
-                timeout=httpx.Timeout(self.timeout)
+                timeout=httpx.Timeout(self.timeout) if self.timeout is not None else None
             )
 
     def _build_url(self, endpoint: str) -> str:

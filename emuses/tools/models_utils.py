@@ -151,7 +151,7 @@ def build_feature_union(feat_cfg: dict, pretrained_ae=None):
     return FeatureUnion(steps)
 
 
-def build_estimator(model_cfg: dict, task: str):
+def build_estimator(model_cfg: dict, task: str, n_jobs: int = -1):
     """
     Parameters
     ----------
@@ -199,7 +199,7 @@ def build_estimator(model_cfg: dict, task: str):
         common_params = {
             "n_estimators": n,
             "max_depth": md,
-            "n_jobs": -1,
+            "n_jobs": n_jobs,
             "random_state": 42,
         }
 
@@ -235,7 +235,7 @@ def build_estimator(model_cfg: dict, task: str):
             penalty=model_cfg["penalty"],
             solver="saga",
             max_iter=10000,
-            n_jobs=-1,
+            n_jobs=n_jobs,
             multi_class="auto",  # Handle both binary and multi-class automatically
         )
 

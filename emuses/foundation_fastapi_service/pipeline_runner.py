@@ -96,6 +96,7 @@ class PipelineRunner:
         args.interactive_plot = bool(config_dict.get("interactive_plot", False))
         args.optim_dict = str(config_dict.get("optim_dict", "optim_dict_hcp"))
         args.hdbscan_jobs = int(config_dict.get("hdbscan_jobs", 4))
+        args.n_jobs = int(config_dict.get("n_jobs", -1))
         args.sigma = config_dict.get("sigma", None)
         args.fwhm = config_dict.get("fwhm", None)
         args.outer_folds = int(config_dict.get("outer_folds", 5))

@@ -1,0 +1,37 @@
+[
+    {
+        "trial_number": 2,
+        "umap_params": {
+            "min_dist": 0.005747511076852396,
+            "n_neighbors": 45,
+            "n_components": 2,
+            "metric": "euclidean"
+        },
+        "umap_metrics": {
+            "eigen_spread": 0.5172826163315806,
+            "density_variability": 0.6480393166883798,
+            "entropy": 0.8852885628099889
+        },
+        "detailed_umap_components": {
+            "eigen_spread": 1.0345652326631611,
+            "density_variability": 0.0,
+            "entropy": 0.0
+        },
+        "hdbscan_best_params": {
+            "hdbscan_min_cluster_size": 23,
+            "hdbscan_min_samples": 7
+        },
+        "hdbscan_metrics": {
+            "noise_ratio": 0.7373974208675264,
+            "dbcv": 0.36251124331708995,
+            "cluster_persistence": 0.07613154078773546
+        },
+        "detailed_hdbscan_components": {
+            "cluster_persistence": 0.15226308157547092,
+            "noise_ratio": 0.0,
+            "dbcv": 0.0
+        },
+        "composite_score": 0.1186828314238632,
+        "interactive_plot": "/mnt/c/Users/Tolhsadum/PycharmProjects/emuses/~/new_cli_test_wsl/plots/interactive_2.html"
+    }
+]

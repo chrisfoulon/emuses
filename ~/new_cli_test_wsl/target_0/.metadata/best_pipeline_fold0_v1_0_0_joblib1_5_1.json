@@ -1,0 +1,116 @@
+{
+    "model_type": "sklearn_pipeline",
+    "version": "1.0.0",
+    "created_at": "2025-07-26T12:47:07.380657",
+    "emuses_version": "1.0.0",
+    "joblib_version": "1.5.1",
+    "dependencies": {
+        "numpy": "1.26.4",
+        "scipy": "1.12.0",
+        "sklearn": "1.7.1",
+        "pandas": "2.3.1",
+        "matplotlib": "3.10.3",
+        "seaborn": "0.13.2",
+        "torch": "2.7.1+cu126"
+    },
+    "config_hash": "7d42adb0bfb3f61d",
+    "file_size": 9389,
+    "description": "Best pipeline for target_0 fold 0/5 (outer score: 0.2141, inner CV: 0.1194)",
+    "tags": [
+        "cv",
+        "pipeline",
+        "fold_0",
+        "target_0",
+        "reg"
+    ],
+    "optuna_study": {
+        "study_name": "target_0_fold_0",
+        "direction": "2",
+        "best_value": 0.11935549137326991,
+        "best_trial": {
+            "trial_number": 12,
+            "value": 0.11935549137326991,
+            "params": {
+                "model_type": "elastic",
+                "elastic_alpha": 0.033539118609636154,
+                "elastic_l1_ratio": 0.901155714632723,
+                "elastic_C": 0.47519683633078225,
+                "elastic_penalty": "l1",
+                "feat_type": "gwd",
+                "feat_sigma_gwd": 0.08097288425471777,
+                "feat_poly_deg": 1,
+                "feat_use_raw": false,
+                "feat_n_comp": 30,
+                "feat_var_thr": 0.8360912137439866,
+                "feat_gamma": 1.8039512590655349,
+                "feat_corr_thr": 0.2972927616527361
+            },
+            "user_attrs": {
+                "cv_mean": 0.11935549137326991,
+                "cv_scores": [
+                    0.12774979431714473,
+                    0.1398498498262586,
+                    0.06830518557027776,
+                    0.09990320363593674,
+                    0.1609694235167317
+                ],
+                "cv_std": 0.03226988571268511,
+                "scoring_metric": "r2"
+            },
+            "system_attrs": {},
+            "state": "1",
+            "datetime_start": "2025-07-26 12:46:01.801593",
+            "datetime_complete": "2025-07-26 12:46:02.647610",
+            "duration": "0:00:00.846017"
+        },
+        "n_trials": 20,
+        "optimization_time": 0.0,
+        "sampler_name": "TPESampler",
+        "pruner_name": "MedianPruner"
+    },
+    "raw_optuna_params": {
+        "model_type": "elastic",
+        "elastic_alpha": 0.033539118609636154,
+        "elastic_l1_ratio": 0.901155714632723,
+        "elastic_C": 0.47519683633078225,
+        "elastic_penalty": "l1",
+        "feat_type": "gwd",
+        "feat_sigma_gwd": 0.08097288425471777,
+        "feat_poly_deg": 1,
+        "feat_use_raw": false,
+        "feat_n_comp": 30,
+        "feat_var_thr": 0.8360912137439866,
+        "feat_gamma": 1.8039512590655349,
+        "feat_corr_thr": 0.2972927616527361
+    },
+    "processed_params": {
+        "model": {
+            "model_type": "elastic",
+            "alpha": 0.033539118609636154,
+            "l1_ratio": 0.901155714632723,
+            "C": 0.47519683633078225,
+            "penalty": "l1"
+        },
+        "features": {
+            "feat_type": "gwd",
+            "sigma_gwd": 0.08097288425471777,
+            "poly_deg": 1,
+            "use_raw": false,
+            "n_comp": 30,
+            "var_thr": 0.8360912137439866,
+            "feat_gamma": 1.8039512590655349,
+            "corr_thr": 0.2972927616527361
+        }
+    },
+    "cv_score": 0.21408217033587362,
+    "cv_scores": [
+        0.12774979431714473,
+        0.1398498498262586,
+        0.06830518557027776,
+        0.09990320363593674,
+        0.1609694235167317
+    ],
+    "cv_folds": 5,
+    "fold_index": 0,
+    "target_id": null
+}

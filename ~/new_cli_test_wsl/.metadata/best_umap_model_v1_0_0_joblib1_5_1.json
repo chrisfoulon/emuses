@@ -1,0 +1,37 @@
+{
+    "model_type": "umap",
+    "version": "1.0.0",
+    "created_at": "2025-07-26T12:45:52.466084",
+    "emuses_version": "1.0.0",
+    "joblib_version": "1.5.1",
+    "dependencies": {
+        "numpy": "1.26.4",
+        "scipy": "1.12.0",
+        "sklearn": "1.7.1",
+        "pandas": "2.3.1",
+        "matplotlib": "3.10.3",
+        "seaborn": "0.13.2",
+        "torch": "2.7.1+cu126"
+    },
+    "config_hash": "7ff06cc4b4893294",
+    "file_size": 909033,
+    "description": "Best UMAP model from trial 2 with composite score 0.1186828314238632",
+    "tags": [
+        "optimization",
+        "best_model",
+        "trial_2"
+    ],
+    "optuna_study": null,
+    "raw_optuna_params": null,
+    "processed_params": {
+        "min_dist": 0.005747511076852396,
+        "n_neighbors": 45,
+        "n_components": 2,
+        "metric": "euclidean"
+    },
+    "cv_score": null,
+    "cv_scores": null,
+    "cv_folds": null,
+    "fold_index": null,
+    "target_id": null
+}

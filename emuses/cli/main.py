@@ -317,6 +317,10 @@ def full(
     optuna_trials: Annotated[int, typer.Option("--optuna_trials", help="Number of trials for Optuna optimization per model/feature set")] = 60,
     parallel_models: Annotated[bool, typer.Option("--parallel_models", help="Train models in parallel across different feature sets")] = False,
     n_jobs: Annotated[int, typer.Option("--n_jobs", help="Number of parallel jobs for model training (-1 uses all cores)")] = -1,
+    service_timeout: Annotated[float, typer.Option("--service-timeout", help="Service request timeout in seconds (0 for unlimited)")] = 0.0,
+    umap_timeout: Annotated[float, typer.Option("--umap-timeout", help="UMAP stage timeout in seconds (0 for unlimited)")] = 0.0,
+    heatmap_timeout: Annotated[float, typer.Option("--heatmap-timeout", help="Heatmap stage timeout in seconds (0 for unlimited)")] = 0.0,
+    prediction_timeout: Annotated[float, typer.Option("--prediction-timeout", help="Prediction stage timeout in seconds (0 for unlimited)")] = 0.0,
     model_selection: Annotated[Optional[List[str]], typer.Option("--model_selection", help="List of models to try. Options: gp, rf, gb, kr, xgb, lgb, et, svr")] = None,
     prediction_optim_dict: Annotated[str, typer.Option("--prediction_optim_dict", help="Name of a prediction optim_dict in optim_configs_predict.py")] = "optim_dict_predict",
     random_state: Annotated[int, typer.Option("--random_state", help="Master random seed for reproducibility")] = 42,
@@ -486,6 +490,10 @@ def full(
             optuna_trials=optuna_trials,
             parallel_models=parallel_models,
             n_jobs=n_jobs,
+            service_timeout=service_timeout,
+            umap_timeout=umap_timeout,
+            heatmap_timeout=heatmap_timeout,
+            prediction_timeout=prediction_timeout,
             model_selection=model_selection,
             prediction_optim_dict=prediction_optim_dict,
             random_state=random_state,
@@ -536,7 +544,8 @@ async def _full_async(**kwargs) -> None:
     try:
         if use_service:
             # Connect to remote service
-            await _execute_via_remote_service("full", pipeline_config, status_renderer, progress_tracker)
+            service_timeout = kwargs.get('service_timeout', 0.0)
+            await _execute_via_remote_service("full", pipeline_config, status_renderer, progress_tracker, service_timeout=service_timeout)
         else:
             # Auto-start local service
             await _execute_via_unified_service(pipeline_config, status_renderer, progress_tracker)
@@ -584,7 +593,7 @@ def _convert_typer_args_to_service_config(**kwargs) -> dict:
     return config
 
 
-async def _execute_via_remote_service(pipeline_type: str, config: dict, status_renderer, progress_tracker, service_url: str = "http://localhost:8000") -> None:
+async def _execute_via_remote_service(pipeline_type: str, config: dict, status_renderer, progress_tracker, service_url: str = "http://localhost:8000", service_timeout: float = 0.0) -> None:
     """
     Execute pipeline via remote FastAPI service.
 
@@ -601,7 +610,9 @@ async def _execute_via_remote_service(pipeline_type: str, config: dict, status_r
     service_url : str, optional
         Base URL of the service, by default "http://localhost:8000"
     """
-    service_client = ServiceHTTPClient(base_url=service_url)
+    # Convert 0.0 to None for unlimited timeout
+    timeout = None if service_timeout <= 0 else service_timeout
+    service_client = ServiceHTTPClient(base_url=service_url, timeout=timeout)
 
     try:
         # Check service health first

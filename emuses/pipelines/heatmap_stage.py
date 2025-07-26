@@ -48,7 +48,7 @@ import openpyxl
 
 
 def _optimise_target(
-    col_idx, X, Y, task, cfg, out_dir, logger_name, optim_dict, pretrained_ae=None
+    col_idx, X, Y, task, cfg, out_dir, logger_name, optim_dict, pretrained_ae=None, n_jobs=-1
 ):
     """
     Runs nested Optuna-CV for one target column and returns artefacts.
@@ -73,6 +73,7 @@ def _optimise_target(
         output_folder=out_dir,
         optim_dict=optim_dict,
         pretrained_ae=pretrained_ae,
+        n_jobs=n_jobs,
     )
     logger.info(
         "%s  kept %d / %d rows  -  mean=%.3f", tag, len(yi), len(Y), scores.mean()
@@ -378,7 +379,10 @@ class HeatmapStage(PipelineStage):
         if ae_results is not None:
             fitted_ae = ae_results.get("fitted_ae")
 
-        results = Parallel(n_jobs=-1, backend="loky")(
+        n_jobs = getattr(self.config, "n_jobs", -1)
+        from emuses.tools.parallelism_utils import create_safe_parallel
+        parallel = create_safe_parallel(n_jobs)
+        results = parallel(
             delayed(_optimise_target)(
                 col_idx,
                 X,
@@ -389,6 +393,7 @@ class HeatmapStage(PipelineStage):
                 logger.name,  # pass logger name so child can log
                 optim_dict_predict_selected,  # pass selected optimization dictionary
                 fitted_ae,  # pass pre-fitted AE if available
+                n_jobs,  # pass n_jobs parameter
             )
             for col_idx in range(Y.shape[1])
         )
