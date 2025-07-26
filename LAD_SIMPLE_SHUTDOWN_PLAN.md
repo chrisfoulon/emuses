@@ -5,6 +5,9 @@
 **Estimated Duration**: 1-2 days  
 **Success Probability**: 98% (maximized through conservative approach)  
 **Priority**: HIGH (critical user experience issue)  
+**Implementation Status**: ⚠️ **NOT STARTED** - Ready for LAD implementation  
+
+> **🚨 CRITICAL USER EXPERIENCE ISSUE**: Currently, EMUSES processes cannot be gracefully interrupted. Users must manually find and kill processes with `ps aux | grep emuses` and `kill -9 <PID>`. This plan provides a conservative, high-success-probability solution.
 
 ## 🎯 Feature Draft
 
