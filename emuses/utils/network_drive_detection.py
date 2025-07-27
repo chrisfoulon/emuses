@@ -153,9 +153,53 @@ def setup_optuna_storage_safe(study_name: str, storage_path: Path) -> str:
     return f"sqlite:///{db_file}"
 
 
+def setup_optuna_storage_with_cleanup_info(study_name: str, storage_path: Path) -> Tuple[str, Optional[Path]]:
+    """
+    Create a safe Optuna storage URL and return cleanup information.
+    
+    This function is similar to setup_optuna_storage_safe but also returns
+    the temporary location (if any) for later cleanup.
+    
+    Parameters
+    ----------
+    study_name : str
+        Name for the Optuna study
+    storage_path : Path
+        Desired path for the storage
+        
+    Returns
+    -------
+    Tuple[str, Optional[Path]]
+        (SQLite URL for Optuna storage, temp_location_for_cleanup)
+        temp_location_for_cleanup is None if no temp location was used
+    """
+    sqlite_location, is_relocated, explanation = get_sqlite_safe_location(storage_path)
+    
+    if is_relocated:
+        print(f"⚠️  {explanation}")
+        print(f"📁 Optimization database: {sqlite_location}")
+        print(f"📁 Results will be saved to: {storage_path}")
+    
+    # Ensure the directory exists
+    sqlite_location.mkdir(parents=True, exist_ok=True)
+    
+    # Create the SQLite URL
+    db_file = sqlite_location / f"{study_name}.db"
+    storage_url = f"sqlite:///{db_file}"
+    
+    # Return temp location for cleanup if relocated, otherwise None
+    temp_location_for_cleanup = sqlite_location if is_relocated else None
+    
+    return storage_url, temp_location_for_cleanup
+
+
 def cleanup_temp_sqlite_location(temp_location: Path, output_folder: Path) -> None:
     """
-    Clean up temporary SQLite location and optionally copy results.
+    Clean up temporary SQLite location and copy SQLite databases to output folder.
+    
+    This function preserves important SQLite database files by copying them to the
+    output folder before cleaning up the temporary location. This ensures users
+    retain access to optimization databases when using network drives.
     
     Parameters
     ----------
@@ -168,18 +212,40 @@ def cleanup_temp_sqlite_location(temp_location: Path, output_folder: Path) -> No
         return
     
     try:
-        # Copy any important files to the output folder
-        # (Optuna databases are typically not needed after completion)
+        import shutil
         
-        # List what was in the temp directory for debugging
+        # List all files in temp directory
         temp_files = list(temp_location.glob("*"))
+        sqlite_files = [f for f in temp_files if f.suffix == '.db']
+        
         if temp_files:
             logger.info(f"Cleaning up temporary SQLite location: {temp_location}")
-            logger.info(f"Temporary files created: {[f.name for f in temp_files]}")
+            logger.info(f"Temporary files found: {[f.name for f in temp_files]}")
         
-        # Remove the temporary directory
-        import shutil
+        # Copy SQLite database files to output folder
+        if sqlite_files:
+            # Create databases subdirectory in output folder
+            db_output_dir = output_folder / "databases"
+            db_output_dir.mkdir(parents=True, exist_ok=True)
+            
+            copied_files = []
+            for db_file in sqlite_files:
+                try:
+                    dest_file = db_output_dir / db_file.name
+                    shutil.copy2(db_file, dest_file)
+                    copied_files.append(dest_file)
+                    logger.info(f"Copied SQLite database: {db_file.name} -> {dest_file}")
+                except Exception as copy_error:
+                    logger.warning(f"Failed to copy SQLite file {db_file}: {copy_error}")
+            
+            if copied_files:
+                print(f"\n📁 SQLite databases preserved in: {db_output_dir}")
+                print(f"   Files copied: {[f.name for f in copied_files]}")
+                print(f"   Original temp location was: {temp_location}")
+        
+        # Remove the temporary directory after copying
         shutil.rmtree(temp_location, ignore_errors=True)
+        logger.info(f"Successfully cleaned up temporary location: {temp_location}")
         
     except Exception as e:
         logger.warning(f"Failed to clean up temporary SQLite location {temp_location}: {e}")

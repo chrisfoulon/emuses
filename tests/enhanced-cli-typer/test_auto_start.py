@@ -47,12 +47,12 @@ class TestAutoStartService:
             service_process = _start_local_service(port=8000)
             assert service_process is not None, "Service process should be created"
             
-            # Wait for service to be ready
-            is_ready = _wait_for_service_ready(service_url, timeout=10)
+            # Wait for service to be ready (increased timeout for CI environments)
+            is_ready = _wait_for_service_ready(service_url, timeout=30)
             assert is_ready, "Service should be ready within timeout"
             
             # Verify service is responding
-            health_response = requests.get(f"{service_url}/health")
+            health_response = requests.get(f"{service_url}/api/health")
             assert health_response.status_code == 200, "Service should respond to health check"
             
         finally:

@@ -132,9 +132,10 @@ def optimize_ae_pretraining(
 
     # Create Optuna study - use network-safe storage if needed
     storage_str = None
+    temp_sqlite_location = None
     if output_folder:
-        from emuses.utils.network_drive_detection import setup_optuna_storage_safe
-        storage_str = setup_optuna_storage_safe("ae_pretraining", output_folder)
+        from emuses.utils.network_drive_detection import setup_optuna_storage_with_cleanup_info
+        storage_str, temp_sqlite_location = setup_optuna_storage_with_cleanup_info("ae_pretraining", output_folder)
 
     study = optuna.create_study(
         direction="minimize",  # Minimize reconstruction error
@@ -201,6 +202,12 @@ def optimize_ae_pretraining(
             logger.info(f"Saved pretrained AE model to: {model_path}")
         except Exception as e:
             logger.error(f"Failed to save AE model: {e}")
+
+    # Clean up temporary SQLite location if it was used
+    if temp_sqlite_location is not None:
+        from emuses.utils.network_drive_detection import cleanup_temp_sqlite_location
+        from pathlib import Path
+        cleanup_temp_sqlite_location(temp_sqlite_location, Path(output_folder))
 
     return {
         "best_params": best_params,

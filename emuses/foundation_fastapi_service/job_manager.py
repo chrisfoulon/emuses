@@ -226,9 +226,9 @@ class JobManager:
                 metadata["message"] = message
 
             # Set timestamps based on status
-            if status == "RUNNING" and "started_at" not in metadata:
+            if status == "running" and "started_at" not in metadata:
                 metadata["started_at"] = datetime.now().isoformat()
-            elif status in ["COMPLETED", "FAILED", "CANCELLED"]:
+            elif status in ["completed", "failed", "cancelled"]:
                 metadata["completed_at"] = datetime.now().isoformat()
 
             # Write atomically using file locking
@@ -413,7 +413,7 @@ class JobManager:
 
                 # Check if job is completed and old enough
                 if (
-                    metadata.get("status") in ["COMPLETED", "FAILED", "CANCELLED"]
+                    metadata.get("status") in ["completed", "failed", "cancelled"]
                     and "completed_at" in metadata
                 ):
                     completed_at = datetime.fromisoformat(metadata["completed_at"])
@@ -491,7 +491,7 @@ class JobManager:
         # Initialize job status
         self.update_job_status(
             job_id=job_id,
-            status="SUBMITTED",
+            status="submitted",
             message="Job submitted for processing",
             current_stage=None,
             progress=0.0,
@@ -595,13 +595,13 @@ class JobManager:
 
         current_status = self.get_job_status(job_id)
 
-        if current_status["status"] in ["COMPLETED", "FAILED", "CANCELLED"]:
+        if current_status["status"] in ["completed", "failed", "cancelled"]:
             return False
 
         # Update status to cancelled
         self.update_job_status(
             job_id=job_id,
-            status="CANCELLED",
+            status="cancelled",
             message="Job cancelled by user",
             completed_at=datetime.utcnow().isoformat() + "Z",
         )

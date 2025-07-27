@@ -227,7 +227,7 @@ class PipelineRunner:
         try:
             # Update job status to running
             self.job_manager.update_job_status(
-                job_id, "RUNNING", message="Starting pipeline execution"
+                job_id, "running", message="Starting pipeline execution"
             )
 
             # Create deep copy of context to prevent corruption
@@ -245,7 +245,7 @@ class PipelineRunner:
 
             # Update job status to completed
             self.job_manager.update_job_status(
-                job_id, "COMPLETED", message="Pipeline execution completed"
+                job_id, "completed", message="Pipeline execution completed"
             )
 
             return result
@@ -253,7 +253,7 @@ class PipelineRunner:
         except asyncio.TimeoutError:
             self.job_manager.update_job_status(
                 job_id,
-                "FAILED",
+                "failed",
                 message=f"Pipeline execution timeout after {self.pipeline_timeout} seconds",
             )
             raise
@@ -261,7 +261,7 @@ class PipelineRunner:
             # Ensure we have a meaningful error message for job status
             error_msg = str(e) if str(e) else f"{type(e).__name__}: Unknown error during pipeline execution"
             self.job_manager.update_job_status(
-                job_id, "FAILED", message=f"Pipeline execution error: {error_msg}"
+                job_id, "failed", message=f"Pipeline execution error: {error_msg}"
             )
             raise
 
@@ -545,7 +545,7 @@ class PipelineRunner:
 
                 try:
                     self.job_manager.update_job_status(
-                        job_id, "RUNNING", message=status_message
+                        job_id, "running", message=status_message
                     )
                 except Exception as e:
                     self.logger.warning(f"Failed to update job status: {e}")

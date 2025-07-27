@@ -761,7 +761,7 @@ async def list_jobs(
     if offset < 0:
         offset = 0
 
-    valid_statuses = ["SUBMITTED", "RUNNING", "COMPLETED", "FAILED", "CANCELLED"]
+    valid_statuses = ["submitted", "running", "completed", "failed", "cancelled"]
     if status and status not in valid_statuses:
         raise HTTPException(
             status_code=400,

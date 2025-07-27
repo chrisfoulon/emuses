@@ -14,6 +14,7 @@ from emuses.utils.network_drive_detection import (
     is_network_or_cloud_path,
     get_sqlite_safe_location,
     setup_optuna_storage_safe,
+    setup_optuna_storage_with_cleanup_info,
     validate_sqlite_compatibility,
     cleanup_temp_sqlite_location
 )
@@ -297,6 +298,124 @@ class TestIntegration:
             safe_location, is_relocated, explanation = get_sqlite_safe_location(path)
             assert is_relocated, f"Path should be relocated: {path_str}"
             assert "/tmp/" in str(safe_location), f"Should use temp location: {path_str}"
+
+
+class TestSQLiteCleanupIntegration:
+    """Test cases for SQLite cleanup and file copying."""
+
+    def test_setup_with_cleanup_info_local_path(self):
+        """Test setup_optuna_storage_with_cleanup_info with local path."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            local_path = Path(temp_dir)
+            
+            storage_url, temp_location = setup_optuna_storage_with_cleanup_info("test_study", local_path)
+            
+            # Should use local path, no temp location
+            assert storage_url.startswith("sqlite:///")
+            assert str(local_path) in storage_url
+            assert "test_study.db" in storage_url
+            assert temp_location is None
+
+    def test_setup_with_cleanup_info_network_path(self):
+        """Test setup_optuna_storage_with_cleanup_info with network path."""
+        network_path = Path("/mnt/s/GIN Dropbox/test")
+        
+        with patch('builtins.print'):  # Suppress warning output
+            storage_url, temp_location = setup_optuna_storage_with_cleanup_info("test_study", network_path)
+        
+        # Should use temp location
+        assert storage_url.startswith("sqlite:///")
+        assert "/tmp/emuses_sqlite_" in storage_url
+        assert "test_study.db" in storage_url
+        assert temp_location is not None
+        assert "emuses_sqlite_" in str(temp_location)
+
+    def test_cleanup_copies_sqlite_files(self):
+        """Test that cleanup function copies SQLite files to output folder."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            # Set up output folder
+            output_folder = Path(temp_dir) / "output"
+            output_folder.mkdir()
+            
+            # Create a temporary SQLite location with test databases
+            temp_location = Path(tempfile.mkdtemp(prefix='emuses_sqlite_'))
+            test_db1 = temp_location / "study1.db"
+            test_db2 = temp_location / "study2.db"
+            non_db_file = temp_location / "other.txt"
+            
+            # Create test files
+            test_db1.write_text("test database 1")
+            test_db2.write_text("test database 2")
+            non_db_file.write_text("not a database")
+            
+            # Run cleanup
+            cleanup_temp_sqlite_location(temp_location, output_folder)
+            
+            # Check that SQLite files were copied
+            db_output_dir = output_folder / "databases"
+            assert db_output_dir.exists()
+            
+            copied_db1 = db_output_dir / "study1.db"
+            copied_db2 = db_output_dir / "study2.db"
+            assert copied_db1.exists()
+            assert copied_db2.exists()
+            assert copied_db1.read_text() == "test database 1"
+            assert copied_db2.read_text() == "test database 2"
+            
+            # Check that non-database files were not copied
+            assert not (db_output_dir / "other.txt").exists()
+            
+            # Check that temp location was deleted
+            assert not temp_location.exists()
+
+    def test_cleanup_handles_empty_temp_location(self):
+        """Test cleanup with empty temp location."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            output_folder = Path(temp_dir) / "output"
+            output_folder.mkdir()
+            
+            # Create empty temp location
+            temp_location = Path(tempfile.mkdtemp(prefix='emuses_sqlite_'))
+            
+            # Should not error
+            cleanup_temp_sqlite_location(temp_location, output_folder)
+            
+            # Should still clean up temp location
+            assert not temp_location.exists()
+            
+            # No databases subdirectory should be created
+            assert not (output_folder / "databases").exists()
+
+    def test_end_to_end_sqlite_file_preservation(self):
+        """Test complete workflow with file preservation."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            # Simulate Dropbox path
+            dropbox_path = Path("/mnt/s/GIN Dropbox/test_project")
+            local_output = Path(temp_dir) / "output"
+            local_output.mkdir()
+            
+            # Setup storage (simulating network drive scenario)
+            with patch('builtins.print'):  # Suppress warnings
+                storage_url, temp_location = setup_optuna_storage_with_cleanup_info("optimization_study", dropbox_path)
+            
+            # Verify temp location was created
+            assert temp_location is not None
+            assert temp_location.exists()
+            
+            # Simulate creating SQLite database during optimization
+            db_file = temp_location / "optimization_study.db"
+            db_file.write_text("simulated optimization database content")
+            
+            # Run cleanup (simulating end of pipeline)
+            cleanup_temp_sqlite_location(temp_location, local_output)
+            
+            # Verify database was preserved in output folder
+            preserved_db = local_output / "databases" / "optimization_study.db"
+            assert preserved_db.exists()
+            assert preserved_db.read_text() == "simulated optimization database content"
+            
+            # Verify temp location was cleaned up
+            assert not temp_location.exists()
 
 
 if __name__ == "__main__":

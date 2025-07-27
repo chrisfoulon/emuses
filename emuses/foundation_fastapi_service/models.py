@@ -111,7 +111,7 @@ class JobStatusResponse(BaseModel):
         json_schema_extra={
             "example": {
                 "job_id": "550e8400-e29b-41d4-a716-446655440000",
-                "status": "RUNNING",
+                "status": "running",
                 "created_at": "2025-07-03T10:30:00Z",
                 "started_at": "2025-07-03T10:30:15Z",
                 "progress": 0.65,

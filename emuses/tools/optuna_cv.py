@@ -153,9 +153,15 @@ def nested_optuna_cv(
         X_te, y_te = X[te_idx], y[te_idx]
 
         # ── run Optuna on *inner* CV ────────────────────────────
-        from emuses.utils.network_drive_detection import setup_optuna_storage_safe
+        from emuses.utils.network_drive_detection import setup_optuna_storage_with_cleanup_info
         study_name = f"{target_tag}_fold_{fold}"
-        storage_str = setup_optuna_storage_safe(f"optuna_{target_tag}", output_folder)
+        storage_str, temp_location = setup_optuna_storage_with_cleanup_info(f"optuna_{target_tag}", output_folder)
+        
+        # Track temp locations for cleanup (initialize list if first fold)
+        if not hasattr(nested_optuna_cv, '_temp_locations'):
+            nested_optuna_cv._temp_locations = []
+        if temp_location is not None:
+            nested_optuna_cv._temp_locations.append(temp_location)
 
         study = optuna.create_study(
             study_name=study_name,
@@ -248,6 +254,14 @@ def nested_optuna_cv(
             fallback_path = f"best_pipeline_{target_tag}_fold{fold}.joblib"
             joblib.dump(best_pipe, fallback_path)
             logger.info(f"Saved pipeline to current directory: {fallback_path}")
+
+    # Clean up temporary SQLite locations if any were used
+    if hasattr(nested_optuna_cv, '_temp_locations'):
+        from emuses.utils.network_drive_detection import cleanup_temp_sqlite_location
+        for temp_location in set(nested_optuna_cv._temp_locations):  # Use set to avoid duplicates
+            cleanup_temp_sqlite_location(temp_location, Path(output_folder))
+        # Clear the list for next run
+        delattr(nested_optuna_cv, '_temp_locations')
 
     return np.asarray(scores), pipelines
 

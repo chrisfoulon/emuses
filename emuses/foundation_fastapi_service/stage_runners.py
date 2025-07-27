@@ -116,7 +116,7 @@ class ProgressTracker:
         # Update job status
         self.job_manager.update_job_status(
             self.job_id,
-            "RUNNING",
+            "running",
             progress=progress,
             current_stage=self.stage_name,
             message=message,
@@ -356,7 +356,7 @@ class UMAPStageRunner(BaseStageRunner):
             self.logger.error(f"UMAP stage failed for job {job_id}: {str(e)}")
             self.job_manager.update_job_status(
                 job_id,
-                "FAILED",
+                "failed",
                 current_stage="umap_stage",
                 message=f"UMAP stage error: {str(e)}",
             )
@@ -455,7 +455,7 @@ class HeatmapStageRunner(BaseStageRunner):
             self.logger.error(f"Heatmap stage failed for job {job_id}: {str(e)}")
             self.job_manager.update_job_status(
                 job_id,
-                "FAILED",
+                "failed",
                 current_stage="heatmap_stage",
                 message=f"Heatmap stage error: {str(e)}",
             )
@@ -538,7 +538,7 @@ class PredictionStageRunner(BaseStageRunner):
             self.logger.error(f"Prediction stage failed for job {job_id}: {str(e)}")
             self.job_manager.update_job_status(
                 job_id,
-                "FAILED",
+                "failed",
                 current_stage="prediction_stage",
                 message=f"Prediction stage error: {str(e)}",
             )

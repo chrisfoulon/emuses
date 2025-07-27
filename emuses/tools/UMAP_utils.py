@@ -617,8 +617,8 @@ def train_and_save_umap_optim_with_nested_clustering(
         return composite_score
 
     # Set up Optuna storage - use network-safe location if needed
-    from emuses.utils.network_drive_detection import setup_optuna_storage_safe
-    storage_url = setup_optuna_storage_safe("umap_nested_optimization", output_folder)
+    from emuses.utils.network_drive_detection import setup_optuna_storage_with_cleanup_info
+    storage_url, temp_sqlite_location = setup_optuna_storage_with_cleanup_info("umap_nested_optimization", output_folder)
 
     # Run the outer optimization using the storage backend for parallelization.
     outer_study = optuna.create_study(
@@ -762,6 +762,11 @@ def train_and_save_umap_optim_with_nested_clustering(
         output_folder=output_folder,
         plot_filename="optimization_log_plot.png",
     )
+
+    # Clean up temporary SQLite location if it was used
+    if temp_sqlite_location is not None:
+        from emuses.utils.network_drive_detection import cleanup_temp_sqlite_location
+        cleanup_temp_sqlite_location(temp_sqlite_location, output_folder)
 
     return (
         best_umap_model,
