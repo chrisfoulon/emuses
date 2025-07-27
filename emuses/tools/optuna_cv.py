@@ -153,8 +153,9 @@ def nested_optuna_cv(
         X_te, y_te = X[te_idx], y[te_idx]
 
         # ── run Optuna on *inner* CV ────────────────────────────
-        storage_str = f"sqlite:///{output_folder}/optuna_{target_tag}.db"
+        from emuses.utils.network_drive_detection import setup_optuna_storage_safe
         study_name = f"{target_tag}_fold_{fold}"
+        storage_str = setup_optuna_storage_safe(f"optuna_{target_tag}", output_folder)
 
         study = optuna.create_study(
             study_name=study_name,

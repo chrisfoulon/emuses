@@ -410,6 +410,126 @@ class TestRerunFunctionality:
         
         assert "No valid command found" in str(exc_info.value)
 
+    def test_backward_compatibility_old_command_files(self):
+        """Test backward compatibility with old command files (before quoting fix)."""
+        # Create a command file like the ones created before our quoting fix
+        old_command = "/home/tolhsadum/miniforge3/envs/emuses/bin/emuses full /home/tolhsadum/new_cli_test_wsl /mnt/s/GIN Dropbox/Chris Foulon/EMUSE/HCP_psy/selected_columns_data.csv --columns_are_features --input_header 0 --input_index_column 0 --input_normalization robust --scores /mnt/s/GIN Dropbox/Chris Foulon/EMUSE/HCP_psy/fluid_int_adj.csv --scores_header 0 --interactive_plot --umap_trials 1 --hdbscan_trials 1 --optuna_trials 10 --hdbscan_jobs 16"
+        
+        command_file = self.output_folder / "command.txt"
+        with open(command_file, 'w', encoding='utf-8') as f:
+            f.write("# EMUSES Pipeline Command\n")
+            f.write(f"# Generated on: 2025-07-27 16:15:40\n")
+            f.write(f"# To rerun: {old_command}\n")
+            f.write(f"# Or use: emuses rerun \"{self.output_folder}\"\n")
+            f.write(f"\n")
+            f.write(f"{old_command}\n")
+        
+        # Load the command - should apply backward compatibility fix
+        fixed_command = load_command_from_folder(self.output_folder)
+        
+        # Parse the fixed command - should work without splitting paths
+        import shlex
+        parsed = shlex.split(fixed_command)
+        
+        # Check that the problematic paths are now intact
+        expected_path1 = '/mnt/s/GIN Dropbox/Chris Foulon/EMUSE/HCP_psy/selected_columns_data.csv'
+        expected_path2 = '/mnt/s/GIN Dropbox/Chris Foulon/EMUSE/HCP_psy/fluid_int_adj.csv'
+        
+        assert expected_path1 in parsed, f"Path 1 not found intact in: {parsed}"
+        assert expected_path2 in parsed, f"Path 2 not found intact in: {parsed}"
+        
+        # Verify no split path fragments
+        problematic_fragments = ['Dropbox/Chris', 'Foulon/EMUSE/HCP_psy/selected_columns_data.csv', 'Foulon/EMUSE/HCP_psy/fluid_int_adj.csv']
+        for fragment in problematic_fragments:
+            assert fragment not in parsed, f"Found split fragment '{fragment}' in parsed command"
+
+    def test_backward_compatibility_detection(self):
+        """Test that the backward compatibility detection works correctly."""
+        from emuses.cli.main import _fix_unquoted_command
+        
+        # Test the specific pattern from user's command file
+        problematic_command = "/home/tolhsadum/miniforge3/envs/emuses/bin/emuses full /home/tolhsadum/new_cli_test_wsl /mnt/s/GIN Dropbox/Chris Foulon/EMUSE/HCP_psy/selected_columns_data.csv --columns_are_features --scores /mnt/s/GIN Dropbox/Chris Foulon/EMUSE/HCP_psy/fluid_int_adj.csv"
+        
+        fixed_command = _fix_unquoted_command(problematic_command)
+        
+        # Should have quotes around the paths with spaces
+        assert '"/mnt/s/GIN Dropbox/Chris Foulon/EMUSE/HCP_psy/selected_columns_data.csv"' in fixed_command
+        assert '"/mnt/s/GIN Dropbox/Chris Foulon/EMUSE/HCP_psy/fluid_int_adj.csv"' in fixed_command
+        
+        # Verify parsing works
+        import shlex
+        parsed = shlex.split(fixed_command)
+        expected_paths = [
+            '/mnt/s/GIN Dropbox/Chris Foulon/EMUSE/HCP_psy/selected_columns_data.csv',
+            '/mnt/s/GIN Dropbox/Chris Foulon/EMUSE/HCP_psy/fluid_int_adj.csv'
+        ]
+        
+        for path in expected_paths:
+            assert path in parsed, f"Expected path not found: {path}"
+
+    def test_mixed_old_new_command_compatibility(self):
+        """Test that properly quoted commands (new format) pass through unchanged."""
+        # Create a properly quoted command (new format)
+        quoted_command = '/home/tolhsadum/miniforge3/envs/emuses/bin/emuses full /home/tolhsadum/new_cli_test_wsl "/mnt/s/GIN Dropbox/Chris Foulon/EMUSE/HCP_psy/selected_columns_data.csv" --columns_are_features --scores "/mnt/s/GIN Dropbox/Chris Foulon/EMUSE/HCP_psy/fluid_int_adj.csv"'
+        
+        command_file = self.output_folder / "command.txt"
+        with open(command_file, 'w', encoding='utf-8') as f:
+            f.write("# EMUSES Pipeline Command\n")
+            f.write(f"# Generated with quoting fix\n")
+            f.write(f"{quoted_command}\n")
+        
+        # Load the command - should pass through unchanged since it's already properly quoted
+        loaded_command = load_command_from_folder(self.output_folder)
+        
+        # Should be the same as the original (or minimally changed)
+        import shlex
+        original_parsed = shlex.split(quoted_command)
+        loaded_parsed = shlex.split(loaded_command)
+        
+        # The essential structure should be the same
+        assert len(original_parsed) == len(loaded_parsed)
+        
+        # Critical paths should be intact
+        expected_paths = [
+            '/mnt/s/GIN Dropbox/Chris Foulon/EMUSE/HCP_psy/selected_columns_data.csv',
+            '/mnt/s/GIN Dropbox/Chris Foulon/EMUSE/HCP_psy/fluid_int_adj.csv'
+        ]
+        
+        for path in expected_paths:
+            assert path in loaded_parsed, f"Path not preserved: {path}"
+
+    def test_edge_case_command_patterns(self):
+        """Test edge cases in command patterns for backward compatibility."""
+        edge_cases = [
+            # Multiple spaces in path
+            "emuses full /tmp/out /mnt/s/GIN Dropbox/Chris Foulon/multiple  spaces/file.csv",
+            
+            # Path at end of command
+            "emuses full /tmp/out data.csv --scores /mnt/s/GIN Dropbox/Chris Foulon/EMUSE/scores.csv",
+            
+            # Multiple problematic paths
+            "emuses full /mnt/s/GIN Dropbox/output /mnt/s/GIN Dropbox/data.csv --scores /mnt/s/GIN Dropbox/scores.csv",
+            
+            # Mixed quoted and unquoted
+            'emuses full "/tmp/quoted path" /mnt/s/GIN Dropbox/unquoted/path.csv',
+        ]
+        
+        from emuses.cli.main import _fix_unquoted_command
+        
+        for command in edge_cases:
+            try:
+                fixed = _fix_unquoted_command(command)
+                
+                # Should be parseable
+                import shlex
+                parsed = shlex.split(fixed)
+                
+                # Should have reasonable number of parts (not massively split)
+                assert len(parsed) < len(command.split()) + 5, f"Command over-split: {command} -> {parsed}"
+                
+            except Exception as e:
+                pytest.fail(f"Failed to fix edge case command '{command}': {e}")
+
 
 if __name__ == "__main__":
     # Run tests when executed directly

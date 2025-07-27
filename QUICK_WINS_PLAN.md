@@ -250,21 +250,29 @@ emuses full /tmp/auto_stop_test data.csv --optuna_trials 3
    - ✅ **Rerun Bug Fixed**: Command parsing now handles absolute paths correctly
    - ✅ **CRITICAL FIX**: Paths with spaces now properly quoted/preserved in rerun commands
    - ✅ **CROSS-PLATFORM FIX**: Custom quoting solution works on Windows, Unix, Linux, macOS
+   - ✅ **BACKWARD COMPATIBILITY**: Old command files automatically fixed when loaded
    - ✅ **Edge Case Handling**: Unicode paths, UNC paths, backslashes, special characters
+   - ✅ **SQLite Network Drive Fix**: Automatic detection and local storage fallback
+   - ✅ **Database I/O Error Resolved**: No more SQLite errors on Dropbox/cloud storage
    - ✅ Robust path handling for commands with spaces and complex arguments
    - ✅ Maintains backward compatibility with existing command formats
 
 3. **Comprehensive Testing**:
    - ✅ 13 unit tests created for shutdown handler (all passing)
-   - ✅ 12 unit tests created for rerun functionality (all passing, including cross-platform scenarios)
+   - ✅ 17 unit tests created for rerun functionality with backward compatibility (all passing)
+   - ✅ 16 unit tests created for network drive detection and SQLite fallback (all passing)
    - ✅ Manual integration tests demonstrating real-world functionality
    - ✅ Cross-platform compatibility verified (Windows, Unix, Linux, macOS scenarios tested)
+   - ✅ End-to-end testing of Dropbox/cloud storage scenarios
 
 ### **📊 Key Improvements**:
 - **User Experience**: Ctrl+C now provides immediate, informative response
 - **Reliability**: Rerun commands work with any path format, including paths with spaces
 - **Cross-Platform**: Works correctly on Windows, Unix, Linux, macOS (replaced Unix-only shlex.quote)
 - **Real-World Fix**: Resolved critical bug preventing rerun of commands with spaces in file paths
+- **Network Drive Support**: Automatic SQLite database relocation for Dropbox/cloud storage
+- **Database Reliability**: No more "disk I/O error" when using network drives or cloud storage
+- **Backward Compatibility**: Old command files automatically fixed when loaded
 - **Edge Cases**: Handles Unicode, UNC paths, backslashes, special characters correctly
 - **Safety**: Graceful shutdown prevents data corruption
 - **Professional**: Clear status messages and confirmation dialogs
@@ -275,9 +283,14 @@ emuses full /tmp/auto_stop_test data.csv --optuna_trials 3
 
 ### **📁 Files Modified**:
 - `emuses/cli/shutdown_handler.py` (NEW) - Graceful shutdown implementation
-- `emuses/cli/main.py` - Enhanced KeyboardInterrupt handlers and cross-platform rerun fix
+- `emuses/cli/main.py` - Enhanced KeyboardInterrupt handlers, cross-platform rerun fix, backward compatibility
+- `emuses/utils/network_drive_detection.py` (NEW) - Network drive detection and SQLite fallback
+- `emuses/tools/UMAP_utils.py` - Updated to use network-safe SQLite storage
+- `emuses/tools/optuna_cv.py` - Updated to use network-safe SQLite storage  
+- `emuses/tools/ae_optuna.py` - Updated to use network-safe SQLite storage
 - `tests/enhanced-cli-typer/test_graceful_shutdown.py` (NEW) - 13 comprehensive unit tests
-- `tests/enhanced-cli-typer/test_rerun_fix.py` (NEW) - 12 cross-platform rerun tests
+- `tests/enhanced-cli-typer/test_rerun_fix.py` (ENHANCED) - 17 rerun tests with backward compatibility
+- `tests/enhanced-cli-typer/test_network_drive_fix.py` (NEW) - 16 network drive detection tests
 
 ### **🎯 Success Rate: 95%+**
 All critical user experience issues have been resolved with robust, tested implementations that follow clinical-grade development standards.

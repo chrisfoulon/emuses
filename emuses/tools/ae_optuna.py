@@ -130,10 +130,11 @@ def optimize_ae_pretraining(
     """
     logger.info(f"Starting AE/VAE pretraining optimization with {n_trials} trials")
 
-    # Create Optuna study
+    # Create Optuna study - use network-safe storage if needed
     storage_str = None
     if output_folder:
-        storage_str = f"sqlite:///{output_folder}/optuna_ae_pretraining.db"
+        from emuses.utils.network_drive_detection import setup_optuna_storage_safe
+        storage_str = setup_optuna_storage_safe("ae_pretraining", output_folder)
 
     study = optuna.create_study(
         direction="minimize",  # Minimize reconstruction error

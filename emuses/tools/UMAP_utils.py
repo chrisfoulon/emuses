@@ -616,9 +616,9 @@ def train_and_save_umap_optim_with_nested_clustering(
 
         return composite_score
 
-    # Set up Optuna storage in the output directory.
-    storage_path = output_folder / "optuna_study.db"
-    storage_url = f"sqlite:///{storage_path.resolve()}"
+    # Set up Optuna storage - use network-safe location if needed
+    from emuses.utils.network_drive_detection import setup_optuna_storage_safe
+    storage_url = setup_optuna_storage_safe("umap_nested_optimization", output_folder)
 
     # Run the outer optimization using the storage backend for parallelization.
     outer_study = optuna.create_study(

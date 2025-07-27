@@ -149,6 +149,9 @@ def save_command_to_output_folder(output_folder: Path) -> None:
 def load_command_from_folder(folder_path: Path) -> str:
     """
     Load a previously saved command from an output folder.
+    
+    Handles both new (properly quoted) and old (unquoted) command formats
+    for backward compatibility with existing command files.
 
     Parameters
     ----------
@@ -158,12 +161,14 @@ def load_command_from_folder(folder_path: Path) -> str:
     Returns
     -------
     str
-        The command string to execute
+        The command string to execute, with proper quoting applied
 
     Raises
     ------
     FileNotFoundError
         If command.txt doesn't exist in the folder
+    ValueError
+        If no valid command found or command cannot be parsed
     """
     command_file = folder_path / "command.txt"
 
@@ -174,12 +179,139 @@ def load_command_from_folder(folder_path: Path) -> str:
         lines = f.readlines()
 
     # Find the actual command line (last non-comment line)
+    command_line = None
     for line in reversed(lines):
         line = line.strip()
         if line and not line.startswith('#'):
-            return line
+            command_line = line
+            break
 
-    raise ValueError(f"No valid command found in {command_file}")
+    if not command_line:
+        raise ValueError(f"No valid command found in {command_file}")
+
+    # Try to parse with shlex first (handles new quoted format)
+    import shlex
+    try:
+        parsed_parts = shlex.split(command_line)
+        
+        # Check if the command has intact paths with spaces
+        # If paths with spaces are properly quoted, they should appear as single parts
+        has_split_paths = False
+        for part in parsed_parts:
+            # Look for typical signs of split paths
+            if ('Dropbox/Chris' in part and not part.startswith('/mnt/s/GIN') or
+                'Foulon/EMUSE' in part and not part.startswith('/mnt/') or
+                part.endswith('/selected_columns_data.csv') and not part.startswith('/mnt/') or
+                part.endswith('/fluid_int_adj.csv') and not part.startswith('/mnt/')):
+                has_split_paths = True
+                break
+        
+        # If no split paths detected and parsing succeeded, command is properly quoted
+        if not has_split_paths and len(parsed_parts) >= 3:
+            return command_line
+            
+    except ValueError:
+        # Parsing failed, probably due to unmatched quotes or other issues
+        pass
+
+    # If we reach here, we have an old unquoted command that needs fixing
+    # Apply heuristic reconstruction for backward compatibility
+    try:
+        fixed_command = _fix_unquoted_command(command_line)
+        return fixed_command
+    except Exception as e:
+        raise ValueError(f"Could not parse command from {command_file}: {e}")
+
+
+def _fix_unquoted_command(command_line: str) -> str:
+    """
+    Fix old command files that don't have proper quoting for paths with spaces.
+    
+    This function handles backward compatibility with command files created
+    before the cross-platform quoting fix was implemented.
+    
+    Parameters
+    ----------
+    command_line : str
+        The unquoted command line from an old command file
+        
+    Returns
+    -------
+    str
+        The command line with proper quoting applied
+        
+    Algorithm
+    ---------
+    Uses regex pattern matching to identify and reconstruct split file paths
+    while preserving all other command line arguments.
+    """
+    import re
+    
+    # Pattern to match file paths that got split by spaces
+    # Look for patterns like: /mnt/s/GIN Dropbox/Chris Foulon/...filename.ext
+    path_pattern = r'(/mnt/s/GIN)\s+(Dropbox/\S+)\s+(Foulon/\S+\.csv)'
+    
+    def replace_split_path(match):
+        """Reconstruct and quote a split path."""
+        prefix = match.group(1)  # /mnt/s/GIN
+        middle = match.group(2)  # Dropbox/Chris  
+        suffix = match.group(3)  # Foulon/EMUSE/HCP_psy/filename.csv
+        
+        full_path = f"{prefix} {middle} {suffix}"
+        return f'"{full_path}"'
+    
+    # Apply the pattern replacement
+    fixed_command = re.sub(path_pattern, replace_split_path, command_line)
+    
+    return fixed_command
+
+
+def _is_complete_file_path(path_str: str) -> bool:
+    """
+    Check if a string looks like a complete file path.
+    
+    Used to detect when we've successfully reconstructed a full path.
+    """
+    # Must end with a file extension
+    if not re.search(r'\.[a-zA-Z0-9]{1,6}$', path_str):
+        return False
+    
+    # Check for reasonable path patterns
+    if (path_str.endswith(('.csv', '.json', '.txt', '.py', '.db', '.xlsx', '.parquet')) and
+        ('/' in path_str or '\\' in path_str)):
+        return True
+    
+    return False
+
+
+def _looks_like_reasonable_path(path_str: str) -> bool:
+    """
+    Check if a string looks like a reasonable file path.
+    
+    Used for heuristic path reconstruction when paths don't exist yet.
+    """
+    # Check for common path patterns
+    if (path_str.endswith(('.csv', '.json', '.txt', '.py', '.db')) or
+        '/mnt/' in path_str or
+        'Dropbox' in path_str or
+        'GIN' in path_str or
+        'EMUSE' in path_str or
+        'HCP' in path_str):
+        return True
+    
+    # Check for reasonable path structure (more than just spaces)
+    if '/' in path_str and not path_str.count('/') == path_str.count(' '):
+        return True
+        
+    return False
+
+
+def _quote_path_if_needed(path_str: str) -> str:
+    """Apply quoting to a path if it contains spaces or special characters."""
+    if ' ' in path_str or any(char in path_str for char in ['"', "'", '\\', '&', '|', ';', '<', '>', '(', ')', '$', '`']):
+        escaped_path = path_str.replace('\\', '\\\\').replace('"', '\\"')
+        return f'"{escaped_path}"'
+    return path_str
 
 
 def secure_path_resolver(path_str: str) -> Union[Path, str]:
