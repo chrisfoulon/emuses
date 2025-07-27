@@ -92,8 +92,44 @@ def save_command_to_output_folder(output_folder: Path) -> None:
         # Ensure output folder exists
         output_folder.mkdir(parents=True, exist_ok=True)
 
-        # Get the original command from sys.argv
-        command = ' '.join(sys.argv)
+        # Get the original command from sys.argv with cross-platform quoting
+        def quote_argument_cross_platform(arg: str) -> str:
+            """
+            Quote a command-line argument in a cross-platform way.
+            
+            This function handles file paths and arguments safely across Unix, Linux, 
+            macOS, and Windows systems without relying on shlex.quote (which is Unix-only).
+            
+            For file paths, we use simple double-quote wrapping since:
+            1. Double quotes work on both Unix and Windows shells
+            2. Double quote is a reserved character in all major filesystems, 
+               so no valid file path can contain it
+            3. This avoids the complex platform-specific quoting rules
+            
+            Parameters
+            ----------
+            arg : str
+                The argument to quote
+                
+            Returns
+            -------
+            str
+                Safely quoted argument
+            """
+            import os
+            
+            # If argument doesn't need quoting, return as-is
+            if not any(char in arg for char in [' ', '\t', '\n', '"', "'", '\\', '&', '|', ';', '<', '>', '(', ')', '$', '`']):
+                return arg
+            
+            # For arguments that need quoting, use double quotes
+            # Handle any existing double quotes and backslashes properly
+            escaped_arg = arg.replace('\\', '\\\\').replace('"', '\\"')
+            return f'"{escaped_arg}"'
+        
+        # Apply cross-platform quoting to all arguments
+        quoted_args = [quote_argument_cross_platform(arg) for arg in sys.argv]
+        command = ' '.join(quoted_args)
 
         # Save command to command.txt
         command_file = output_folder / "command.txt"
@@ -251,10 +287,10 @@ def rerun(
         # Parse and execute the command
         import shlex
 
-        # Remove 'emuses' from the beginning since we're already in the app
+        # Remove executable path (emuses or absolute path) from the beginning
         command_parts = shlex.split(command)
-        if command_parts and command_parts[0] == 'emuses':
-            command_parts = command_parts[1:]
+        if command_parts and ('emuses' in command_parts[0] or command_parts[0].startswith('/')):
+            command_parts = command_parts[1:]  # Remove first element (executable path)
 
         # Execute in subprocess to prevent infinite recursion
         result = subprocess.run(
@@ -504,7 +540,7 @@ def full(
             use_service=use_service,
         ))
     except KeyboardInterrupt:
-        typer.echo("\nOperation cancelled by user", err=True)
+        typer.echo("\n🛑 Operation cancelled by user", err=True)
         raise typer.Exit(code=130)
     except Exception as e:
         typer.echo(f"Error: {e}", err=True)
@@ -613,6 +649,7 @@ async def _execute_via_remote_service(pipeline_type: str, config: dict, status_r
     # Convert 0.0 to None for unlimited timeout
     timeout = None if service_timeout <= 0 else service_timeout
     service_client = ServiceHTTPClient(base_url=service_url, timeout=timeout)
+    shutdown_handler = None
 
     try:
         # Check service health first
@@ -634,14 +671,59 @@ async def _execute_via_remote_service(pipeline_type: str, config: dict, status_r
         job_id = job_response["job_id"]
         print(status_renderer.render_status("info", f"Job submitted with ID: {job_id}"))
 
-        # Poll for completion with progress display
+        # Initialize shutdown handler for graceful interruption
+        from emuses.cli.shutdown_handler import SimpleShutdownHandler
+        shutdown_handler = SimpleShutdownHandler(service_client, job_id)
+
+        # Poll for completion with progress display and interrupt handling
         print("Starting pipeline execution...")
+        await _poll_job_completion(service_client, job_id, shutdown_handler)
 
-        start_time = time.time()
-        last_progress = -1
-        poll_count = 0
+        print("✓ Execution completed")
 
-        while True:
+    except KeyboardInterrupt:
+        if shutdown_handler:
+            should_stop = await shutdown_handler.handle_interruption()
+            if should_stop:
+                await shutdown_handler.cleanup_and_stop()
+                print("✅ Shutdown completed gracefully")
+                raise typer.Exit(code=130)
+            else:
+                print("▶️  Resuming execution...")
+                # Continue polling - resume the job completion wait
+                await _poll_job_completion(service_client, job_id, shutdown_handler)
+        else:
+            # Fallback to existing behavior if shutdown_handler not ready
+            print("\nOperation cancelled by user")
+            raise typer.Exit(code=130)
+
+    finally:
+        if hasattr(service_client, '_session') and service_client._session:
+            await service_client._session.aclose()
+
+
+async def _poll_job_completion(service_client, job_id: str, shutdown_handler) -> None:
+    """
+    Poll for job completion with graceful interrupt handling.
+    
+    This function can be resumed after a user chooses to continue
+    following a Ctrl+C interruption.
+    
+    Parameters
+    ----------
+    service_client : ServiceHTTPClient
+        Client for service communication
+    job_id : str
+        ID of job to monitor
+    shutdown_handler : SimpleShutdownHandler
+        Handler for graceful interruptions
+    """
+    start_time = time.time()
+    last_progress = -1
+    poll_count = 0
+
+    while True:
+        try:
             poll_count += 1
             status = await service_client.get_job_status(job_id)
 
@@ -672,11 +754,22 @@ async def _execute_via_remote_service(pipeline_type: str, config: dict, status_r
 
             await asyncio.sleep(2)  # Poll every 2 seconds
 
-        print("✓ Execution completed")
-
-    finally:
-        if hasattr(service_client, '_session') and service_client._session:
-            await service_client._session.aclose()
+        except KeyboardInterrupt:
+            # Handle nested interrupts during polling
+            if shutdown_handler:
+                should_stop = await shutdown_handler.handle_interruption()
+                if should_stop:
+                    await shutdown_handler.cleanup_and_stop()
+                    print("✅ Shutdown completed gracefully")
+                    raise typer.Exit(code=130)
+                else:
+                    print("▶️  Resuming execution...")
+                    # Continue the polling loop
+                    continue
+            else:
+                # Fallback behavior
+                print("\nOperation cancelled by user")
+                raise typer.Exit(code=130)
 
 
 def create_fastapi_app():
@@ -1000,7 +1093,7 @@ def umap(
             input_dataset=input_dataset,
         ))
     except KeyboardInterrupt:
-        typer.echo("\nOperation cancelled by user", err=True)
+        typer.echo("\n🛑 Operation cancelled by user", err=True)
         raise typer.Exit(code=130)
     except Exception as e:
         typer.echo(f"Error: {e}", err=True)
@@ -1032,7 +1125,7 @@ def clustering(
             output_folder=output_folder,
         ))
     except KeyboardInterrupt:
-        typer.echo("\nOperation cancelled by user", err=True)
+        typer.echo("\n🛑 Operation cancelled by user", err=True)
         raise typer.Exit(code=130)
     except Exception as e:
         typer.echo(f"Error: {e}", err=True)
@@ -1068,7 +1161,7 @@ def heatmap(
             input_dataset=input_dataset,
         ))
     except KeyboardInterrupt:
-        typer.echo("\nOperation cancelled by user", err=True)
+        typer.echo("\n🛑 Operation cancelled by user", err=True)
         raise typer.Exit(code=130)
     except Exception as e:
         typer.echo(f"Error: {e}", err=True)
@@ -1104,7 +1197,7 @@ def prediction(
             input_dataset=input_dataset,
         ))
     except KeyboardInterrupt:
-        typer.echo("\nOperation cancelled by user", err=True)
+        typer.echo("\n🛑 Operation cancelled by user", err=True)
         raise typer.Exit(code=130)
     except Exception as e:
         typer.echo(f"Error: {e}", err=True)
