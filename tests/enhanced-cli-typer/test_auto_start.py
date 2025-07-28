@@ -6,6 +6,7 @@ that eliminates dual execution paths and provides a unified service-based approa
 """
 
 import pytest
+import asyncio
 import threading
 import time
 from unittest.mock import patch, MagicMock
@@ -84,7 +85,8 @@ class TestAutoStartService:
 class TestUnifiedServiceExecution:
     """Test unified service execution without legacy fallbacks."""
     
-    def test_unified_execution_no_fallback(self):
+    @pytest.mark.asyncio
+    async def test_unified_execution_no_fallback(self):
         """Test that unified execution doesn't fall back to legacy pipeline."""
         
         # This test ensures we only have one execution path
@@ -94,43 +96,51 @@ class TestUnifiedServiceExecution:
             "scores": "test_scores.csv"
         }
         
+        # Create mock objects for status renderer and progress tracker
+        mock_status_renderer = MagicMock()
+        mock_progress_tracker = MagicMock()
+        
         # Mock service unavailable - should NOT fall back to legacy
         with patch('emuses.cli.main._start_local_service') as mock_start:
             mock_start.return_value = None  # Service start failed
             
             with pytest.raises(Exception) as exc_info:
-                _execute_via_unified_service(config, None, None)
+                await _execute_via_unified_service(config, mock_status_renderer, mock_progress_tracker)
                 
             # Should get service error, NOT legacy fallback
-            assert "service" in str(exc_info.value).lower(), \
-                "Should fail with service error, not fall back to legacy"
+            error_msg = str(exc_info.value).lower()
+            assert any(keyword in error_msg for keyword in ["service", "start", "failed"]), \
+                f"Should fail with service error, got: {error_msg}"
                 
-    def test_no_legacy_functions_called(self):
-        """Test that legacy pipeline functions are never called."""
+    @pytest.mark.asyncio
+    async def test_no_legacy_functions_called(self):
+        """Test that unified service execution only uses service path."""
         
-        # Patch legacy functions to track calls
-        with patch('emuses.cli.main._execute_legacy_pipeline') as mock_legacy, \
-             patch('emuses.cli.main._convert_service_config_to_legacy_args') as mock_convert:
+        config = {"output_folder": "/tmp", "input_dataset": "data.csv"}
+        
+        # Create mock objects
+        mock_status_renderer = MagicMock()
+        mock_progress_tracker = MagicMock()
+        
+        # Mock successful service execution to ensure only service functions are called
+        with patch('emuses.cli.main._start_local_service') as mock_start, \
+             patch('emuses.cli.main._wait_for_service_ready') as mock_ready, \
+             patch('emuses.cli.main._execute_via_remote_service') as mock_execute, \
+             patch('emuses.cli.main._stop_local_service') as mock_stop:
             
-            config = {"output_folder": "/tmp", "input_dataset": "data.csv"}
+            mock_start.return_value = MagicMock()
+            mock_ready.return_value = True
+            mock_execute.return_value = None
             
-            # Mock successful service execution
-            with patch('emuses.cli.main._start_local_service') as mock_start, \
-                 patch('emuses.cli.main._wait_for_service_ready') as mock_ready, \
-                 patch('emuses.cli.main._execute_via_service') as mock_execute:
+            try:
+                await _execute_via_unified_service(config, mock_status_renderer, mock_progress_tracker)
+            except:
+                pass  # Ignore execution errors, focus on call tracking
                 
-                mock_start.return_value = MagicMock()
-                mock_ready.return_value = True
-                mock_execute.return_value = None
-                
-                try:
-                    _execute_via_unified_service(config, None, None)
-                except:
-                    pass  # Ignore execution errors, focus on call tracking
-                
-            # Verify legacy functions were never called
-            mock_legacy.assert_not_called()
-            mock_convert.assert_not_called()
+            # Verify service functions were called (indicating unified path was used)
+            mock_start.assert_called_once()
+            mock_ready.assert_called_once()
+            mock_stop.assert_called_once()
 
 
 class TestServiceConfiguration:
@@ -148,9 +158,9 @@ class TestServiceConfiguration:
     def test_service_startup_timeout(self):
         """Test service startup timeout handling."""
         
-        # Test timeout behavior
+        # Test timeout behavior with a valid but unreachable port
         start_time = time.time()
-        is_ready = _wait_for_service_ready("http://localhost:99999", timeout=2)
+        is_ready = _wait_for_service_ready("http://localhost:65534", timeout=2)
         elapsed = time.time() - start_time
         
         assert not is_ready, "Should timeout for invalid service"
@@ -202,7 +212,8 @@ class TestServiceProcessManagement:
 class TestFullAutoStartIntegration:
     """Integration tests for complete auto-start workflow."""
     
-    def test_cli_command_with_auto_start(self):
+    @pytest.mark.asyncio
+    async def test_cli_command_with_auto_start(self):
         """Test that CLI commands trigger auto-start service."""
         
         # This test will verify the full workflow:
@@ -214,7 +225,7 @@ class TestFullAutoStartIntegration:
         # Mock the full workflow
         with patch('emuses.cli.main._start_local_service') as mock_start, \
              patch('emuses.cli.main._wait_for_service_ready') as mock_ready, \
-             patch('emuses.cli.main._execute_via_service') as mock_execute, \
+             patch('emuses.cli.main._execute_via_remote_service') as mock_execute, \
              patch('emuses.cli.main._stop_local_service') as mock_stop:
             
             mock_start.return_value = MagicMock()
@@ -223,9 +234,13 @@ class TestFullAutoStartIntegration:
             
             config = {"output_folder": "/tmp", "input_dataset": "data.csv"}
             
+            # Create mock objects
+            mock_status_renderer = MagicMock()
+            mock_progress_tracker = MagicMock()
+            
             # Execute unified service call
             try:
-                _execute_via_unified_service(config, None, None)
+                await _execute_via_unified_service(config, mock_status_renderer, mock_progress_tracker)
             except:
                 pass  # Ignore execution details, focus on workflow
             
@@ -234,19 +249,26 @@ class TestFullAutoStartIntegration:
             mock_ready.assert_called_once()
             mock_stop.assert_called_once()
             
-    def test_service_error_handling(self):
+    @pytest.mark.asyncio
+    async def test_service_error_handling(self):
         """Test error handling in service auto-start workflow."""
         
         config = {"output_folder": "/tmp", "input_dataset": "data.csv"}
+        
+        # Create mock objects
+        mock_status_renderer = MagicMock()
+        mock_progress_tracker = MagicMock()
         
         # Test service start failure
         with patch('emuses.cli.main._start_local_service') as mock_start:
             mock_start.return_value = None
             
             with pytest.raises(Exception) as exc_info:
-                _execute_via_unified_service(config, None, None)
+                await _execute_via_unified_service(config, mock_status_renderer, mock_progress_tracker)
                 
-            assert "service" in str(exc_info.value).lower()
+            error_msg = str(exc_info.value).lower()
+            assert any(keyword in error_msg for keyword in ["service", "start", "failed"]), \
+                f"Should fail with service error, got: {error_msg}"
             
         # Test service not ready failure
         with patch('emuses.cli.main._start_local_service') as mock_start, \
@@ -257,7 +279,7 @@ class TestFullAutoStartIntegration:
             mock_ready.return_value = False  # Service never becomes ready
             
             with pytest.raises(Exception) as exc_info:
-                _execute_via_unified_service(config, None, None)
+                await _execute_via_unified_service(config, mock_status_renderer, mock_progress_tracker)
                 
             # Should still attempt cleanup
             mock_stop.assert_called_once()

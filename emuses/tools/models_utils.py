@@ -173,6 +173,10 @@ def build_estimator(model_cfg: dict, task: str, n_jobs: int = -1):
     sklearn-compatible estimator - already initialised with the
     sampled hyper-parameters.
     """
+    from emuses.tools.parallelism_utils import get_safe_n_jobs
+    
+    # Apply safe n_jobs for subprocess context
+    safe_n_jobs = get_safe_n_jobs(n_jobs)
     task = task.lower()
     if task not in {"reg", "clf"}:
         raise ValueError("task must be 'reg' or 'clf'")
@@ -199,7 +203,7 @@ def build_estimator(model_cfg: dict, task: str, n_jobs: int = -1):
         common_params = {
             "n_estimators": n,
             "max_depth": md,
-            "n_jobs": n_jobs,
+            "n_jobs": safe_n_jobs,
             "random_state": 42,
         }
 
@@ -235,7 +239,7 @@ def build_estimator(model_cfg: dict, task: str, n_jobs: int = -1):
             penalty=model_cfg["penalty"],
             solver="saga",
             max_iter=10000,
-            n_jobs=n_jobs,
+            n_jobs=safe_n_jobs,
             multi_class="auto",  # Handle both binary and multi-class automatically
         )
 

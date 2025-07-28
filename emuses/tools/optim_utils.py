@@ -25,7 +25,8 @@ from sklearn.model_selection import KFold, cross_val_score
 from sklearn.metrics import r2_score, mean_squared_error, mean_absolute_error
 
 # Joblib imports
-from joblib import dump, Parallel, delayed
+from joblib import dump, delayed
+from emuses.tools.parallelism_utils import create_safe_parallel, get_safe_n_jobs
 
 # Local imports
 # (emuses.tools.kernel_regression_utils will be imported where needed)
@@ -800,7 +801,9 @@ def optuna_feature_set_comparison(
 
     # Process all feature sets in parallel
     if n_jobs != 1:  # Use parallelization
-        results_list = Parallel(n_jobs=min(len(X_sets), n_jobs))(
+        safe_n_jobs = get_safe_n_jobs(min(len(X_sets), n_jobs))
+        parallel = create_safe_parallel(safe_n_jobs)
+        results_list = parallel(
             delayed(process_feature_set)(X, name)
             for X, name in zip(X_sets, feature_set_names)
         )

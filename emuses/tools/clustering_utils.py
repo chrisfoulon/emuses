@@ -289,8 +289,8 @@ def evaluate_hdbscan(
         return None, {}
 
     # Determine dynamic range for min_cluster_size and min_samples
-    n_samples = filtered_coordinates.shape[0]
-    max_cluster_size = int(size_factor * n_samples)
+    # n_samples = filtered_coordinates.shape[0]  # Unused - for dynamic range calculation
+    # max_cluster_size = int(size_factor * n_samples)  # Unused - for dynamic range calculation
     # TODO might need to adjust the number of clusters and number of values to test
     # min_cluster_sizes = np.linspace(2, max(2, max_cluster_size), num=5, dtype=int).tolist()
     min_cluster_sizes = [5]

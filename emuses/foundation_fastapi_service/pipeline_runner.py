@@ -335,6 +335,12 @@ class PipelineRunner:
             Dict[str, Any]: Updated context after pipeline execution
         """
         try:
+            # Configure parallelism context for service worker environment
+            from emuses.tools.parallelism_utils import configure_parallelism_backend
+            
+            # Service workers run in subprocess context - use threading backend
+            configure_parallelism_backend(force_backend="threading")
+
             # Convert context to EMUSESPipeline arguments
             args = self._context_to_emuses_args(context)
 

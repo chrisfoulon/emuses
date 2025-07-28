@@ -46,7 +46,7 @@ class UMAPStage(PipelineStage):
         # Use new naming convention only
         train_features = context.get("embedding_train_features")
         test_features = context.get("embedding_test_features")
-        train_indices = context.get("embedding_train_indices")  # May be None
+        # train_indices = context.get("embedding_train_indices")  # Unused variable
 
         # Determine file paths based on output folder and prefix
         prefix = self.config.prefix if hasattr(self.config, "prefix") else ""

@@ -8,6 +8,7 @@ import logging
 import numpy as np
 import optuna
 import time
+import warnings
 from pathlib import Path
 from typing import List, Tuple, Optional, Dict, Any
 
@@ -32,6 +33,11 @@ from emuses.tools.models_utils import build_estimator, build_feature_union
 
 def _objective_factory(X, y, task: str, inner_cv, optim_dict, pretrained_ae=None, n_jobs=-1):
     """Return an Optuna objective that samples the *conditional* space."""
+    from emuses.tools.parallelism_utils import get_safe_n_jobs
+    
+    # Apply safe n_jobs for subprocess context
+    safe_n_jobs = get_safe_n_jobs(n_jobs)
+    
     # Use appropriate scoring metric based on the task
     if task == "clf":
         # For classification tasks
@@ -51,7 +57,7 @@ def _objective_factory(X, y, task: str, inner_cv, optim_dict, pretrained_ae=None
 
         # 2 ─ build feature transformer + estimator
         feats = build_feature_union(params["features"], pretrained_ae=pretrained_ae)
-        est = build_estimator(params["model"], task, n_jobs)
+        est = build_estimator(params["model"], task, safe_n_jobs)
 
         # 3 ─ cross-validate
         pipe = Pipeline([("feat", feats), ("est", est)])
@@ -67,7 +73,7 @@ def _objective_factory(X, y, task: str, inner_cv, optim_dict, pretrained_ae=None
                     module="sklearn.pipeline"
                 )
                 scores = cross_val_score(
-                    pipe, X, y, cv=inner_cv, scoring=scoring, n_jobs=n_jobs
+                    pipe, X, y, cv=inner_cv, scoring=scoring, n_jobs=safe_n_jobs
                 )
             # Store individual CV scores in trial for metadata
             trial.set_user_attr("cv_scores", scores.tolist())
@@ -133,6 +139,11 @@ def nested_optuna_cv(
     pipelines : list[Pipeline]
         Best pipeline for each outer fold.
     """
+    from emuses.tools.parallelism_utils import get_safe_n_jobs
+    
+    # Apply safe n_jobs for subprocess context
+    safe_n_jobs = get_safe_n_jobs(n_jobs)
+    
     # Use provided optim_dict or fall back to default
     if optim_dict is None:
         optim_dict = optim_dict_predict
@@ -172,7 +183,7 @@ def nested_optuna_cv(
 
         optimization_start = time.time()
         study.optimize(
-            _objective_factory(X_tr, y_tr, task, inner_cv, optim_dict, pretrained_ae, n_jobs),
+            _objective_factory(X_tr, y_tr, task, inner_cv, optim_dict, pretrained_ae, safe_n_jobs),
             n_trials=n_trials,
             show_progress_bar=False,
         )
@@ -194,7 +205,7 @@ def nested_optuna_cv(
                         best_params["features"], pretrained_ae=pretrained_ae
                     ),
                 ),
-                ("est", build_estimator(best_params["model"], task, n_jobs)),
+                ("est", build_estimator(best_params["model"], task, safe_n_jobs)),
             ]
         ).fit(X_tr, y_tr)
 
@@ -399,14 +410,14 @@ def analyze_cv_results(
                 f"Outer CV Score: {results['outer_cv_mean']:.4f} ± {results['outer_cv_std']:.4f}"
             )
 
-        print(f"\nPer-fold results:")
+        print("\nPer-fold results:")
         for i, (score, stats) in enumerate(zip(outer_scores, optuna_stats)):
             print(
                 f"  Fold {i}: outer={score:.4f}, inner_best={stats['best_value']:.4f}, "
                 f"trials={stats['n_trials']}"
             )
 
-        print(f"\nOptuna optimization summary:")
+        print("\nOptuna optimization summary:")
         if optuna_stats:
             total_trials = sum(s["n_trials"] for s in optuna_stats)
             mean_inner_best = np.mean([s["best_value"] for s in optuna_stats])

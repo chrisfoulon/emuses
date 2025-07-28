@@ -6,7 +6,6 @@ import hdbscan
 import matplotlib.pyplot as plt
 import umap
 import joblib
-from joblib import Parallel, delayed
 from sklearn.model_selection import StratifiedKFold, KFold
 from datetime import datetime
 
@@ -33,7 +32,6 @@ from emuses.tools.kernel_regression_utils import (
 )
 from emuses.tools.visualisation import plot_clustering_interactive_with_hover
 from emuses.tools.inputs_utils import load_and_preprocess_digits_dataset, get_array_info
-from emuses.tools.model_io import ModelIOManager
 from bcblib.tools.general_utils import save_json
 
 import optuna
@@ -100,11 +98,11 @@ class HeatmapStage(PipelineStage):
         prediction_train_labels = context.get("prediction_train_labels")
 
         # Get embedding coordinates (UMAP embeddings for unlabelled data used for UMAP training)
-        embedding_train_coords = context.get("embedding_train_coords")
+        # embedding_train_coords = context.get("embedding_train_coords")  # Unused
 
-        # Get feature data for input matrices
-        embedding_train_features = context.get("embedding_train_features")
-        prediction_train_features = context.get("prediction_train_features")
+        # Get feature data for input matrices  
+        # embedding_train_features = context.get("embedding_train_features")  # Unused
+        # prediction_train_features = context.get("prediction_train_features")  # Unused
 
         # Decide whether we are in regression or classification mode
         task = "clf" if getattr(self.config, "classification", False) else "reg"
@@ -266,8 +264,6 @@ class HeatmapStage(PipelineStage):
                 ae_trials = optim_dict_ae.get("meta", {}).get("n_trials", 30)
 
                 try:
-                    from emuses.tools.ae_optuna import optimize_ae_pretraining
-
                     # Use a timestamp in the model name to allow multiple runs
                     import time
 
@@ -381,6 +377,7 @@ class HeatmapStage(PipelineStage):
 
         n_jobs = getattr(self.config, "n_jobs", -1)
         from emuses.tools.parallelism_utils import create_safe_parallel
+        from joblib import delayed
         parallel = create_safe_parallel(n_jobs)
         results = parallel(
             delayed(_optimise_target)(
@@ -867,7 +864,7 @@ class HeatmapStage(PipelineStage):
             best_target = summary_df.loc[summary_df["Mean_Score"].idxmax(), "Target"]
             best_score = summary_df["Mean_Score"].max()
 
-            logger.info(f"Performance Summary Statistics:")
+            logger.info("Performance Summary Statistics:")
             logger.info(f"  Task: {task.upper()}")
             logger.info(f"  Targets optimized: {len(summary_data)}")
             logger.info(f"  Per-target files created: {len(per_target_files_created)}")

@@ -129,6 +129,9 @@ All documentation follows consistent formatting:
 - **Model Persistence**: Versioned artifacts with comprehensive metadata
 - **Fallback Mechanisms**: Robust loading with compatibility checking
 - **Parallel Processing**: Efficient multi-core utilization throughout pipeline
+- **Service Architecture**: FastAPI-based REST API with automatic local/remote execution
+- **Job Management**: Background processing with progress tracking and artifact management
+- **Resilient Client**: Circuit breaker, retry logic, and connection pooling for robust service communication
 
 ### Integration Patterns
 - **Stage Coordination**: How pipeline stages communicate and share data
@@ -161,6 +164,38 @@ All documentation follows consistent formatting:
 - Parameter tuning guidance and best practices
 - Performance characteristics and computational complexity
 
+### API Service Documentation (`docs/emuses/`)
+
+#### 1. API Service (`api_service.md`)
+- **Purpose**: Comprehensive REST API reference for EMUSES service
+- **Key Features**:
+  - Complete endpoint documentation with request/response examples
+  - Authentication, rate limiting, and security patterns
+  - Job management lifecycle (submit, monitor, cancel, artifacts)
+  - File upload system with validation and storage
+  - Error handling patterns and standardized responses
+- **Integration**: Central API reference for service-based EMUSES execution
+
+#### 2. CLI Service Integration (`cli_service_integration.md`)
+- **Purpose**: CLI-to-service integration patterns and client usage
+- **Key Features**:
+  - Auto-start local service and remote service connection modes
+  - Robust HTTP client with circuit breaker and retry logic
+  - Progress monitoring and real-time job status updates
+  - Offline fallback and graceful degradation patterns
+  - Security considerations and path validation
+- **Integration**: Bridges CLI interface with service architecture
+
+#### 3. Service Deployment (`service_deployment.md`)
+- **Purpose**: Production deployment guide for EMUSES service
+- **Key Features**:
+  - Local development setup and containerized deployment
+  - Kubernetes, Docker Compose, and cloud platform configurations
+  - Load balancing, SSL/TLS, and security hardening
+  - Monitoring, logging, and performance optimization
+  - Troubleshooting and maintenance procedures
+- **Integration**: Complete deployment reference for all environments
+
 ## File Organization
 
 ```
@@ -170,6 +205,9 @@ docs/emuses/
 ├── umap_stage.md             # UMAP dimensionality reduction
 ├── heatmap_stage.md          # Enhanced prediction pipeline
 ├── prediction_stage.md       # Feature engineering and modeling
+├── api_service.md            # FastAPI service comprehensive reference
+├── cli_service_integration.md # CLI-service integration patterns
+├── service_deployment.md     # Service deployment and configuration
 └── utils/
     ├── features_utils.md     # Feature engineering transformers
     ├── model_io.md          # Model persistence system

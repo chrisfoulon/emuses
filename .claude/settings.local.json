@@ -20,7 +20,10 @@
       "Bash(cp:*)",
       "Bash(timeout 10s python -m emuses.cli:*)",
       "Bash(timeout:*)",
-      "Bash(flake8:*)"
+      "Bash(flake8:*)",
+      "Bash(rg:*)",
+      "Bash(sed:*)",
+      "Bash(git ls-tree:*)"
     ],
     "deny": []
   }

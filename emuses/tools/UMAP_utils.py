@@ -539,7 +539,7 @@ def train_and_save_umap_optim_with_nested_clustering(
 
         # Generate an interactive clustering plot for the inner-loop best clustering.
         interactive_plot_path = output_plot_folder / f"interactive_{trial.number}.html"
-        fig = plot_clustering_interactive_with_hover(
+        plot_clustering_interactive_with_hover(
             embeddings,
             best_labels_trial,
             output_path=interactive_plot_path,

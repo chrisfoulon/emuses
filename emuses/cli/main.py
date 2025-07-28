@@ -116,8 +116,6 @@ def save_command_to_output_folder(output_folder: Path) -> None:
             str
                 Safely quoted argument
             """
-            import os
-            
             # If argument doesn't need quoting, return as-is
             if not any(char in arg for char in [' ', '\t', '\n', '"', "'", '\\', '&', '|', ';', '<', '>', '(', ')', '$', '`']):
                 return arg
@@ -685,6 +683,12 @@ async def _full_async(**kwargs) -> None:
 
     Executes locally by default, or via FastAPI service if --service flag is used.
     """
+    # Configure parallelism context for CLI environment
+    from emuses.tools.parallelism_utils import configure_parallelism_backend
+    
+    # CLI runs in main process context - use default (loky) backend
+    configure_parallelism_backend(force_backend=None)
+    
     # Initialize components
     status_renderer = StatusRenderer()
     progress_tracker = ProgressTracker()

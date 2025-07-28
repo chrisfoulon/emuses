@@ -47,7 +47,8 @@ from sklearn.model_selection import KFold, GridSearchCV, cross_val_score
 from sklearn.decomposition import PCA
 from sklearn.svm import SVR
 from pykrige.rk import Krige
-from joblib import dump, Parallel, delayed
+from joblib import dump, delayed
+from emuses.tools.parallelism_utils import create_safe_parallel, get_safe_n_jobs
 import GPy
 import xgboost as xgb
 import seaborn as sns
@@ -1644,7 +1645,8 @@ def new_pipeline_test(
     from sklearn.model_selection import KFold
     import time
     import joblib
-    from joblib import Parallel, delayed
+    from joblib import delayed
+    from emuses.tools.parallelism_utils import create_safe_parallel, get_safe_n_jobs
     import json
 
     # Import functions from elsewhere in the codebase
@@ -1997,8 +1999,10 @@ def new_pipeline_test(
     # Execute tasks in parallel or sequentially
     all_results = {}
     if run_parallel and n_jobs != 1:
-        print(f"Running optimization in parallel with {n_jobs} jobs...")
-        results = Parallel(n_jobs=n_jobs)(
+        safe_n_jobs = get_safe_n_jobs(n_jobs)
+        print(f"Running optimization in parallel with {safe_n_jobs} jobs...")
+        parallel = create_safe_parallel(safe_n_jobs)
+        results = parallel(
             delayed(optimize_train_model)(fs_name, X, y, X_test, y_test)
             for fs_name, X, y, X_test, y_test in parallel_tasks
         )

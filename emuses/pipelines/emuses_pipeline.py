@@ -509,7 +509,7 @@ class EMUSESPipeline:
 
             # Track indices for unlabelled data (embedding)
             embedding_train_indices = None
-            embedding_test_indices = None
+            # embedding_test_indices = None  # Unused variable
 
             # Update context with new naming scheme only (no backward compatibility)
             self.context.update(
