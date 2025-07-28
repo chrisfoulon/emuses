@@ -1,0 +1,26 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ls:*)",
+      "Bash(find:*)",
+      "Bash(git submodule:*)",
+      "Bash(cat:*)",
+      "Bash(pytest:*)",
+      "Bash(rm:*)",
+      "Bash(python:*)",
+      "Bash(uvicorn:*)",
+      "Bash(pip install:*)",
+      "Bash(pip show:*)",
+      "Bash(git log:*)",
+      "Bash(git add:*)",
+      "Bash(git fetch:*)",
+      "Bash(grep:*)",
+      "Bash(emuses full:*)",
+      "Bash(mkdir:*)",
+      "Bash(cp:*)",
+      "Bash(timeout 10s python -m emuses.cli:*)",
+      "Bash(timeout:*)"
+    ],
+    "deny": []
+  }
+}
