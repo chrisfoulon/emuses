@@ -19,7 +19,8 @@
       "Bash(mkdir:*)",
       "Bash(cp:*)",
       "Bash(timeout 10s python -m emuses.cli:*)",
-      "Bash(timeout:*)"
+      "Bash(timeout:*)",
+      "Bash(flake8:*)"
     ],
     "deny": []
   }

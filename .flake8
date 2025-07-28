@@ -38,4 +38,5 @@ exclude =
     .venv,
     venv,
     env,
-    .env
+    .env,
+    .lad
