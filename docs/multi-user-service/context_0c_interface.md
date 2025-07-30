@@ -1,0 +1,153 @@
+# Multi-User EMUSES Service - Interface Context (Phase 0c)
+
+## Phase Focus
+**Domain**: CLI integration, deployment infrastructure, admin tools, background processing
+**Scope**: Multi-mode CLI, HTTP authentication, Docker deployment, ProcessPoolExecutor, admin interface
+**Prerequisites**: Plan 0b completion (workspace APIs, job management, quota system)
+
+## Expected Integration Inputs from Plan 0b
+
+**Workspace API Contracts**: (To be updated with actual implementations)
+- Workspace management endpoint specifications
+- Job management interface contracts
+- Quota system API endpoints and validation methods
+
+**Multi-User Job Manager**: (To be updated with actual implementations)
+- User-scoped job management interfaces
+- Workspace isolation patterns and storage methods
+- Security boundary implementations
+
+**Security Patterns**: (To be updated with actual implementations)
+- API authentication and authorization patterns
+- User context validation methods
+- Data access control implementations
+
+## CLI Multi-Mode Architecture
+
+### Deployment Mode Detection
+**Three Modes**: Local (no auth), Multi-user (selective auth), Production (full auth)
+**Environment Variables**: `EMUSES_DEPLOYMENT_MODE` detection and parsing
+**Configuration Classes**: Mode-specific configuration and validation
+
+### CLI Parameter Enhancement
+**Authentication Parameters**: `--service` and `--token` parameter support
+**Mode Validation**: Parameter validation per deployment mode
+**Backward Compatibility**: Existing CLI workflows preserved
+
+### Service Manager Extension
+**Multi-Mode Support**: External service connection capabilities
+**Health Checking**: Service health validation and monitoring
+**Mode Switching**: Graceful deployment mode transitions
+
+## HTTP Client Authentication Integration
+
+### ServiceHTTPClient Extension
+**Token Management**: JWT token header injection and refresh logic
+**Authentication Errors**: Authentication error handling and recovery
+**Session Persistence**: Token storage and validation across CLI calls
+
+### Token Storage Strategy
+**Secure Storage**: Token storage in `~/.emuses/token` with secure permissions
+**Validation**: Token expiry checks and automatic refresh
+**CLI Commands**: Login/logout CLI command implementation
+
+### User Session Management
+**Automatic Login**: Seamless login flows for CLI operations
+**Session Persistence**: User context maintenance across CLI calls
+**User Context Display**: User information display in CLI interfaces
+
+## Background Processing Architecture
+
+### ProcessPoolExecutor Integration
+**Worker Configuration**: Process pool sizing and worker management
+**Job Queue**: Job queue management and task distribution
+**Process Monitoring**: Worker health monitoring and cleanup
+
+### Task Execution Patterns
+**Pipeline Processing**: EMUSES pipeline execution in separate processes
+**User Context**: User workspace isolation in background processes
+**Status Tracking**: Task status tracking and progress reporting
+
+### Task Management APIs
+**Submission**: Task submission and queue management endpoints
+**Control**: Task cancellation and cleanup logic
+**Monitoring**: Process health monitoring and status reporting
+
+## Production Infrastructure
+
+### Docker Deployment Configuration
+**Compose Files**: Production docker-compose.yml with PostgreSQL
+**Service Containers**: API service containerization
+**Networking**: nginx reverse proxy configuration
+
+### Application Containerization
+**Dockerfile**: API service Dockerfile with health checks
+**Startup Scripts**: Application initialization and health validation
+**Environment**: Production environment configuration templates
+
+### Infrastructure Management
+**Secrets Management**: Secure secrets and environment variable handling
+**Monitoring**: Application monitoring and logging configuration
+**Health Checks**: Service health validation and startup verification
+
+## Admin Tools Architecture
+
+### Admin API Endpoints
+**User Management**: User creation, listing, updating, deletion endpoints
+**Quota Management**: Quota adjustment and monitoring endpoints
+**System Monitoring**: Job queue status and system health endpoints
+
+### CLI Admin Commands
+**User Operations**: `emuses admin add-user`, quota management commands
+**System Control**: `emuses admin system-status`, job cancellation commands
+**Help System**: Comprehensive help text and usage examples
+
+### Research Environment Optimization
+**CLI-First Design**: Admin tools optimized for CLI access
+**Documentation**: Comprehensive usage examples and troubleshooting
+**Workflow Integration**: Admin workflows suited for research environments
+
+## Database Migration Completion
+
+### Workspace Table Migrations
+**Schema Completion**: Workspace and dataset table migrations
+**Relationships**: Job table migrations with user relationships
+**Constraints**: Database constraints and index optimization
+
+### Migration Management
+**CLI Integration**: Migration commands integrated into admin CLI
+**Validation**: Migration validation and rollback capabilities
+**Initialization**: Database initialization and setup scripts
+
+## Integration Deliverables for Next Phase
+
+**This phase will provide:**
+- Complete CLI interface with all deployment modes functional
+- Fully integrated authentication system across all components
+- Production deployment infrastructure with Docker configurations
+- Background processing system with ProcessPoolExecutor integration
+- Admin CLI tools with complete functionality
+
+**Context Updates Required:**
+Upon phase completion, update `context_0d_security.md` with actual:
+- Complete system architecture documentation
+- All integration points and interface contracts
+- Attack surface analysis and security boundaries
+- Performance characteristics and bottleneck analysis
+
+## Testing and Validation Requirements
+
+### CLI Integration Testing
+**Mode Switching**: Deployment mode functionality validation
+**Authentication**: CLI authentication flow testing
+**Backward Compatibility**: Existing workflow preservation validation
+
+### Infrastructure Testing
+**Container Deployment**: Docker deployment and service validation
+**Background Processing**: ProcessPoolExecutor functionality testing
+**Admin Tools**: Admin CLI command functionality validation
+
+### Integration Validation
+**End-to-End**: Complete system workflow testing
+**Cross-Component**: Authentication + workspace + CLI integration testing
+**Performance**: System performance under load validation
