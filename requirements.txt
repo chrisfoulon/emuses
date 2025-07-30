@@ -34,6 +34,14 @@ uvicorn
 slowapi
 python-multipart
 
+# Multi-user service dependencies
+fastapi-users[sqlalchemy]
+asyncpg
+aiosqlite
+alembic
+sqlalchemy[asyncio]
+bcrypt
+
 # CLI packages (Critical for CLI)
 typer
 requests

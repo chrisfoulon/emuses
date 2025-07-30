@@ -5,23 +5,39 @@
 **Scope**: Workspace models, multi-user job manager, API endpoints, resource management
 **Prerequisites**: Plan 0a completion (user models, authentication, database)
 
-## Expected Integration Inputs from Plan 0a
+## Actual Integration Inputs from Plan 0a (COMPLETED)
 
-**User Model APIs**: (To be updated with actual implementations)
-- User model definitions and relationships
-- Authentication middleware patterns
-- Database session management methods
-- JWT user validation functions
+**User Model APIs**: ✅ IMPLEMENTED
+- `User` model extending `SQLAlchemyBaseUserTableUUID` with EMUSES fields (organization, role, quotas)
+- `UserSettings` model for preferences with relationships
+- Located in: `emuses.multi_user_service.models`
+- Database tables: `users`, `user_settings` with foreign key relationships
 
-**Database Infrastructure**: (To be updated with actual implementations)
-- Connection pooling configuration
-- Migration execution patterns
-- Async database session handling
+**Database Infrastructure**: ✅ IMPLEMENTED
+- `DatabaseConfig` class with environment-based configuration
+- `create_engine()` function with async PostgreSQL + SQLite support
+- `get_async_session()` dependency for FastAPI injection
+- Connection pooling with configurable parameters
+- Located in: `emuses.multi_user_service.database`
 
-**Authentication Patterns**: (To be updated with actual implementations)
-- User dependency injection methods
-- Role-based access control patterns
-- Deployment mode configuration classes
+**Authentication Patterns**: ✅ IMPLEMENTED
+- `get_current_user`, `get_current_active_user`, `get_current_superuser` dependencies
+- `get_current_user_optional` for backward compatibility
+- `get_conditional_auth_dependency()` for deployment-mode-aware authentication
+- JWT authentication backend with `get_auth_backend()`
+- Located in: `emuses.multi_user_service.auth` and `emuses.multi_user_service.middleware`
+
+**Migration Infrastructure**: ✅ IMPLEMENTED
+- Alembic configuration with `get_alembic_config()`
+- Migration environment setup with `create_migration_environment()`
+- Initial migration generated for users and user_settings tables
+- Located in: `emuses.multi_user_service.migrations`
+
+**Authentication Endpoints**: ✅ IMPLEMENTED
+- Registration, login, logout endpoints via FastAPI-Users
+- Custom validation and status endpoints
+- User profile management endpoints
+- Located in: `emuses.multi_user_service.endpoints`
 
 ## Workspace Architecture Design
 
