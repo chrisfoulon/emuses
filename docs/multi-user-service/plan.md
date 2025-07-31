@@ -106,7 +106,7 @@
     - [x] 5A.2.2: Add authentication table migrations
     - [x] 5A.2.3: Create index and constraint migrations
 
-### Phase 3B: Workspace Isolation ║ 2-3 days ║ HIGH PRIORITY (Enhanced with security testing)
+### Phase 3B: Workspace Isolation ║ 2-3 days ║ HIGH PRIORITY ✅ COMPLETED (Enhanced with security testing)
 
 - [x] **Task 6**: Create user workspace models ║ `tests/multi-user-service/test_workspace_models.py` ║ User workspace and dataset models with relationships ║ M ✅ COMPLETED
   - [x] 6.1: Create Workspace model
@@ -159,10 +159,10 @@
     - [ ] 9.2.1: Track job execution time and resource usage
     - [ ] 9.2.2: Monitor storage consumption
     - [ ] 9.2.3: Implement quota reset policies
-  - [ ] 9.3: Create quota management endpoints
-    - [ ] 9.3.1: User quota status endpoint
-    - [ ] 9.3.2: Admin quota adjustment endpoints
-    - [ ] 9.3.3: Usage history and reporting
+  - [x] 9.3: Create quota management endpoints ✅ COMPLETED
+    - [x] 9.3.1: User quota status endpoint
+    - [x] 9.3.2: Admin quota adjustment endpoints
+    - [x] 9.3.3: Usage history and reporting
 
 ### Phase 3C: CLI Multi-Mode Support ║ 1-2 days ║ MEDIUM PRIORITY
 

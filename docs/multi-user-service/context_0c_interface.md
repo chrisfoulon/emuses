@@ -5,22 +5,28 @@
 **Scope**: Multi-mode CLI, HTTP authentication, Docker deployment, ProcessPoolExecutor, admin interface
 **Prerequisites**: Plan 0b completion (workspace APIs, job management, quota system)
 
-## Expected Integration Inputs from Plan 0b
+## Actual Integration Inputs from Plan 0b (COMPLETED)
 
-**Workspace API Contracts**: (To be updated with actual implementations)
-- Workspace management endpoint specifications
-- Job management interface contracts
-- Quota system API endpoints and validation methods
+**✅ Workspace API Contracts**: `emuses.multi_user_service.workspace_endpoints`
+- **Workspace Management**: Complete CRUD operations with `POST/GET/PUT/DELETE /workspaces/` endpoints
+- **Dataset Management**: Complete lifecycle with `POST/GET/PUT/DELETE /datasets/` endpoints  
+- **Training Job Management**: User-scoped jobs with `POST/GET/PUT/DELETE /jobs/` endpoints
+- **Quota Management**: Complete quota API with `GET /quota/status`, `POST /quota/admin/adjust`, `GET /quota/usage/history`, `GET/POST /quota/admin/*` endpoints
+- **Authentication Integration**: All endpoints require FastAPI-Users authentication via `get_current_user()` dependency
+- **Setup Function**: Single `setup_workspace_endpoints(app)` integrates all routers into FastAPI app
 
-**Multi-User Job Manager**: (To be updated with actual implementations)
-- User-scoped job management interfaces
-- Workspace isolation patterns and storage methods
-- Security boundary implementations
+**✅ Multi-User Job Manager**: `emuses.multi_user_service.job_manager.MultiUserJobManager`
+- **User-Scoped Operations**: `create_user_job()`, `list_user_jobs()`, `cancel_user_job()` with user context
+- **Storage Isolation**: `create_user_storage_path()` with secure permissions (0o700) and user isolation
+- **Ownership Validation**: `validate_job_ownership()` prevents cross-user access
+- **Resource Tracking**: `update_user_resource_usage()`, `get_user_resource_usage()` for quota integration
+- **Quota Validation**: Integrated quota checking in job creation workflow
 
-**Security Patterns**: (To be updated with actual implementations)
-- API authentication and authorization patterns
-- User context validation methods
-- Data access control implementations
+**✅ Security Patterns**: `emuses.multi_user_service.auth` & `emuses.multi_user_service.middleware`
+- **API Authentication**: FastAPI-Users with JWT tokens via `get_current_user()`, `get_current_active_user()`, `get_current_superuser()`
+- **User Context Validation**: Helper functions `_get_user_workspace()`, `_get_user_dataset()`, `_get_user_training_job()` with 404 responses for unauthorized access
+- **Data Access Control**: Complete user isolation with ownership validation across all endpoints
+- **Conditional Authentication**: `get_conditional_auth_dependency()` for deployment-mode-aware authentication
 
 ## CLI Multi-Mode Architecture
 

@@ -1,0 +1,9 @@
+============================= test session starts ==============================
+platform linux -- Python 3.11.5, pytest-8.3.3, pluggy-1.5.0
+rootdir: /home/chrisfoulon/neuro_apps/emuses
+configfile: pytest.ini
+plugins: cov-6.2.1, asyncio-1.0.0, anyio-4.9.0
+asyncio: mode=Mode.STRICT, asyncio_default_fixture_loop_scope=function, asyncio_default_test_loop_scope=function
+collected 0 items
+
+============================ no tests ran in 0.01s =============================
