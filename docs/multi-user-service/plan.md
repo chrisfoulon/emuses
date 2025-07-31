@@ -27,114 +27,114 @@
 
 ### Phase 3A: Authentication Foundation ║ 2 days ║ HIGH PRIORITY (Simplified based on minimal user models)
 
-- [ ] **Task 1**: Create user models and database schema ║ `tests/multi-user-service/test_auth_models.py` ║ Add SQLAlchemy user models with FastAPI-Users integration ║ L
-  - [ ] 1.1: Create User model extending SQLAlchemyBaseUserTableUUID
-    - [ ] 1.1.1: Add EMUSES-specific fields (organization, role, quotas)
-    - [ ] 1.1.2: Add usage tracking fields (storage, compute hours)
-    - [ ] 1.1.3: Add relationships to workspaces and jobs
-  - [ ] 1.2: Create UserSettings model for preferences
-    - [ ] 1.2.1: Add default EMUSES configuration preferences
-    - [ ] 1.2.2: Add notification and UI preferences
-  - [ ] 1.3: Create database configuration and connection setup
-    - [ ] 1.3.1: Add environment-based database URL configuration
-    - [ ] 1.3.2: Create async database session management
-    - [ ] 1.3.3: Add database initialization and health checks
-    - [ ] 1.3.4: Configure connection pooling for concurrent users (asyncpg pool)
-    - [ ] 1.3.5: Add database performance monitoring and query optimization
+- [x] **Task 1**: Create user models and database schema ║ `tests/multi-user-service/test_auth_models.py` ║ Add SQLAlchemy user models with FastAPI-Users integration ║ L ✅ COMPLETED
+  - [x] 1.1: Create User model extending SQLAlchemyBaseUserTableUUID
+    - [x] 1.1.1: Add EMUSES-specific fields (organization, role, quotas)
+    - [x] 1.1.2: Add usage tracking fields (storage, compute hours)
+    - [x] 1.1.3: Add relationships to workspaces and jobs
+  - [x] 1.2: Create UserSettings model for preferences
+    - [x] 1.2.1: Add default EMUSES configuration preferences
+    - [x] 1.2.2: Add notification and UI preferences
+  - [x] 1.3: Create database configuration and connection setup
+    - [x] 1.3.1: Add environment-based database URL configuration
+    - [x] 1.3.2: Create async database session management
+    - [x] 1.3.3: Add database initialization and health checks
+    - [x] 1.3.4: Configure connection pooling for concurrent users (asyncpg pool)
+    - [x] 1.3.5: Add database performance monitoring and query optimization
 
-- [ ] **Task 2**: Implement JWT authentication backend ║ `tests/multi-user-service/test_auth_backend.py` ║ FastAPI-Users JWT authentication with secure token management ║ M
-  - [ ] 2.1: Configure JWT authentication backend
-    - [ ] 2.1.1: Set up JWT secret key from environment
-    - [ ] 2.1.2: Configure token expiration and refresh policies
-    - [ ] 2.1.3: Add bearer transport configuration
-  - [ ] 2.2: Create user manager with EMUSES-specific logic
-    - [ ] 2.2.1: Implement user registration validation
-    - [ ] 2.2.2: Add password complexity requirements
-    - [ ] 2.2.3: Create user quota initialization
-    - [ ] 2.2.4: Implement token rotation and refresh strategy
-    - [ ] 2.2.5: Add token blacklisting for logout/security events
-  - [ ] 2.3: Set up FastAPI-Users instance
-    - [ ] 2.3.1: Configure authentication backends
-    - [ ] 2.3.2: Create user dependency functions
-    - [ ] 2.3.3: Add role-based access dependencies
+- [x] **Task 2**: Implement JWT authentication backend ║ `tests/multi-user-service/test_auth_backend.py` ║ FastAPI-Users JWT authentication with secure token management ║ M ✅ COMPLETED
+  - [x] 2.1: Configure JWT authentication backend
+    - [x] 2.1.1: Set up JWT secret key from environment
+    - [x] 2.1.2: Configure token expiration and refresh policies
+    - [x] 2.1.3: Add bearer transport configuration
+  - [x] 2.2: Create user manager with EMUSES-specific logic
+    - [x] 2.2.1: Implement user registration validation
+    - [x] 2.2.2: Add password complexity requirements
+    - [x] 2.2.3: Create user quota initialization
+    - [x] 2.2.4: Implement token rotation and refresh strategy
+    - [x] 2.2.5: Add token blacklisting for logout/security events
+  - [x] 2.3: Set up FastAPI-Users instance
+    - [x] 2.3.1: Configure authentication backends
+    - [x] 2.3.2: Create user dependency functions
+    - [x] 2.3.3: Add role-based access dependencies
 
-- [ ] **Task 3**: Add authentication middleware to existing FastAPI app ║ `tests/multi-user-service/test_auth_middleware.py` ║ Integrate authentication with existing middleware stack ║ M
-  - [ ] 3.1: Add authentication middleware after CORS
-    - [ ] 3.1.1: Position auth middleware correctly in stack
-    - [ ] 3.1.2: Preserve existing error handling patterns
-    - [ ] 3.1.3: Add authentication error handlers
-  - [ ] 3.2: Create optional authentication dependency
-    - [ ] 3.2.1: Implement conditional authentication based on deployment mode
-    - [ ] 3.2.2: Add graceful degradation for local mode
-    - [ ] 3.2.3: Maintain backward compatibility
-  - [ ] 3.3: Update existing endpoints with user context
-    - [ ] 3.3.1: Add user dependencies to protected endpoints
-    - [ ] 3.3.2: Preserve existing API signatures
-    - [ ] 3.3.3: Add user context to request processing
+- [x] **Task 3**: Add authentication middleware to existing FastAPI app ║ `tests/multi-user-service/test_auth_middleware.py` ║ Integrate authentication with existing middleware stack ║ M ✅ COMPLETED
+  - [x] 3.1: Add authentication middleware after CORS
+    - [x] 3.1.1: Position auth middleware correctly in stack
+    - [x] 3.1.2: Preserve existing error handling patterns
+    - [x] 3.1.3: Add authentication error handlers
+  - [x] 3.2: Create optional authentication dependency
+    - [x] 3.2.1: Implement conditional authentication based on deployment mode
+    - [x] 3.2.2: Add graceful degradation for local mode
+    - [x] 3.2.3: Maintain backward compatibility
+  - [x] 3.3: Update existing endpoints with user context
+    - [x] 3.3.1: Add user dependencies to protected endpoints
+    - [x] 3.3.2: Preserve existing API signatures
+    - [x] 3.3.3: Add user context to request processing
 
-- [ ] **Task 4**: Create authentication endpoints ║ `tests/multi-user-service/test_auth_endpoints.py` ║ Registration, login, logout, and token management ║ S (Revised from M - simplified with minimal user model)
-  - [ ] 4.1: Add authentication routes from FastAPI-Users
-    - [ ] 4.1.1: Register JWT authentication router
-    - [ ] 4.1.2: Add user registration router
-    - [ ] 4.1.3: Configure route prefixes and tags
-  - [ ] 4.2: Create simple authentication endpoints
-    - [ ] 4.2.1: Add token validation endpoint
-    - [ ] 4.2.2: Create basic user profile management
-    - [ ] 4.2.3: Add simple password reset functionality
-  - [ ] 4.3: Implement simple user registration workflow
-    - [ ] 4.3.1: Add email validation and uniqueness checks
-    - [ ] 4.3.2: Create default workspace during registration
-    - [ ] 4.3.3: Initialize minimal user settings (n_jobs, optuna_trials defaults)
+- [x] **Task 4**: Create authentication endpoints ║ `tests/multi-user-service/test_auth_endpoints.py` ║ Registration, login, logout, and token management ║ S ✅ COMPLETED
+  - [x] 4.1: Add authentication routes from FastAPI-Users
+    - [x] 4.1.1: Register JWT authentication router
+    - [x] 4.1.2: Add user registration router
+    - [x] 4.1.3: Configure route prefixes and tags
+  - [x] 4.2: Create simple authentication endpoints
+    - [x] 4.2.1: Add token validation endpoint
+    - [x] 4.2.2: Create basic user profile management
+    - [x] 4.2.3: Add simple password reset functionality
+  - [x] 4.3: Implement simple user registration workflow
+    - [x] 4.3.1: Add email validation and uniqueness checks
+    - [x] 4.3.2: Create default workspace during registration
+    - [x] 4.3.3: Initialize minimal user settings (n_jobs, optuna_trials defaults)
 
-- [ ] **Task 5**: Implement deployment mode configuration ║ `tests/multi-user-service/test_deployment_config.py` ║ Environment-based authentication enabling/disabling ║ S
-  - [ ] 5.1: Create deployment configuration class
-    - [ ] 5.1.1: Add environment variable parsing for deployment modes
-    - [ ] 5.1.2: Configure authentication requirements per mode
-    - [ ] 5.1.3: Set up database connection configs (Redis removed based on hybrid approach)
-  - [ ] 5.2: Add configuration validation
-    - [ ] 5.2.1: Validate required environment variables
-    - [ ] 5.2.2: Check database connectivity in auth-required modes
-    - [ ] 5.2.3: Create configuration health checks
+- [x] **Task 5**: Implement deployment mode configuration ║ `tests/multi-user-service/test_deployment_config.py` ║ Environment-based authentication enabling/disabling ║ S ✅ COMPLETED
+  - [x] 5.1: Create deployment configuration class
+    - [x] 5.1.1: Add environment variable parsing for deployment modes
+    - [x] 5.1.2: Configure authentication requirements per mode
+    - [x] 5.1.3: Set up database connection configs
+  - [x] 5.2: Add configuration validation
+    - [x] 5.2.1: Validate required environment variables
+    - [x] 5.2.2: Check database connectivity in auth-required modes
+    - [x] 5.2.3: Create configuration health checks
 
-- [ ] **Task 5A**: Create initial database migrations ║ `tests/multi-user-service/test_initial_migrations.py` ║ Alembic migration setup before model testing ║ S
-  - [ ] 5A.1: Set up Alembic configuration
-    - [ ] 5A.1.1: Create migration environment
-    - [ ] 5A.1.2: Configure database metadata detection
-    - [ ] 5A.1.3: Add migration script templates
-  - [ ] 5A.2: Create initial user and auth table migrations
-    - [ ] 5A.2.1: Generate user table migrations
-    - [ ] 5A.2.2: Add authentication table migrations
-    - [ ] 5A.2.3: Create index and constraint migrations
+- [x] **Task 5A**: Create initial database migrations ║ `tests/multi-user-service/test_initial_migrations.py` ║ Alembic migration setup before model testing ║ S ✅ COMPLETED
+  - [x] 5A.1: Set up Alembic configuration
+    - [x] 5A.1.1: Create migration environment
+    - [x] 5A.1.2: Configure database metadata detection
+    - [x] 5A.1.3: Add migration script templates
+  - [x] 5A.2: Create initial user and auth table migrations
+    - [x] 5A.2.1: Generate user table migrations
+    - [x] 5A.2.2: Add authentication table migrations
+    - [x] 5A.2.3: Create index and constraint migrations
 
 ### Phase 3B: Workspace Isolation ║ 2-3 days ║ HIGH PRIORITY (Enhanced with security testing)
 
-- [ ] **Task 6**: Create user workspace models ║ `tests/multi-user-service/test_workspace_models.py` ║ User workspace and dataset models with relationships ║ M
-  - [ ] 6.1: Create Workspace model
-    - [ ] 6.1.1: Add workspace metadata and relationships
-    - [ ] 6.1.2: Implement storage path management
-    - [ ] 6.1.3: Add sharing and collaboration fields for future use
-  - [ ] 6.2: Create Dataset model
-    - [ ] 6.2.1: Add dataset metadata and file information
-    - [ ] 6.2.2: Implement versioning and integrity checking
-    - [ ] 6.2.3: Add dataset-job association model
-  - [ ] 6.3: Create TrainingJob model
-    - [ ] 6.3.1: Extend existing job concepts with user ownership
-    - [ ] 6.3.2: Add resource usage tracking
-    - [ ] 6.3.3: Implement job status and result management
+- [x] **Task 6**: Create user workspace models ║ `tests/multi-user-service/test_workspace_models.py` ║ User workspace and dataset models with relationships ║ M ✅ COMPLETED
+  - [x] 6.1: Create Workspace model
+    - [x] 6.1.1: Add workspace metadata and relationships
+    - [x] 6.1.2: Implement storage path management
+    - [x] 6.1.3: Add sharing and collaboration fields for future use
+  - [x] 6.2: Create Dataset model
+    - [x] 6.2.1: Add dataset metadata and file information
+    - [x] 6.2.2: Implement versioning and integrity checking
+    - [x] 6.2.3: Add dataset-job association model
+  - [x] 6.3: Create TrainingJob model
+    - [x] 6.3.1: Extend existing job concepts with user ownership
+    - [x] 6.3.2: Add resource usage tracking
+    - [x] 6.3.3: Implement job status and result management
 
-- [ ] **Task 7**: Extend JobManager with user-scoped storage ║ `tests/multi-user-service/test_multi_user_job_manager.py` ║ User workspace isolation in job management ║ L
-  - [ ] 7.1: Create MultiUserJobManager class
-    - [ ] 7.1.1: Extend existing JobManager with user context
-    - [ ] 7.1.2: Implement user-scoped storage directory creation
-    - [ ] 7.1.3: Add user quota validation
-  - [ ] 7.2: Implement user workspace storage factory
-    - [ ] 7.2.1: Create user-isolated storage paths
-    - [ ] 7.2.2: Set secure directory permissions (0o700)
-    - [ ] 7.2.3: Add storage cleanup and management
-  - [ ] 7.3: Add job ownership validation
-    - [ ] 7.3.1: Validate user owns jobs before operations
-    - [ ] 7.3.2: Filter job listings by user ownership
-    - [ ] 7.3.3: Implement user-scoped job cancellation
+- [x] **Task 7**: Extend JobManager with user-scoped storage ║ `tests/multi-user-service/test_multi_user_job_manager.py` ║ User workspace isolation in job management ║ L ✅ COMPLETED
+  - [x] 7.1: Create MultiUserJobManager class
+    - [x] 7.1.1: Extend existing JobManager with user context
+    - [x] 7.1.2: Implement user-scoped storage directory creation
+    - [x] 7.1.3: Add user quota validation
+  - [x] 7.2: Implement user workspace storage factory
+    - [x] 7.2.1: Create user-isolated storage paths
+    - [x] 7.2.2: Set secure directory permissions (0o700)
+    - [x] 7.2.3: Add storage cleanup and management
+  - [x] 7.3: Add job ownership validation
+    - [x] 7.3.1: Validate user owns jobs before operations
+    - [x] 7.3.2: Filter job listings by user ownership
+    - [x] 7.3.3: Implement user-scoped job cancellation
 
 - [ ] **Task 8**: Create user workspace API endpoints ║ `tests/multi-user-service/test_workspace_endpoints.py` ║ RESTful API for workspace management ║ M
   - [ ] 8.1: Implement workspace management endpoints
