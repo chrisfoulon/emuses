@@ -198,3 +198,211 @@ async def get_database_session():
         except Exception:
             await session.rollback()
             raise
+
+
+async def create_all_tables():
+    """Create all database tables using SQLAlchemy metadata.
+
+    This function is used for database initialization and should be
+    called on application startup to ensure all tables exist.
+    """
+    try:
+        from emuses.multi_user_service.models import Base
+        engine = create_engine()
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+        logger.info("Database tables created successfully")
+    except Exception as e:
+        logger.error(f"Failed to create database tables: {e}")
+        raise
+
+
+async def drop_all_tables():
+    """Drop all database tables using SQLAlchemy metadata.
+
+    WARNING: This function will delete all data. Use with caution.
+    """
+    try:
+        from emuses.multi_user_service.models import Base
+        engine = create_engine()
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.drop_all)
+        logger.info("Database tables dropped successfully")
+    except Exception as e:
+        logger.error(f"Failed to drop database tables: {e}")
+        raise
+
+
+def run_migrations(target_revision: str = "head"):
+    """Run database migrations to target revision.
+
+    Parameters
+    ----------
+    target_revision : str
+        Target revision to migrate to (default: "head" for latest)
+
+    Raises
+    ------
+    Exception
+        If migration fails
+    """
+    try:
+        from alembic.config import Config
+        from alembic import command
+        import os
+
+        # Get alembic configuration
+        config = Config("alembic.ini")
+
+        # Set database URL if not already configured
+        db_config = DatabaseConfig()
+        if db_config.database_url:
+            sync_url = db_config.database_url.replace("+asyncpg", "").replace("+aiosqlite", "")
+            config.set_main_option("sqlalchemy.url", sync_url)
+
+        # Run migration
+        command.upgrade(config, target_revision)
+        logger.info(f"Database migration to {target_revision} completed successfully")
+
+    except Exception as e:
+        logger.error(f"Database migration failed: {e}")
+        raise
+
+
+def rollback_migration(target_revision: str):
+    """Rollback database migration to target revision.
+
+    Parameters
+    ----------
+    target_revision : str
+        Target revision to rollback to
+
+    Raises
+    ------
+    Exception
+        If rollback fails
+    """
+    try:
+        from alembic.config import Config
+        from alembic import command
+
+        # Get alembic configuration
+        config = Config("alembic.ini")
+
+        # Set database URL if not already configured
+        db_config = DatabaseConfig()
+        if db_config.database_url:
+            sync_url = db_config.database_url.replace("+asyncpg", "").replace("+aiosqlite", "")
+            config.set_main_option("sqlalchemy.url", sync_url)
+
+        # Run downgrade
+        command.downgrade(config, target_revision)
+        logger.info(f"Database rollback to {target_revision} completed successfully")
+
+    except Exception as e:
+        logger.error(f"Database rollback failed: {e}")
+        raise
+
+
+def get_migration_status():
+    """Get current migration status and available revisions.
+
+    Returns
+    -------
+    dict
+        Dictionary containing current revision, head revision, and pending migrations
+    """
+    try:
+        from alembic.config import Config
+        from alembic import command
+        from alembic.script import ScriptDirectory
+        from alembic.runtime.migration import MigrationContext
+        from sqlalchemy import create_engine as sync_create_engine
+        import io
+        import sys
+
+        # Get alembic configuration
+        config = Config("alembic.ini")
+
+        # Set database URL
+        db_config = DatabaseConfig()
+        if db_config.database_url:
+            sync_url = db_config.database_url.replace("+asyncpg", "").replace("+aiosqlite", "")
+        else:
+            sync_url = "sqlite:///:memory:"
+
+        config.set_main_option("sqlalchemy.url", sync_url)
+
+        # Get script directory
+        script = ScriptDirectory.from_config(config)
+
+        # Get current revision from database
+        sync_engine = sync_create_engine(sync_url)
+        with sync_engine.connect() as conn:
+            context = MigrationContext.configure(conn)
+            current_rev = context.get_current_revision()
+
+        # Get head revision
+        head_rev = script.get_current_head()
+
+        # Get all revisions
+        all_revisions = [rev.revision for rev in script.walk_revisions()]
+
+        # Check if database is up to date
+        is_up_to_date = current_rev == head_rev
+
+        return {
+            "current_revision": current_rev,
+            "head_revision": head_rev,
+            "all_revisions": all_revisions,
+            "is_up_to_date": is_up_to_date,
+            "pending_migrations": len(all_revisions) if current_rev is None else 0
+        }
+
+    except Exception as e:
+        logger.error(f"Failed to get migration status: {e}")
+        raise
+
+
+def validate_database_schema():
+    """Validate that database schema matches SQLAlchemy models.
+
+    Returns
+    -------
+    dict
+        Validation results with any discrepancies found
+    """
+    try:
+        from emuses.multi_user_service.models import Base
+        from sqlalchemy import create_engine as sync_create_engine, inspect
+
+        db_config = DatabaseConfig()
+        if db_config.database_url:
+            sync_url = db_config.database_url.replace("+asyncpg", "").replace("+aiosqlite", "")
+        else:
+            sync_url = "sqlite:///:memory:"
+
+        sync_engine = sync_create_engine(sync_url)
+
+        # Get expected tables from models
+        expected_tables = set(Base.metadata.tables.keys())
+
+        # Get actual tables from database
+        inspector = inspect(sync_engine)
+        actual_tables = set(inspector.get_table_names())
+
+        # Compare
+        missing_tables = expected_tables - actual_tables
+        extra_tables = actual_tables - expected_tables
+
+        return {
+            "valid": len(missing_tables) == 0 and len(extra_tables) == 0,
+            "expected_tables": list(expected_tables),
+            "actual_tables": list(actual_tables),
+            "missing_tables": list(missing_tables),
+            "extra_tables": list(extra_tables)
+        }
+
+    except Exception as e:
+        logger.error(f"Schema validation failed: {e}")
+        raise
