@@ -210,3 +210,44 @@ coverage_html/
 *GIN Dropbox*
 */new_cli_test/
 */HCP_psy/*
+
+# =============================================================================
+# EMUSES Multi-User Service Security
+# =============================================================================
+
+# Environment files with secrets
+.env.production
+.env.local
+.env.development
+
+# Docker secrets
+docker/secrets/secrets.env
+docker/secrets/*.key
+docker/secrets/*.pem
+
+# SSL certificates and keys
+docker/ssl/*.crt
+docker/ssl/*.key
+docker/ssl/*.pem
+*.crt
+*.key
+*.pem
+
+# User authentication tokens
+~/.emuses/token.json
+token.json
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
+# Storage and backup directories
+storage/
+backups/
+
+# Docker volumes
+postgres_data/
+
+# Full output files from LAD token optimization
+full_output.txt
