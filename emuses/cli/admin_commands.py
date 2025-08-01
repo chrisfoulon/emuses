@@ -5,8 +5,9 @@ user management, quota management, and system monitoring.
 """
 
 import typer
-import asyncio
+import os
 import json
+import httpx
 from typing import Optional, List
 from pathlib import Path
 from rich.console import Console
@@ -15,11 +16,80 @@ from rich.panel import Panel
 from rich.text import Text
 from rich.columns import Columns
 
-from .service_client import ServiceHTTPClient, ServiceClientError
-from .rich_features import StatusRenderer
+# Using httpx for synchronous HTTP requests instead of async ServiceHTTPClient
 
 console = Console()
-status_renderer = StatusRenderer()
+
+
+class AdminClientError(Exception):
+    """Exception raised for admin client errors.
+    
+    Matches ServiceClientError interface for compatibility.
+    """
+    pass
+
+
+def make_admin_request(
+    endpoint: str,
+    method: str = "GET",
+    json_data: dict = None,
+    service_url: Optional[str] = None,
+    token: Optional[str] = None
+) -> httpx.Response:
+    """Make synchronous HTTP request for admin operations.
+    
+    Args:
+        endpoint: API endpoint (e.g., "/admin/users")
+        method: HTTP method (GET, POST, PUT, DELETE)
+        json_data: JSON payload for POST/PUT requests
+        service_url: Service base URL (defaults to env var or localhost)
+        token: Admin authentication token (defaults to env var)
+        
+    Returns:
+        httpx.Response: HTTP response object
+        
+    Raises:
+        AdminClientError: For connection or authentication errors
+    """
+    # Determine base URL
+    base_url = (
+        service_url or 
+        os.getenv("EMUSES_SERVICE_URL") or 
+        "http://localhost:8000"
+    )
+    
+    # Determine auth token
+    auth_token = token or os.getenv("EMUSES_ADMIN_TOKEN")
+    
+    # Prepare headers
+    headers = {}
+    if auth_token:
+        headers["Authorization"] = f"Bearer {auth_token}"
+    
+    # Construct full URL
+    url = f"{base_url.rstrip('/')}{endpoint}"
+    
+    try:
+        # Make synchronous request
+        if method.upper() == "GET":
+            response = httpx.get(url, headers=headers)
+        elif method.upper() == "POST":
+            response = httpx.post(url, headers=headers, json=json_data)
+        elif method.upper() == "PUT":
+            response = httpx.put(url, headers=headers, json=json_data)
+        elif method.upper() == "DELETE":
+            response = httpx.delete(url, headers=headers)
+        else:
+            raise AdminClientError(f"Unsupported HTTP method: {method}")
+            
+        return response
+        
+    except httpx.ConnectError as e:
+        raise AdminClientError(f"Connection failed: {e}")
+    except httpx.TimeoutException as e:
+        raise AdminClientError(f"Request timeout: {e}")
+    except Exception as e:
+        raise AdminClientError(f"Request failed: {e}")
 
 # Create admin sub-application
 admin_app = typer.Typer(
@@ -201,7 +271,13 @@ def add_user(
     """
     try:
         # Create service client
-        client = ServiceHTTPClient(service_url=service_url, token=token)
+        # Create service client with proper defaults
+        client_kwargs = {}
+        if service_url is not None:
+            client_kwargs['base_url'] = service_url
+        if token is not None:
+            client_kwargs['auth_token'] = token
+        client = ServiceHTTPClient(**client_kwargs)
         
         # Prepare user creation request
         user_data = {
@@ -212,7 +288,7 @@ def add_user(
             "is_verified": verified
         }
         
-        with status_renderer.status("Creating user..."):
+        with console.status("Creating user..."):
             response = client.post("/admin/users", json=user_data)
             
         if response.status_code == 201:
@@ -242,7 +318,7 @@ def add_user(
             ))
             raise typer.Exit(1)
             
-    except ServiceClientError as e:
+    except AdminClientError as e:
         console.print(Panel(
             f"❌ Service error: {e}",
             title="Connection Error",
@@ -299,9 +375,15 @@ def list_users(
     Tip: For large systems (100+ users), use pagination to avoid overwhelming output.
     """
     try:
-        client = ServiceHTTPClient(service_url=service_url, token=token)
+        # Create service client with proper defaults
+        client_kwargs = {}
+        if service_url is not None:
+            client_kwargs['base_url'] = service_url
+        if token is not None:
+            client_kwargs['auth_token'] = token
+        client = ServiceHTTPClient(**client_kwargs)
         
-        with status_renderer.status("Fetching users..."):
+        with console.status("Fetching users..."):
             response = client.get(f"/admin/users?skip={skip}&limit={limit}")
             
         if response.status_code == 200:
@@ -339,7 +421,7 @@ def list_users(
             ))
             raise typer.Exit(1)
             
-    except ServiceClientError as e:
+    except AdminClientError as e:
         console.print(Panel(
             f"❌ Service error: {e}",
             title="Connection Error",
@@ -397,9 +479,15 @@ def system_status(
     • Pre-maintenance system verification
     """
     try:
-        client = ServiceHTTPClient(service_url=service_url, token=token)
+        # Create service client with proper defaults
+        client_kwargs = {}
+        if service_url is not None:
+            client_kwargs['base_url'] = service_url
+        if token is not None:
+            client_kwargs['auth_token'] = token
+        client = ServiceHTTPClient(**client_kwargs)
         
-        with status_renderer.status("Fetching system status..."):
+        with console.status("Fetching system status..."):
             # Get system status
             status_response = client.get("/admin/system/status")
             health_response = client.get("/admin/system/health") if detailed else None
@@ -474,7 +562,7 @@ def system_status(
             ))
             raise typer.Exit(1)
             
-    except ServiceClientError as e:
+    except AdminClientError as e:
         console.print(Panel(
             f"❌ Service error: {e}",
             title="Connection Error",
@@ -544,7 +632,13 @@ def set_quota(
         raise typer.Exit(1)
     
     try:
-        client = ServiceHTTPClient(service_url=service_url, token=token)
+        # Create service client with proper defaults
+        client_kwargs = {}
+        if service_url is not None:
+            client_kwargs['base_url'] = service_url
+        if token is not None:
+            client_kwargs['auth_token'] = token
+        client = ServiceHTTPClient(**client_kwargs)
         
         # First, get user ID by email (this would need user lookup endpoint)
         # For now, use email as user_id (this is simplified)
@@ -556,7 +650,7 @@ def set_quota(
             "new_value": value
         }
         
-        with status_renderer.status(f"Setting {quota_type} quota to {value} for {user_email}..."):
+        with console.status(f"Setting {quota_type} quota to {value} for {user_email}..."):
             response = client.post("/admin/quota/adjust", json=quota_data)
             
         if response.status_code == 200:
@@ -578,7 +672,7 @@ def set_quota(
             ))
             raise typer.Exit(1)
             
-    except ServiceClientError as e:
+    except AdminClientError as e:
         console.print(Panel(
             f"❌ Service error: {e}",
             title="Connection Error",
@@ -647,9 +741,15 @@ def cancel_job(
             return
     
     try:
-        client = ServiceHTTPClient(service_url=service_url, token=token)
+        # Create service client with proper defaults
+        client_kwargs = {}
+        if service_url is not None:
+            client_kwargs['base_url'] = service_url
+        if token is not None:
+            client_kwargs['auth_token'] = token
+        client = ServiceHTTPClient(**client_kwargs)
         
-        with status_renderer.status(f"Cancelling job {job_id}..."):
+        with console.status(f"Cancelling job {job_id}..."):
             # Use task cancellation endpoint
             response = client.post(f"/tasks/{job_id}/cancel")
             
@@ -677,7 +777,7 @@ def cancel_job(
             ))
             raise typer.Exit(1)
             
-    except ServiceClientError as e:
+    except AdminClientError as e:
         console.print(Panel(
             f"❌ Service error: {e}",
             title="Connection Error",

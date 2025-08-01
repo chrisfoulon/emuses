@@ -1,0 +1,189 @@
+EMUSES Multi-User Service Testing - Fri Aug  1 22:54:51 CEST 2025
+Platform: Linux DESKTOP-PA3LLB4 5.15.167.4-microsoft-standard-WSL2 #1 SMP Tue Nov 5 00:21:55 UTC 2024 x86_64 x86_64 x86_64 GNU/Linux
+Python: Python 3.11.13
+Working Directory: /mnt/c/Users/Tolhsadum/PycharmProjects/emuses
+
+=== PHASE 1: Basic CLI Testing ===
+Test 1.3: python -m emuses --help
+Purpose: Test if EMUSES CLI module loads and shows main help
+/home/tolhsadum/miniforge3/envs/emuses/bin/python: No module named emuses.__main__; 'emuses' is a package and cannot be directly executed
+Result: FAILED - CLI failed to load
+Checking project structure:
+./emuses/cli/__main__.py
+CLI entry points:
+./emuses/api/main.py
+./emuses/cli/main.py
+./emuses/scripts/main.py
+Test 1.3b: python -m emuses.cli --help
+                                                                                
+ Usage: python -m emuses.cli [OPTIONS] COMMAND [ARGS]...                        
+                                                                                
+ EMUSES pipeline                                                                
+                                                                                
+                                                                                
+╭─ Options ────────────────────────────────────────────────────────────────────╮
+│ --install-completion            Install completion for the current shell.    │
+│ --show-completion               Show completion for the current shell, to    │
+│                                 copy it or customize the installation.       │
+│ --help                -h        Show this message and exit.                  │
+╰──────────────────────────────────────────────────────────────────────────────╯
+╭─ Commands ───────────────────────────────────────────────────────────────────╮
+│ rerun                Rerun a previously executed command from its output     │
+│                      folder.                                                 │
+│ full                 Run the full pipeline                                   │
+│ umap                 Train the UMAP and get the embeddings                   │
+│ clustering           Perform clustering on embeddings                        │
+│ heatmap              Create a heatmap                                        │
+│ prediction           Train a prediction model                                │
+│ install-completion   Install shell completion                                │
+│ admin                Administrative commands for EMUSES multi-user service.  │
+╰──────────────────────────────────────────────────────────────────────────────╯
+
+Result: SUCCESS - CLI loaded via emuses.cli
+Test 1.4: python -m emuses.cli admin --help
+                                                                                
+ Usage: python -m emuses.cli admin [OPTIONS] COMMAND [ARGS]...                  
+                                                                                
+ Administrative commands for EMUSES multi-user service.                         
+                                                                                
+ These commands allow system administrators to manage users, quotas, and        
+ monitor                                                                        
+ system health in multi-user EMUSES deployments. All commands require admin     
+ authentication tokens in multi-user mode.                                      
+                                                                                
+ Common usage patterns:                                                         
+ • User management: add-user, list-users                                        
+ • System monitoring: system-status                                             
+ • Resource management: set-quota                                               
+ • Job control: cancel-job                                                      
+                                                                                
+ Use 'emuses admin COMMAND --help' for detailed command help.                   
+                                                                                
+╭─ Options ────────────────────────────────────────────────────────────────────╮
+│ --help  -h        Show this message and exit.                                │
+╰──────────────────────────────────────────────────────────────────────────────╯
+╭─ Commands ───────────────────────────────────────────────────────────────────╮
+│ help            Display comprehensive help for admin commands and common     │
+│                 workflows.                                                   │
+│ add-user        Create a new user in the system.                             │
+│ list-users      List all users in the system.                                │
+│ system-status   Display system status and health information.                │
+│ set-quota       Set user quota value.                                        │
+│ cancel-job      Cancel a stuck or running job.                               │
+╰──────────────────────────────────────────────────────────────────────────────╯
+
+Result: SUCCESS - Admin commands available
+Test 1.5: python -m emuses.cli admin help
+
+╭────────────────────────────────────────────╮
+│ EMUSES Admin Commands - Comprehensive Help │
+╰────────────────────────────────────────────╯
+
+                               Available Commands                               
+┏━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ Command         ┃ Purpose                      ┃ Example                     ┃
+┡━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
+│ add-user        │ Create new system user       │ emuses admin add-user       │
+│                 │                              │ user@lab.edu -p pass123     │
+│ list-users      │ Display all system users     │ emuses admin list-users     │
+│                 │                              │ --limit 20                  │
+│ set-quota       │ Adjust user resource quotas  │ emuses admin set-quota      │
+│                 │                              │ user@lab.edu storage_gb 100 │
+│ system-status   │ Monitor system health        │ emuses admin system-status  │
+│                 │                              │ --detailed                  │
+│ cancel-job      │ Cancel stuck or running jobs │ emuses admin cancel-job     │
+│                 │                              │ 12345678-abcd-...           │
+└─────────────────┴──────────────────────────────┴─────────────────────────────┘
+
+╭─────────────────────────────── Authentication ───────────────────────────────╮
+│ 🔐 Authentication Requirements                                               │
+│                                                                              │
+│ • Multi-user mode: All commands require --token or stored admin token        │
+│ • Local mode: Commands work without authentication                           │
+│ • Production mode: Admin token mandatory for security                        │
+│                                                                              │
+│ Set admin token: export EMUSES_ADMIN_TOKEN=your_token_here                   │
+│ Or use: --token your_token_here with each command                            │
+╰──────────────────────────────────────────────────────────────────────────────╯
+
+╭────────────────────────────── Common Workflows ──────────────────────────────╮
+│ 📋 Common Admin Workflows                                                    │
+│                                                                              │
+│ 1. New User Setup:                                                           │
+│    emuses admin add-user researcher@university.edu -p temp_password          │
+│    emuses admin set-quota researcher@university.edu storage_gb 50            │
+│    emuses admin set-quota researcher@university.edu concurrent_jobs 3        │
+│                                                                              │
+│ 2. System Monitoring:                                                        │
+│    emuses admin system-status --detailed                                     │
+│    emuses admin list-users --limit 50                                        │
+│                                                                              │
+│ 3. Emergency Job Management:                                                 │
+│    emuses admin system-status  # Check for stuck jobs                        │
+│    emuses admin cancel-job <job-id> --force                                  │
+│                                                                              │
+│ 4. Quota Management:                                                         │
+│    emuses admin set-quota user@example.com storage_gb 100                    │
+│    emuses admin set-quota user@example.com compute_hours 500                 │
+╰──────────────────────────────────────────────────────────────────────────────╯
+
+╭────────────────────────────── Troubleshooting ───────────────────────────────╮
+│ 🔧 Troubleshooting                                                           │
+│                                                                              │
+│ Connection Issues:                                                           │
+│ • Check service URL: --service-url http://localhost:8000                     │
+│ • Verify admin token is valid and not expired                                │
+│ • Ensure EMUSES service is running                                           │
+│                                                                              │
+│ Permission Errors:                                                           │
+│ • Confirm you have superuser/admin privileges                                │
+│ • Check token has admin scope                                                │
+│ • Verify deployment mode allows admin operations                             │
+│                                                                              │
+│ Command Failures:                                                            │
+│ • Use --help flag for detailed command syntax                                │
+│ • Check user email format and existence                                      │
+│ • Verify quota types: storage_gb, concurrent_jobs, compute_hours             │
+╰──────────────────────────────────────────────────────────────────────────────╯
+
+Result: SUCCESS - Comprehensive help displayed
+=== PHASE 2: Local Mode Testing ===
+Test 2.1: python -m emuses.cli admin system-status
+╭─────────────────────────────────── Error ────────────────────────────────────╮
+│ ❌ Unexpected error: ServiceHTTPClient.__init__() got an unexpected keyword  │
+│ argument 'service_url'                                                       │
+╰──────────────────────────────────────────────────────────────────────────────╯
+=== FIXES APPLIED ===
+1. Fixed ServiceHTTPClient parameters: service_url->base_url, token->auth_token
+2. Fixed CLI command: python -m emuses -> python -m emuses.cli
+3. Updated documentation in admin-guide.md and research-workflows.md
+4. Updated context files
+
+=== RETESTING AFTER FIXES ===
+Test 2.1 (retry): python -m emuses.cli admin system-status
+╭─────────────────────────────────── Error ────────────────────────────────────╮
+│ ❌ Unexpected error: Invalid base URL: None                                  │
+╰──────────────────────────────────────────────────────────────────────────────╯
+Result: Still has issues (expected - no API service running)
+Test 2.1 (retry #2): python -m emuses.cli admin system-status
+╭─────────────────────────────────── Error ────────────────────────────────────╮
+│ ❌ Unexpected error: 'StatusRenderer' object has no attribute 'status'       │
+╰──────────────────────────────────────────────────────────────────────────────╯
+Result: Different issue (connection error expected)
+=== NEW ISSUE FOUND ===
+Issue #3: StatusRenderer.status() method doesn't exist
+admin_commands.py tries to use: with status_renderer.status('...'):
+But StatusRenderer only has render_status() method, not status() context manager
+=== TESTING RICH CONSOLE.STATUS FIX ===
+Test 2.1 (retry #3): python -m emuses.cli admin system-status
+╭─────────────────────────────────── Error ────────────────────────────────────╮
+│ ❌ Unexpected error: 'coroutine' object has no attribute 'status_code'       │
+╰──────────────────────────────────────────────────────────────────────────────╯
+sys:1: RuntimeWarning: coroutine 'ServiceHTTPClient.get' was never awaited
+RuntimeWarning: Enable tracemalloc to get the object allocation traceback
+Result: Different issue (connection error expected)
+=== NEW ISSUE FOUND ===
+Issue #4: ServiceHTTPClient methods are async but called synchronously
+Error: 'coroutine' object has no attribute 'status_code'
+Warning: coroutine 'ServiceHTTPClient.get' was never awaited
+Root cause: admin_commands.py calls async methods without await
