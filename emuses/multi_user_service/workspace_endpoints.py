@@ -965,17 +965,17 @@ def create_training_job_router() -> APIRouter:
 
 
 def setup_workspace_endpoints(app: FastAPI) -> None:
-    """Set up workspace, dataset, training job, and quota endpoints on FastAPI application.
+    """Set up workspace, dataset, training job, quota, and task endpoints on FastAPI application.
 
-    Adds workspace, dataset, training job management, and quota management 
-    routers to the FastAPI app.
+    Adds workspace, dataset, training job management, quota management, and
+    background task management routers to the FastAPI app.
 
     Parameters
     ----------
     app : FastAPI
         The FastAPI application instance to configure
     """
-    logger.info("Setting up workspace, dataset, training job, and quota endpoints")
+    logger.info("Setting up workspace, dataset, training job, quota, and task endpoints")
 
     workspace_router = create_workspace_router()
     dataset_router = create_dataset_router()
@@ -984,10 +984,15 @@ def setup_workspace_endpoints(app: FastAPI) -> None:
     # Import and create quota endpoints
     from emuses.multi_user_service.quota_endpoints import create_quota_router
     quota_router = create_quota_router()
+    
+    # Import and create task endpoints
+    from emuses.multi_user_service.task_endpoints import create_task_router
+    task_router = create_task_router()
 
     app.include_router(workspace_router)
     app.include_router(dataset_router)
     app.include_router(job_router)
     app.include_router(quota_router)
+    app.include_router(task_router)
 
-    logger.info("Workspace, dataset, training job, and quota endpoints configured")
+    logger.info("Workspace, dataset, training job, quota, and task endpoints configured")
