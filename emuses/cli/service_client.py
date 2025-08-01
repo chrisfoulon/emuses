@@ -196,7 +196,9 @@ class ServiceHTTPClient:
         retry_backoff_factor: float = 2.0,
         max_retry_delay: float = 60.0,
         enable_request_timeout_scaling: bool = False,
-        enable_advanced_error_categorization: bool = False
+        enable_advanced_error_categorization: bool = False,
+        auth_token: Optional[str] = None,
+        auto_token_management: bool = True
     ):
         """
         Initialize the HTTP client.
@@ -299,6 +301,19 @@ class ServiceHTTPClient:
         self.offline_reason: Optional[str] = None
         self._last_health_check: Optional[float] = None
 
+        # Authentication configuration
+        self.auth_token = auth_token
+        self.auto_token_management = auto_token_management
+        self._token_manager = None
+        
+        if self.auto_token_management:
+            try:
+                from emuses.multi_user_service.token_manager import TokenManager
+                self._token_manager = TokenManager()
+            except ImportError:
+                logger.warning("Token manager not available, automatic token management disabled")
+                self.auto_token_management = False
+
         self._session: Optional[httpx.AsyncClient] = None
 
     async def __aenter__(self):
@@ -327,6 +342,45 @@ class ServiceHTTPClient:
     def _build_url(self, endpoint: str) -> str:
         """Build full URL from endpoint."""
         return urljoin(self.base_url + '/', endpoint.lstrip('/'))
+    
+    def _get_auth_headers(self) -> Dict[str, str]:
+        """Get authentication headers for requests.
+        
+        Returns
+        -------
+        Dict[str, str]
+            Authentication headers dictionary
+        """
+        headers = {}
+        
+        # Use provided token first
+        if self.auth_token:
+            headers["Authorization"] = f"Bearer {self.auth_token}"
+            return headers
+        
+        # Fall back to stored token if auto-management is enabled
+        if self.auto_token_management and self._token_manager:
+            auth_header = self._token_manager.get_auth_header()
+            if auth_header:
+                headers["Authorization"] = auth_header
+        
+        return headers
+    
+    def set_auth_token(self, token: str) -> None:
+        """Set authentication token for requests.
+        
+        Parameters
+        ----------
+        token : str
+            JWT authentication token
+        """
+        self.auth_token = token
+    
+    def clear_auth_token(self) -> None:
+        """Clear authentication token."""
+        self.auth_token = None
+        if self._token_manager:
+            self._token_manager.clear_token()
 
     async def _request(
         self,
@@ -368,6 +422,12 @@ class ServiceHTTPClient:
         await self._ensure_session()
         url = self._build_url(endpoint)
         base_timeout = kwargs.get('timeout', self.timeout)
+        
+        # Add authentication headers
+        auth_headers = self._get_auth_headers()
+        if auth_headers:
+            existing_headers = kwargs.get('headers', {})
+            kwargs['headers'] = {**existing_headers, **auth_headers}
 
         for attempt in range(self.max_retries + 1):
             try:

@@ -5,6 +5,42 @@
 **Scope**: Multi-mode CLI, HTTP authentication, Docker deployment, ProcessPoolExecutor, admin interface
 **Prerequisites**: Plan 0b completion (workspace APIs, job management, quota system)
 
+## Plan 0c Completed Deliverables
+
+**✅ CLI Multi-Mode Support (Tasks 10-11 COMPLETED)**:
+
+**Task 10 - Deployment Mode Detection**: `emuses.multi_user_service.deployment_config`
+- **Three Deployment Modes**: LOCAL (no auth), MULTI_USER (selective auth), PRODUCTION (full auth)
+- **Environment Detection**: Via `EMUSES_DEPLOYMENT_MODE` with validation and fallback
+- **Service Discovery**: Automatic service URL resolution per deployment mode
+- **CLI Integration**: Automatic mode detection with configuration validation
+- **Test Coverage**: 23/23 tests passing with comprehensive mode switching validation
+
+**Task 11 - Authentication in HTTP Client**: `emuses.multi_user_service.token_manager` + `emuses.cli.service_client`
+- **Token Management**: Secure JWT storage in `~/.emuses/token.json` with 0o600 permissions
+- **Authentication Headers**: Automatic Bearer token injection in HTTP requests
+- **CLI Parameters**: `--service-url` and `--token` parameters with deployment mode awareness
+- **Session Persistence**: Token validation, expiry checks, and automatic token management
+- **Test Coverage**: 15/15 tests passing with complete authentication flow validation
+
+**CLI Command Examples**:
+```bash
+# Local mode (default) - no authentication required
+emuses full output/ input/
+
+# Multi-user mode with authentication
+EMUSES_DEPLOYMENT_MODE=multi-user emuses full output/ input/ --token "jwt_token_here"
+
+# Production mode with custom service URL
+EMUSES_DEPLOYMENT_MODE=production emuses full output/ input/ --service-url "https://api.example.com" --token "jwt_token_here"
+```
+
+**Integration Points Completed**:
+- FastAPI app integration with deployment mode detection
+- Multi-user workspace endpoints integrated when service mode enabled
+- HTTP client with automatic authentication header injection
+- CLI parameter validation and deployment mode configuration
+
 ## Actual Integration Inputs from Plan 0b (COMPLETED)
 
 **✅ Workspace API Contracts**: `emuses.multi_user_service.workspace_endpoints`

@@ -495,6 +495,8 @@ def full(
     hdbscan_jobs: Annotated[Optional[int], typer.Option("--hdbscan_jobs", help="Number of parallel jobs for inner (HDBSCAN) optimization")] = None,
     interactive: Annotated[bool, typer.Option("--interactive", help="Run in interactive mode")] = False,
     use_service: Annotated[bool, typer.Option("--service", help="Use remote service for execution")] = False,
+    service_url: Annotated[Optional[str], typer.Option("--service-url", help="URL of the remote service (auto-detected in multi-user mode)")] = None,
+    token: Annotated[Optional[str], typer.Option("--token", help="Authentication token for multi-user mode")] = None,
 ) -> None:
     """
     Run the full pipeline.
@@ -668,6 +670,8 @@ def full(
             hdbscan_jobs=hdbscan_jobs,
             interactive=interactive,
             use_service=use_service,
+            service_url=service_url,
+            token=token,
         ))
     except KeyboardInterrupt:
         typer.echo("\n🛑 Operation cancelled by user", err=True)
@@ -681,8 +685,15 @@ async def _full_async(**kwargs) -> None:
     """
     Async implementation of the full pipeline command.
 
-    Executes locally by default, or via FastAPI service if --service flag is used.
+    Executes based on deployment mode detection and handles authentication if required.
     """
+    # Import deployment configuration
+    from emuses.multi_user_service.deployment_config import (
+        get_deployment_config, 
+        validate_deployment_config,
+        get_service_discovery_url
+    )
+    
     # Configure parallelism context for CLI environment
     from emuses.tools.parallelism_utils import configure_parallelism_backend
     
@@ -693,9 +704,23 @@ async def _full_async(**kwargs) -> None:
     status_renderer = StatusRenderer()
     progress_tracker = ProgressTracker()
 
+    # Get deployment configuration
+    deployment_config = get_deployment_config()
+    config_validation = validate_deployment_config(deployment_config)
+    
+    if not config_validation["valid"]:
+        print(status_renderer.render_status("error", "Deployment configuration validation failed:"))
+        for error in config_validation["errors"]:
+            print(status_renderer.render_status("error", f"  - {error}"))
+        raise typer.Exit(code=1)
+
+    print(status_renderer.render_status("info", f"Running in {deployment_config.mode.value} mode"))
+
     # Handle interactive mode
     interactive = kwargs.pop('interactive', False)
     use_service = kwargs.pop('use_service', False)
+    service_url = kwargs.pop('service_url', None)
+    token = kwargs.pop('token', None)
 
     if interactive:
         print(status_renderer.render_status("info", "Starting Interactive Mode..."))
@@ -712,15 +737,24 @@ async def _full_async(**kwargs) -> None:
     # Convert arguments to service API format
     pipeline_config = _convert_typer_args_to_service_config(**kwargs)
 
-    # Unified service execution - no more dual architecture
+    # Determine service URL based on deployment mode and parameters
+    if service_url is None:
+        service_url = get_service_discovery_url() or "http://localhost:8000"
+    
+    # Handle authentication for multi-user modes
+    if deployment_config.requires_auth and token:
+        print(status_renderer.render_status("info", "Using provided authentication token"))
+        # Token will be handled by the service client
+
+    # Execution logic based on deployment mode
     try:
-        if use_service:
-            # Connect to remote service
-            service_timeout = kwargs.get('service_timeout', 0.0)
-            await _execute_via_remote_service("full", pipeline_config, status_renderer, progress_tracker, service_timeout=service_timeout)
-        else:
-            # Auto-start local service
+        if deployment_config.mode.value == "local":
+            # Local mode - auto-start local service
             await _execute_via_unified_service(pipeline_config, status_renderer, progress_tracker)
+        else:
+            # Multi-user or production mode - use remote service
+            service_timeout = kwargs.get('service_timeout', 0.0)
+            await _execute_via_remote_service("full", pipeline_config, status_renderer, progress_tracker, service_url=service_url, service_timeout=service_timeout, auth_token=token)
 
         print(status_renderer.render_status("success", "Pipeline completed successfully!"))
     except Exception as e:
@@ -765,7 +799,7 @@ def _convert_typer_args_to_service_config(**kwargs) -> dict:
     return config
 
 
-async def _execute_via_remote_service(pipeline_type: str, config: dict, status_renderer, progress_tracker, service_url: str = "http://localhost:8000", service_timeout: float = 0.0) -> None:
+async def _execute_via_remote_service(pipeline_type: str, config: dict, status_renderer, progress_tracker, service_url: str = "http://localhost:8000", service_timeout: float = 0.0, auth_token: Optional[str] = None) -> None:
     """
     Execute pipeline via remote FastAPI service.
 
@@ -784,7 +818,7 @@ async def _execute_via_remote_service(pipeline_type: str, config: dict, status_r
     """
     # Convert 0.0 to None for unlimited timeout
     timeout = None if service_timeout <= 0 else service_timeout
-    service_client = ServiceHTTPClient(base_url=service_url, timeout=timeout)
+    service_client = ServiceHTTPClient(base_url=service_url, timeout=timeout, auth_token=auth_token)
     shutdown_handler = None
 
     try:

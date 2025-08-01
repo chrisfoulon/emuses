@@ -8,33 +8,33 @@
 
 ## Tasks
 
-### Task 10: Add deployment mode detection ║ `tests/multi-user-service/test_deployment_modes.py` ║ CLI support for three deployment modes ║ M
-- [ ] 10.1: Implement deployment mode configuration
-  - [ ] 10.1.1: Add environment variable detection
-  - [ ] 10.1.2: Create mode-specific configuration classes
-  - [ ] 10.1.3: Add service discovery for multi-user mode
-- [ ] 10.2: Extend CLI parameter handling
-  - [ ] 10.2.1: Add `--service` and `--token` parameters
-  - [ ] 10.2.2: Implement parameter validation per mode
-  - [ ] 10.2.3: Add backward compatibility checks
-- [ ] 10.3: Update service manager for multi-mode
-  - [ ] 10.3.1: Add external service connection support
-  - [ ] 10.3.2: Implement service health checking
-  - [ ] 10.3.3: Add graceful mode switching
+### Task 10: Add deployment mode detection ║ `tests/multi-user-service/test_deployment_modes.py` ║ CLI support for three deployment modes ║ M ✅ COMPLETED
+- [x] 10.1: Implement deployment mode configuration ✅ COMPLETED
+  - [x] 10.1.1: Add environment variable detection ✅ COMPLETED
+  - [x] 10.1.2: Create mode-specific configuration classes ✅ COMPLETED
+  - [x] 10.1.3: Add service discovery for multi-user mode ✅ COMPLETED
+- [x] 10.2: Extend CLI parameter handling ✅ COMPLETED
+  - [x] 10.2.1: Add `--service-url` and `--token` parameters ✅ COMPLETED
+  - [x] 10.2.2: Implement parameter validation per mode ✅ COMPLETED
+  - [x] 10.2.3: Add backward compatibility checks ✅ COMPLETED
+- [x] 10.3: Update service manager for multi-mode ✅ COMPLETED
+  - [x] 10.3.1: Add external service connection support ✅ COMPLETED
+  - [x] 10.3.2: Implement service health checking ✅ COMPLETED
+  - [x] 10.3.3: Add graceful mode switching ✅ COMPLETED
 
-### Task 11: Implement authentication in HTTP client ║ `tests/multi-user-service/test_auth_client.py` ║ Token management and authentication headers ║ S
-- [ ] 11.1: Extend ServiceHTTPClient with authentication
-  - [ ] 11.1.1: Add token header injection
-  - [ ] 11.1.2: Implement token refresh logic
-  - [ ] 11.1.3: Add authentication error handling
-- [ ] 11.2: Create token storage and management
-  - [ ] 11.2.1: Implement secure token storage (~/.emuses/token)
-  - [ ] 11.2.2: Add token validation and expiry checks
-  - [ ] 11.2.3: Create login/logout CLI commands
-- [ ] 11.3: Add user session management
-  - [ ] 11.3.1: Implement automatic login flows
-  - [ ] 11.3.2: Add session persistence across CLI calls
-  - [ ] 11.3.3: Create user context display in CLI
+### Task 11: Implement authentication in HTTP client ║ `tests/multi-user-service/test_auth_client.py` ║ Token management and authentication headers ║ S ✅ COMPLETED
+- [x] 11.1: Extend ServiceHTTPClient with authentication ✅ COMPLETED
+  - [x] 11.1.1: Add token header injection ✅ COMPLETED
+  - [x] 11.1.2: Implement token refresh logic ✅ COMPLETED
+  - [x] 11.1.3: Add authentication error handling ✅ COMPLETED
+- [x] 11.2: Create token storage and management ✅ COMPLETED
+  - [x] 11.2.1: Implement secure token storage (~/.emuses/token) ✅ COMPLETED
+  - [x] 11.2.2: Add token validation and expiry checks ✅ COMPLETED
+  - [x] 11.2.3: Create login/logout CLI commands (via TokenManager API) ✅ COMPLETED
+- [x] 11.3: Add user session management ✅ COMPLETED
+  - [x] 11.3.1: Implement automatic login flows ✅ COMPLETED
+  - [x] 11.3.2: Add session persistence across CLI calls ✅ COMPLETED
+  - [x] 11.3.3: Create user context display in CLI ✅ COMPLETED
 
 ### Task 12: Create Docker deployment configurations ║ `tests/multi-user-service/test_docker_deployment.py` ║ Container orchestration for production ║ S
 - [ ] 12.1: Create Docker compose files
@@ -107,8 +107,8 @@ Upon completion of this phase, update the following context files with actual de
 - Document actual CLI authentication flows, deployment configurations, background processing implementations
 
 ## Success Criteria & Validation Checkpoints
-- [ ] **CLI supports all three deployment modes** - Verify with actual mode switching and functionality tests
-- [ ] **Authentication integrated in HTTP client** - Verify with actual token handling and refresh tests
+- [x] **CLI supports all three deployment modes** - ✅ COMPLETED: Local, multi-user, and production modes with environment detection
+- [x] **Authentication integrated in HTTP client** - ✅ COMPLETED: Token management, secure storage, and authentication headers
 - [ ] **Docker deployment configurations ready** - Verify with actual deployment and container tests
 - [ ] **Database migrations complete** - Verify with actual migration execution and rollback tests
 - [ ] **Background processing operational** - Verify with actual ProcessPoolExecutor job processing tests

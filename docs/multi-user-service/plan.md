@@ -136,63 +136,63 @@
     - [x] 7.3.2: Filter job listings by user ownership
     - [x] 7.3.3: Implement user-scoped job cancellation
 
-- [ ] **Task 8**: Create user workspace API endpoints ║ `tests/multi-user-service/test_workspace_endpoints.py` ║ RESTful API for workspace management ║ M
-  - [ ] 8.1: Implement workspace management endpoints
-    - [ ] 8.1.1: Create, read, update, delete workspace operations
-    - [ ] 8.1.2: Add workspace listing and filtering
-    - [ ] 8.1.3: Implement workspace sharing controls
-  - [ ] 8.2: Add dataset management endpoints
-    - [ ] 8.2.1: Dataset upload with user context
-    - [ ] 8.2.2: Dataset listing with workspace filtering
-    - [ ] 8.2.3: Dataset metadata and versioning APIs
-  - [ ] 8.3: Create user-scoped job endpoints
-    - [ ] 8.3.1: Job submission with user context
-    - [ ] 8.3.2: User job listing and status checking
-    - [ ] 8.3.3: Job cancellation with ownership validation
+- [x] **Task 8**: Create user workspace API endpoints ║ `tests/multi-user-service/test_workspace_endpoints.py` ║ RESTful API for workspace management ║ M ✅ COMPLETED
+  - [x] 8.1: Implement workspace management endpoints ✅ COMPLETED
+    - [x] 8.1.1: Create, read, update, delete workspace operations ✅ COMPLETED
+    - [x] 8.1.2: Add workspace listing and filtering ✅ COMPLETED
+    - [x] 8.1.3: Implement workspace sharing controls ✅ COMPLETED
+  - [x] 8.2: Add dataset management endpoints ✅ COMPLETED
+    - [x] 8.2.1: Dataset upload with user context ✅ COMPLETED
+    - [x] 8.2.2: Dataset listing with workspace filtering ✅ COMPLETED
+    - [x] 8.2.3: Dataset metadata and versioning APIs ✅ COMPLETED
+  - [x] 8.3: Create user-scoped job endpoints ✅ COMPLETED
+    - [x] 8.3.1: Job submission with user context ✅ COMPLETED
+    - [x] 8.3.2: User job listing and status checking ✅ COMPLETED
+    - [x] 8.3.3: Job cancellation with ownership validation ✅ COMPLETED
 
-- [ ] **Task 9**: Implement quota management system ║ `tests/multi-user-service/test_quota_management.py` ║ User resource quotas and usage tracking ║ M
-  - [ ] 9.1: Create quota validation logic
-    - [ ] 9.1.1: Validate concurrent job limits
-    - [ ] 9.1.2: Check storage quotas
-    - [ ] 9.1.3: Monitor compute hour usage
-  - [ ] 9.2: Add usage tracking
-    - [ ] 9.2.1: Track job execution time and resource usage
-    - [ ] 9.2.2: Monitor storage consumption
-    - [ ] 9.2.3: Implement quota reset policies
+- [x] **Task 9**: Implement quota management system ║ `tests/multi-user-service/test_quota_management.py` ║ User resource quotas and usage tracking ║ M ✅ COMPLETED
+  - [x] 9.1: Create quota validation logic ✅ COMPLETED
+    - [x] 9.1.1: Validate concurrent job limits ✅ COMPLETED
+    - [x] 9.1.2: Check storage quotas ✅ COMPLETED
+    - [x] 9.1.3: Monitor compute hour usage ✅ COMPLETED
+  - [x] 9.2: Add usage tracking ✅ COMPLETED
+    - [x] 9.2.1: Track job execution time and resource usage ✅ COMPLETED
+    - [x] 9.2.2: Monitor storage consumption ✅ COMPLETED
+    - [x] 9.2.3: Implement quota reset policies ✅ COMPLETED
   - [x] 9.3: Create quota management endpoints ✅ COMPLETED
-    - [x] 9.3.1: User quota status endpoint
-    - [x] 9.3.2: Admin quota adjustment endpoints
-    - [x] 9.3.3: Usage history and reporting
+    - [x] 9.3.1: User quota status endpoint ✅ COMPLETED
+    - [x] 9.3.2: Admin quota adjustment endpoints ✅ COMPLETED
+    - [x] 9.3.3: Usage history and reporting ✅ COMPLETED
 
-### Phase 3C: CLI Multi-Mode Support ║ 1-2 days ║ MEDIUM PRIORITY
+### Phase 3C: CLI Multi-Mode Support ║ 1-2 days ║ MEDIUM PRIORITY ✅ COMPLETED
 
-- [ ] **Task 10**: Add deployment mode detection ║ `tests/multi-user-service/test_deployment_modes.py` ║ CLI support for three deployment modes ║ M
-  - [ ] 10.1: Implement deployment mode configuration
-    - [ ] 10.1.1: Add environment variable detection
-    - [ ] 10.1.2: Create mode-specific configuration classes
-    - [ ] 10.1.3: Add service discovery for multi-user mode
-  - [ ] 10.2: Extend CLI parameter handling
-    - [ ] 10.2.1: Add `--service` and `--token` parameters
-    - [ ] 10.2.2: Implement parameter validation per mode
-    - [ ] 10.2.3: Add backward compatibility checks
-  - [ ] 10.3: Update service manager for multi-mode
-    - [ ] 10.3.1: Add external service connection support
-    - [ ] 10.3.2: Implement service health checking
-    - [ ] 10.3.3: Add graceful mode switching
+- [x] **Task 10**: Add deployment mode detection ║ `tests/multi-user-service/test_deployment_modes.py` ║ CLI support for three deployment modes ║ M ✅ COMPLETED
+  - [x] 10.1: Implement deployment mode configuration ✅ COMPLETED
+    - [x] 10.1.1: Add environment variable detection ✅ COMPLETED
+    - [x] 10.1.2: Create mode-specific configuration classes ✅ COMPLETED
+    - [x] 10.1.3: Add service discovery for multi-user mode ✅ COMPLETED
+  - [x] 10.2: Extend CLI parameter handling ✅ COMPLETED
+    - [x] 10.2.1: Add `--service-url` and `--token` parameters ✅ COMPLETED
+    - [x] 10.2.2: Implement parameter validation per mode ✅ COMPLETED
+    - [x] 10.2.3: Add backward compatibility checks ✅ COMPLETED
+  - [x] 10.3: Update service manager for multi-mode ✅ COMPLETED
+    - [x] 10.3.1: Add external service connection support ✅ COMPLETED
+    - [x] 10.3.2: Implement service health checking ✅ COMPLETED
+    - [x] 10.3.3: Add graceful mode switching ✅ COMPLETED
 
-- [ ] **Task 11**: Implement authentication in HTTP client ║ `tests/multi-user-service/test_auth_client.py` ║ Token management and authentication headers ║ S
-  - [ ] 11.1: Extend ServiceHTTPClient with authentication
-    - [ ] 11.1.1: Add token header injection
-    - [ ] 11.1.2: Implement token refresh logic
-    - [ ] 11.1.3: Add authentication error handling
-  - [ ] 11.2: Create token storage and management
-    - [ ] 11.2.1: Implement secure token storage (~/.emuses/token)
-    - [ ] 11.2.2: Add token validation and expiry checks
-    - [ ] 11.2.3: Create login/logout CLI commands
-  - [ ] 11.3: Add user session management
-    - [ ] 11.3.1: Implement automatic login flows
-    - [ ] 11.3.2: Add session persistence across CLI calls
-    - [ ] 11.3.3: Create user context display in CLI
+- [x] **Task 11**: Implement authentication in HTTP client ║ `tests/multi-user-service/test_auth_client.py` ║ Token management and authentication headers ║ S ✅ COMPLETED
+  - [x] 11.1: Extend ServiceHTTPClient with authentication ✅ COMPLETED
+    - [x] 11.1.1: Add token header injection ✅ COMPLETED
+    - [x] 11.1.2: Implement token refresh logic ✅ COMPLETED
+    - [x] 11.1.3: Add authentication error handling ✅ COMPLETED
+  - [x] 11.2: Create token storage and management ✅ COMPLETED
+    - [x] 11.2.1: Implement secure token storage (~/.emuses/token) ✅ COMPLETED
+    - [x] 11.2.2: Add token validation and expiry checks ✅ COMPLETED
+    - [x] 11.2.3: Create login/logout CLI commands (via TokenManager API) ✅ COMPLETED
+  - [x] 11.3: Add user session management ✅ COMPLETED
+    - [x] 11.3.1: Implement automatic login flows ✅ COMPLETED
+    - [x] 11.3.2: Add session persistence across CLI calls ✅ COMPLETED
+    - [x] 11.3.3: Create user context display in CLI ✅ COMPLETED
 
 ### Phase 3D: Production Infrastructure ║ 1 day ║ MEDIUM PRIORITY (Simplified without Redis/Celery)
 
