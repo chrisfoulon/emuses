@@ -1408,6 +1408,14 @@ def install_completion(
         raise typer.Exit(code=1)
 
 
+# Add admin subcommand
+try:
+    from .admin_commands import admin_app
+    app.add_typer(admin_app, name="admin")
+except ImportError:
+    # Admin commands not available (likely missing dependencies)
+    pass
+
 # Aliases for command functions (for testing)
 full_command = full
 umap_command = umap

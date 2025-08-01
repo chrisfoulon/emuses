@@ -1,0 +1,548 @@
+# EMUSES Admin Commands - Complete Usage Guide
+
+This guide provides comprehensive usage examples, troubleshooting steps, and best practices for EMUSES admin commands in multi-user deployments.
+
+## Table of Contents
+
+1. [Getting Started](#getting-started)
+2. [Authentication Setup](#authentication-setup)
+3. [Command Usage Examples](#command-usage-examples)
+4. [Common Workflows](#common-workflows)
+5. [Troubleshooting](#troubleshooting)
+6. [Best Practices](#best-practices)
+7. [Emergency Procedures](#emergency-procedures)
+
+## Getting Started
+
+The EMUSES admin commands provide a comprehensive CLI interface for managing users, quotas, and system health in multi-user EMUSES deployments.
+
+### Prerequisites
+
+- EMUSES service running in multi-user or production mode
+- Admin authentication token
+- Appropriate network access to the EMUSES service
+
+### Basic Command Structure
+
+```bash
+emuses admin <command> [arguments] [options]
+```
+
+### Available Commands
+
+| Command | Purpose | Requires Auth |
+|---------|---------|---------------|
+| `help` | Display comprehensive help | No |
+| `add-user` | Create new system user | Yes |
+| `list-users` | Display all users | Yes |
+| `set-quota` | Adjust user quotas | Yes |
+| `system-status` | Monitor system health | Yes |
+| `cancel-job` | Cancel stuck jobs | Yes |
+
+## Authentication Setup
+
+### Environment Variable (Recommended)
+
+```bash
+# Set admin token globally
+export EMUSES_ADMIN_TOKEN="your-admin-token-here"
+
+# Set service URL if not default
+export EMUSES_SERVICE_URL="https://emuses.your-institution.edu"
+```
+
+### Command-Line Options
+
+```bash
+# Specify token per command
+emuses admin list-users --token your-admin-token-here
+
+# Specify custom service URL
+emuses admin system-status --service-url http://localhost:8000 --token your-token
+```
+
+### Token Management
+
+```bash
+# Test token validity
+emuses admin system-status
+
+# If token is expired, you'll see:
+# ❌ Service error: 401 Unauthorized
+```
+
+## Command Usage Examples
+
+### User Management
+
+#### Creating Users
+
+```bash
+# Basic user creation
+emuses admin add-user researcher@university.edu --password SecurePass123
+
+# Custom organization
+emuses admin add-user postdoc@lab.edu -p MyPass456 -o "Neuroscience Lab"
+
+# Create inactive user (for later activation)
+emuses admin add-user intern@college.edu -p TempPass789 --inactive
+
+# Create unverified user (requires email verification)
+emuses admin add-user newuser@example.com -p Pass123 --unverified
+```
+
+#### Listing Users
+
+```bash
+# Default listing (10 users)
+emuses admin list-users
+
+# Extended listing
+emuses admin list-users --limit 50
+
+# Pagination for large systems
+emuses admin list-users --skip 20 --limit 10
+
+# For very large systems (1000+ users)
+emuses admin list-users --skip 100 --limit 25
+```
+
+### Quota Management
+
+#### Setting Storage Quotas
+
+```bash
+# Standard researcher allocation
+emuses admin set-quota researcher@uni.edu storage_gb 50
+
+# High-capacity user
+emuses admin set-quota senior-researcher@uni.edu storage_gb 200
+
+# Limited allocation for students
+emuses admin set-quota student@uni.edu storage_gb 10
+```
+
+#### Managing Concurrent Jobs
+
+```bash
+# Standard allocation
+emuses admin set-quota user@example.com concurrent_jobs 2
+
+# Power user allocation
+emuses admin set-quota poweruser@lab.edu concurrent_jobs 5
+
+# Limited for shared systems
+emuses admin set-quota intern@college.edu concurrent_jobs 1
+```
+
+#### Compute Hour Limits
+
+```bash
+# Monthly limit for researchers
+emuses admin set-quota researcher@uni.edu compute_hours 500
+
+# Generous allocation for long-running experiments
+emuses admin set-quota phd-student@uni.edu compute_hours 1000
+
+# Conservative limit for new users
+emuses admin set-quota newuser@uni.edu compute_hours 100
+```
+
+### System Monitoring
+
+#### Basic System Status
+
+```bash
+# Quick health check
+emuses admin system-status
+
+# Expected output:
+# System Status: HEALTHY
+# Components: ✅ database, ✅ api, ✅ background_tasks
+# Metrics: total_users: 45, active_jobs: 12
+```
+
+#### Detailed System Status
+
+```bash
+# Comprehensive diagnostic
+emuses admin system-status --detailed
+
+# Includes:
+# - Health check details
+# - Job queue statistics
+# - Resource utilization
+```
+
+#### Continuous Monitoring
+
+```bash
+# Monitor every 30 seconds
+watch -n 30 'emuses admin system-status --detailed'
+
+# Monitor with timestamp
+while true; do
+  echo "=== $(date) ==="
+  emuses admin system-status
+  sleep 60
+done
+```
+
+### Job Management
+
+#### Cancelling Jobs
+
+```bash
+# Get job ID from system status
+emuses admin system-status --detailed
+
+# Cancel with confirmation
+emuses admin cancel-job 12345678-1234-1234-1234-123456789abc
+
+# Emergency force cancellation (no confirmation)
+emuses admin cancel-job abcd1234-5678-90ef-ghij-klmnopqrstuv --force
+```
+
+## Common Workflows
+
+### New User Onboarding
+
+```bash
+# 1. Create user account
+emuses admin add-user newuser@institution.edu -p TemporaryPass123 -o "Research Department"
+
+# 2. Set appropriate quotas
+emuses admin set-quota newuser@institution.edu storage_gb 25
+emuses admin set-quota newuser@institution.edu concurrent_jobs 2
+emuses admin set-quota newuser@institution.edu compute_hours 200
+
+# 3. Verify user creation
+emuses admin list-users --limit 5
+
+# 4. Communicate credentials to user
+echo "User created: newuser@institution.edu"
+echo "Temporary password: TemporaryPass123"
+echo "Please change password on first login"
+```
+
+### System Health Monitoring
+
+```bash
+# Daily health check routine
+echo "=== Daily EMUSES Health Check ==="
+emuses admin system-status --detailed
+
+# Check for stuck jobs
+if [[ $(emuses admin system-status | grep -c "running_jobs: [5-9]") -gt 0 ]]; then
+  echo "WARNING: Many running jobs detected"
+  emuses admin system-status --detailed
+fi
+
+# Check user activity
+emuses admin list-users --limit 50 | grep -c "✅.*✅.*❌"
+echo "Active users: $?"
+```
+
+### Quota Adjustment Campaign
+
+```bash
+# Bulk quota updates for user group
+USERS=("user1@uni.edu" "user2@uni.edu" "user3@uni.edu")
+NEW_STORAGE=100
+
+for user in "${USERS[@]}"; do
+  echo "Updating quota for $user..."
+  emuses admin set-quota "$user" storage_gb $NEW_STORAGE
+  if [ $? -eq 0 ]; then
+    echo "✅ Success: $user"
+  else
+    echo "❌ Failed: $user"
+  fi
+done
+```
+
+### Emergency System Maintenance
+
+```bash
+# 1. Check system status
+emuses admin system-status --detailed
+
+# 2. Cancel all running jobs (if necessary)
+# First get job IDs
+emuses admin system-status --detailed | grep -A 20 "Job Queues"
+
+# Cancel individual jobs (get IDs from status output)
+# emuses admin cancel-job <job-id> --force
+
+# 3. Verify system is clear
+emuses admin system-status
+
+# 4. Proceed with maintenance...
+```
+
+## Troubleshooting
+
+### Authentication Issues
+
+#### Problem: 401 Unauthorized
+
+```bash
+# Check token validity
+emuses admin system-status
+
+# Solutions:
+# 1. Verify token is set correctly
+echo $EMUSES_ADMIN_TOKEN
+
+# 2. Check token format (should be JWT)
+# 3. Verify you have admin privileges
+# 4. Check token expiration
+```
+
+#### Problem: 403 Forbidden
+
+```bash
+# Your token is valid but lacks admin privileges
+# Solutions:
+# 1. Contact system administrator
+# 2. Verify superuser status in database
+# 3. Use correct admin token (not user token)
+```
+
+### Connection Issues
+
+#### Problem: Connection refused
+
+```bash
+# Check service availability
+curl -I http://localhost:8000/health
+
+# Solutions:
+# 1. Verify service is running
+# 2. Check correct service URL
+emuses admin system-status --service-url http://correct-host:8000
+
+# 3. Check firewall rules
+# 4. Verify network connectivity
+```
+
+#### Problem: Timeout errors
+
+```bash
+# Solutions:
+# 1. Check system load
+emuses admin system-status --detailed
+
+# 2. Increase timeout (if supported)
+# 3. Try during off-peak hours
+# 4. Check database connectivity
+```
+
+### Command-Specific Issues
+
+#### User Creation Failures
+
+```bash
+# Problem: Email already exists
+# Solution: Check existing users first
+emuses admin list-users | grep "user@example.com"
+
+# Problem: Invalid email format
+# Solution: Verify email format
+echo "user@example.com" | grep -E '^[^@]+@[^@]+\.[^@]+$'
+
+# Problem: Weak password
+# Solution: Use stronger password (8+ chars, mixed case, numbers)
+```
+
+#### Quota Setting Failures
+
+```bash
+# Problem: Invalid quota type
+# Valid types: storage_gb, concurrent_jobs, compute_hours
+emuses admin set-quota user@example.com storage_gb 50  # ✅ Correct
+emuses admin set-quota user@example.com disk_space 50  # ❌ Invalid
+
+# Problem: User not found
+# Solution: Verify user exists
+emuses admin list-users | grep "user@example.com"
+```
+
+#### Job Cancellation Issues
+
+```bash
+# Problem: Job not found
+# Solution: Verify job ID
+emuses admin system-status --detailed | grep -A 10 "Job Queues"
+
+# Problem: Job already completed
+# Solution: Check job status first
+emuses admin system-status --detailed
+```
+
+### System Performance Issues
+
+#### High Load
+
+```bash
+# Diagnosis
+emuses admin system-status --detailed
+
+# Look for:
+# - High number of running jobs
+# - Database connection issues
+# - Resource exhaustion
+
+# Solutions:
+# 1. Cancel non-essential jobs
+# 2. Reduce concurrent job limits
+# 3. Check system resources
+```
+
+#### Database Issues
+
+```bash
+# Symptoms:
+# - Slow responses
+# - Connection timeouts
+# - Internal server errors
+
+# Diagnosis:
+emuses admin system-status --detailed
+
+# Solutions:
+# 1. Check database server status
+# 2. Review database logs
+# 3. Consider database maintenance
+```
+
+## Best Practices
+
+### Security
+
+1. **Token Management**
+   - Rotate admin tokens regularly
+   - Store tokens securely (environment variables)
+   - Never commit tokens to version control
+   - Use separate tokens for different environments
+
+2. **User Management**
+   - Use strong default passwords
+   - Require password changes on first login
+   - Regularly audit user accounts
+   - Deactivate unused accounts
+
+3. **Quota Management**
+   - Monitor usage before adjusting quotas
+   - Set reasonable defaults for new users
+   - Document quota policies
+   - Review quotas periodically
+
+### Operational
+
+1. **Monitoring**
+   - Perform daily health checks
+   - Set up automated monitoring alerts
+   - Track key metrics over time
+   - Document incidents and resolutions
+
+2. **Maintenance**
+   - Schedule regular maintenance windows
+   - Test admin commands in staging first
+   - Keep backups before major changes
+   - Document all administrative actions
+
+3. **Communication**
+   - Notify users of quota changes
+   - Announce maintenance windows
+   - Provide user documentation
+   - Maintain clear escalation procedures
+
+### Automation
+
+1. **Scripting Common Tasks**
+   ```bash
+   #!/bin/bash
+   # daily-health-check.sh
+   
+   echo "=== EMUSES Daily Health Check $(date) ==="
+   emuses admin system-status --detailed > daily-status.log
+   
+   # Check for issues and alert if needed
+   if grep -q "❌" daily-status.log; then
+     echo "WARNING: System issues detected"
+     # Send alert email/notification
+   fi
+   ```
+
+2. **Bulk Operations**
+   ```bash
+   # bulk-quota-update.sh
+   while IFS= read -r user; do
+     emuses admin set-quota "$user" storage_gb 100
+   done < user-list.txt
+   ```
+
+## Emergency Procedures
+
+### System Down
+
+1. **Immediate Response**
+   ```bash
+   # Check system status
+   emuses admin system-status
+   
+   # If unresponsive, check service directly
+   curl -I http://service-host:8000/health
+   ```
+
+2. **Escalation Steps**
+   - Check infrastructure logs
+   - Contact system administrators
+   - Follow incident response procedures
+
+### Resource Exhaustion
+
+1. **Immediate Actions**
+   ```bash
+   # Check running jobs
+   emuses admin system-status --detailed
+   
+   # Cancel non-essential jobs
+   emuses admin cancel-job <job-id> --force
+   ```
+
+2. **Long-term Solutions**
+   - Review and adjust quotas
+   - Implement stricter resource limits
+   - Consider infrastructure scaling
+
+### Security Incidents
+
+1. **Suspected Compromise**
+   ```bash
+   # Check for suspicious activity
+   emuses admin list-users | grep -E "(suspicious|unknown)"
+   
+   # Disable suspicious accounts
+   # (Note: This would require additional endpoints)
+   ```
+
+2. **Response Actions**
+   - Revoke compromised tokens
+   - Reset affected user passwords
+   - Review access logs
+   - Follow security incident procedures
+
+---
+
+## Getting Help
+
+- Use `emuses admin help` for built-in comprehensive guidance
+- Use `emuses admin <command> --help` for command-specific help
+- Check system logs for detailed error information
+- Contact your EMUSES system administrator for complex issues
+
+---
+
+*This guide covers EMUSES multi-user service administration. For single-user deployments, many admin commands are not required or available.*

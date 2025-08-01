@@ -130,6 +130,20 @@ if RATE_LIMITING_ENABLED and limiter:
     app.state.limiter = limiter
     app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
+# Set up multi-user service endpoints (conditionally based on deployment mode)
+try:
+    deployment_mode = os.getenv("EMUSES_DEPLOYMENT_MODE", "local")
+    if deployment_mode in ["multi_user", "production"]:
+        from emuses.multi_user_service.workspace_endpoints import setup_workspace_endpoints
+        setup_workspace_endpoints(app)
+        logger.info(f"Multi-user service endpoints enabled for {deployment_mode} mode")
+    else:
+        logger.info("Multi-user service endpoints disabled for local mode")
+except ImportError as e:
+    logger.warning(f"Multi-user service components not available: {e}")
+except Exception as e:
+    logger.error(f"Failed to set up multi-user service endpoints: {e}")
+
 # Initialize core components lazily to avoid import issues
 job_manager = None
 pipeline_runner = None

@@ -988,11 +988,16 @@ def setup_workspace_endpoints(app: FastAPI) -> None:
     # Import and create task endpoints
     from emuses.multi_user_service.task_endpoints import create_task_router
     task_router = create_task_router()
+    
+    # Import and create admin endpoints
+    from emuses.multi_user_service.admin_endpoints import create_admin_router
+    admin_router = create_admin_router()
 
     app.include_router(workspace_router)
     app.include_router(dataset_router)
     app.include_router(job_router)
     app.include_router(quota_router)
     app.include_router(task_router)
+    app.include_router(admin_router)
 
-    logger.info("Workspace, dataset, training job, quota, and task endpoints configured")
+    logger.info("Workspace, dataset, training job, quota, task, and admin endpoints configured")

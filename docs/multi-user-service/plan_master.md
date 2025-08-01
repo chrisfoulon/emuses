@@ -238,20 +238,20 @@
     - [x] 14.3.2: Task cancellation and cleanup logic ✅ COMPLETED
     - [x] 14.3.3: Process health monitoring ✅ COMPLETED
 
-- [ ] **Task 15**: Implement CLI admin tools ║ `tests/multi-user-service/test_admin_cli.py` ║ Simple API endpoints with CLI commands for admin tasks ║ S (Based on Decision #3)
-  - [ ] 15.1: Create admin API endpoints
-    - [ ] 15.1.1: Add user management endpoints (create, list, update, delete)
-    - [ ] 15.1.2: Add quota management endpoints
-    - [ ] 15.1.3: Add system monitoring endpoints (job queues, health)
-  - [ ] 15.2: Create CLI admin commands
-    - [ ] 15.2.1: Add `emuses admin add-user` command
-    - [ ] 15.2.2: Add `emuses admin set-quota` command  
-    - [ ] 15.2.3: Add `emuses admin system-status` command
-    - [ ] 15.2.4: Add `emuses admin cancel-job` command for stuck jobs
-  - [ ] 15.3: Add admin documentation and help
-    - [ ] 15.3.1: Create comprehensive help text for all admin commands
-    - [ ] 15.3.2: Add usage examples and troubleshooting guide
-    - [ ] 15.3.3: Document admin workflows for research environments
+- [x] **Task 15**: Implement CLI admin tools ║ `tests/multi-user-service/test_admin_cli.py` ║ Simple API endpoints with CLI commands for admin tasks ║ S (Based on Decision #3) ✅ COMPLETED
+  - [x] 15.1: Create admin API endpoints ✅ COMPLETED
+    - [x] 15.1.1: Add user management endpoints (create, list, update, delete) ✅ COMPLETED
+    - [x] 15.1.2: Add quota management endpoints ✅ COMPLETED
+    - [x] 15.1.3: Add system monitoring endpoints (job queues, health) ✅ COMPLETED
+  - [x] 15.2: Create CLI admin commands ✅ COMPLETED
+    - [x] 15.2.1: Add `emuses admin add-user` command ✅ COMPLETED
+    - [x] 15.2.2: Add `emuses admin set-quota` command ✅ COMPLETED
+    - [x] 15.2.3: Add `emuses admin system-status` command ✅ COMPLETED
+    - [x] 15.2.4: Add `emuses admin cancel-job` command for stuck jobs ✅ COMPLETED
+  - [x] 15.3: Add admin documentation and help ✅ COMPLETED
+    - [x] 15.3.1: Create comprehensive help text for all admin commands ✅ COMPLETED
+    - [x] 15.3.2: Add usage examples and troubleshooting guide ✅ COMPLETED
+    - [x] 15.3.3: Document admin workflows for research environments ✅ COMPLETED
 
 ### Phase 3E: Comprehensive Testing and Security ║ 2-3 days ║ HIGH PRIORITY (Enhanced based on review feedback)
 

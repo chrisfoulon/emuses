@@ -124,7 +124,7 @@ class TestBackgroundTaskManager:
         task_id = task_manager.create_task(job_id, user_id, config)
         
         # Mock the pipeline executor to avoid actual execution
-        with patch('emuses.multi_user_service.background_tasks.PipelineExecutor') as mock_executor:
+        with patch('emuses.multi_user_service.background_tasks.PipelineRunner') as mock_executor:
             mock_executor.return_value.execute.return_value = {"success": True}
             
             success = task_manager.submit_task(task_id)
@@ -288,7 +288,7 @@ class TestPipelineExecution:
         config = {"test": "execution_config"}
         
         # Mock pipeline executor
-        with patch('emuses.multi_user_service.background_tasks.PipelineExecutor') as mock_executor:
+        with patch('emuses.multi_user_service.background_tasks.PipelineRunner') as mock_executor:
             mock_executor.return_value.execute.return_value = {"result": "success"}
             
             # Execute pipeline task
@@ -327,7 +327,7 @@ class TestPipelineExecution:
         
         config = {"test": "resource_tracking"}
         
-        with patch('emuses.multi_user_service.background_tasks.PipelineExecutor') as mock_executor:
+        with patch('emuses.multi_user_service.background_tasks.PipelineRunner') as mock_executor:
             mock_executor.return_value.execute.return_value = {"tracked": True}
             
             result = _execute_pipeline_task(
@@ -361,7 +361,7 @@ class TestPipelineExecution:
         config = {"test": "failure_config"}
         
         # Mock pipeline executor to raise exception
-        with patch('emuses.multi_user_service.background_tasks.PipelineExecutor') as mock_executor:
+        with patch('emuses.multi_user_service.background_tasks.PipelineRunner') as mock_executor:
             mock_executor.return_value.execute.side_effect = Exception("Pipeline failed")
             
             with pytest.raises(Exception, match="Pipeline failed"):
@@ -454,7 +454,7 @@ class TestTaskIntegration:
             task_ids.append(task_id)
         
         # Submit tasks
-        with patch('emuses.multi_user_service.background_tasks.PipelineExecutor') as mock_executor:
+        with patch('emuses.multi_user_service.background_tasks.PipelineRunner') as mock_executor:
             mock_executor.return_value.execute.return_value = {"concurrent": True}
             
             for task_id in task_ids:

@@ -22,7 +22,7 @@ from dataclasses import dataclass, field
 from sqlalchemy.orm import Session
 
 from emuses.multi_user_service.job_manager import MultiUserJobManager
-from emuses.foundation_fastapi_service.pipeline_executor import PipelineExecutor
+from emuses.foundation_fastapi_service.pipeline_runner import PipelineRunner
 
 
 class TaskStatus(Enum):
@@ -640,7 +640,7 @@ class BackgroundTaskManager:
         self._shutdown_event.set()
         
         if self._executor:
-            self._executor.shutdown(wait=wait, timeout=timeout)
+            self._executor.shutdown(wait=wait)
             self._executor = None
             
         # Wait for background threads to finish
@@ -723,7 +723,7 @@ def _execute_pipeline_task(
         )
         
         # Create pipeline executor with job directory context
-        executor = PipelineExecutor(
+        executor = PipelineRunner(
             input_dir=job_dir / "input",
             output_dir=job_dir / "output"
         )
