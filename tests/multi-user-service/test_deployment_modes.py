@@ -16,7 +16,49 @@ from emuses.multi_user_service.deployment_config import (
     validate_deployment_config,
     is_service_mode_enabled,
     get_service_discovery_url,
+    normalize_deployment_mode,
 )
+
+
+class TestDeploymentModeNormalization:
+    """Test deployment mode normalization function for dual format support."""
+    
+    def test_normalize_underscore_to_hyphen(self):
+        """Test normalization of underscore format to hyphen format."""
+        assert normalize_deployment_mode("multi_user") == "multi-user"
+        assert normalize_deployment_mode("MULTI_USER") == "multi-user"
+    
+    def test_normalize_hyphen_unchanged(self):
+        """Test hyphen format remains unchanged."""
+        assert normalize_deployment_mode("multi-user") == "multi-user"
+        assert normalize_deployment_mode("MULTI-USER") == "multi-user"
+    
+    def test_normalize_single_word_modes(self):
+        """Test normalization of single-word deployment modes."""
+        assert normalize_deployment_mode("local") == "local"
+        assert normalize_deployment_mode("LOCAL") == "local"
+        assert normalize_deployment_mode("production") == "production"
+        assert normalize_deployment_mode("PRODUCTION") == "production"
+    
+    def test_normalize_empty_and_none(self):
+        """Test normalization handles edge cases."""
+        assert normalize_deployment_mode("") == ""
+        # None case will be handled by the calling function
+    
+    def test_normalize_mixed_case_and_formats(self):
+        """Test normalization with mixed case and format combinations."""
+        # Various combinations that should all normalize to "multi-user"
+        test_cases = [
+            "multi_user",
+            "MULTI_USER", 
+            "Multi_User",
+            "multi-user",
+            "MULTI-USER",
+            "Multi-User"
+        ]
+        
+        for case in test_cases:
+            assert normalize_deployment_mode(case) == "multi-user"
 
 
 class TestDeploymentModeDetection:
@@ -45,6 +87,30 @@ class TestDeploymentModeDetection:
         with patch.dict(os.environ, {"EMUSES_DEPLOYMENT_MODE": "invalid"}):
             mode = detect_deployment_mode()
             assert mode == DeploymentMode.LOCAL
+    
+    def test_detect_deployment_mode_underscore_format(self):
+        """Test deployment mode detection with underscore format (POSIX-compliant)."""
+        with patch.dict(os.environ, {"EMUSES_DEPLOYMENT_MODE": "multi_user"}):
+            mode = detect_deployment_mode()
+            assert mode == DeploymentMode.MULTI_USER
+    
+    def test_detect_deployment_mode_hyphen_format(self):
+        """Test deployment mode detection with hyphen format (user-friendly)."""
+        with patch.dict(os.environ, {"EMUSES_DEPLOYMENT_MODE": "multi-user"}):
+            mode = detect_deployment_mode()
+            assert mode == DeploymentMode.MULTI_USER
+    
+    def test_detect_deployment_mode_both_formats_case_insensitive(self):
+        """Test both underscore and hyphen formats work case-insensitively."""
+        # Test uppercase underscore
+        with patch.dict(os.environ, {"EMUSES_DEPLOYMENT_MODE": "MULTI_USER"}):
+            mode = detect_deployment_mode()
+            assert mode == DeploymentMode.MULTI_USER
+        
+        # Test uppercase hyphen
+        with patch.dict(os.environ, {"EMUSES_DEPLOYMENT_MODE": "MULTI-USER"}):
+            mode = detect_deployment_mode()
+            assert mode == DeploymentMode.MULTI_USER
 
 
 class TestDeploymentConfiguration:
@@ -115,14 +181,14 @@ class TestConfigurationValidation:
             result = validate_deployment_config(config)
             
             assert result["valid"] is False
-            assert "JWT_SECRET environment variable is required for authentication" in result["errors"]
+            assert "EMUSES_JWT_SECRET environment variable is required for authentication" in result["errors"]
             assert "DATABASE_URL environment variable is required" in result["errors"]
     
     def test_validate_multi_user_config_valid(self):
         """Test multi-user config validation with all requirements."""
         with patch.dict(os.environ, {
             "EMUSES_DEPLOYMENT_MODE": "multi-user",
-            "JWT_SECRET": "test-secret",
+            "EMUSES_JWT_SECRET": "test-secret",
             "DATABASE_URL": "postgresql://user:pass@localhost/emuses"
         }):
             config = get_deployment_config()
@@ -135,7 +201,7 @@ class TestConfigurationValidation:
         """Test config validation with invalid database URL."""
         with patch.dict(os.environ, {
             "EMUSES_DEPLOYMENT_MODE": "production",
-            "JWT_SECRET": "test-secret",
+            "EMUSES_JWT_SECRET": "test-secret",
             "DATABASE_URL": "invalid-url"
         }):
             config = get_deployment_config()

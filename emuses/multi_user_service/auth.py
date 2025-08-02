@@ -7,7 +7,7 @@ user management logic, token handling, and role-based access control.
 import os
 import logging
 from typing import Optional, Type
-from fastapi import Depends, Request
+from fastapi import Depends, Request, Response
 from fastapi_users import BaseUserManager, FastAPIUsers, UUIDIDMixin
 from fastapi_users.authentication import (
     AuthenticationBackend,
@@ -35,14 +35,14 @@ def get_jwt_secret() -> str:
     Raises
     ------
     ValueError
-        If JWT_SECRET is missing in non-local deployment modes
+        If EMUSES_JWT_SECRET is missing in non-local deployment modes
     """
-    jwt_secret = os.getenv("JWT_SECRET")
+    jwt_secret = os.getenv("EMUSES_JWT_SECRET")
     if not jwt_secret:
         deployment_mode = os.getenv("EMUSES_DEPLOYMENT_MODE", "local")
         if deployment_mode != "local":
             raise ValueError(
-                "JWT_SECRET environment variable is required for multi-user deployment"
+                "EMUSES_JWT_SECRET environment variable is required for multi-user deployment"
             )
         # Use development secret for local mode
         jwt_secret = "development-secret-key-change-in-production"
@@ -90,6 +90,7 @@ class UserManager(UUIDIDMixin, BaseUserManager[User, type(User.id)]):
         self,
         user: User,
         request: Optional[Request] = None,
+        response: Optional[Response] = None,
     ):
         """Handle post-login tasks.
 
@@ -101,6 +102,8 @@ class UserManager(UUIDIDMixin, BaseUserManager[User, type(User.id)]):
             Logged in user
         request : Optional[Request]
             FastAPI request object
+        response : Optional[Response]
+            FastAPI response object built by the transport
         """
         logger.info(f"User {user.id} logged in")
 

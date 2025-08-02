@@ -19,7 +19,7 @@ class TestJWTAuthenticationBackend:
         from emuses.multi_user_service.auth import get_auth_backend
         
         with patch.dict(os.environ, {
-            'JWT_SECRET': 'test-secret-key',
+            'EMUSES_JWT_SECRET': 'test-secret-key',
             'EMUSES_DEPLOYMENT_MODE': 'multi-user'
         }):
             auth_backend = get_auth_backend()
@@ -45,7 +45,7 @@ class TestJWTAuthenticationBackend:
         from emuses.multi_user_service.auth import get_fastapi_users
         
         with patch.dict(os.environ, {
-            'JWT_SECRET': 'test-secret-key'
+            'EMUSES_JWT_SECRET': 'test-secret-key'
         }):
             fastapi_users = get_fastapi_users()
             
@@ -78,14 +78,14 @@ class TestJWTAuthenticationBackend:
         """Test JWT secret key validation."""
         from emuses.multi_user_service.auth import get_jwt_secret
         
-        # Test that missing JWT_SECRET in production mode raises error
+        # Test that missing EMUSES_JWT_SECRET in production mode raises error
         with patch.dict(os.environ, {
             'EMUSES_DEPLOYMENT_MODE': 'production'
         }, clear=True):
-            with pytest.raises(ValueError, match="JWT_SECRET.*required"):
+            with pytest.raises(ValueError, match="EMUSES_JWT_SECRET.*required"):
                 get_jwt_secret()
                 
-        # Test that missing JWT_SECRET in local mode works (uses default)
+        # Test that missing EMUSES_JWT_SECRET in local mode works (uses default)
         with patch.dict(os.environ, {
             'EMUSES_DEPLOYMENT_MODE': 'local'
         }, clear=True):

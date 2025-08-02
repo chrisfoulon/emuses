@@ -44,6 +44,20 @@
 ## Common Gotchas & Solutions
 *Accumulated from previous implementations*
 
+### Fixed Issues (August 2025)
+**CLI Command Invocation**: The correct command is `python -m emuses.cli` not `python -m emuses`
+- Root cause: Project structure has `emuses/cli/__main__.py` but no `emuses/__main__.py`
+- Fixed in: testing-commands.md, admin-guide.md, research-workflows.md
+
+**ServiceHTTPClient Parameter Mismatch**: Constructor expects `base_url` and `auth_token`, not `service_url` and `token`
+- Root cause: API inconsistency between admin_commands.py and service_client.py
+- Fixed in: admin_commands.py (all 5 instances)
+
+**StatusRenderer Context Manager**: Used non-existent `status_renderer.status()` instead of Rich's `console.status()`
+- Root cause: StatusRenderer class doesn't have status() context manager method
+- Industry standard: Rich library's `console.status()` context manager
+- Fixed in: admin_commands.py (replaced all instances, removed unused imports)
+
 ### Token Optimization for Large Codebases
 **Standard test commands:**
 - **Large test suites**: Use `2>&1 | tail -n 100` for pytest commands to capture only final results/failures

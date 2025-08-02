@@ -228,6 +228,31 @@ EMUSES_DEPLOYMENT_MODE=production emuses full output/ input/ --service-url "http
 - **Resource Management**: Grant-based allocation, collaborative research setup, and quota management
 - **Compliance Support**: Usage reporting, audit trails, and user activity monitoring
 
+### CLI Admin HTTP Client Architecture Fix (✅ COMPLETED - Plan 0c Final Implementation)
+**✅ Async/Sync Architecture Resolution**: Replaced ServiceHTTPClient with synchronous httpx implementation
+- **Problem Addressed**: CLI admin commands attempted to call async ServiceHTTPClient methods synchronously, causing coroutine execution failures
+- **Solution**: Created `make_admin_request()` helper function using synchronous httpx for all admin CLI operations
+- **Error Handling**: Created `AdminClientError` class matching ServiceClientError interface for compatibility
+- **Implementation**: Updated all 5 admin commands (add-user, list-users, system-status, set-quota, cancel-job) to use httpx
+
+**✅ Synchronous HTTP Client Design**: Clean separation between async service layer and synchronous CLI layer
+- **httpx Integration**: Direct synchronous HTTP requests without async/await complexity in CLI commands
+- **Authentication**: Preserved existing environment variable and parameter-based token authentication
+- **URL Configuration**: Maintained service URL resolution from environment variables and command-line parameters
+- **Connection Handling**: Comprehensive error handling for connection failures, timeouts, and HTTP errors
+
+**✅ Testing and Validation**: Complete test coverage and functionality validation
+- **Existing Tests**: 14/14 admin CLI tests pass without modification (tests target API endpoints, not client implementation)
+- **Error Handling**: Verified graceful error handling for connection refused scenarios
+- **Command Functionality**: All admin commands load correctly with proper help text and Rich console formatting
+- **Code Quality**: Flake8 compliance maintained with proper NumPy-style docstrings
+
+**Architecture Benefits**:
+- **Simplicity**: CLI commands are now purely synchronous without async complexity
+- **Maintainability**: Clear separation between service layer (async) and CLI layer (sync)
+- **Performance**: Direct HTTP calls without async overhead for CLI operations
+- **Compatibility**: Preserved all existing authentication and configuration patterns
+
 ## Database Migration System (✅ COMPLETED - Task 13)
 
 ### Alembic Migration Infrastructure

@@ -25,7 +25,7 @@ The EMUSES admin commands provide a comprehensive CLI interface for managing use
 ### Basic Command Structure
 
 ```bash
-emuses admin <command> [arguments] [options]
+python -m emuses.cli admin <command> [arguments] [options]
 ```
 
 ### Available Commands
@@ -55,17 +55,17 @@ export EMUSES_SERVICE_URL="https://emuses.your-institution.edu"
 
 ```bash
 # Specify token per command
-emuses admin list-users --token your-admin-token-here
+python -m emuses.cli admin list-users --token your-admin-token-here
 
 # Specify custom service URL
-emuses admin system-status --service-url http://localhost:8000 --token your-token
+python -m emuses.cli admin system-status --service-url http://localhost:8000 --token your-token
 ```
 
 ### Token Management
 
 ```bash
 # Test token validity
-emuses admin system-status
+python -m emuses.cli admin system-status
 
 # If token is expired, you'll see:
 # ❌ Service error: 401 Unauthorized
@@ -79,32 +79,32 @@ emuses admin system-status
 
 ```bash
 # Basic user creation
-emuses admin add-user researcher@university.edu --password SecurePass123
+python -m emuses.cli admin add-user researcher@university.edu --password SecurePass123
 
 # Custom organization
-emuses admin add-user postdoc@lab.edu -p MyPass456 -o "Neuroscience Lab"
+python -m emuses.cli admin add-user postdoc@lab.edu -p MyPass456 -o "Neuroscience Lab"
 
 # Create inactive user (for later activation)
-emuses admin add-user intern@college.edu -p TempPass789 --inactive
+python -m emuses.cli admin add-user intern@college.edu -p TempPass789 --inactive
 
 # Create unverified user (requires email verification)
-emuses admin add-user newuser@example.com -p Pass123 --unverified
+python -m emuses.cli admin add-user newuser@example.com -p Pass123 --unverified
 ```
 
 #### Listing Users
 
 ```bash
 # Default listing (10 users)
-emuses admin list-users
+python -m emuses.cli admin list-users
 
 # Extended listing
-emuses admin list-users --limit 50
+python -m emuses.cli admin list-users --limit 50
 
 # Pagination for large systems
-emuses admin list-users --skip 20 --limit 10
+python -m emuses.cli admin list-users --skip 20 --limit 10
 
 # For very large systems (1000+ users)
-emuses admin list-users --skip 100 --limit 25
+python -m emuses.cli admin list-users --skip 100 --limit 25
 ```
 
 ### Quota Management
@@ -113,39 +113,39 @@ emuses admin list-users --skip 100 --limit 25
 
 ```bash
 # Standard researcher allocation
-emuses admin set-quota researcher@uni.edu storage_gb 50
+python -m emuses.cli admin set-quota researcher@uni.edu storage_gb 50
 
 # High-capacity user
-emuses admin set-quota senior-researcher@uni.edu storage_gb 200
+python -m emuses.cli admin set-quota senior-researcher@uni.edu storage_gb 200
 
 # Limited allocation for students
-emuses admin set-quota student@uni.edu storage_gb 10
+python -m emuses.cli admin set-quota student@uni.edu storage_gb 10
 ```
 
 #### Managing Concurrent Jobs
 
 ```bash
 # Standard allocation
-emuses admin set-quota user@example.com concurrent_jobs 2
+python -m emuses.cli admin set-quota user@example.com concurrent_jobs 2
 
 # Power user allocation
-emuses admin set-quota poweruser@lab.edu concurrent_jobs 5
+python -m emuses.cli admin set-quota poweruser@lab.edu concurrent_jobs 5
 
 # Limited for shared systems
-emuses admin set-quota intern@college.edu concurrent_jobs 1
+python -m emuses.cli admin set-quota intern@college.edu concurrent_jobs 1
 ```
 
 #### Compute Hour Limits
 
 ```bash
 # Monthly limit for researchers
-emuses admin set-quota researcher@uni.edu compute_hours 500
+python -m emuses.cli admin set-quota researcher@uni.edu compute_hours 500
 
 # Generous allocation for long-running experiments
-emuses admin set-quota phd-student@uni.edu compute_hours 1000
+python -m emuses.cli admin set-quota phd-student@uni.edu compute_hours 1000
 
 # Conservative limit for new users
-emuses admin set-quota newuser@uni.edu compute_hours 100
+python -m emuses.cli admin set-quota newuser@uni.edu compute_hours 100
 ```
 
 ### System Monitoring
@@ -154,7 +154,7 @@ emuses admin set-quota newuser@uni.edu compute_hours 100
 
 ```bash
 # Quick health check
-emuses admin system-status
+python -m emuses.cli admin system-status
 
 # Expected output:
 # System Status: HEALTHY
@@ -166,7 +166,7 @@ emuses admin system-status
 
 ```bash
 # Comprehensive diagnostic
-emuses admin system-status --detailed
+python -m emuses.cli admin system-status --detailed
 
 # Includes:
 # - Health check details
@@ -178,12 +178,12 @@ emuses admin system-status --detailed
 
 ```bash
 # Monitor every 30 seconds
-watch -n 30 'emuses admin system-status --detailed'
+watch -n 30 'python -m emuses.cli admin system-status --detailed'
 
 # Monitor with timestamp
 while true; do
   echo "=== $(date) ==="
-  emuses admin system-status
+  python -m emuses.cli admin system-status
   sleep 60
 done
 ```
@@ -194,13 +194,13 @@ done
 
 ```bash
 # Get job ID from system status
-emuses admin system-status --detailed
+python -m emuses.cli admin system-status --detailed
 
 # Cancel with confirmation
-emuses admin cancel-job 12345678-1234-1234-1234-123456789abc
+python -m emuses.cli admin cancel-job 12345678-1234-1234-1234-123456789abc
 
 # Emergency force cancellation (no confirmation)
-emuses admin cancel-job abcd1234-5678-90ef-ghij-klmnopqrstuv --force
+python -m emuses.cli admin cancel-job abcd1234-5678-90ef-ghij-klmnopqrstuv --force
 ```
 
 ## Common Workflows
@@ -209,15 +209,15 @@ emuses admin cancel-job abcd1234-5678-90ef-ghij-klmnopqrstuv --force
 
 ```bash
 # 1. Create user account
-emuses admin add-user newuser@institution.edu -p TemporaryPass123 -o "Research Department"
+python -m emuses.cli admin add-user newuser@institution.edu -p TemporaryPass123 -o "Research Department"
 
 # 2. Set appropriate quotas
-emuses admin set-quota newuser@institution.edu storage_gb 25
-emuses admin set-quota newuser@institution.edu concurrent_jobs 2
-emuses admin set-quota newuser@institution.edu compute_hours 200
+python -m emuses.cli admin set-quota newuser@institution.edu storage_gb 25
+python -m emuses.cli admin set-quota newuser@institution.edu concurrent_jobs 2
+python -m emuses.cli admin set-quota newuser@institution.edu compute_hours 200
 
 # 3. Verify user creation
-emuses admin list-users --limit 5
+python -m emuses.cli admin list-users --limit 5
 
 # 4. Communicate credentials to user
 echo "User created: newuser@institution.edu"
@@ -230,16 +230,16 @@ echo "Please change password on first login"
 ```bash
 # Daily health check routine
 echo "=== Daily EMUSES Health Check ==="
-emuses admin system-status --detailed
+python -m emuses.cli admin system-status --detailed
 
 # Check for stuck jobs
-if [[ $(emuses admin system-status | grep -c "running_jobs: [5-9]") -gt 0 ]]; then
+if [[ $(python -m emuses.cli admin system-status | grep -c "running_jobs: [5-9]") -gt 0 ]]; then
   echo "WARNING: Many running jobs detected"
-  emuses admin system-status --detailed
+  python -m emuses.cli admin system-status --detailed
 fi
 
 # Check user activity
-emuses admin list-users --limit 50 | grep -c "✅.*✅.*❌"
+python -m emuses.cli admin list-users --limit 50 | grep -c "✅.*✅.*❌"
 echo "Active users: $?"
 ```
 
@@ -252,7 +252,7 @@ NEW_STORAGE=100
 
 for user in "${USERS[@]}"; do
   echo "Updating quota for $user..."
-  emuses admin set-quota "$user" storage_gb $NEW_STORAGE
+  python -m emuses.cli admin set-quota "$user" storage_gb $NEW_STORAGE
   if [ $? -eq 0 ]; then
     echo "✅ Success: $user"
   else
@@ -265,17 +265,17 @@ done
 
 ```bash
 # 1. Check system status
-emuses admin system-status --detailed
+python -m emuses.cli admin system-status --detailed
 
 # 2. Cancel all running jobs (if necessary)
 # First get job IDs
-emuses admin system-status --detailed | grep -A 20 "Job Queues"
+python -m emuses.cli admin system-status --detailed | grep -A 20 "Job Queues"
 
 # Cancel individual jobs (get IDs from status output)
-# emuses admin cancel-job <job-id> --force
+# python -m emuses.cli admin cancel-job <job-id> --force
 
 # 3. Verify system is clear
-emuses admin system-status
+python -m emuses.cli admin system-status
 
 # 4. Proceed with maintenance...
 ```
@@ -288,7 +288,7 @@ emuses admin system-status
 
 ```bash
 # Check token validity
-emuses admin system-status
+python -m emuses.cli admin system-status
 
 # Solutions:
 # 1. Verify token is set correctly
@@ -320,7 +320,7 @@ curl -I http://localhost:8000/health
 # Solutions:
 # 1. Verify service is running
 # 2. Check correct service URL
-emuses admin system-status --service-url http://correct-host:8000
+python -m emuses.cli admin system-status --service-url http://correct-host:8000
 
 # 3. Check firewall rules
 # 4. Verify network connectivity
@@ -331,7 +331,7 @@ emuses admin system-status --service-url http://correct-host:8000
 ```bash
 # Solutions:
 # 1. Check system load
-emuses admin system-status --detailed
+python -m emuses.cli admin system-status --detailed
 
 # 2. Increase timeout (if supported)
 # 3. Try during off-peak hours
@@ -345,7 +345,7 @@ emuses admin system-status --detailed
 ```bash
 # Problem: Email already exists
 # Solution: Check existing users first
-emuses admin list-users | grep "user@example.com"
+python -m emuses.cli admin list-users | grep "user@example.com"
 
 # Problem: Invalid email format
 # Solution: Verify email format
@@ -360,12 +360,12 @@ echo "user@example.com" | grep -E '^[^@]+@[^@]+\.[^@]+$'
 ```bash
 # Problem: Invalid quota type
 # Valid types: storage_gb, concurrent_jobs, compute_hours
-emuses admin set-quota user@example.com storage_gb 50  # ✅ Correct
-emuses admin set-quota user@example.com disk_space 50  # ❌ Invalid
+python -m emuses.cli admin set-quota user@example.com storage_gb 50  # ✅ Correct
+python -m emuses.cli admin set-quota user@example.com disk_space 50  # ❌ Invalid
 
 # Problem: User not found
 # Solution: Verify user exists
-emuses admin list-users | grep "user@example.com"
+python -m emuses.cli admin list-users | grep "user@example.com"
 ```
 
 #### Job Cancellation Issues
@@ -373,11 +373,11 @@ emuses admin list-users | grep "user@example.com"
 ```bash
 # Problem: Job not found
 # Solution: Verify job ID
-emuses admin system-status --detailed | grep -A 10 "Job Queues"
+python -m emuses.cli admin system-status --detailed | grep -A 10 "Job Queues"
 
 # Problem: Job already completed
 # Solution: Check job status first
-emuses admin system-status --detailed
+python -m emuses.cli admin system-status --detailed
 ```
 
 ### System Performance Issues
@@ -386,7 +386,7 @@ emuses admin system-status --detailed
 
 ```bash
 # Diagnosis
-emuses admin system-status --detailed
+python -m emuses.cli admin system-status --detailed
 
 # Look for:
 # - High number of running jobs
@@ -408,7 +408,7 @@ emuses admin system-status --detailed
 # - Internal server errors
 
 # Diagnosis:
-emuses admin system-status --detailed
+python -m emuses.cli admin system-status --detailed
 
 # Solutions:
 # 1. Check database server status
@@ -466,7 +466,7 @@ emuses admin system-status --detailed
    # daily-health-check.sh
    
    echo "=== EMUSES Daily Health Check $(date) ==="
-   emuses admin system-status --detailed > daily-status.log
+   python -m emuses.cli admin system-status --detailed > daily-status.log
    
    # Check for issues and alert if needed
    if grep -q "❌" daily-status.log; then
@@ -479,7 +479,7 @@ emuses admin system-status --detailed
    ```bash
    # bulk-quota-update.sh
    while IFS= read -r user; do
-     emuses admin set-quota "$user" storage_gb 100
+     python -m emuses.cli admin set-quota "$user" storage_gb 100
    done < user-list.txt
    ```
 
@@ -490,7 +490,7 @@ emuses admin system-status --detailed
 1. **Immediate Response**
    ```bash
    # Check system status
-   emuses admin system-status
+   python -m emuses.cli admin system-status
    
    # If unresponsive, check service directly
    curl -I http://service-host:8000/health
@@ -506,10 +506,10 @@ emuses admin system-status --detailed
 1. **Immediate Actions**
    ```bash
    # Check running jobs
-   emuses admin system-status --detailed
+   python -m emuses.cli admin system-status --detailed
    
    # Cancel non-essential jobs
-   emuses admin cancel-job <job-id> --force
+   python -m emuses.cli admin cancel-job <job-id> --force
    ```
 
 2. **Long-term Solutions**
@@ -522,7 +522,7 @@ emuses admin system-status --detailed
 1. **Suspected Compromise**
    ```bash
    # Check for suspicious activity
-   emuses admin list-users | grep -E "(suspicious|unknown)"
+   python -m emuses.cli admin list-users | grep -E "(suspicious|unknown)"
    
    # Disable suspicious accounts
    # (Note: This would require additional endpoints)
@@ -538,8 +538,8 @@ emuses admin system-status --detailed
 
 ## Getting Help
 
-- Use `emuses admin help` for built-in comprehensive guidance
-- Use `emuses admin <command> --help` for command-specific help
+- Use `python -m emuses.cli admin help` for built-in comprehensive guidance
+- Use `python -m emuses.cli admin <command> --help` for command-specific help
 - Check system logs for detailed error information
 - Contact your EMUSES system administrator for complex issues
 

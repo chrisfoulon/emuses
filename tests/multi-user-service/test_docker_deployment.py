@@ -120,7 +120,7 @@ class TestEnvironmentConfiguration:
 
             # Required environment variables
             assert "DATABASE_URL" in content
-            assert "JWT_SECRET" in content
+            assert "EMUSES_JWT_SECRET" in content
             assert "EMUSES_DEPLOYMENT_MODE" in content
 
     def test_docker_env_file(self):

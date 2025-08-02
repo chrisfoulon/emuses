@@ -23,7 +23,7 @@ class TestAuthenticationEndpoints:
         )
         
         with patch.dict(os.environ, {
-            'JWT_SECRET': 'test-secret-key'
+            'EMUSES_JWT_SECRET': 'test-secret-key'
         }):
             auth_router = get_auth_router()
             register_router = get_register_router()
@@ -40,7 +40,7 @@ class TestAuthenticationEndpoints:
         app = FastAPI()
         
         with patch.dict(os.environ, {
-            'JWT_SECRET': 'test-secret-key'
+            'EMUSES_JWT_SECRET': 'test-secret-key'
         }):
             setup_auth_endpoints(app)
             
@@ -58,7 +58,7 @@ class TestAuthenticationEndpoints:
         app = FastAPI()
         
         with patch.dict(os.environ, {
-            'JWT_SECRET': 'test-secret-key'
+            'EMUSES_JWT_SECRET': 'test-secret-key'
         }):
             setup_auth_endpoints(app)
             
@@ -77,7 +77,7 @@ class TestAuthenticationEndpoints:
         app = FastAPI()
         
         with patch.dict(os.environ, {
-            'JWT_SECRET': 'test-secret-key'
+            'EMUSES_JWT_SECRET': 'test-secret-key'
         }):
             setup_auth_endpoints(app)
             
@@ -95,7 +95,7 @@ class TestAuthenticationEndpoints:
         app = FastAPI()
         
         with patch.dict(os.environ, {
-            'JWT_SECRET': 'test-secret-key'
+            'EMUSES_JWT_SECRET': 'test-secret-key'
         }):
             setup_auth_endpoints(app)
             
@@ -121,7 +121,7 @@ class TestAuthenticationEndpoints:
         app = FastAPI()
         
         with patch.dict(os.environ, {
-            'JWT_SECRET': 'test-secret-key'
+            'EMUSES_JWT_SECRET': 'test-secret-key'
         }):
             setup_auth_endpoints(app)
             

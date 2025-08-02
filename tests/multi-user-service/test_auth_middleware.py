@@ -47,7 +47,7 @@ class TestAuthenticationMiddleware:
         
         with patch.dict(os.environ, {
             'EMUSES_DEPLOYMENT_MODE': 'multi-user',
-            'JWT_SECRET': 'test-secret'
+            'EMUSES_JWT_SECRET': 'test-secret'
         }):
             setup_authentication_middleware(app)
             
@@ -71,7 +71,7 @@ class TestAuthenticationMiddleware:
         
         with patch.dict(os.environ, {
             'EMUSES_DEPLOYMENT_MODE': 'multi-user',
-            'JWT_SECRET': 'test-secret'
+            'EMUSES_JWT_SECRET': 'test-secret'
         }):
             dependency = get_conditional_auth_dependency()
             # In multi-user mode, dependency should require authentication
@@ -89,7 +89,7 @@ class TestAuthenticationMiddleware:
         
         with patch.dict(os.environ, {
             'EMUSES_DEPLOYMENT_MODE': 'multi-user',
-            'JWT_SECRET': 'test-secret'
+            'EMUSES_JWT_SECRET': 'test-secret'
         }):
             setup_authentication_middleware(app)
             

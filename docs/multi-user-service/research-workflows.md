@@ -42,22 +42,22 @@ echo "=== Semester Setup - $(date) ==="
 while IFS=, read -r email name org user_type; do
   if [[ "$user_type" == "undergraduate" ]]; then
     # Conservative quotas for undergraduates
-    emuses admin add-user "$email" -p "TempPass$(date +%Y%m)" -o "$org"
-    emuses admin set-quota "$email" storage_gb 5
-    emuses admin set-quota "$email" concurrent_jobs 1
-    emuses admin set-quota "$email" compute_hours 50
+    python -m emuses.cli admin add-user "$email" -p "TempPass$(date +%Y%m)" -o "$org"
+    python -m emuses.cli admin set-quota "$email" storage_gb 5
+    python -m emuses.cli admin set-quota "$email" concurrent_jobs 1
+    python -m emuses.cli admin set-quota "$email" compute_hours 50
   elif [[ "$user_type" == "graduate" ]]; then
     # Higher quotas for graduate students
-    emuses admin add-user "$email" -p "TempPass$(date +%Y%m)" -o "$org"
-    emuses admin set-quota "$email" storage_gb 25
-    emuses admin set-quota "$email" concurrent_jobs 2
-    emuses admin set-quota "$email" compute_hours 200
+    python -m emuses.cli admin add-user "$email" -p "TempPass$(date +%Y%m)" -o "$org"
+    python -m emuses.cli admin set-quota "$email" storage_gb 25
+    python -m emuses.cli admin set-quota "$email" concurrent_jobs 2
+    python -m emuses.cli admin set-quota "$email" compute_hours 200
   elif [[ "$user_type" == "faculty" ]]; then
     # Generous quotas for faculty
-    emuses admin add-user "$email" -p "TempPass$(date +%Y%m)" -o "$org"
-    emuses admin set-quota "$email" storage_gb 100
-    emuses admin set-quota "$email" concurrent_jobs 5
-    emuses admin set-quota "$email" compute_hours 1000
+    python -m emuses.cli admin add-user "$email" -p "TempPass$(date +%Y%m)" -o "$org"
+    python -m emuses.cli admin set-quota "$email" storage_gb 100
+    python -m emuses.cli admin set-quota "$email" concurrent_jobs 5
+    python -m emuses.cli admin set-quota "$email" compute_hours 1000
   fi
   echo "Created user: $email ($user_type)"
 done < new-users-semester.csv
@@ -74,17 +74,17 @@ echo "Semester setup complete!"
 echo "=== Semester Cleanup - $(date) ==="
 
 # 1. Identify inactive student accounts
-emuses admin list-users --limit 1000 > all-users.txt
+python -m emuses.cli admin list-users --limit 1000 > all-users.txt
 
 # 2. Process departing students (from provided list)
 while IFS= read -r email; do
   echo "Processing departure: $email"
   
   # Cancel any running jobs
-  emuses admin system-status --detailed | grep "$email" | while read job_info; do
+  python -m emuses.cli admin system-status --detailed | grep "$email" | while read job_info; do
     job_id=$(echo "$job_info" | grep -o '[0-9a-f-]\{36\}')
     if [[ -n "$job_id" ]]; then
-      emuses admin cancel-job "$job_id" --force
+      python -m emuses.cli admin cancel-job "$job_id" --force
       echo "Cancelled job: $job_id for $email"
     fi
   done
@@ -116,26 +116,26 @@ POSITION="$4"
 echo "=== Onboarding Researcher: $NAME ==="
 
 # Create account with research-appropriate quotas
-emuses admin add-user "$EMAIL" -p "Welcome$(date +%Y)" -o "$LAB"
+python -m emuses.cli admin add-user "$EMAIL" -p "Welcome$(date +%Y)" -o "$LAB"
 
 case "$POSITION" in
   "postdoc")
     # Generous resources for postdocs
-    emuses admin set-quota "$EMAIL" storage_gb 100
-    emuses admin set-quota "$EMAIL" concurrent_jobs 4
-    emuses admin set-quota "$EMAIL" compute_hours 800
+    python -m emuses.cli admin set-quota "$EMAIL" storage_gb 100
+    python -m emuses.cli admin set-quota "$EMAIL" concurrent_jobs 4
+    python -m emuses.cli admin set-quota "$EMAIL" compute_hours 800
     ;;
   "research_scientist")
     # High resources for research scientists
-    emuses admin set-quota "$EMAIL" storage_gb 200
-    emuses admin set-quota "$EMAIL" concurrent_jobs 5
-    emuses admin set-quota "$EMAIL" compute_hours 1000
+    python -m emuses.cli admin set-quota "$EMAIL" storage_gb 200
+    python -m emuses.cli admin set-quota "$EMAIL" concurrent_jobs 5
+    python -m emuses.cli admin set-quota "$EMAIL" compute_hours 1000
     ;;
   "phd_student")
     # Moderate resources for PhD students
-    emuses admin set-quota "$EMAIL" storage_gb 50
-    emuses admin set-quota "$EMAIL" concurrent_jobs 3
-    emuses admin set-quota "$EMAIL" compute_hours 400
+    python -m emuses.cli admin set-quota "$EMAIL" storage_gb 50
+    python -m emuses.cli admin set-quota "$EMAIL" concurrent_jobs 3
+    python -m emuses.cli admin set-quota "$EMAIL" compute_hours 400
     ;;
 esac
 
@@ -186,9 +186,9 @@ while IFS=, read -r email role percentage; do
   
   echo "Allocating to $email ($role): ${storage_alloc}GB storage, ${compute_alloc}h compute"
   
-  emuses admin set-quota "$email" storage_gb "$storage_alloc"
-  emuses admin set-quota "$email" compute_hours "$compute_alloc"
-  emuses admin set-quota "$email" concurrent_jobs "$concurrent_jobs"
+  python -m emuses.cli admin set-quota "$email" storage_gb "$storage_alloc"
+  python -m emuses.cli admin set-quota "$email" compute_hours "$compute_alloc"
+  python -m emuses.cli admin set-quota "$email" concurrent_jobs "$concurrent_jobs"
   
 done < "project-${PROJECT}-members.csv"
 
@@ -217,9 +217,9 @@ done
 # Apply temporary boost
 for user in "${USERS[@]}"; do
   echo "Boosting resources for $user"
-  emuses admin set-quota "$user" storage_gb 200
-  emuses admin set-quota "$user" concurrent_jobs 6
-  emuses admin set-quota "$user" compute_hours 2000
+  python -m emuses.cli admin set-quota "$user" storage_gb 200
+  python -m emuses.cli admin set-quota "$user" concurrent_jobs 6
+  python -m emuses.cli admin set-quota "$user" compute_hours 2000
 done
 
 echo "Temporary boost applied. Remember to restore quotas after deadline!"
@@ -243,15 +243,15 @@ for user in "${SUMMER_RESEARCHERS[@]}"; do
   echo "Setting up summer research allocation for $user"
   
   # Summer students get enhanced resources
-  emuses admin set-quota "$user" storage_gb 75
-  emuses admin set-quota "$user" concurrent_jobs 3
-  emuses admin set-quota "$user" compute_hours 600
+  python -m emuses.cli admin set-quota "$user" storage_gb 75
+  python -m emuses.cli admin set-quota "$user" concurrent_jobs 3
+  python -m emuses.cli admin set-quota "$user" compute_hours 600
 done
 
 # Monitor system load during high-usage period
 echo "#!/bin/bash" > summer-monitoring.sh
 echo "# Run this daily during summer research period" >> summer-monitoring.sh
-echo "emuses admin system-status --detailed > daily-status-\$(date +%Y%m%d).log" >> summer-monitoring.sh
+echo "python -m emuses.cli admin system-status --detailed > daily-status-\$(date +%Y%m%d).log" >> summer-monitoring.sh
 echo "# Alert if running jobs > 80% capacity" >> summer-monitoring.sh
 chmod +x summer-monitoring.sh
 
@@ -267,15 +267,15 @@ echo "Summer setup complete. Use ./summer-monitoring.sh for daily monitoring"
 echo "=== Winter Break Maintenance Period ==="
 
 # 1. System health check
-emuses admin system-status --detailed > pre-maintenance-status.log
+python -m emuses.cli admin system-status --detailed > pre-maintenance-status.log
 
 # 2. Cancel non-essential jobs
 echo "Checking for long-running jobs to cancel..."
-emuses admin system-status --detailed | grep -A 50 "Job Queues"
+python -m emuses.cli admin system-status --detailed | grep -A 50 "Job Queues"
 
 # 3. User activity audit
 echo "=== User Activity Audit ===" > winter-audit.log
-emuses admin list-users --limit 1000 >> winter-audit.log
+python -m emuses.cli admin list-users --limit 1000 >> winter-audit.log
 
 # 4. Prepare for next semester
 echo "Creating next semester preparation checklist:"
@@ -321,7 +321,7 @@ for lab in "${!LAB_QUOTAS[@]}"; do
   done
   
   # Get lab members
-  emuses admin list-users --limit 1000 | grep "$lab" > "${lab// /_}_members.txt"
+  python -m emuses.cli admin list-users --limit 1000 | grep "$lab" > "${lab// /_}_members.txt"
   
   echo "Lab member list saved to ${lab// /_}_members.txt"
 done
@@ -347,7 +347,7 @@ if [[ $day_of_week -le 5 ]] && [[ $current_hour -ge 9 ]] && [[ $current_hour -le
   # This would require more sophisticated quota management
   
   # Get current system load
-  emuses admin system-status --detailed > current-load.log
+  python -m emuses.cli admin system-status --detailed > current-load.log
   
   running_jobs=$(grep "Running:" current-load.log | grep -o '[0-9]\+')
   
@@ -377,9 +377,9 @@ COURSE_ORG="$COURSE-$SEMESTER"
 
 # Set up instructor with course admin privileges
 echo "Setting up instructor: $INSTRUCTOR"
-emuses admin set-quota "$INSTRUCTOR" storage_gb 200
-emuses admin set-quota "$INSTRUCTOR" concurrent_jobs 8
-emuses admin set-quota "$INSTRUCTOR" compute_hours 2000
+python -m emuses.cli admin set-quota "$INSTRUCTOR" storage_gb 200
+python -m emuses.cli admin set-quota "$INSTRUCTOR" concurrent_jobs 8
+python -m emuses.cli admin set-quota "$INSTRUCTOR" compute_hours 2000
 
 # Course-specific quotas for assignments
 ASSIGNMENT_STORAGE=10  # GB per student
@@ -390,10 +390,10 @@ CONCURRENT_JOBS=2      # For coursework
 while IFS= read -r student_email; do
   echo "Enrolling student: $student_email"
   
-  emuses admin add-user "$student_email" -p "Course$(date +%Y%m)" -o "$COURSE_ORG"
-  emuses admin set-quota "$student_email" storage_gb "$ASSIGNMENT_STORAGE"
-  emuses admin set-quota "$student_email" concurrent_jobs "$CONCURRENT_JOBS"
-  emuses admin set-quota "$student_email" compute_hours "$ASSIGNMENT_COMPUTE"
+  python -m emuses.cli admin add-user "$student_email" -p "Course$(date +%Y%m)" -o "$COURSE_ORG"
+  python -m emuses.cli admin set-quota "$student_email" storage_gb "$ASSIGNMENT_STORAGE"
+  python -m emuses.cli admin set-quota "$student_email" concurrent_jobs "$CONCURRENT_JOBS"
+  python -m emuses.cli admin set-quota "$student_email" compute_hours "$ASSIGNMENT_COMPUTE"
   
 done < "${COURSE}-roster.txt"
 
@@ -414,7 +414,7 @@ COURSE="$3"
 echo "=== Managing Assignment Deadline: $ASSIGNMENT ==="
 
 # Get course students
-emuses admin list-users --limit 1000 | grep "$COURSE" > course-students.txt
+python -m emuses.cli admin list-users --limit 1000 | grep "$COURSE" > course-students.txt
 
 # Increase temporary limits before deadline
 days_until_deadline=$(( ($(date -d "$DEADLINE" +%s) - $(date +%s)) / 86400 ))
@@ -427,8 +427,8 @@ if [[ $days_until_deadline -le 3 ]]; then
       email=$(echo "$line" | grep -o '[^[:space:]]*@[^[:space:]]*')
       if [[ -n "$email" ]]; then
         # Temporary boost for deadline crunch
-        emuses admin set-quota "$email" concurrent_jobs 3
-        emuses admin set-quota "$email" compute_hours 150
+        python -m emuses.cli admin set-quota "$email" concurrent_jobs 3
+        python -m emuses.cli admin set-quota "$email" compute_hours 150
         echo "Boosted resources for $email"
       fi
     fi
@@ -436,7 +436,7 @@ if [[ $days_until_deadline -le 3 ]]; then
 fi
 
 # Monitor system load during deadline period
-emuses admin system-status --detailed > "assignment-${ASSIGNMENT}-load.log"
+python -m emuses.cli admin system-status --detailed > "assignment-${ASSIGNMENT}-load.log"
 ```
 
 ## Research Data Management
@@ -479,9 +479,9 @@ while IFS=, read -r email role; do
   esac
   
   echo "Allocating ${user_storage}GB storage to $email ($role)"
-  emuses admin set-quota "$email" storage_gb "$user_storage"
-  emuses admin set-quota "$email" concurrent_jobs "$concurrent_jobs"
-  emuses admin set-quota "$email" compute_hours 500
+  python -m emuses.cli admin set-quota "$email" storage_gb "$user_storage"
+  python -m emuses.cli admin set-quota "$email" concurrent_jobs "$concurrent_jobs"
+  python -m emuses.cli admin set-quota "$email" compute_hours 500
   
 done < "${PROJECT}-team.csv"
 
@@ -505,15 +505,15 @@ while IFS=, read -r email institution role; do
   org="$COLLABORATION-$institution"
   
   if [[ "$role" == "coordinator" ]]; then
-    emuses admin add-user "$email" -p "Collab$(date +%Y)" -o "$org"
-    emuses admin set-quota "$email" storage_gb 200
-    emuses admin set-quota "$email" concurrent_jobs 6
-    emuses admin set-quota "$email" compute_hours 1500
+    python -m emuses.cli admin add-user "$email" -p "Collab$(date +%Y)" -o "$org"
+    python -m emuses.cli admin set-quota "$email" storage_gb 200
+    python -m emuses.cli admin set-quota "$email" concurrent_jobs 6
+    python -m emuses.cli admin set-quota "$email" compute_hours 1500
   elif [[ "$role" == "researcher" ]]; then
-    emuses admin add-user "$email" -p "Collab$(date +%Y)" -o "$org"
-    emuses admin set-quota "$email" storage_gb 100
-    emuses admin set-quota "$email" concurrent_jobs 4
-    emuses admin set-quota "$email" compute_hours 800
+    python -m emuses.cli admin add-user "$email" -p "Collab$(date +%Y)" -o "$org"
+    python -m emuses.cli admin set-quota "$email" storage_gb 100
+    python -m emuses.cli admin set-quota "$email" concurrent_jobs 4
+    python -m emuses.cli admin set-quota "$email" compute_hours 800
   fi
   
   echo "Setup $email from $institution as $role"
@@ -538,10 +538,10 @@ echo "=== Generating Usage Report for $REPORT_PERIOD ==="
 mkdir -p "$OUTPUT_DIR"
 
 # System status report
-emuses admin system-status --detailed > "$OUTPUT_DIR/system-status-$REPORT_PERIOD.log"
+python -m emuses.cli admin system-status --detailed > "$OUTPUT_DIR/system-status-$REPORT_PERIOD.log"
 
 # User activity report
-emuses admin list-users --limit 1000 > "$OUTPUT_DIR/user-list-$REPORT_PERIOD.txt"
+python -m emuses.cli admin list-users --limit 1000 > "$OUTPUT_DIR/user-list-$REPORT_PERIOD.txt"
 
 # Count users by organization
 echo "=== Users by Organization ===" > "$OUTPUT_DIR/org-summary-$REPORT_PERIOD.txt"
@@ -574,8 +574,8 @@ echo "=== Creating Audit Trail for $AUDIT_DATE ==="
 mkdir -p "$AUDIT_DIR"
 
 # Capture current system state
-emuses admin system-status --detailed > "$AUDIT_DIR/system-state.log"
-emuses admin list-users --limit 10000 > "$AUDIT_DIR/all-users.json"
+python -m emuses.cli admin system-status --detailed > "$AUDIT_DIR/system-state.log"
+python -m emuses.cli admin list-users --limit 10000 > "$AUDIT_DIR/all-users.json"
 
 # Create audit summary
 cat << EOF > "$AUDIT_DIR/audit-summary.txt"
@@ -646,7 +646,7 @@ EOF
 ALERT_EMAIL="admin@institution.edu"
 
 # Check for unusual patterns
-emuses admin system-status --detailed > daily-status.log
+python -m emuses.cli admin system-status --detailed > daily-status.log
 
 # Alert on high load
 running_jobs=$(grep "Running:" daily-status.log | grep -o '[0-9]\+')
@@ -660,7 +660,7 @@ fi
 
 # Weekly user activity summary
 if [[ $(date +%u) -eq 1 ]]; then  # Monday
-  emuses admin list-users --limit 1000 | \
+  python -m emuses.cli admin list-users --limit 1000 | \
     mail -s "EMUSES Weekly User Summary" "$ALERT_EMAIL"
 fi
 ```
@@ -674,10 +674,10 @@ fi
 echo "=== Resource Planning Analysis ==="
 
 # Current utilization
-emuses admin system-status --detailed > current-usage.log
+python -m emuses.cli admin system-status --detailed > current-usage.log
 
 # Project growth estimation
-current_users=$(emuses admin list-users --limit 1000 | wc -l)
+current_users=$(python -m emuses.cli admin list-users --limit 1000 | wc -l)
 echo "Current users: $current_users"
 
 # Estimate resources needed for next semester

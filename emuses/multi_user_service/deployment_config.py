@@ -14,6 +14,44 @@ from urllib.parse import urlparse
 logger = logging.getLogger(__name__)
 
 
+def normalize_deployment_mode(mode_str: str) -> str:
+    """Convert any deployment mode format to enum-compatible format.
+    
+    This function provides dual-format support for deployment modes:
+    - POSIX-compliant format: "multi_user" (enterprise/production)
+    - User-friendly format: "multi-user" (solo/local usage)
+    
+    Both formats are normalized to the internal enum format ("multi-user").
+    
+    Parameters
+    ----------
+    mode_str : str
+        Deployment mode string in any supported format
+        
+    Returns
+    -------
+    str
+        Normalized deployment mode string compatible with DeploymentMode enum
+        
+    Examples
+    --------
+    >>> normalize_deployment_mode("multi_user")
+    'multi-user'
+    >>> normalize_deployment_mode("MULTI_USER")
+    'multi-user'
+    >>> normalize_deployment_mode("multi-user")
+    'multi-user'
+    >>> normalize_deployment_mode("local")
+    'local'
+    """
+    if not mode_str:
+        return mode_str
+    
+    # Convert to lowercase and replace underscores with hyphens
+    # This normalizes both "multi_user" and "multi-user" to "multi-user"
+    return mode_str.lower().replace("_", "-")
+
+
 class DeploymentMode(Enum):
     """Supported deployment modes for EMUSES service."""
     
@@ -50,6 +88,9 @@ class DeploymentConfig:
 def detect_deployment_mode() -> DeploymentMode:
     """Detect current deployment mode from environment variables.
     
+    Supports both POSIX-compliant (multi_user) and user-friendly (multi-user) 
+    formats for dual-use case compatibility.
+    
     Returns
     -------
     DeploymentMode
@@ -61,14 +102,18 @@ def detect_deployment_mode() -> DeploymentMode:
     >>> os.environ["EMUSES_DEPLOYMENT_MODE"] = "production"
     >>> detect_deployment_mode()
     <DeploymentMode.PRODUCTION: 'production'>
+    >>> os.environ["EMUSES_DEPLOYMENT_MODE"] = "multi_user"
+    >>> detect_deployment_mode()
+    <DeploymentMode.MULTI_USER: 'multi-user'>
     """
-    mode_str = os.getenv("EMUSES_DEPLOYMENT_MODE", "local").lower()
+    mode_str = os.getenv("EMUSES_DEPLOYMENT_MODE", "local")
+    normalized_mode = normalize_deployment_mode(mode_str)
     
     try:
-        return DeploymentMode(mode_str)
+        return DeploymentMode(normalized_mode)
     except ValueError:
         logger.warning(
-            f"Unknown deployment mode '{mode_str}', defaulting to local mode"
+            f"Unknown deployment mode '{mode_str}' (normalized: '{normalized_mode}'), defaulting to local mode"
         )
         return DeploymentMode.LOCAL
 
@@ -144,8 +189,8 @@ def validate_deployment_config(config: DeploymentConfig) -> Dict[str, Any]:
     
     # Validate required environment variables
     if config.requires_auth:
-        if not os.getenv("JWT_SECRET"):
-            errors.append("JWT_SECRET environment variable is required for authentication")
+        if not os.getenv("EMUSES_JWT_SECRET"):
+            errors.append("EMUSES_JWT_SECRET environment variable is required for authentication")
     
     if config.requires_database:
         database_url = os.getenv("DATABASE_URL")

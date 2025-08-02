@@ -136,7 +136,7 @@ class DeploymentConfig:
     # Redis removed based on Decision #4: Hybrid background processing approach
     
     # JWT configuration
-    jwt_secret: Optional[str] = os.getenv("JWT_SECRET") if auth_required else None
+    jwt_secret: Optional[str] = os.getenv("EMUSES_JWT_SECRET") if auth_required else None
 ```
 
 ## Maintenance Opportunities in Target Files

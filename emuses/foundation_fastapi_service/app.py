@@ -132,11 +132,15 @@ if RATE_LIMITING_ENABLED and limiter:
 
 # Set up multi-user service endpoints (conditionally based on deployment mode)
 try:
-    deployment_mode = os.getenv("EMUSES_DEPLOYMENT_MODE", "local")
-    if deployment_mode in ["multi_user", "production"]:
+    from emuses.multi_user_service.deployment_config import is_service_mode_enabled, detect_deployment_mode
+    
+    if is_service_mode_enabled():
+        deployment_mode = detect_deployment_mode()
         from emuses.multi_user_service.workspace_endpoints import setup_workspace_endpoints
+        from emuses.multi_user_service.endpoints import setup_auth_endpoints
         setup_workspace_endpoints(app)
-        logger.info(f"Multi-user service endpoints enabled for {deployment_mode} mode")
+        setup_auth_endpoints(app)
+        logger.info(f"Multi-user service endpoints enabled for {deployment_mode.value} mode")
     else:
         logger.info("Multi-user service endpoints disabled for local mode")
 except ImportError as e:

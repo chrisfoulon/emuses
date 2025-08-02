@@ -23,7 +23,7 @@ class TestWorkspaceEndpoints:
         app = FastAPI()
         
         with patch.dict(os.environ, {
-            'JWT_SECRET': 'test-secret-key'
+            'EMUSES_JWT_SECRET': 'test-secret-key'
         }):
             setup_auth_endpoints(app)
             
