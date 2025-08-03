@@ -1,0 +1,18 @@
+# Safety vulnerability scanning policy
+# For scientific computing environments
+version: "2.0"
+
+security:
+  ignore-vulnerabilities:
+    # Neuroimaging library exceptions (placeholder - add actual CVE IDs if needed)
+    # Example: 12345  # Known false positive in scientific library
+
+  # Severity level to fail build  
+  severity-threshold: "medium"
+  
+  # Scan reports
+  json-report: true
+  short-report: false
+  
+  # Continue on unsafe requirements
+  continue-on-vulnerability-error: false

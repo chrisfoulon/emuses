@@ -1,0 +1,11 @@
+[bandit]
+# Bandit configuration for EMUSES
+exclude_dirs = tests/,docker/,scripts/,.github/
+skips = B101,B601,B603
+# B101: Test for use of assert (common in tests)
+# B601: Paramiko calls (not used in EMUSES)
+# B603: Subprocess without shell (acceptable for our use cases)
+
+# Specific exclusions for scientific computing
+[bandit.assert_used]
+skips = ['*test*', '*conftest*']

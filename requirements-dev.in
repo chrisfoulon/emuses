@@ -1,0 +1,13 @@
+# Base requirements
+-r requirements.in
+
+# Development and testing dependencies
+pytest
+pytest-asyncio
+pytest-cov
+black
+isort
+flake8
+mypy
+bandit
+safety

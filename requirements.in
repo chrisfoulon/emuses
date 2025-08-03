@@ -1,0 +1,51 @@
+# Core Python packages
+numpy
+pandas
+Pillow
+scikit-learn
+scipy
+tqdm
+joblib
+matplotlib
+seaborn
+
+# Neuroimaging packages
+nibabel
+nilearn
+mne
+pybids
+bcblib
+
+# Machine Learning packages
+umap-learn
+hdbscan
+xgboost
+statsmodels
+pykrige
+gpy
+optuna
+optuna-integration[sklearn]
+torch
+lightgbm
+
+# Web Framework & API packages (Critical for service)
+fastapi
+fastapi-users[sqlalchemy,oauth]
+uvicorn
+slowapi
+python-multipart
+
+# CLI packages (Critical for CLI)
+typer
+requests
+httpx
+psutil
+
+# Visualization & UI packages
+plotly
+streamlit
+kaleido
+
+# Data processing packages
+narwhals
+optuna-dashboard

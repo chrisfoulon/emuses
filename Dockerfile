@@ -11,10 +11,10 @@ RUN apt-get update && apt-get install -y \
 RUN python -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
-# Copy requirements and install Python dependencies
-COPY requirements.txt .
-RUN pip install --no-cache-dir --upgrade pip setuptools wheel && \
-    pip install --no-cache-dir -r requirements.txt
+# Copy requirements and install Python dependencies with pip-tools
+COPY requirements.txt requirements-prod.txt .
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel pip-tools && \
+    pip-sync requirements-prod.txt
 
 # Production stage
 FROM python:3.11-slim

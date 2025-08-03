@@ -1,0 +1,235 @@
+name: CI Pipeline
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: [3.9, "3.10", "3.11"]
+    
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_PASSWORD: test_password
+          POSTGRES_DB: emuses_test
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+      redis:
+        image: redis:7-alpine
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 6379:6379
+
+    env:
+      DATABASE_URL: postgresql://postgres:test_password@localhost:5432/emuses_test
+      EMUSES_JWT_SECRET: test-secret-key-for-ci
+      EMUSES_DEPLOYMENT_MODE: testing
+      REDIS_URL: redis://localhost:6379
+
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ matrix.python-version }}
+    
+    - name: Cache pip dependencies
+      uses: actions/cache@v3
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-${{ hashFiles('requirements*.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-
+    
+    - name: Install pip-tools and dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install pip-tools
+        pip-sync requirements-dev.txt
+        pip install -e .
+    
+    - name: Run tests with coverage
+      run: |
+        pytest --cov=emuses --cov-report=xml --cov-report=html --cov-report=term-missing
+    
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v3
+      with:
+        file: ./coverage.xml
+        flags: unittests
+        name: codecov-umbrella
+        fail_ci_if_error: false
+
+  security:
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: "3.11"
+    
+    - name: Install security tools
+      run: |
+        python -m pip install --upgrade pip
+        pip install pip-tools safety bandit
+    
+    - name: Install dependencies for scanning
+      run: |
+        pip-sync requirements.txt
+    
+    - name: Run Safety dependency scan
+      run: |
+        safety scan --policy-file .safety-policy.yml --output json --save-json safety-report.json
+      continue-on-error: true
+    
+    - name: Run Bandit security scan
+      run: |
+        bandit -r emuses/ -f json -o bandit-report.json || echo "Bandit scan completed"
+      continue-on-error: true
+    
+    - name: Upload security reports
+      uses: actions/upload-artifact@v3
+      with:
+        name: security-reports-${{ github.run_number }}
+        path: |
+          safety-report.json
+          bandit-report.json
+        retention-days: 30
+
+  quality:
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: "3.11"
+    
+    - name: Install quality tools
+      run: |
+        python -m pip install --upgrade pip
+        pip install pip-tools black isort flake8 mypy
+    
+    - name: Install dependencies
+      run: |
+        pip-sync requirements-dev.txt
+    
+    - name: Check code formatting with Black
+      run: |
+        black --check --diff emuses/
+    
+    - name: Check import sorting with isort
+      run: |
+        isort --check-only --diff emuses/
+    
+    - name: Run linting with flake8
+      run: |
+        flake8 emuses/
+    
+    - name: Run type checking with mypy
+      run: |
+        mypy emuses/ --ignore-missing-imports
+      continue-on-error: true
+
+  build:
+    runs-on: ubuntu-latest
+    needs: [test, security, quality]
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v2
+    
+    - name: Log in to GitHub Container Registry
+      uses: docker/login-action@v2
+      with:
+        registry: ghcr.io
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    
+    - name: Extract metadata
+      id: meta
+      uses: docker/metadata-action@v4
+      with:
+        images: ghcr.io/${{ github.repository }}
+        tags: |
+          type=ref,event=branch
+          type=ref,event=pr
+          type=sha
+          type=raw,value=latest,enable={{is_default_branch}}
+    
+    - name: Build and push Docker image
+      uses: docker/build-push-action@v4
+      with:
+        context: .
+        platforms: linux/amd64,linux/arm64
+        push: true
+        tags: ${{ steps.meta.outputs.tags }}
+        labels: ${{ steps.meta.outputs.labels }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+        build-args: |
+          BUILDKIT_INLINE_CACHE=1
+    
+    - name: Run Grype vulnerability scanner
+      uses: anchore/scan-action@v3
+      with:
+        image: ghcr.io/${{ github.repository }}:${{ github.sha }}
+        fail-build: true
+        severity-cutoff: high
+        
+    - name: Generate SBOM with Syft
+      uses: anchore/sbom-action@v0
+      with:
+        image: ghcr.io/${{ github.repository }}:${{ github.sha }}
+        format: spdx-json
+        output-file: sbom.spdx.json
+    
+    - name: Upload container security artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: container-security-reports-${{ github.run_number }}
+        path: |
+          sbom.spdx.json
+        retention-days: 30
+
+  notify:
+    runs-on: ubuntu-latest
+    needs: [test, security, quality, build]
+    if: always()
+    steps:
+    - name: Notify on failure
+      if: contains(needs.*.result, 'failure')
+      run: |
+        echo "❌ CI Pipeline failed - check the logs above"
+        exit 1
+    
+    - name: Notify on success
+      if: needs.test.result == 'success' && needs.security.result == 'success' && needs.quality.result == 'success'
+      run: |
+        echo "✅ CI Pipeline completed successfully"

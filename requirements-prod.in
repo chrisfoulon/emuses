@@ -1,0 +1,6 @@
+# Base requirements
+-r requirements.in
+
+# Production-only dependencies
+gunicorn
+uvicorn[standard]
