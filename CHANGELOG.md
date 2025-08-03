@@ -1,0 +1,73 @@
+# 1.0.0 (2025-08-03)
+
+
+### Bug Fixes
+
+* **cli:** resolve critical rerun and SQLite network drive issues ([0d74508](https://github.com/chrisfoulon/emuses/commit/0d7450823127a6219f525e6de2890b92510e81e4))
+* **foundation-fastapi-service:** fix API endpoint test failures ([ef6ebbb](https://github.com/chrisfoulon/emuses/commit/ef6ebbb682fedbb8885fe627b106541e696c570d))
+* **foundation-fastapi-service:** remove arbitrary parameter ranges and hardcoded limits ([8f86156](https://github.com/chrisfoulon/emuses/commit/8f861569aa306be207d7a2cf0a402489eb24478e))
+* **foundation-fastapi-service:** uncheck Task 5 due to testing anti-pattern ([6cbe085](https://github.com/chrisfoulon/emuses/commit/6cbe0857669e6cea937ab103f1d6ce93da754392))
+* resolve authentication issues and clean up project artifacts ([b346b73](https://github.com/chrisfoulon/emuses/commit/b346b73f58c0bd2cd4a4fd72f3b692a8cfb61770))
+* **service:** resolve infinite polling loop with status case standardization ([ecf817a](https://github.com/chrisfoulon/emuses/commit/ecf817a8a161d74a0df7b79a6b9ee9fe388f659e))
+* **test-infrastructure:** resolve hanging issues and partial test failures ([7225d1b](https://github.com/chrisfoulon/emuses/commit/7225d1b49fb6263f2c24044ed3f2f8bc3581fb31))
+* **tests:** resolve PosixPath vs string comparison in pipeline integration test ([02a45c5](https://github.com/chrisfoulon/emuses/commit/02a45c59f8cbd809da10e42547a5ffb4414dc3ce))
+
+
+### Features
+
+* Add LAD submodule with latest version ([c3518e9](https://github.com/chrisfoulon/emuses/commit/c3518e98e494b720998c697fcc68b2cad3bd7d18))
+* Add LAD variable map for foundation FastAPI service ([5f0e791](https://github.com/chrisfoulon/emuses/commit/5f0e79129e901cd5b37c1c9cbe007b1a3b499fc0))
+* Add production readiness implementation plans ([f67255d](https://github.com/chrisfoulon/emuses/commit/f67255d8185764641912fb397436fb297f746f33))
+* **cli-testclient-integration:** implement core TestClient integration for local execution ([e67a528](https://github.com/chrisfoulon/emuses/commit/e67a528db09a7de8ddc6288d2b13a8f22c9486de))
+* **cli:** complete command logging and graceful shutdown planning ([7787c2a](https://github.com/chrisfoulon/emuses/commit/7787c2a48efee6a842822446430f993b45258f52))
+* **cli:** implement command logging and rerun functionality ([974882a](https://github.com/chrisfoulon/emuses/commit/974882aaeec213726083c52da9958bc8c5505caa))
+* **cli:** implement graceful shutdown and fix cross-platform rerun bug ([0a63f9a](https://github.com/chrisfoulon/emuses/commit/0a63f9a6874cab58be92038d7046efd864803bc1))
+* **cli:** partial implementation of httpx synchronous client for admin commands ([57619f8](https://github.com/chrisfoulon/emuses/commit/57619f82e4834cf4999407e1781b8c54bb3f699e)), closes [#4](https://github.com/chrisfoulon/emuses/issues/4) [#4](https://github.com/chrisfoulon/emuses/issues/4)
+* Complete CI/CD pipeline implementation with comprehensive testing and security scanning ([f499567](https://github.com/chrisfoulon/emuses/commit/f4995678f879002d8b0431a87caf200d159def05))
+* **completion:** complete task 10.2 and 11.1 for phase 0 quality assurance ([ad05035](https://github.com/chrisfoulon/emuses/commit/ad050355bac31013c565caf7ca66573f589f749d))
+* **docs:** complete API documentation recovery and documentation cleanup ([9482192](https://github.com/chrisfoulon/emuses/commit/94821925197b43b3b56aaed26b4f660740aa3003))
+* **docs:** merge documentation reorganization and LAD framework setup ([5ad1c00](https://github.com/chrisfoulon/emuses/commit/5ad1c000f384d429607b86c012a5b95a044ffce9))
+* Document EMUSESPipeline integration requirements in LAD framework ([db0b7d6](https://github.com/chrisfoulon/emuses/commit/db0b7d60f58ed9d9e775a8e8284461101a2fb5f4))
+* **emuses-pipeline-integration:** add context-to-args converter utility ([723b829](https://github.com/chrisfoulon/emuses/commit/723b8292c0d13e59fedc1ca0d65807e3fbe60bb6))
+* **emuses-pipeline-integration:** add progress callback adapter ([4e147d1](https://github.com/chrisfoulon/emuses/commit/4e147d1d288e58a15f2a02d3000de426e46914e7))
+* **enhanced-cli-typer:** add service client and rich features tests ([daa36e1](https://github.com/chrisfoulon/emuses/commit/daa36e172f066c8a700ae2c7aaddf3424b86235f))
+* **enhanced-cli-typer:** complete argument compatibility analysis ([4da0751](https://github.com/chrisfoulon/emuses/commit/4da0751fc1e6383052017c5f74b9194ebcbf2650))
+* **enhanced-cli-typer:** complete CLI integration with functional pipeline execution ([554c831](https://github.com/chrisfoulon/emuses/commit/554c831db0b899037db17262a7fbf4de23bc6908))
+* **enhanced-cli-typer:** complete security validation testing ([09f53c6](https://github.com/chrisfoulon/emuses/commit/09f53c6b4ccb9494ce5f791cc62bfcf8dd659e99))
+* **enhanced-cli-typer:** complete Task 5 - Rich UI features with performance optimization ([f15ef1d](https://github.com/chrisfoulon/emuses/commit/f15ef1d605016e3c2fc383dd48b0caa740f21764))
+* **enhanced-cli-typer:** complete Task 5 & 6 - Rich UI features and Interactive mode ([9942d9b](https://github.com/chrisfoulon/emuses/commit/9942d9b124a54ba7ceac913e7fc09a53c752bcc5))
+* **enhanced-cli:** implement core Typer CLI structure with security hardening ([cfcb38b](https://github.com/chrisfoulon/emuses/commit/cfcb38b0a9905f9bfc0a8fb2d4ed42cfc86913fa))
+* **foundation-fastapi-service:** implement stage runners with validation and monitoring ([dd65136](https://github.com/chrisfoulon/emuses/commit/dd6513624a655c121b57fe2a5a386f96b5f5dcf7))
+* **foundation-fastapi:** complete documentation compliance with NumPy-style docstrings ([e7f73a6](https://github.com/chrisfoulon/emuses/commit/e7f73a647d60e0deef843797795979591756598a))
+* **foundation-fastapi:** complete HCP real-world example validation via FastAPI service ([5d9f0c3](https://github.com/chrisfoulon/emuses/commit/5d9f0c33cfa28972f75b2148e0b304f63fd813a7))
+* Implement Foundation FastAPI Service (LAD Session 1) + Critical Bug Fixes ([3579b11](https://github.com/chrisfoulon/emuses/commit/3579b11e23204a7f723b72b9fa740aab925b88da))
+* implement real EMUSES pipeline execution in PipelineRunner ([f9feb23](https://github.com/chrisfoulon/emuses/commit/f9feb23d2600f00dd0476af9c8ca099008e8ab94))
+* **lad:** complete LAD Phase 0 test warnings resolution ([c3d9c0d](https://github.com/chrisfoulon/emuses/commit/c3d9c0da342225c5f8a3f18a932e1f654f2681f5))
+* **lad:** enhance LAD framework with validation strategy and note-taking protocols ([e4cd37d](https://github.com/chrisfoulon/emuses/commit/e4cd37dfa9767927e371e5911ca8e5ce2adf1d60))
+* **multi-user:** complete Plan 0a Foundation implementation ([c0bf0ce](https://github.com/chrisfoulon/emuses/commit/c0bf0ce34d00fba459b17b45bf32477c90ffe966))
+* **multi-user:** complete Plan 0b workspace isolation with quota management endpoints ([19f5aa6](https://github.com/chrisfoulon/emuses/commit/19f5aa6330b970e9e002f228afd9c4b38498e6cf))
+* **multi-user:** complete Plan 0c Task 12 - Docker production infrastructure ([5d5556f](https://github.com/chrisfoulon/emuses/commit/5d5556f82f4acf8b9910d84c32a926ec84bd23c7))
+* **multi-user:** complete Plan 0c Task 13 - Database Migration System ([9bab824](https://github.com/chrisfoulon/emuses/commit/9bab8241d4325932535fe4171312109c92ce1327))
+* **multi-user:** complete Plan 0c Task 14 - Hybrid Background Task Management ([c6c4d7d](https://github.com/chrisfoulon/emuses/commit/c6c4d7d848573b2f30b3809898a1c39cc9c66cec))
+* **multi-user:** complete Plan 0c Tasks 10-11 - CLI multi-mode support and authentication ([5d72d08](https://github.com/chrisfoulon/emuses/commit/5d72d08b0667b60db5889624ee6f4b87f0b778f0))
+* **multi-user:** complete Task 15 - CLI admin tools with comprehensive documentation ([25ae0ec](https://github.com/chrisfoulon/emuses/commit/25ae0eccafc50ed1470aabb99b67b2779531096f))
+* **multi-user:** implement workspace models and multi-user job manager ([29ba87f](https://github.com/chrisfoulon/emuses/commit/29ba87f55261a8efddea8ba1800ea5330bb0e748))
+* **phase0:** complete final cleanup and add test warnings resolution plan ([17525d5](https://github.com/chrisfoulon/emuses/commit/17525d5d160d65d3371de1eb359815dd0136a7b3))
+* **pipeline_runner:** implement async pipeline execution with ProcessPoolExecutor ([140aae6](https://github.com/chrisfoulon/emuses/commit/140aae6be46a5b16c912bacd9df2dbdd836179cd))
+* **plan-0d:** Complete Task 7 - Concurrency and performance testing ([c7dbe54](https://github.com/chrisfoulon/emuses/commit/c7dbe5401b8ace1639f5b3f39245ef81d2f93a81))
+* **planning:** complete multi-user service LAD planning framework ([69d9743](https://github.com/chrisfoulon/emuses/commit/69d9743914e1ad85e9b42d206b5cf4cba6423525))
+* **planning:** consolidate EMUSES development into comprehensive LAD-ready plan ([91f5ae6](https://github.com/chrisfoulon/emuses/commit/91f5ae6be5070b362cbfbb2da6f6b7f0664332b5))
+* remove field name transformation layer for API consistency ([b2870f1](https://github.com/chrisfoulon/emuses/commit/b2870f13dd0c9918aa41807ccb065b9e9fb01819))
+* remove plan.md and add rich_features.py implementation ([88a50c5](https://github.com/chrisfoulon/emuses/commit/88a50c5da9fa979ef688151f8d56cc298a7e478e))
+* **security:** comprehensive security testing and input validation ([52505c6](https://github.com/chrisfoulon/emuses/commit/52505c6cce8d0576d397aa9c9cbc9a8dcc49924b))
+* **test-data:** add real CSV test data files and improve compatibility test ([521f4bd](https://github.com/chrisfoulon/emuses/commit/521f4bd2cbac784fa132c694e01a0198488d382c))
+* update LAD framework to latest version ([d0c1ff8](https://github.com/chrisfoulon/emuses/commit/d0c1ff8d272eae0dc9fd526d3cb77564f188a389))
+* update LAD framework with intelligent model optimization ([aa9f588](https://github.com/chrisfoulon/emuses/commit/aa9f588965627bf71c98b0c89cf3c84f5e27a68b))
+* Update LAD submodule and add foundation service documentation ([6e6d9d4](https://github.com/chrisfoulon/emuses/commit/6e6d9d4bba6a252a3112825d2a4ce636ffb2d139))
+* Update LAD to latest version with proper submodule setup ([ab93dac](https://github.com/chrisfoulon/emuses/commit/ab93dac99cb9023f47eabcebc23bed47b05ea18d))
+* **upload-endpoints:** implement file upload endpoints for real-world API usage ([c2a2b51](https://github.com/chrisfoulon/emuses/commit/c2a2b51edff9bfc4526c0997873faf554fc6b3e3))
+
+
+### BREAKING CHANGES
+
+* **foundation-fastapi-service:** test_api_endpoints.py requires refactoring from unit to integration testing
