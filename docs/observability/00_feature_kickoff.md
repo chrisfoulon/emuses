@@ -2,7 +2,7 @@
 
 ## Feature Draft
 
-**Feature draft** ⟶ Implement a comprehensive observability and monitoring system for EMUSES following 2025 industry best practices with OpenTelemetry, Prometheus, Grafana, and Tempo. The system should provide the three pillars of observability: metrics collection for performance monitoring, distributed tracing for request flow analysis, and structured logging with correlation IDs for debugging. Include automatic instrumentation for FastAPI applications, custom metrics for scientific pipeline operations, real-time dashboards for system health monitoring, and alerting capabilities for operational issues. The implementation must support multi-service architecture (CLI, FastAPI service, multi-user service) with proper correlation across service boundaries, maintain minimal performance overhead, and provide actionable insights for both system administrators and researchers using the platform.
+**Feature draft** ⟶ Implement a lightweight but effective monitoring system for EMUSES using Prometheus metrics collection, Grafana dashboards, and structured logging. The system should provide essential observability capabilities: performance metrics for scientific pipeline operations, system health monitoring, basic alerting, and structured logging for debugging. Focus on battle-tested, low-overhead solutions that provide immediate value with minimal complexity. Include custom metrics for UMAP optimization time, memory usage, job completion rates, and error tracking. The implementation must maintain <2% performance overhead, provide actionable insights for both administrators and researchers, and establish a foundation that can be upgraded to full OpenTelemetry later if enterprise features are needed.
 
 ## Strategic Importance
 
@@ -11,36 +11,36 @@ Production observability is essential for enterprise adoption and operational ex
 ## Success Criteria
 
 ### Must Have
-- [ ] OpenTelemetry integration for automatic instrumentation
 - [ ] Prometheus metrics collection with custom scientific pipeline metrics
 - [ ] Grafana dashboards for system health and performance visualization
-- [ ] Distributed tracing with Tempo for request flow analysis
-- [ ] Structured logging with correlation IDs across all services
+- [ ] Structured logging with consistent format across all services
 - [ ] Health check endpoints for all services
-- [ ] Real-time alerting for critical system issues
-- [ ] Performance metrics for scientific pipeline operations
+- [ ] Basic alerting for critical system issues (disk space, memory, errors)
+- [ ] Performance metrics for scientific pipeline operations (UMAP time, memory usage)
+- [ ] Docker-compose integration for easy deployment
+- [ ] Low-overhead implementation (<2% performance impact)
 
 ### Quality Indicators
-- [ ] < 5% performance overhead from instrumentation
+- [ ] < 2% performance overhead from instrumentation
 - [ ] Sub-second response time for dashboard queries
-- [ ] 99.9% metrics collection reliability
-- [ ] Comprehensive correlation between traces, metrics, and logs
-- [ ] Actionable alerts with minimal false positives
-- [ ] Scientific pipeline performance insights (UMAP optimization time, etc.)
+- [ ] 99.5% metrics collection reliability
+- [ ] Actionable alerts with minimal false positives (<5% false positive rate)
+- [ ] Clear correlation between metrics and logs for debugging
+- [ ] Scientific pipeline performance insights (UMAP optimization time, memory patterns)
 
 ### Industry Compliance
-- [ ] OpenTelemetry standard implementation for portability
-- [ ] Prometheus metrics following naming conventions
+- [ ] Prometheus metrics following naming conventions and best practices
 - [ ] Grafana dashboards following UX best practices
-- [ ] OTEL Collector configuration for data processing
-- [ ] Kubernetes-ready deployment configurations
+- [ ] Structured logging using JSON format with consistent fields
+- [ ] Docker-compose deployment configurations
 - [ ] Integration with existing Docker infrastructure
+- [ ] Foundation ready for future OpenTelemetry upgrade
 
 ## Implementation Complexity
 
-**Estimated Effort**: 5-7 days
-**Complexity Level**: Medium-High
-**Team Requirements**: 1 DevOps Engineer + 1 Backend Engineer for instrumentation
+**Estimated Effort**: 3-5 days
+**Complexity Level**: Medium  
+**Team Requirements**: 1 Backend Engineer (DevOps knowledge helpful but not required)
 
 ## Dependencies
 
@@ -53,17 +53,17 @@ Production observability is essential for enterprise adoption and operational ex
 ## Risk Assessment
 
 **Technical Risks**:
-- Performance impact on scientific computing workloads
-- Complexity of correlating metrics across async operations
-- Storage requirements for metrics and trace data
-- Integration complexity with existing authentication system
+- Performance impact on scientific computing workloads (mitigated by <2% overhead requirement)
+- Storage requirements for metrics data (mitigated by Prometheus retention policies)
+- Learning curve for Prometheus query language (PromQL)
+- Initial setup complexity for Grafana dashboards
 
 **Mitigation Strategies**:
-- Implement sampling strategies for trace collection
-- Use async instrumentation patterns to minimize overhead
-- Configure appropriate retention policies for observability data
+- Use lightweight metrics collection with minimal CPU overhead
+- Configure Prometheus retention policies to manage storage (default 15 days)  
+- Start with essential metrics and expand based on operational needs
 - Validate performance impact with scientific benchmark datasets
-- Implement gradual rollout with feature flags
+- Provide pre-built dashboard templates and documentation
 
 ## Value Proposition
 

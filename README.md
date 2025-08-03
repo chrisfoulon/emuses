@@ -4,46 +4,84 @@ This project aims to develop a tool that models the relationship between input d
 
 ## 📦 Installation
 
-### Recommended Installation (Complete Dependencies)
+### Recommended Installation (pip-tools)
 
-For the best experience and to ensure all features work correctly:
+EMUSES uses pip-tools for reliable dependency management:
 
 ```bash
 # Clone the repository
 git clone <repository-url>
 cd emuses
 
-# Install all dependencies
-pip install -r requirements.txt
+# Install pip-tools for dependency management
+pip install pip-tools
+
+# Install all dependencies (pinned versions)
+pip-sync requirements.txt
 
 # Install EMUSES in development mode
 pip install -e .
 
-# Validate installation
-python validate_deps.py
+# Verify installation
+python -m emuses.cli --help
 ```
 
-### Alternative Installation (Setup.py Only)
+### Development Installation
+
+For development work with testing and linting tools:
 
 ```bash
+# Install development dependencies
+pip-sync requirements-dev.txt
+
+# Install EMUSES in development mode
 pip install -e .
 ```
 
-**Note**: If you encounter missing dependencies, install them manually:
+### Production Installation
+
+For production deployments:
+
 ```bash
-pip install fastapi uvicorn typer slowapi python-multipart requests httpx psutil
+# Install production dependencies
+pip-sync requirements-prod.txt
+
+# Install EMUSES
+pip install -e .
 ```
 
-### Verify Installation
+## Dependency Management
 
-EMUSES automatically checks critical dependencies when you use it, but you can run a comprehensive validation:
+EMUSES uses pip-tools for reproducible builds and security.
 
+### Installing Dependencies
 ```bash
-# Comprehensive validation (optional)
-python validate_deps.py
+# Install all dependencies
+pip-sync requirements.txt
 
-# Or just try using EMUSES - it will warn you if anything is missing
-python -m emuses.cli --help
+# Install development dependencies
+pip-sync requirements-dev.txt
+```
+
+### Adding New Dependencies
+```bash
+# Add to requirements.in
+echo "new-package>=1.0.0" >> requirements.in
+
+# Regenerate requirements.txt
+pip-compile requirements.in
+
+# Install new dependencies
+pip-sync requirements.txt
+```
+
+### Updating Dependencies
+```bash
+# Update all dependencies
+./scripts/update-dependencies.sh
+
+# Update specific package
+pip-compile --upgrade-package package-name requirements.in
 ```
 
 ## 🚀 Quick Start

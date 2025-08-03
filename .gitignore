@@ -251,3 +251,6 @@ postgres_data/
 
 # Full output files from LAD token optimization
 full_output.txt
+
+# Private evaluation and planning files
+.private/
