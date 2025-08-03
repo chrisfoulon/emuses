@@ -1,3 +1,10 @@
+# [1.1.0](https://github.com/chrisfoulon/emuses/compare/v1.0.0...v1.1.0) (2025-08-03)
+
+
+### Features
+
+* Update implementation order to prioritize observability before inference-pipeline ([7d2c159](https://github.com/chrisfoulon/emuses/commit/7d2c159fbf40979e0c316991828486ea0376d315))
+
 # 1.0.0 (2025-08-03)
 
 
