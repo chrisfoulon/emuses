@@ -4,6 +4,8 @@
 
 This plan implements universal inference capabilities for EMUSES with manifest-based model integrity and comprehensive research utilities. The implementation follows a 2-phase approach building on existing ModelIOManager and UMAP transform capabilities.
 
+**🚀 ENHANCED WITH OBSERVABILITY**: This implementation leverages the observability infrastructure from Phase 3 to provide metric-driven development, performance tracking, and research insights throughout the inference pipeline.
+
 ## Phase 0: Universal Model Format (1 week)
 
 ### Goal
@@ -11,35 +13,61 @@ Establish manifest-based model integrity and versioning for all EMUSES models wi
 
 ### Core Components
 
-#### 1. Enhanced ModelIOManager (emuses/tools/model_io.py)
+#### 1. Enhanced ModelIOManager with Observability (emuses/tools/model_io.py)
 ```python
+import time
+from emuses.observability import metrics, logger  # From Phase 3
+
 class ModelIOManager:
     def save_model(self, model, model_name, version=None, description="", tags=None):
-        """Save model with automatic manifest generation"""
-        # Existing save logic
-        # NEW: Generate manifest.json after model save
-        manifest_path = os.path.join(model_folder, "model_manifest.json")
-        self._generate_manifest(model_folder, version, description, tags)
+        """Save model with automatic manifest generation and metrics tracking"""
+        start_time = time.time()
+        try:
+            # Existing save logic
+            # NEW: Generate manifest.json after model save
+            manifest_path = os.path.join(model_folder, "model_manifest.json")
+            self._generate_manifest(model_folder, version, description, tags)
+            
+            # Observability integration
+            save_duration = time.time() - start_time
+            metrics.model_save_duration.observe(save_duration)
+            metrics.models_saved_total.inc()
+            logger.info("Model saved", extra={
+                "model_name": model_name, 
+                "version": version,
+                "save_duration": save_duration,
+                "model_size_mb": self._get_model_size_mb(model_folder)
+            })
+            
+        except Exception as e:
+            metrics.model_save_errors_total.inc()
+            logger.error("Model save failed", extra={"model_name": model_name, "error": str(e)})
+            raise
         
     def load_model(self, model_name, verify_integrity=True):
-        """Load model with optional integrity verification"""
-        # Existing load logic  
-        # NEW: Verify manifest if verify_integrity=True
-        if verify_integrity:
-            self._verify_manifest(model_folder)
+        """Load model with optional integrity verification and performance tracking"""
+        start_time = time.time()
+        try:
+            # Existing load logic  
+            # NEW: Verify manifest if verify_integrity=True
+            if verify_integrity:
+                verify_start = time.time()
+                self._verify_manifest(model_folder)
+                metrics.model_verification_duration.observe(time.time() - verify_start)
             
-    def _generate_manifest(self, model_folder, version, description, tags):
-        """Generate integrity manifest for model folder"""
-        # Calculate SHA-256 for all model files
-        # Create manifest structure with metadata
-        # Auto-increment version if not specified
-        
-    def _verify_manifest(self, model_folder):
-        """Verify model integrity against manifest"""
-        # Load manifest.json
-        # Recalculate file hashes
-        # Compare against stored hashes
-        # Raise exception if mismatch detected
+            load_duration = time.time() - start_time
+            metrics.model_load_duration.observe(load_duration)
+            metrics.models_loaded_total.inc()
+            logger.info("Model loaded", extra={
+                "model_name": model_name,
+                "load_duration": load_duration,
+                "integrity_verified": verify_integrity
+            })
+            
+        except Exception as e:
+            metrics.model_load_errors_total.inc()
+            logger.error("Model load failed", extra={"model_name": model_name, "error": str(e)})
+            raise
 ```
 
 #### 2. Manifest Structure
@@ -159,57 +187,130 @@ Enable inference on trained models with automatic detection of validation vs pur
 
 ### Core Components
 
-#### 1. InferenceStage (emuses/pipelines/inference_stage.py)
+#### 1. InferenceStage with Observability Integration (emuses/pipelines/inference_stage.py)
 ```python
+import time
+from emuses.observability import metrics, logger, create_span
+
 class InferenceStage(PipelineStage):
     def __init__(self, config):
-        """Initialize inference stage with model loading"""
+        """Initialize inference stage with model loading and metrics setup"""
         self.model_path = config.model_path
         self.data_path = config.data_path
         self.output_path = config.output_path
         self.validate_mode = config.validate_mode
         
     def execute(self, context):
-        """Run inference on new data, auto-detect validation mode"""
-        # Load trained models from manifest
-        trained_models = self._load_trained_models()
-        
-        # Load new data
-        new_features = self._load_features(self.data_path)
-        
-        # Auto-detect validation vs inference mode
-        has_labels = self._detect_labels()
-        mode = "validation" if (has_labels or self.validate_mode) else "inference"
-        
-        # Transform features through trained UMAP
-        transformed_features = self._transform_features(new_features, trained_models)
-        
-        # Run predictions
-        predictions = self._predict(transformed_features, trained_models)
-        
-        # Format and save results
-        results = self._format_results(predictions, mode)
-        self._save_results(results)
-        
-        return results
+        """Run inference with comprehensive performance tracking and research insights"""
+        with create_span("inference_pipeline") as span:
+            start_time = time.time()
+            
+            try:
+                # Load trained models from manifest (leverages ModelIOManager metrics)
+                model_load_start = time.time()
+                trained_models = self._load_trained_models()
+                span.set_attribute("model_path", self.model_path)
+                
+                # Load new data with performance tracking
+                data_load_start = time.time()
+                new_features = self._load_features(self.data_path)
+                data_load_duration = time.time() - data_load_start
+                metrics.inference_data_load_duration.observe(data_load_duration)
+                span.set_attribute("input_samples", len(new_features))
+                
+                # Auto-detect validation vs inference mode
+                has_labels = self._detect_labels()
+                mode = "validation" if (has_labels or self.validate_mode) else "inference"
+                span.set_attribute("inference_mode", mode)
+                
+                # Transform features through trained UMAP (critical performance path)
+                transform_start = time.time()
+                transformed_features = self._transform_features(new_features, trained_models)
+                transform_duration = time.time() - transform_start
+                metrics.umap_transform_duration.observe(transform_duration)
+                metrics.samples_transformed_total.inc(len(new_features))
+                
+                # Run predictions with per-model performance tracking
+                predict_start = time.time()
+                predictions = self._predict(transformed_features, trained_models)
+                predict_duration = time.time() - predict_start
+                metrics.ensemble_prediction_duration.observe(predict_duration)
+                metrics.predictions_generated_total.inc(len(predictions))
+                
+                # Calculate validation metrics if in validation mode
+                validation_metrics = None
+                if mode == "validation":
+                    validation_start = time.time()
+                    validation_metrics = self._calculate_validation_metrics(predictions)
+                    metrics.validation_computation_duration.observe(time.time() - validation_start)
+                    
+                    # Track accuracy for research insights
+                    if 'accuracy' in validation_metrics:
+                        metrics.inference_validation_accuracy.observe(validation_metrics['accuracy'])
+                
+                # Calculate overall performance metrics
+                total_duration = time.time() - start_time
+                throughput = len(new_features) / total_duration
+                metrics.inference_pipeline_duration.observe(total_duration)
+                metrics.inference_throughput_samples_per_sec.observe(throughput)
+                
+                # Structured logging for research and debugging
+                logger.info("Inference pipeline completed", extra={
+                    "mode": mode,
+                    "samples_processed": len(new_features),
+                    "model_path": self.model_path,
+                    "total_duration_sec": round(total_duration, 3),
+                    "data_load_sec": round(data_load_duration, 3),
+                    "transform_sec": round(transform_duration, 3),
+                    "prediction_sec": round(predict_duration, 3),
+                    "throughput_samples_per_sec": round(throughput, 2),
+                    "validation_accuracy": validation_metrics.get('accuracy') if validation_metrics else None
+                })
+                
+                # Format and save results with performance breakdown
+                results = self._format_results(predictions, mode, {
+                    'total_duration_ms': total_duration * 1000,
+                    'performance_breakdown': {
+                        'data_load_ms': data_load_duration * 1000,
+                        'umap_transform_ms': transform_duration * 1000,
+                        'prediction_ms': predict_duration * 1000,
+                        'throughput_samples_per_sec': throughput
+                    },
+                    'validation_metrics': validation_metrics
+                })
+                self._save_results(results)
+                
+                return results
+                
+            except Exception as e:
+                metrics.inference_pipeline_errors_total.inc()
+                logger.error("Inference pipeline failed", extra={
+                    "model_path": self.model_path,
+                    "error": str(e),
+                    "duration_before_error_sec": time.time() - start_time
+                })
+                span.record_exception(e)
+                raise
         
     def _load_trained_models(self):
-        """Load all models from trained model folder"""
-        # Use ModelIOManager with manifest verification
-        # Load UMAP, HDBSCAN, and prediction models
+        """Load all models from trained model folder with integrity verification"""
+        # ModelIOManager already provides metrics via Phase 3 integration
+        # Load UMAP, HDBSCAN, and prediction models with manifest verification
         # Return model bundle with metadata
         
     def _transform_features(self, features, models):
-        """Transform new data through trained UMAP"""
+        """Transform new data through trained UMAP with performance tracking"""
         # Apply trained UMAP transformation
         # Use existing rescaling logic from UMAPStage
+        # Individual UMAP performance already tracked via metrics
         # Return transformed embeddings
         
     def _predict(self, embeddings, models):
-        """Run ensemble predictions"""
+        """Run ensemble predictions with per-model performance insights"""
         # Apply trained prediction models
+        # Track individual model performance for ensemble analysis
         # Handle both single and multi-target predictions
-        # Return prediction results with confidence scores
+        # Return prediction results with confidence scores and model breakdown
 ```
 
 #### 2. CLI Command Integration (emuses/cli/main.py)
@@ -361,12 +462,17 @@ emuses/tools/model_io.py                     # Add manifest capabilities
 - [ ] Rich progress indicators and result summaries
 - [ ] Complete documentation with examples
 
-### Research Integration
+### Research Integration with Observability Benefits
 - [ ] Publication-ready citations in multiple formats
-- [ ] Complete reproducibility documentation  
+- [ ] Complete reproducibility documentation with performance baselines
 - [ ] Model integrity verification for collaboration
 - [ ] Version tracking with change detection
 - [ ] Cross-platform model compatibility
+- [ ] **Performance benchmarking**: Automatic collection of inference performance data for optimization
+- [ ] **Research insights**: Detailed metrics on model loading, UMAP transforms, and prediction times
+- [ ] **Reproducibility metrics**: Track inference consistency across different hardware/environments
+- [ ] **Usage analytics**: Monitor which models are used most frequently for research prioritization
+- [ ] **Error analysis**: Comprehensive error tracking and debugging information
 
 ## Testing Strategy
 

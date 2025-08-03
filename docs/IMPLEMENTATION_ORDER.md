@@ -25,44 +25,47 @@ Based on decisions made regarding:
 - **Implementation**: GitHub Actions with pip-sync integration
 - **Risk**: Medium - requires Docker/GitHub Actions expertise
 
-## Phase 3: Core Functionality (2 weeks) 🧠
+## Phase 3: Production Excellence (1 week) 📊
 
-### 3. **inference-pipeline**
-- **Duration**: 2 weeks  
-- **Dependencies**: Stable infrastructure (CI/CD helpful but not blocking)
-- **Value**: Universal model format, inference commands, research utilities
-- **Implementation**: Enhanced ModelIOManager, InferenceStage, CLI commands
-- **Risk**: Medium - core research functionality, high user impact
-
-## Phase 4: Collaboration Platform (3-4 weeks) 🤝
-
-### 4. **model-registry**
-- **Duration**: 3-4 weeks
-- **Dependencies**: **CRITICAL** - Requires inference-pipeline completion
-- **Value**: Model sharing, discovery, multi-user collaboration
-- **Implementation**: Clean database migration, shared DB approach
-- **Risk**: High - complex database integration, migration complexity
-
-## Phase 5: Production Excellence (1 week) 📊
-
-### 5. **observability** (simplified approach)
+### 3. **observability** (simplified approach)
 - **Duration**: 1 week (reduced from 2-3 weeks)
-- **Dependencies**: Can run parallel with model-registry
-- **Value**: Prometheus monitoring, Grafana dashboards, structured logging
+- **Dependencies**: Stable infrastructure (CI/CD helpful but not blocking)
+- **Value**: Prometheus monitoring, Grafana dashboards, structured logging for development
 - **Implementation**: Lightweight monitoring stack, <2% overhead
 - **Risk**: Low - simplified approach, well-established tools
+- **Research Benefits**: Performance baselines, debugging capabilities, metric-driven development
+
+## Phase 4: Core Functionality (2 weeks) 🧠
+
+### 4. **inference-pipeline**
+- **Duration**: 2 weeks  
+- **Dependencies**: **ENHANCED** - Leverages observability for performance monitoring
+- **Value**: Universal model format, inference commands, research utilities with built-in metrics
+- **Implementation**: Enhanced ModelIOManager with metrics, InferenceStage with performance tracking, CLI commands with structured logging
+- **Risk**: Medium - core research functionality, but reduced with observability insights
+- **Observability Integration**: Model loading metrics, inference performance tracking, error rate monitoring
+
+## Phase 5: Collaboration Platform (3-4 weeks) 🤝
+
+### 5. **model-registry**
+- **Duration**: 3-4 weeks
+- **Dependencies**: **CRITICAL** - Requires inference-pipeline completion
+- **Value**: Model sharing, discovery, multi-user collaboration with comprehensive monitoring
+- **Implementation**: Clean database migration, shared DB approach with observability integration
+- **Risk**: High - complex database integration, but mitigated by existing monitoring infrastructure
+- **Observability Integration**: Registry performance metrics, model usage analytics, user activity tracking
 
 ## Timeline & Dependencies
 
 ```
-dependency_management (4h) → cicd-pipeline (1w) → inference-pipeline (2w) → model-registry (3-4w)
-                                                                                      ↕
-                                                      observability (1w) ←←←←←←←←←←←←←←
+dependency_management (4h) → cicd-pipeline (1w) → observability (1w) → inference-pipeline (2w) → model-registry (3-4w)
+                                                         ↓                        ↓                         ↓
+                                               monitoring setup         performance tracking      registry analytics
 ```
 
-### **Total Duration**: 6-8 weeks
-### **Critical Path**: dependency → CI/CD → inference → registry
-### **Parallel Opportunity**: observability can start during model-registry phase
+### **Total Duration**: 6-8 weeks  
+### **Critical Path**: dependency → CI/CD → observability → inference → registry
+### **Value Chain**: Each phase enhances the next with monitoring and insights
 
 ## Key Decisions Reflected
 
@@ -116,13 +119,20 @@ dependency_management (4h) → cicd-pipeline (1w) → inference-pipeline (2w) �
 ## Implementation Notes
 
 ### **Critical Dependencies**:
+- **observability** → **inference-pipeline**: Monitoring infrastructure enables metric-driven development
 - **inference-pipeline** → **model-registry**: Universal model format required
 - **dependency_management** → **cicd-pipeline**: Pinned dependencies needed for CI
 - **Clean database migration**: Must complete before any production users
 
-### **Parallel Work Opportunities**:
-- observability can be developed during model-registry implementation
-- Documentation updates can happen throughout all phases
-- Testing strategies can be refined in each phase
+### **Enhanced Integration Benefits**:
+- **Observability-first development**: Each subsequent phase builds on monitoring capabilities
+- **Performance-driven optimization**: Real metrics guide inference and registry implementation
+- **Comprehensive monitoring**: Registry inherits mature observability patterns from inference
+- **Research insights**: Scientific workflows benefit from detailed performance and usage analytics
+
+### **Implementation Synergies**:
+- **Phase 3 → 4**: Observability provides baseline metrics for inference performance optimization
+- **Phase 4 → 5**: Inference patterns inform registry monitoring requirements  
+- **Continuous improvement**: Each phase generates insights that improve the next
 
 This implementation order maximizes value delivery while minimizing technical risk and rework.
