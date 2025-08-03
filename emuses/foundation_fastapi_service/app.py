@@ -33,10 +33,18 @@ from emuses.foundation_fastapi_service.models import (
     FileUploadResponse,
 )
 
+# Observability imports
+from emuses.observability import (
+    setup_structured_logging,
+    get_logger,
+    get_metrics_registry,
+    track_http_request
+)
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+
+# Configure structured logging for observability
+setup_structured_logging(level=os.getenv('LOG_LEVEL', 'INFO'))
+logger = get_logger(__name__)
 
 # Environment-based configuration
 TESTING_MODE = os.getenv("TESTING_MODE", "false").lower() == "true"
@@ -129,6 +137,32 @@ app.add_middleware(RequestSizeLimiterMiddleware, max_size=1024 * 1024 * 1024)
 if RATE_LIMITING_ENABLED and limiter:
     app.state.limiter = limiter
     app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+# Add observability middleware for HTTP request tracking
+@app.middleware("http")
+async def observability_middleware(request: Request, call_next):
+    """Track HTTP requests with metrics and structured logging"""
+    method = request.method
+    # Sanitize endpoint path for metrics (remove dynamic parts)
+    endpoint = str(request.url.path)
+    for pattern in ["/api/jobs/", "/api/artifacts/"]:
+        if pattern in endpoint:
+            endpoint = pattern + "{id}"
+            break
+    
+    with track_http_request(method, endpoint):
+        response = await call_next(request)
+        
+        # Log request completion
+        logger.info(
+            "HTTP request completed",
+            method=method,
+            endpoint=endpoint,
+            status_code=response.status_code,
+            user_agent=request.headers.get("user-agent", "unknown")
+        )
+        
+        return response
 
 # Set up multi-user service endpoints (conditionally based on deployment mode)
 try:
@@ -1235,6 +1269,26 @@ async def health_check() -> Dict[str, str]:
         "timestamp": datetime.now(timezone.utc).isoformat() + "Z",
         "version": "1.0.0",
     }
+
+
+@app.get("/metrics")
+async def metrics_endpoint():
+    """Prometheus metrics endpoint for monitoring and observability.
+    
+    Returns
+    -------
+    Response
+        Prometheus-formatted metrics data
+    """
+    from fastapi import Response
+    
+    metrics_registry = get_metrics_registry()
+    metrics_data = metrics_registry.get_metrics()
+    
+    return Response(
+        content=metrics_data,
+        media_type=metrics_registry.get_content_type()
+    )
 
 
 # Add request size limiting middleware

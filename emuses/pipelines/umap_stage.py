@@ -3,6 +3,7 @@ import logging
 from pathlib import Path
 
 from emuses.pipelines.pipeline_stage import PipelineStage
+from emuses.observability import track_scientific_operation, get_logger, track_optimization_trial
 from emuses.tools.UMAP_utils import (
     train_and_save_umap_optim_with_nested_clustering,
     load_umap_model,
@@ -32,21 +33,40 @@ class UMAPStage(PipelineStage):
         self.cluster_labels_path = None
 
     def run(self, context, progress_queue=None):
-        logger = logging.getLogger(__name__)
-        logger.info("Running UMAP Stage")
+        logger = get_logger(__name__)
+        
+        # Get user context for observability
+        user_id = context.get("user_id")
+        dataset_name = context.get("dataset_name", "unknown")
+        
+        with track_scientific_operation(
+            "umap_optimization", 
+            user_id=user_id,
+            additional_attributes={"dataset": dataset_name}
+        ) as obs_ctx:
+            logger.info("Running UMAP Stage", user_id=user_id, dataset=dataset_name)
 
-        # Get component-specific seeds from context
-        random_seeds = context.get("random_seeds", {})
-        umap_seed = random_seeds.get("umap_seed", 42)
-        clustering_seed = random_seeds.get("clustering_seed", 42)
-        logger.info(
-            f"Using random seeds - UMAP: {umap_seed}, Clustering: {clustering_seed}"
-        )
+            # Get component-specific seeds from context
+            random_seeds = context.get("random_seeds", {})
+            umap_seed = random_seeds.get("umap_seed", 42)
+            clustering_seed = random_seeds.get("clustering_seed", 42)
+            logger.info(
+                f"Using random seeds - UMAP: {umap_seed}, Clustering: {clustering_seed}"
+            )
+            
+            # Add optimization context to observability
+            obs_ctx.set_attribute("umap_seed", umap_seed)
+            obs_ctx.set_attribute("clustering_seed", clustering_seed)
 
-        # Use new naming convention only
-        train_features = context.get("embedding_train_features")
-        test_features = context.get("embedding_test_features")
-        # train_indices = context.get("embedding_train_indices")  # Unused variable
+            # Use new naming convention only
+            train_features = context.get("embedding_train_features")
+            test_features = context.get("embedding_test_features")
+            # train_indices = context.get("embedding_train_indices")  # Unused variable
+            
+            if train_features is not None:
+                obs_ctx.set_attribute("train_samples", len(train_features))
+            if test_features is not None:
+                obs_ctx.set_attribute("test_samples", len(test_features))
 
         # Determine file paths based on output folder and prefix
         prefix = self.config.prefix if hasattr(self.config, "prefix") else ""

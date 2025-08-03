@@ -343,6 +343,8 @@ plotly==6.2.0
     # via -r requirements.in
 pooch==1.8.2
     # via mne
+prometheus-client==0.22.1
+    # via -r requirements.in
 protobuf==6.31.1
     # via streamlit
 psutil==7.0.0
@@ -461,6 +463,8 @@ statsmodels==0.14.5
     #   -r requirements.in
     #   bcblib
 streamlit==1.47.1
+    # via -r requirements.in
+structlog==25.4.0
     # via -r requirements.in
 sympy==1.14.0
     # via torch
