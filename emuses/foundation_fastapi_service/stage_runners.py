@@ -8,17 +8,18 @@ independently with parameter validation, resource limits, and progress tracking.
 import asyncio
 import copy
 import logging
-import psutil
-import time
-from pathlib import Path
-from typing import Dict, Any, Optional, Callable
-from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 import threading
+import time
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
+from pathlib import Path
+from typing import Any, Callable, Dict, Optional
 
-from emuses.pipelines.umap_stage import UMAPStage
+import psutil
+
+from emuses.foundation_fastapi_service.job_manager import JobManager
 from emuses.pipelines.heatmap_stage import HeatmapStage
 from emuses.pipelines.prediction_stage import PredictionStage
-from emuses.foundation_fastapi_service.job_manager import JobManager
+from emuses.pipelines.umap_stage import UMAPStage
 
 
 class ResourceMonitor:

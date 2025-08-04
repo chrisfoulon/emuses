@@ -6,45 +6,36 @@ providing job management, pipeline execution, and artifact handling capabilities
 
 import asyncio
 import logging
-import os
-from pathlib import Path
-from typing import List, Optional, Dict, Any
-from uuid import UUID, uuid4
-from datetime import datetime, timezone
 import mimetypes
+import os
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any, Dict, List, Optional
+from uuid import UUID, uuid4
 
 # Explicit import for Starlette form parser compatibility
 import python_multipart
-
-from fastapi import FastAPI, HTTPException, File, UploadFile, Request, Depends
-from fastapi.responses import FileResponse, JSONResponse
-from fastapi.middleware.cors import CORSMiddleware
-from slowapi import Limiter, _rate_limit_exceeded_handler
-from slowapi.util import get_remote_address
-from slowapi.errors import RateLimitExceeded
 import uvicorn
+from fastapi import Depends, FastAPI, File, HTTPException, Request, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse, JSONResponse
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.util import get_remote_address
 
-from emuses.foundation_fastapi_service.models import (
-    PipelineConfigRequest,
-    JobSubmissionRequest,
-    JobStatusResponse,
-    ErrorResponse,
-    FileUploadModel,
-    FileUploadResponse,
-)
-
+from emuses.foundation_fastapi_service.models import (ErrorResponse,
+                                                      FileUploadModel,
+                                                      FileUploadResponse,
+                                                      JobStatusResponse,
+                                                      JobSubmissionRequest,
+                                                      PipelineConfigRequest)
 # Observability imports
-from emuses.observability import (
-    setup_structured_logging,
-    get_logger,
-    get_metrics_registry,
-    track_http_request
-)
-from emuses.observability.logging import set_request_context, clear_context
-
+from emuses.observability import (get_logger, get_metrics_registry,
+                                  setup_structured_logging, track_http_request)
+from emuses.observability.logging import clear_context, set_request_context
 
 # Configure structured logging for observability
-setup_structured_logging(level=os.getenv('LOG_LEVEL', 'INFO'))
+setup_structured_logging(level=os.getenv("LOG_LEVEL", "INFO"))
 logger = get_logger(__name__)
 
 # Environment-based configuration
@@ -139,61 +130,73 @@ if RATE_LIMITING_ENABLED and limiter:
     app.state.limiter = limiter
     app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
+
 # Add observability middleware for HTTP request tracking and correlation IDs
 @app.middleware("http")
 async def observability_middleware(request: Request, call_next):
     """Track HTTP requests with metrics, structured logging, and correlation IDs"""
     import uuid
-    
+
     method = request.method
     # Sanitize endpoint path for metrics (remove dynamic parts)
     endpoint = str(request.url.path)
-    for pattern in ["/api/v1/jobs/", "/api/jobs/", "/api/v1/artifacts/", "/api/artifacts/"]:
+    for pattern in [
+        "/api/v1/jobs/",
+        "/api/jobs/",
+        "/api/v1/artifacts/",
+        "/api/artifacts/",
+    ]:
         if pattern in endpoint:
             endpoint = pattern + "{id}"
             break
-    
+
     # Generate or extract correlation ID
     correlation_id = request.headers.get("x-correlation-id") or str(uuid.uuid4())
-    
+
     # Extract user ID if available (from headers or auth context)
     user_id = request.headers.get("x-user-id")
-    
+
     # Set request context for structured logging
     set_request_context(request_id=correlation_id, user_id=user_id)
-    
+
     try:
         with track_http_request(method, endpoint):
             response = await call_next(request)
-            
+
             # Add correlation ID to response headers
             response.headers["x-correlation-id"] = correlation_id
-            
+
             # Log request completion with correlation info
             logger.info(
                 "HTTP request completed",
                 method=method,
                 endpoint=endpoint,
                 status_code=response.status_code,
-                user_agent=request.headers.get("user-agent", "unknown")
+                user_agent=request.headers.get("user-agent", "unknown"),
             )
-            
+
             return response
     finally:
         # Always clear context to prevent leaks
         clear_context()
 
+
 # Set up multi-user service endpoints (conditionally based on deployment mode)
 try:
-    from emuses.multi_user_service.deployment_config import is_service_mode_enabled, detect_deployment_mode
-    
+    from emuses.multi_user_service.deployment_config import (
+        detect_deployment_mode, is_service_mode_enabled)
+
     if is_service_mode_enabled():
         deployment_mode = detect_deployment_mode()
-        from emuses.multi_user_service.workspace_endpoints import setup_workspace_endpoints
         from emuses.multi_user_service.endpoints import setup_auth_endpoints
+        from emuses.multi_user_service.workspace_endpoints import \
+            setup_workspace_endpoints
+
         setup_workspace_endpoints(app)
         setup_auth_endpoints(app)
-        logger.info(f"Multi-user service endpoints enabled for {deployment_mode.value} mode")
+        logger.info(
+            f"Multi-user service endpoints enabled for {deployment_mode.value} mode"
+        )
     else:
         logger.info("Multi-user service endpoints disabled for local mode")
 except ImportError as e:
@@ -262,7 +265,8 @@ def get_pipeline_runner():
     """Get or create the pipeline runner instance."""
     global pipeline_runner
     if pipeline_runner is None:
-        from emuses.foundation_fastapi_service.pipeline_runner import PipelineRunner
+        from emuses.foundation_fastapi_service.pipeline_runner import \
+            PipelineRunner
 
         pipeline_runner = PipelineRunner(get_job_manager())
     return pipeline_runner
@@ -378,7 +382,7 @@ def validate_file_path(file_path: str) -> Path:
     # Convert Windows paths to WSL paths if necessary
     converted_path = _convert_windows_path_to_wsl(file_path)
     path = Path(converted_path)
-    
+
     if not path.exists():
         raise ValueError(f"File not found: {file_path} (tried: {converted_path})")
     if not path.is_file():
@@ -388,44 +392,45 @@ def validate_file_path(file_path: str) -> Path:
 
 def _convert_windows_path_to_wsl(file_path: str) -> str:
     """Convert Windows path to WSL path if needed.
-    
+
     Only performs conversion in WSL environment to avoid breaking
     other deployment scenarios.
-    
+
     Parameters
     ----------
     file_path : str
         Original file path (may be Windows or Linux format)
-        
+
     Returns
     -------
     str
         Path converted to WSL format if necessary
     """
     import os
-    
+
     # Only convert if we're in WSL environment
-    if not (os.path.exists('/mnt/c') or 'microsoft' in os.uname().release.lower()):
+    if not (os.path.exists("/mnt/c") or "microsoft" in os.uname().release.lower()):
         return file_path
-    
+
     # Clean up any combined paths that got corrupted
     # Handle case where working directory got prepended to Windows path
-    if '/mnt/c/Users/' in file_path and ':\\' in file_path:
+    if "/mnt/c/Users/" in file_path and ":\\" in file_path:
         # Extract just the Windows path part after the last occurrence of drive letter pattern
         import re
+
         match = re.search(r'([A-Za-z]):\\([^"]*)', file_path)
         if match:
             drive_letter = match.group(1).lower()
-            rest_of_path = match.group(2).replace('\\', '/')
+            rest_of_path = match.group(2).replace("\\", "/")
             return f"/mnt/{drive_letter}/{rest_of_path}"
-    
+
     # Check if it's a Windows path (contains drive letter)
-    if len(file_path) >= 3 and file_path[1] == ':' and file_path[2] == '\\':
+    if len(file_path) >= 3 and file_path[1] == ":" and file_path[2] == "\\":
         # Convert Windows path like "S:\folder\file.txt" to "/mnt/s/folder/file.txt"
         drive_letter = file_path[0].lower()
-        rest_of_path = file_path[3:].replace('\\', '/')
+        rest_of_path = file_path[3:].replace("\\", "/")
         return f"/mnt/{drive_letter}/{rest_of_path}"
-    
+
     # Already in Linux/WSL format or relative path
     return file_path
 
@@ -511,12 +516,18 @@ async def submit_full_pipeline_job(
 
         # Create a converted copy of config for pipeline execution only
         pipeline_config = config.copy()
-        pipeline_config["input_dataset"] = _convert_windows_path_to_wsl(config["input_dataset"])
+        pipeline_config["input_dataset"] = _convert_windows_path_to_wsl(
+            config["input_dataset"]
+        )
         pipeline_config["scores"] = _convert_windows_path_to_wsl(config["scores"])
         if pipeline_config.get("output_folder"):
-            pipeline_config["output_folder"] = _convert_windows_path_to_wsl(config["output_folder"])
+            pipeline_config["output_folder"] = _convert_windows_path_to_wsl(
+                config["output_folder"]
+            )
         if pipeline_config.get("label_dataset"):
-            pipeline_config["label_dataset"] = _convert_windows_path_to_wsl(config["label_dataset"])
+            pipeline_config["label_dataset"] = _convert_windows_path_to_wsl(
+                config["label_dataset"]
+            )
 
         # Wrap converted config in the expected structure for pipeline runner
         pipeline_context = {
@@ -1293,20 +1304,19 @@ async def health_check() -> Dict[str, str]:
 @app.get("/metrics")
 async def metrics_endpoint():
     """Prometheus metrics endpoint for monitoring and observability.
-    
+
     Returns
     -------
     Response
         Prometheus-formatted metrics data
     """
     from fastapi import Response
-    
+
     metrics_registry = get_metrics_registry()
     metrics_data = metrics_registry.get_metrics()
-    
+
     return Response(
-        content=metrics_data,
-        media_type=metrics_registry.get_content_type()
+        content=metrics_data, media_type=metrics_registry.get_content_type()
     )
 
 

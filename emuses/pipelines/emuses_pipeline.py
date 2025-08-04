@@ -2,29 +2,23 @@
 
 import logging
 import time
-import numpy as np
 from pathlib import Path
+
+import numpy as np
+from bcblib.tools.dataframe_filtering import normalize_dataframe
+from bcblib.tools.general_utils import parse_file_list_argument, save_json
+from bcblib.tools.nifti_utils import load_nifti
 from numpy.random import default_rng
 from sklearn.model_selection import train_test_split
 
-from emuses.observability import track_scientific_operation, get_logger
-
+from emuses.observability import get_logger, track_scientific_operation
 from emuses.pipelines.pipeline_config import PipelineConfig
-
-from bcblib.tools.general_utils import parse_file_list_argument, save_json
-from bcblib.tools.dataframe_filtering import normalize_dataframe
-from bcblib.tools.nifti_utils import load_nifti
-from emuses.tools.inputs_utils import (
-    detect_dataset_type,
-    process_images,
-    nifti_dataset_to_matrix,
-    load_and_preprocess_digits_dataset,
-    prepare_scores,
-    spreadsheet_to_input_df,
-    is_bids_dataset,
-    handle_bids_dataset,
-)
 from emuses.tools.data_preproc import find_min_resolution
+from emuses.tools.inputs_utils import (detect_dataset_type,
+                                       handle_bids_dataset, is_bids_dataset,
+                                       load_and_preprocess_digits_dataset,
+                                       nifti_dataset_to_matrix, prepare_scores,
+                                       process_images, spreadsheet_to_input_df)
 
 
 class EMUSESPipeline:
@@ -680,8 +674,8 @@ class EMUSESPipeline:
             additional_attributes={
                 "dataset": dataset_name,
                 "total_stages": total_stages,
-                "pipeline_type": "emuses_full"
-            }
+                "pipeline_type": "emuses_full",
+            },
         ) as obs_ctx:
             for i, stage in enumerate(self.stages):
                 stage_name = stage.__class__.__name__
@@ -698,10 +692,12 @@ class EMUSESPipeline:
                     additional_attributes={
                         "stage_index": i,
                         "stage_name": stage_name,
-                        "dataset": dataset_name
-                    }
+                        "dataset": dataset_name,
+                    },
                 ) as stage_obs_ctx:
-                    self.logger.info(f"Starting stage {i+1}/{total_stages}: {stage_name}")
+                    self.logger.info(
+                        f"Starting stage {i+1}/{total_stages}: {stage_name}"
+                    )
                     stage.run(self.context, progress_queue=progress_queue)
                     self.logger.info(f"Completed stage: {stage_name}")
 
@@ -714,7 +710,7 @@ class EMUSESPipeline:
                 self.context["pipeline_metadata"]["stages_runtime"][
                     stage_name
                 ] = stage_runtime
-                
+
                 # Add stage metrics to observability
                 stage_obs_ctx.set_attribute("stage_runtime", stage_runtime)
                 stage_obs_ctx.set_attribute("stage_completed", True)
@@ -729,7 +725,12 @@ class EMUSESPipeline:
                 self.context["pipeline_metadata"]["end_time"]
                 - self.context["pipeline_metadata"]["start_time"]
             )
-            
+
             # Add final observability metrics
-            obs_ctx.set_attribute("total_runtime", self.context["pipeline_metadata"]["total_runtime"])
-            obs_ctx.set_attribute("stages_completed", len(self.context["pipeline_metadata"]["stages_completed"]))
+            obs_ctx.set_attribute(
+                "total_runtime", self.context["pipeline_metadata"]["total_runtime"]
+            )
+            obs_ctx.set_attribute(
+                "stages_completed",
+                len(self.context["pipeline_metadata"]["stages_completed"]),
+            )

@@ -5,17 +5,16 @@ to the existing FastAPI application with proper positioning and backward
 compatibility.
 """
 
-import os
 import logging
-from typing import Optional, Callable, Any
-from fastapi import FastAPI, Depends, Request, HTTPException
+import os
+from typing import Any, Callable, Optional
+
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.security import HTTPBearer
 
-from emuses.multi_user_service.auth import (
-    get_current_user_optional,
-    get_current_active_user,
-    fastapi_users
-)
+from emuses.multi_user_service.auth import (fastapi_users,
+                                            get_current_active_user,
+                                            get_current_user_optional)
 from emuses.multi_user_service.models import User
 
 logger = logging.getLogger(__name__)
@@ -86,13 +85,14 @@ def get_conditional_auth_dependency() -> Callable:
         return get_current_active_user
     else:
         # Default to optional authentication
-        logger.warning(f"Unknown deployment mode: {deployment_mode}, using optional auth")
+        logger.warning(
+            f"Unknown deployment mode: {deployment_mode}, using optional auth"
+        )
         return get_current_user_optional
 
 
 async def get_user_context(
-    request: Request,
-    user: Optional[User] = Depends(get_conditional_auth_dependency())
+    request: Request, user: Optional[User] = Depends(get_conditional_auth_dependency())
 ) -> Optional[User]:
     """Get user context for request processing.
 
@@ -147,7 +147,7 @@ def require_authentication(user: User = Depends(get_current_active_user)) -> Use
 
 
 def optional_authentication(
-    user: Optional[User] = Depends(get_current_user_optional)
+    user: Optional[User] = Depends(get_current_user_optional),
 ) -> Optional[User]:
     """Dependency for optional authentication.
 
@@ -183,9 +183,10 @@ def create_user_scoped_dependency(base_dependency: Callable) -> Callable:
     Callable
         User-scoped dependency function
     """
+
     async def user_scoped_dependency(
         user: Optional[User] = Depends(get_conditional_auth_dependency()),
-        base_result: Any = Depends(base_dependency)
+        base_result: Any = Depends(base_dependency),
     ):
         """User-scoped wrapper for base dependency.
 

@@ -9,21 +9,21 @@ This module provides an async wrapper for EMUSES pipeline execution with:
 - Timeout handling and proper cleanup
 """
 
+import argparse
 import asyncio
 import copy
 import logging
 import pickle
 import time
-import argparse
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
-from typing import Dict, Any, Callable, Optional
+from typing import Any, Callable, Dict, Optional
 from uuid import UUID
 
+from emuses.foundation_fastapi_service.job_manager import JobManager
+from emuses.observability import get_logger, track_scientific_operation
 from emuses.pipelines.emuses_pipeline import EMUSESPipeline
 from emuses.pipelines.pipeline_config import PipelineConfig
-from emuses.foundation_fastapi_service.job_manager import JobManager
-from emuses.observability import track_scientific_operation, get_logger
 
 
 class PipelineRunner:
@@ -260,7 +260,11 @@ class PipelineRunner:
             raise
         except Exception as e:
             # Ensure we have a meaningful error message for job status
-            error_msg = str(e) if str(e) else f"{type(e).__name__}: Unknown error during pipeline execution"
+            error_msg = (
+                str(e)
+                if str(e)
+                else f"{type(e).__name__}: Unknown error during pipeline execution"
+            )
             self.job_manager.update_job_status(
                 job_id, "failed", message=f"Pipeline execution error: {error_msg}"
             )
@@ -293,13 +297,16 @@ class PipelineRunner:
 
         except Exception as e:
             import traceback
+
             error_msg = str(e) if str(e) else f"{type(e).__name__} (no error message)"
             self.logger.error(f"Pipeline execution failed: {error_msg}")
             self.logger.debug(f"Full traceback:\n{traceback.format_exc()}")
-            
+
             # Ensure we always have a meaningful error message
             if not str(e):
-                raise RuntimeError(f"Pipeline stage execution failed: {type(e).__name__} occurred") from e
+                raise RuntimeError(
+                    f"Pipeline stage execution failed: {type(e).__name__} occurred"
+                ) from e
             raise
 
     def _run_pipeline(
@@ -339,20 +346,21 @@ class PipelineRunner:
         user_id = context.get("user_id")
         job_id = context.get("job_id", "unknown")
         dataset_name = context.get("config", {}).get("input_dataset", "api_data")
-        
+
         with track_scientific_operation(
             "pipeline_execution",
             user_id=user_id,
             additional_attributes={
                 "job_id": job_id,
                 "dataset": dataset_name,
-                "execution_method": "pipeline_runner"
-            }
+                "execution_method": "pipeline_runner",
+            },
         ) as obs_ctx:
             try:
                 # Configure parallelism context for service worker environment
-                from emuses.tools.parallelism_utils import configure_parallelism_backend
-                
+                from emuses.tools.parallelism_utils import \
+                    configure_parallelism_backend
+
                 # Service workers run in subprocess context - use threading backend
                 configure_parallelism_backend(force_backend="threading")
 
@@ -361,10 +369,12 @@ class PipelineRunner:
 
                 # Create EMUSESPipeline instance
                 pipeline = EMUSESPipeline(args)
-                
+
                 # Add observability context
-                obs_ctx.set_attribute("num_stages", len(context.get("config", {}).keys()))
-                
+                obs_ctx.set_attribute(
+                    "num_stages", len(context.get("config", {}).keys())
+                )
+
                 # Set up pipeline context based on execution mode
                 if context.get("input_dataset"):
                     # File-based execution: EMUSESPipeline will load and process files
@@ -390,20 +400,26 @@ class PipelineRunner:
 
                 if config_dict.get("umap_stage_enabled", True):
                     from emuses.pipelines.umap_stage import UMAPStage
+
                     pipeline.add_stage(UMAPStage(pipeline.config))
                     enabled_stages.append("umap")
 
                 if config_dict.get("heatmap_stage_enabled", True):
                     from emuses.pipelines.heatmap_stage import HeatmapStage
+
                     output_format_info = context.get("output_format_info", [])
-                    pipeline.add_stage(HeatmapStage(pipeline.config, output_format_info))
+                    pipeline.add_stage(
+                        HeatmapStage(pipeline.config, output_format_info)
+                    )
                     enabled_stages.append("heatmap")
 
                 if config_dict.get("prediction_stage_enabled", True):
-                    from emuses.pipelines.prediction_stage import PredictionStage
+                    from emuses.pipelines.prediction_stage import \
+                        PredictionStage
+
                     pipeline.add_stage(PredictionStage(pipeline.config))
                     enabled_stages.append("prediction")
-                    
+
                 obs_ctx.set_attribute("enabled_stages", enabled_stages)
 
                 # Create progress callback adapter if needed
@@ -420,33 +436,40 @@ class PipelineRunner:
 
                 # Merge EMUSESPipeline context back into API context
                 result_context = self._merge_pipeline_context(context, pipeline.context)
-                
+
                 # Add final observability metrics
                 obs_ctx.set_attribute("pipeline_success", True)
                 if "pipeline_metadata" in result_context:
                     metadata = result_context["pipeline_metadata"]
-                    obs_ctx.set_attribute("total_runtime", metadata.get("total_runtime", 0))
-                    obs_ctx.set_attribute("stages_completed", len(metadata.get("stages_completed", [])))
+                    obs_ctx.set_attribute(
+                        "total_runtime", metadata.get("total_runtime", 0)
+                    )
+                    obs_ctx.set_attribute(
+                        "stages_completed", len(metadata.get("stages_completed", []))
+                    )
 
                 return result_context
 
             except Exception as e:
                 # Log the error with full traceback and re-raise with preserved context
                 import traceback
+
                 error_msg = str(e) if str(e) else f"{type(e).__name__} (no message)"
                 full_traceback = traceback.format_exc()
-                
+
                 # Add error context to observability
                 obs_ctx.set_attribute("pipeline_success", False)
                 obs_ctx.set_attribute("error_type", type(e).__name__)
                 obs_ctx.set_attribute("error_message", error_msg)
-                
+
                 self.logger.error(f"EMUSESPipeline execution failed: {error_msg}")
                 self.logger.error(f"Full traceback:\n{full_traceback}")
-                
+
                 # Re-raise with enhanced error message if original is empty
                 if not str(e):
-                    raise RuntimeError(f"Pipeline execution failed: {type(e).__name__} occurred during stage execution") from e
+                    raise RuntimeError(
+                        f"Pipeline execution failed: {type(e).__name__} occurred during stage execution"
+                    ) from e
                 raise
 
     def _merge_pipeline_context(

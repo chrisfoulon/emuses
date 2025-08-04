@@ -1,49 +1,40 @@
 # kernel_regression.py
 from copy import deepcopy
 from pathlib import Path
+
+import matplotlib
 import numpy as np
 import pandas as pd
-import matplotlib
 
 matplotlib.use("Agg")
-import matplotlib.pyplot as plt
-from matplotlib import pyplot as plt
+import json
+import os
+import time
 
+import GPy
+# Other imports
+import hdbscan
+import matplotlib.pyplot as plt
+from joblib import Parallel, delayed, dump
+from matplotlib import pyplot as plt
 # SciPy imports
 from scipy.spatial import ConvexHull, cKDTree
-from scipy.stats import normaltest
 from scipy.spatial.distance import cdist
-
+from scipy.stats import normaltest
 # Scikit-learn imports
-from sklearn.base import BaseEstimator, RegressorMixin, ClassifierMixin
-from sklearn.model_selection import KFold
-from sklearn.metrics import (
-    accuracy_score,
-    balanced_accuracy_score,
-    roc_auc_score,
-    r2_score,
-    mean_squared_error,
-    mean_absolute_error,
-    confusion_matrix,
-    f1_score,
-    precision_score,
-    recall_score,
-    pairwise_distances,
-)
+from sklearn.base import BaseEstimator, ClassifierMixin, RegressorMixin
 from sklearn.decomposition import PCA
+from sklearn.metrics import (accuracy_score, balanced_accuracy_score,
+                             confusion_matrix, f1_score, mean_absolute_error,
+                             mean_squared_error, pairwise_distances,
+                             precision_score, r2_score, recall_score,
+                             roc_auc_score)
+from sklearn.model_selection import KFold
 
+from emuses.tools.correlation_maps_utils import calculate_correlation_grid
 # EMUSES imports
 from emuses.tools.output_utils import save_statistical_maps
 from emuses.tools.stats_utils import input_matrix_stat_map
-from emuses.tools.correlation_maps_utils import calculate_correlation_grid
-
-# Other imports
-import hdbscan
-from joblib import dump, Parallel, delayed
-import GPy
-import os
-import json
-import time
 
 
 class KernelRegressor(BaseEstimator, RegressorMixin):
@@ -389,7 +380,7 @@ def nested_cv_kernel_regression(
 
         # Calculate and store performance metrics
         if classification:
-            from sklearn.metrics import balanced_accuracy_score, accuracy_score
+            from sklearn.metrics import accuracy_score, balanced_accuracy_score
 
             acc = accuracy_score(y_test_outer, y_pred)
             bal_acc = balanced_accuracy_score(y_test_outer, y_pred)
@@ -632,7 +623,8 @@ def evaluate_ensemble_on_test(models, X_test, y_test, classification=False):
             results["recall"] = None
     else:
         # Regression metrics
-        from sklearn.metrics import r2_score, mean_squared_error, mean_absolute_error
+        from sklearn.metrics import (mean_absolute_error, mean_squared_error,
+                                     r2_score)
 
         results["r2"] = float(r2_score(y_test, mean_pred))
         results["mse"] = float(mean_squared_error(y_test, mean_pred))
@@ -1438,7 +1430,7 @@ def optimize_gp_model(model, max_iter=300, verbose=True):
                     max_iters=max_iter // 2,
                     verbose=verbose,
                 )
-            except:
+            except Exception:
                 if verbose:
                     print(
                         "All optimization attempts failed. Using current model parameters."

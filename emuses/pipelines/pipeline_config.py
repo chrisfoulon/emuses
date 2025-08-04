@@ -2,17 +2,18 @@
 
 import argparse
 import atexit
-from dataclasses import dataclass, field
 import logging
-from logging.handlers import QueueHandler, QueueListener
 import multiprocessing as mp
-from pathlib import Path
-from datetime import datetime
 import sys
+from dataclasses import dataclass, field
+from datetime import datetime
+from logging.handlers import QueueHandler, QueueListener
+from pathlib import Path
 from typing import Union
 
-from bcblib.tools.general_utils import save_json
 import optuna
+from bcblib.tools.general_utils import save_json
+
 from emuses.observability.logging import setup_structured_logging
 
 # create ONE queue at module load, so children can see it
@@ -105,7 +106,7 @@ class PipelineConfig:
                 kwargs.update(namespace_dict)
             else:
                 # Handle any object with attributes (like MinimalArgs)
-                if hasattr(args[0], '__dict__'):
+                if hasattr(args[0], "__dict__"):
                     obj_dict = vars(args[0])
                     kwargs.update(obj_dict)
 
@@ -160,26 +161,26 @@ class PipelineConfig:
         log_file = log_dir / "pipeline.log"
 
         # Setup observability structured logging with file output
-        setup_structured_logging(level='INFO', output_file=str(log_file))
-        
+        setup_structured_logging(level="INFO", output_file=str(log_file))
+
         # Ensure file logging works by adding a dedicated FileHandler
         root = logging.getLogger()
-        
+
         # Check if we already have a file handler for this specific file
         file_handler_exists = any(
             isinstance(h, logging.FileHandler) and h.baseFilename == str(log_file)
             for h in root.handlers
         )
-        
+
         if not file_handler_exists:
             # Add a dedicated file handler to ensure logs go to pipeline.log
-            file_handler = logging.FileHandler(log_file, mode='a')
+            file_handler = logging.FileHandler(log_file, mode="a")
             file_handler.setLevel(logging.INFO)
-            file_handler.setFormatter(logging.Formatter(
-                '%(asctime)s [%(levelname)8s] %(name)s: %(message)s'
-            ))
+            file_handler.setFormatter(
+                logging.Formatter("%(asctime)s [%(levelname)8s] %(name)s: %(message)s")
+            )
             root.addHandler(file_handler)
-        
+
         # Log successful configuration
         config_logger = logging.getLogger("emuses.pipeline_config")
         config_logger.info("Pipeline logging configured successfully")

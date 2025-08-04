@@ -1,23 +1,22 @@
 # streamlit_app.py
+import argparse
+import logging
 import queue
 import sys
 import threading
 import time
+from pathlib import Path
 
+import numpy as np
 import plotly
 import streamlit as st
-import logging
-import argparse
-from pathlib import Path
-import numpy as np
-
 from matplotlib import pyplot as plt
 
 # Import pipeline classes
 from emuses.pipelines.emuses_pipeline import EMUSESPipeline
-from emuses.pipelines.umap_stage import UMAPStage
 from emuses.pipelines.heatmap_stage import HeatmapStage
 from emuses.pipelines.prediction_stage import PredictionStage
+from emuses.pipelines.umap_stage import UMAPStage
 
 
 def main():

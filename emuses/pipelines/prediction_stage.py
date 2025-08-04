@@ -1,26 +1,23 @@
-import os
+import concurrent.futures
 import json
 import logging
-import numpy as np
-import pandas as pd
+import os
 from pathlib import Path
 
-from emuses.pipelines.pipeline_stage import PipelineStage
-from emuses.observability import track_scientific_operation, get_logger
-from emuses.tools.stats_utils import (
-    compute_gwd_summary_test,
-    train_and_test_model_per_label,
-    optuna_model_selection,
-)
-from emuses.tools.stats_utils import compute_gwd_summary
-from sklearn.metrics import r2_score, mean_squared_error, mean_absolute_error
-from sklearn.model_selection import cross_val_score
-from sklearn.kernel_ridge import KernelRidge
-
+import numpy as np
+import pandas as pd
 from bcblib.tools.general_utils import save_json
-
-import concurrent.futures
 from joblib import dump
+from sklearn.kernel_ridge import KernelRidge
+from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
+from sklearn.model_selection import cross_val_score
+
+from emuses.observability import get_logger, track_scientific_operation
+from emuses.pipelines.pipeline_stage import PipelineStage
+from emuses.tools.stats_utils import (compute_gwd_summary,
+                                      compute_gwd_summary_test,
+                                      optuna_model_selection,
+                                      train_and_test_model_per_label)
 
 # Import new model I/O system
 from ..tools.model_io import ModelIOManager
@@ -37,16 +34,16 @@ class PredictionStage(PipelineStage):
 
     def run(self, context, progress_queue=None):
         logger = get_logger(__name__)
-        
+
         # Get user context for observability
         user_id = context.get("user_id")
         dataset_name = context.get("dataset_name", "unknown")
-        
+
         with track_scientific_operation(
             "prediction_modeling",
             user_id=user_id,
-            additional_attributes={"dataset": dataset_name}
-        ) as obs_ctx:
+            additional_attributes={"dataset": dataset_name},
+        ):
             logger.info("Running Prediction Stage (Test Evaluation)", user_id=user_id)
 
             # Get component-specific seeds from context

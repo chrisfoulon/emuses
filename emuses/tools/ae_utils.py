@@ -5,13 +5,14 @@ in the EMUSES pipeline. These models can learn compressed representations
 of high-dimensional input features.
 """
 
+import logging
+
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import numpy as np
 from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.preprocessing import StandardScaler
-import logging
 
 logger = logging.getLogger(__name__)
 

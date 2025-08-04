@@ -1,10 +1,7 @@
 # emuses/tools/features_utils.py
-import numpy as np
-from scipy.spatial.distance import cdist
-from sklearn.base import BaseEstimator, TransformerMixin
-
 # emuses/tools/features_utils.py
 import numpy as np
+from scipy.spatial.distance import cdist
 from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.decomposition import PCA, KernelPCA
 

@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 import argparse
+import os
 import subprocess
 import sys
-import os
 from time import sleep
 
 
@@ -11,21 +11,28 @@ def main():
         description="Run EMUSES with a range of dynamic optim_dict configurations as separate processes."
     )
     parser.add_argument(
-        '--num_configs', type=int, default=50,
-        help="Number of dynamic optim_dict configurations to try (e.g., if 10, will try dynamic_optim_dict_0 to dynamic_optim_dict_9)."
+        "--num_configs",
+        type=int,
+        default=50,
+        help="Number of dynamic optim_dict configurations to try (e.g., if 10, will try dynamic_optim_dict_0 to dynamic_optim_dict_9).",
     )
     parser.add_argument(
-        '--base_optim_dict', type=str, default='dynamic_optim_dict',
-        help="Base name of the optim_dict variable in optim_configs.py (e.g., 'dynamic_optim_dict')."
+        "--base_optim_dict",
+        type=str,
+        default="dynamic_optim_dict",
+        help="Base name of the optim_dict variable in optim_configs.py (e.g., 'dynamic_optim_dict').",
     )
     parser.add_argument(
-        '--max_concurrent', type=int, default=20,
-        help="Maximum number of concurrent processes. A machine with 72 cores might handle around 20 heavy processes concurrently."
+        "--max_concurrent",
+        type=int,
+        default=20,
+        help="Maximum number of concurrent processes. A machine with 72 cores might handle around 20 heavy processes concurrently.",
     )
     # All remaining arguments will be passed to the EMUSES command.
     parser.add_argument(
-        'emuses_args', nargs=argparse.REMAINDER,
-        help="The command-line arguments for the EMUSES tool. For example: 'full /path/to/output mnist -inorm min-max --correlation_method pointbiserial --test_size 0.2 --interactive_plot --classification'"
+        "emuses_args",
+        nargs=argparse.REMAINDER,
+        help="The command-line arguments for the EMUSES tool. For example: 'full /path/to/output mnist -inorm min-max --correlation_method pointbiserial --test_size 0.2 --interactive_plot --classification'",
     )
 
     args = parser.parse_args()
@@ -37,7 +44,9 @@ def main():
     # emuses <subcommand> <output_folder> ...
     # So, the output folder is the second argument in emuses_args.
     if len(args.emuses_args) < 2:
-        print("Error: At least two arguments are required for EMUSES (subcommand and output folder).")
+        print(
+            "Error: At least two arguments are required for EMUSES (subcommand and output folder)."
+        )
         sys.exit(1)
     base_output_folder = args.emuses_args[1]
 

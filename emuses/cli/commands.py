@@ -6,13 +6,8 @@ the main CLI module. This separation allows for better testing and
 organization of the CLI code.
 """
 
-from .main import (
-    full_command,
-    umap_command,
-    clustering_command,
-    heatmap_command,
-    prediction_command
-)
+from .main import (clustering_command, full_command, heatmap_command,
+                   prediction_command, umap_command)
 
 # Re-export command functions for testing
 __all__ = [
@@ -20,5 +15,5 @@ __all__ = [
     "umap_command",
     "clustering_command",
     "heatmap_command",
-    "prediction_command"
+    "prediction_command",
 ]

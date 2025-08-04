@@ -1,11 +1,12 @@
 from pathlib import Path
 
 import numpy as np
-from scipy.stats import pointbiserialr, pearsonr, spearmanr
-from emuses.tools.stats_utils import compute_gwd_for_point, compute_sigma_median
+from scipy.stats import pearsonr, pointbiserialr, spearmanr
 
-from emuses.tools.stats_utils import input_matrix_stat_map
 from emuses.tools.output_utils import save_statistical_maps
+from emuses.tools.stats_utils import (compute_gwd_for_point,
+                                      compute_sigma_median,
+                                      input_matrix_stat_map)
 from emuses.tools.visualisation import plot_clustering
 
 
@@ -331,7 +332,6 @@ def run_heatmap_analysis(
             effect_size_maps = {}
         else:
             # Restrict to the high-confidence indices
-            high_conf_embeddings = embeddings[high_confidence_indices]
             high_conf_cluster_labels = cluster_labels[high_confidence_indices]
             unique_clusters = np.unique(high_conf_cluster_labels)
             print(

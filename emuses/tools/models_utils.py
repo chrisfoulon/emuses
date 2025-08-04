@@ -4,18 +4,17 @@ from the Optuna-sampled hyper-parameter dict.
 """
 
 import logging
-from sklearn.ensemble import RandomForestRegressor, RandomForestClassifier
+
+from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
 from sklearn.linear_model import ElasticNet, LogisticRegression
-
-from emuses.tools.kernel_regression_utils import (
-    KernelRegressor,
-    KernelLogisticRegressor,
-)
-
 from sklearn.pipeline import FeatureUnion
-from emuses.tools.features_utils import RawCoords, GWD, PCAGWD, KernelPCAGWD, CorrFilter
-from emuses.tools.ae_utils import AETransformer
 from sklearn.preprocessing import PolynomialFeatures, StandardScaler
+
+from emuses.tools.ae_utils import AETransformer
+from emuses.tools.features_utils import (GWD, PCAGWD, CorrFilter, KernelPCAGWD,
+                                         RawCoords)
+from emuses.tools.kernel_regression_utils import (KernelLogisticRegressor,
+                                                  KernelRegressor)
 
 logger = logging.getLogger(__name__)
 
@@ -174,7 +173,7 @@ def build_estimator(model_cfg: dict, task: str, n_jobs: int = -1):
     sampled hyper-parameters.
     """
     from emuses.tools.parallelism_utils import get_safe_n_jobs
-    
+
     # Apply safe n_jobs for subprocess context
     safe_n_jobs = get_safe_n_jobs(n_jobs)
     task = task.lower()

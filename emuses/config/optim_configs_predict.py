@@ -246,7 +246,7 @@ optim_dict_raw_only = {
 optim_dict_test = {
     "meta": {
         "n_trials": 10,  # Reduced for integration testing
-        "description": "Fast test configuration for CI/integration tests"
+        "description": "Fast test configuration for CI/integration tests",
     },
     "param": {
         "model": {
@@ -280,7 +280,7 @@ optim_dict_test = {
 optim_dict_ae_test = {
     "meta": {
         "n_trials": 5,  # Very few trials for fast testing
-        "description": "Fast autoencoder test configuration"
+        "description": "Fast autoencoder test configuration",
     },
     "param": {
         "ae": {
@@ -291,7 +291,7 @@ optim_dict_ae_test = {
             "ae_batch_size": {"choices": [32]},  # Fixed batch size
             "ae_weight_decay": {"low": 1e-5, "high": 1e-4, "log": True},
         }
-    }
+    },
 }
 
 
@@ -299,7 +299,7 @@ optim_dict_ae_test = {
 quick_train_dict = {
     "meta": {
         "n_trials": 15,  # Moderate number of trials for decent optimization
-        "description": "Fast training configuration with simple models and features for quick testing"
+        "description": "Fast training configuration with simple models and features for quick testing",
     },
     "param": {
         "model": {
@@ -340,7 +340,7 @@ quick_train_dict = {
                 "conditional_on": {"feat_type": ["gwd"]},
             },
         },
-    }
+    },
 }
 
 
@@ -365,7 +365,7 @@ def load_optim_dict_predict(config_name=None):
     # Return default if no name provided
     if config_name is None:
         return optim_dict_predict
-        
+
     globals_dict = globals()
 
     # First, check if the full name exists.
@@ -394,4 +394,6 @@ def load_optim_dict_predict(config_name=None):
         else:
             raise ValueError(f"Variable '{base}' not found in optim_configs_predict.")
     else:
-        raise ValueError(f"Variable '{config_name}' not found in optim_configs_predict.")
+        raise ValueError(
+            f"Variable '{config_name}' not found in optim_configs_predict."
+        )

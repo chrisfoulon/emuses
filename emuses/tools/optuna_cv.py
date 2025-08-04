@@ -3,41 +3,40 @@
 #  Nested Optuna CV for EMUSES prediction models
 #  – conditional search (features + model family)
 # ---------------------------------------------------------------
-import joblib
 import logging
-import numpy as np
-import optuna
 import time
 import warnings
 from pathlib import Path
-from typing import List, Tuple, Optional, Dict, Any
+from typing import Any, Dict, List, Optional, Tuple
+
+import joblib
+import numpy as np
+import optuna
 
 # Import new model I/O system
 from .model_io import ModelIOManager
 
 logger = logging.getLogger(__name__)
 
+from sklearn.model_selection import KFold, StratifiedKFold, cross_val_score
 from sklearn.pipeline import Pipeline
-from sklearn.model_selection import (
-    KFold,
-    StratifiedKFold,
-    cross_val_score,
-)
 
 from emuses.config.optim_configs_predict import optim_dict_predict
-from emuses.tools.optim_utils import suggest_parameters_conditional
 from emuses.tools.models_utils import build_estimator, build_feature_union
+from emuses.tools.optim_utils import suggest_parameters_conditional
 
 # ---------------------------------------------------------------
 
 
-def _objective_factory(X, y, task: str, inner_cv, optim_dict, pretrained_ae=None, n_jobs=-1):
+def _objective_factory(
+    X, y, task: str, inner_cv, optim_dict, pretrained_ae=None, n_jobs=-1
+):
     """Return an Optuna objective that samples the *conditional* space."""
     from emuses.tools.parallelism_utils import get_safe_n_jobs
-    
+
     # Apply safe n_jobs for subprocess context
     safe_n_jobs = get_safe_n_jobs(n_jobs)
-    
+
     # Use appropriate scoring metric based on the task
     if task == "clf":
         # For classification tasks
@@ -70,7 +69,7 @@ def _objective_factory(X, y, task: str, inner_cv, optim_dict, pretrained_ae=None
                     "ignore",
                     category=FutureWarning,
                     message=".*Pipeline instance is not fitted yet.*",
-                    module="sklearn.pipeline"
+                    module="sklearn.pipeline",
                 )
                 scores = cross_val_score(
                     pipe, X, y, cv=inner_cv, scoring=scoring, n_jobs=safe_n_jobs
@@ -140,10 +139,10 @@ def nested_optuna_cv(
         Best pipeline for each outer fold.
     """
     from emuses.tools.parallelism_utils import get_safe_n_jobs
-    
+
     # Apply safe n_jobs for subprocess context
     safe_n_jobs = get_safe_n_jobs(n_jobs)
-    
+
     # Use provided optim_dict or fall back to default
     if optim_dict is None:
         optim_dict = optim_dict_predict
@@ -164,12 +163,16 @@ def nested_optuna_cv(
         X_te, y_te = X[te_idx], y[te_idx]
 
         # ── run Optuna on *inner* CV ────────────────────────────
-        from emuses.utils.network_drive_detection import setup_optuna_storage_with_cleanup_info
+        from emuses.utils.network_drive_detection import \
+            setup_optuna_storage_with_cleanup_info
+
         study_name = f"{target_tag}_fold_{fold}"
-        storage_str, temp_location = setup_optuna_storage_with_cleanup_info(f"optuna_{target_tag}", output_folder)
-        
+        storage_str, temp_location = setup_optuna_storage_with_cleanup_info(
+            f"optuna_{target_tag}", output_folder
+        )
+
         # Track temp locations for cleanup (initialize list if first fold)
-        if not hasattr(nested_optuna_cv, '_temp_locations'):
+        if not hasattr(nested_optuna_cv, "_temp_locations"):
             nested_optuna_cv._temp_locations = []
         if temp_location is not None:
             nested_optuna_cv._temp_locations.append(temp_location)
@@ -183,7 +186,9 @@ def nested_optuna_cv(
 
         optimization_start = time.time()
         study.optimize(
-            _objective_factory(X_tr, y_tr, task, inner_cv, optim_dict, pretrained_ae, safe_n_jobs),
+            _objective_factory(
+                X_tr, y_tr, task, inner_cv, optim_dict, pretrained_ae, safe_n_jobs
+            ),
             n_trials=n_trials,
             show_progress_bar=False,
         )
@@ -267,12 +272,16 @@ def nested_optuna_cv(
             logger.info(f"Saved pipeline to current directory: {fallback_path}")
 
     # Clean up temporary SQLite locations if any were used
-    if hasattr(nested_optuna_cv, '_temp_locations'):
-        from emuses.utils.network_drive_detection import cleanup_temp_sqlite_location
-        for temp_location in set(nested_optuna_cv._temp_locations):  # Use set to avoid duplicates
+    if hasattr(nested_optuna_cv, "_temp_locations"):
+        from emuses.utils.network_drive_detection import \
+            cleanup_temp_sqlite_location
+
+        for temp_location in set(
+            nested_optuna_cv._temp_locations
+        ):  # Use set to avoid duplicates
             cleanup_temp_sqlite_location(temp_location, Path(output_folder))
         # Clear the list for next run
-        delattr(nested_optuna_cv, '_temp_locations')
+        delattr(nested_optuna_cv, "_temp_locations")
 
     return np.asarray(scores), pipelines
 

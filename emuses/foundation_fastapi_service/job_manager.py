@@ -7,17 +7,17 @@ This module provides job lifecycle management functionality including:
 - Job metadata tracking with sanitization and cleanup policies
 """
 
-import json
-import threading
-import time
-import re
 import html
-from pathlib import Path
-from typing import Dict, Any, List, Optional, Union
-from uuid import uuid4, UUID
-from datetime import datetime, timedelta
+import json
 import os
 import platform
+import re
+import threading
+import time
+from datetime import datetime, timedelta
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Union
+from uuid import UUID, uuid4
 
 # Platform-specific imports for file locking
 try:

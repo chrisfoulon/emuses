@@ -1,267 +1,224 @@
-import json
-import itertools
 import copy
-import numpy as np
+import itertools
+import json
 import random
 
+import numpy as np
 
 optim_dict_default = {
-    'param': {
-        'umap': {
-            'min_dist': {'name': 'min_dist', 'low': 0.0, 'high': 0.5},
-            'n_neighbors': {'name': 'n_neighbors', 'low': 5, 'high': 45, 'step': 10},
-            'n_components': {'value': 2},
-            'metric': {'name': 'metric', 'choices': ['euclidean']}
+    "param": {
+        "umap": {
+            "min_dist": {"name": "min_dist", "low": 0.0, "high": 0.5},
+            "n_neighbors": {"name": "n_neighbors", "low": 5, "high": 45, "step": 10},
+            "n_components": {"value": 2},
+            "metric": {"name": "metric", "choices": ["euclidean"]},
         },
-        'hdbscan': {
-            'min_cluster_size': {'name': 'min_cluster_size', 'low': 5, 'high': 50},
-            'min_samples': {'name': 'min_samples', 'low': 1, 'high': 10}
-        }
+        "hdbscan": {
+            "min_cluster_size": {"name": "min_cluster_size", "low": 5, "high": 50},
+            "min_samples": {"name": "min_samples", "low": 1, "high": 10},
+        },
     },
-    'metrics': {
-        'umap': {
+    "metrics": {
+        "umap": {
             # 'spread': {
             #     'weight': 1.0,
             #     'target': 0.3,
             #     "epsilon": 0.2
             # },
-            'eigen_spread': {
-                'weight': 2.0,
+            "eigen_spread": {
+                "weight": 2.0,
             },
-            'density_variability': {
-                'weight': 1.0,
-                'target': 0.4,
-                "epsilon": 0.2
+            "density_variability": {"weight": 1.0, "target": 0.4, "epsilon": 0.2},
+            "entropy": {
+                "weight": 3.0,  # Increase the weight on entropy to drive down uniformity.
+                "target": 0.6,  # Target lower entropy to encourage well-defined subregions.
+                "epsilon": 0.25,
             },
-            'entropy': {
-                'weight': 3.0,       # Increase the weight on entropy to drive down uniformity.
-                'target': 0.6,       # Target lower entropy to encourage well-defined subregions.
-                "epsilon": 0.25
-            }
         },
-        'hdbscan': {
-            'cluster_persistence': {
-                'weight': 2,       # Seems to maintain a stable (and reasonable) number of clusters.
+        "hdbscan": {
+            "cluster_persistence": {
+                "weight": 2,  # Seems to maintain a stable (and reasonable) number of clusters.
             },
-            'noise_ratio': {
-                'weight': 1.0,
-                'target': 0.9,       # Ensuring a low noise level (e.g., 10% noise).
-                "epsilon": 0.05
+            "noise_ratio": {
+                "weight": 1.0,
+                "target": 0.9,  # Ensuring a low noise level (e.g., 10% noise).
+                "epsilon": 0.05,
             },
-            'dbcv': {
-                'weight': 1.0,       # High weight to ensure clusters are compact and well separated.
-                'target': 1,
-                'epsilon': 0.5       # Because 0.5 normalized is 0 in the raw DBCV score
-            }
-        }
-    }
+            "dbcv": {
+                "weight": 1.0,  # High weight to ensure clusters are compact and well separated.
+                "target": 1,
+                "epsilon": 0.5,  # Because 0.5 normalized is 0 in the raw DBCV score
+            },
+        },
+    },
 }
 
 
 optim_dict_hard = {
-    'param': {
-        'umap': {
-            'min_dist': {'name': 'min_dist', 'low': 0.01, 'high': 0.5},
-            'n_neighbors': {'name': 'n_neighbors', 'low': 5, 'high': 45, 'step': 20},
-            'n_components': {'value': 2},
-            'metric': {'name': 'metric', 'choices': ['euclidean']}
+    "param": {
+        "umap": {
+            "min_dist": {"name": "min_dist", "low": 0.01, "high": 0.5},
+            "n_neighbors": {"name": "n_neighbors", "low": 5, "high": 45, "step": 20},
+            "n_components": {"value": 2},
+            "metric": {"name": "metric", "choices": ["euclidean"]},
         },
-        'hdbscan': {
-            'min_cluster_size': {'name': 'min_cluster_size', 'low': 5, 'high': 50},
-            'min_samples': {'name': 'min_samples', 'low': 1, 'high': 10}
-        }
+        "hdbscan": {
+            "min_cluster_size": {"name": "min_cluster_size", "low": 5, "high": 50},
+            "min_samples": {"name": "min_samples", "low": 1, "high": 10},
+        },
     },
-    'metrics': {
-        'umap': {
+    "metrics": {
+        "umap": {
             # 'spread': {
             #     'weight': 1.0,
             #     'target': 0.3,
             #     "epsilon": 0.2
             # },
-            'eigen_spread': {
-                'weight': 2.0,
+            "eigen_spread": {
+                "weight": 2.0,
             },
-            'density_variability': {
-                'weight': 1.0,
-                'target': 0.4,
-                "epsilon": 0.2
+            "density_variability": {"weight": 1.0, "target": 0.4, "epsilon": 0.2},
+            "entropy": {
+                "weight": 3,  # Increase the weight on entropy to drive down uniformity.
+                "target": 0.6,  # Target lower entropy to encourage well-defined subregions.
+                "epsilon": 0.3,
             },
-            'entropy': {
-                'weight': 3,       # Increase the weight on entropy to drive down uniformity.
-                'target': 0.6,       # Target lower entropy to encourage well-defined subregions.
-                "epsilon": 0.3
-            }
         },
-        'hdbscan': {
-            'cluster_persistence': {
-                'weight': 2,       # Seems to maintain a stable (and reasonable) number of clusters.
+        "hdbscan": {
+            "cluster_persistence": {
+                "weight": 2,  # Seems to maintain a stable (and reasonable) number of clusters.
             },
-            'noise_ratio': {
-                'weight': 1.0,
-                'target': 0.9,       # Ensuring a low noise level (e.g., 10% noise).
-                "epsilon": 0.05
+            "noise_ratio": {
+                "weight": 1.0,
+                "target": 0.9,  # Ensuring a low noise level (e.g., 10% noise).
+                "epsilon": 0.05,
             },
-            'dbcv': {
-                'weight': 1.0,       # High weight to ensure clusters are compact and well separated.
-                'target': 1,
-                'epsilon': 0.5       # Because 0.5 normalized is 0 in the raw DBCV score
-            }
-        }
-    }
+            "dbcv": {
+                "weight": 1.0,  # High weight to ensure clusters are compact and well separated.
+                "target": 1,
+                "epsilon": 0.5,  # Because 0.5 normalized is 0 in the raw DBCV score
+            },
+        },
+    },
 }
 
 
 optim_dict_range = {
-    'param': {
-        'umap': {
-            'min_dist': {'name': 'min_dist', 'low': 0.01, 'high': 0.25},
-            'n_neighbors': {'name': 'n_neighbors', 'low': 2, 'high': 25},
-            'n_components': {'value': 2},
-            'metric': {'name': 'metric', 'choices': ['euclidean']}
+    "param": {
+        "umap": {
+            "min_dist": {"name": "min_dist", "low": 0.01, "high": 0.25},
+            "n_neighbors": {"name": "n_neighbors", "low": 2, "high": 25},
+            "n_components": {"value": 2},
+            "metric": {"name": "metric", "choices": ["euclidean"]},
         },
-        'hdbscan': {
-            'min_cluster_size': {'name': 'min_cluster_size', 'low': 10, 'high': 100},
-            'min_samples': {'name': 'min_samples', 'low': 1, 'high': 20}
-        }
+        "hdbscan": {
+            "min_cluster_size": {"name": "min_cluster_size", "low": 10, "high": 100},
+            "min_samples": {"name": "min_samples", "low": 1, "high": 20},
+        },
     },
-    'metrics': {
-        'umap': {
+    "metrics": {
+        "umap": {
             # 'spread': {
             #     'weight': 1.0,
             #     'target': 0.3,
             #     "epsilon": 0.2
             # },
-            'eigen_spread': {
-                'weight': 2.0,
-                'target': 0.4,
-                "epsilon": 0.3
+            "eigen_spread": {"weight": 2.0, "target": 0.4, "epsilon": 0.3},
+            "density_variability": {"weight": 1.0, "target": 0.5, "epsilon": 0.2},
+            "entropy": {
+                "weight": 2.0,  # Increase the weight on entropy to drive down uniformity.
+                "target": 0.6,  # Target lower entropy to encourage well-defined subregions.
+                "epsilon": 0.3,
             },
-            'density_variability': {
-                'weight': 1.0,
-                'target': 0.5,
-                "epsilon": 0.2
-            },
-            'entropy': {
-                'weight': 2.0,       # Increase the weight on entropy to drive down uniformity.
-                'target': 0.6,       # Target lower entropy to encourage well-defined subregions.
-                "epsilon": 0.3
-            }
         },
-        'hdbscan': {
-            'cluster_persistence': {
-                'weight': 2,       # Seems to maintain a stable (and reasonable) number of clusters.
-                'target': 0.5,
-                "epsilon": 0.3
+        "hdbscan": {
+            "cluster_persistence": {
+                "weight": 2,  # Seems to maintain a stable (and reasonable) number of clusters.
+                "target": 0.5,
+                "epsilon": 0.3,
             },
-            'noise_ratio': {
-                'weight': 1.0,
-                'target': 0.9,       # Ensuring a low noise level (e.g., 10% noise).
-                "epsilon": 0.05
+            "noise_ratio": {
+                "weight": 1.0,
+                "target": 0.9,  # Ensuring a low noise level (e.g., 10% noise).
+                "epsilon": 0.05,
             },
-            'dbcv': {
-                'weight': 1.0,       # High weight to ensure clusters are compact and well separated.
-                'target': 0.75,
-                'epsilon': 0.25       # Because 0.5 normalized is 0 in the raw DBCV score
-            }
-        }
-    }
+            "dbcv": {
+                "weight": 1.0,  # High weight to ensure clusters are compact and well separated.
+                "target": 0.75,
+                "epsilon": 0.25,  # Because 0.5 normalized is 0 in the raw DBCV score
+            },
+        },
+    },
 }
 
 
 optim_dict_test = {
-    'param': {
+    "param": {
         "umap": {
             "min_dist": 0.04625027098983125,
             "n_neighbors": 5,
             "n_components": 2,
-            "metric": "euclidean"
+            "metric": "euclidean",
+        },
+        "hdbscan": {"min_cluster_size": 26, "min_samples": 1},
+    },
+    "metrics": {
+        "umap": {
+            "spread": {
+                "weight": 1.0,  # Slightly reduced if you want clusters to be tighter.
+                "target": 0.6,
+                "epsilon": 0.3,
+            },
+            "density_variability": {"weight": 1.0, "target": 0.4, "epsilon": 0.3},
+            "entropy": {
+                "weight": 3,  # Increase the weight on entropy to drive down uniformity.
+                "target": 0.6,  # Target lower entropy to encourage well-defined subregions.
+                "epsilon": 0.25,
+            },
         },
         "hdbscan": {
-            "min_cluster_size": 26,
-            "min_samples": 1
-        }
-    },
-    'metrics': {
-        'umap': {
-            'spread': {
-                'weight': 1.0,       # Slightly reduced if you want clusters to be tighter.
-                'target': 0.6,
-                "epsilon": 0.3
+            "cluster_persistence": {
+                "weight": 1.5  # Seems to maintain a stable (and reasonable) number of clusters.
             },
-            'density_variability': {
-                'weight': 1.0,
-                'target': 0.4,
-                "epsilon": 0.3
+            "noise_ratio": {
+                "weight": 1.0,
+                "target": 0.9,  # Ensuring a low noise level (e.g., 10% noise).
+                "epsilon": 0.25,
             },
-            'entropy': {
-                'weight': 3,       # Increase the weight on entropy to drive down uniformity.
-                'target': 0.6,       # Target lower entropy to encourage well-defined subregions.
-                "epsilon": 0.25
-            }
+            "dbcv": {
+                "weight": 1.0  # High weight to ensure clusters are compact and well separated.
+            },
         },
-        'hdbscan': {
-            'cluster_persistence': {
-                'weight': 1.5       # Seems to maintain a stable (and reasonable) number of clusters.
-            },
-            'noise_ratio': {
-                'weight': 1.0,
-                'target': 0.9,       # Ensuring a low noise level (e.g., 10% noise).
-                "epsilon": 0.25
-            },
-            'dbcv': {
-                'weight': 1.0        # High weight to ensure clusters are compact and well separated.
-            }
-        }
-    }
+    },
 }
 
 
 optim_dict_mnist = {
-    'param': {
-        'umap': {
-            'min_dist': {'name': 'min_dist', 'value': 0.08393266179885042},
-            'n_neighbors': {'name': 'n_neighbors', 'value': 5},
-            'n_components': {'name': 'n_components', 'value': 2},
-            'metric': {'name': 'metric', 'choices': ['euclidean']}
+    "param": {
+        "umap": {
+            "min_dist": {"name": "min_dist", "value": 0.08393266179885042},
+            "n_neighbors": {"name": "n_neighbors", "value": 5},
+            "n_components": {"name": "n_components", "value": 2},
+            "metric": {"name": "metric", "choices": ["euclidean"]},
         },
-        'hdbscan': {
-            'min_cluster_size': {'name': 'min_cluster_size', 'value': 40},
-            'min_samples': {'name': 'min_samples', 'value': 4}
-        }
+        "hdbscan": {
+            "min_cluster_size": {"name": "min_cluster_size", "value": 40},
+            "min_samples": {"name": "min_samples", "value": 4},
+        },
     },
-    'metrics': {
-        'umap': {
-            'spread': {
-                'weight': 1.0,
-                'target': 0.6,
-                'epsilon': 0.1
-            },
-            'density_variability': {
-                'weight': 1.2,
-                'target': 0.4,
-                'epsilon': 0.1
-            },
-            'entropy': {
-                'weight': 1.5
-            }
+    "metrics": {
+        "umap": {
+            "spread": {"weight": 1.0, "target": 0.6, "epsilon": 0.1},
+            "density_variability": {"weight": 1.2, "target": 0.4, "epsilon": 0.1},
+            "entropy": {"weight": 1.5},
         },
-        'hdbscan': {
-            'cluster_persistence': {
-                'weight': 2.0
-            },
-            'noise_ratio': {
-                'weight': 1.0,
-                'target': 0.1,
-                'epsilon': 0.05
-            },
-            'dbcv': {
-                'weight': 1.5
-            }
-        }
-    }
+        "hdbscan": {
+            "cluster_persistence": {"weight": 2.0},
+            "noise_ratio": {"weight": 1.0, "target": 0.1, "epsilon": 0.05},
+            "dbcv": {"weight": 1.5},
+        },
+    },
 }
-
-
 
 
 optim_dict_hcp = {
@@ -270,43 +227,22 @@ optim_dict_hcp = {
             "min_dist": 0.02998297837572888,
             "n_neighbors": 3,
             "n_components": 2,
-            "metric": "euclidean"
+            "metric": "euclidean",
+        },
+        "hdbscan": {"min_cluster_size": 11, "min_samples": 2},
+    },
+    "metrics": {
+        "umap": {
+            "spread": {"weight": 1.0, "target": 0.6, "epsilon": 0.1},
+            "density_variability": {"weight": 1.2, "target": 0.4, "epsilon": 0.1},
+            "entropy": {"weight": 1.5},
         },
         "hdbscan": {
-            "min_cluster_size": 11,
-            "min_samples": 2
-        }
-    },
-    'metrics': {
-        'umap': {
-            'spread': {
-                'weight': 1.0,
-                'target': 0.6,
-                'epsilon': 0.1
-            },
-            'density_variability': {
-                'weight': 1.2,
-                'target': 0.4,
-                'epsilon': 0.1
-            },
-            'entropy': {
-                'weight': 1.5
-            }
+            "cluster_persistence": {"weight": 2.0},
+            "noise_ratio": {"weight": 1.0, "target": 0.1, "epsilon": 0.05},
+            "dbcv": {"weight": 1.0},
         },
-        'hdbscan': {
-            'cluster_persistence': {
-                'weight': 2.0
-            },
-            'noise_ratio': {
-                'weight': 1.0,
-                'target': 0.1,
-                'epsilon': 0.05
-            },
-            'dbcv': {
-                'weight': 1.0
-            }
-        }
-    }
+    },
 }
 
 
@@ -339,32 +275,28 @@ def generate_dynamic_metrics_configs(n_configs=10):
                 "spread": {
                     "weight": 1.0,
                     "target": 0.2 - delta,  # lower if delta is positive
-                    "min_penalty": min_penalty_val
+                    "min_penalty": min_penalty_val,
                 },
                 "density_variability": {
                     "weight": 1.5,
                     "target": 0.4 + delta,  # higher if delta is positive
-                    "min_penalty": min_penalty_val
+                    "min_penalty": min_penalty_val,
                 },
                 "entropy": {
                     "weight": 1.2,
                     "target": entropy_target,
-                    "min_penalty": min_penalty_val
-                }
+                    "min_penalty": min_penalty_val,
+                },
             },
             "hdbscan": {
-                "cluster_persistence": {
-                    "weight": 1.0  # No target; raw value.
-                },
+                "cluster_persistence": {"weight": 1.0},  # No target; raw value.
                 "noise_ratio": {
                     "weight": 1.0,
                     "target": noise_target,
-                    "min_penalty": min_penalty_val
+                    "min_penalty": min_penalty_val,
                 },
-                "dbcv": {
-                    "weight": 1.0  # No target.
-                }
-            }
+                "dbcv": {"weight": 1.0},  # No target.
+            },
         }
         configs.append(config)
     return configs
@@ -377,16 +309,8 @@ dynamic_optim_dict = generate_dynamic_metrics_configs(n_configs=50)
 
 # Our default weights (for the weight portion only)
 DEFAULT_WEIGHTS = {
-    "umap": {
-        "spread": 1.0,
-        "density_variability": 1.5,
-        "entropy": 1.2
-    },
-    "hdbscan": {
-        "cluster_persistence": 1.0,
-        "noise_ratio": 1.0,
-        "dbcv": 1.0
-    }
+    "umap": {"spread": 1.0, "density_variability": 1.5, "entropy": 1.2},
+    "hdbscan": {"cluster_persistence": 1.0, "noise_ratio": 1.0, "dbcv": 1.0},
 }
 
 
@@ -411,10 +335,7 @@ def generate_configs_from_candidates(cand_umap, cand_hdbscan, default_weights):
     # Cartesian products:
     for umap_combo in itertools.product(*umap_candidate_lists):
         for hdbscan_combo in itertools.product(*hdbscan_candidate_lists):
-            config = {
-                "umap": {},
-                "hdbscan": {}
-            }
+            config = {"umap": {}, "hdbscan": {}}
             # Set UMAP weights.
             for i, key in enumerate(umap_keys):
                 config["umap"][key] = {
@@ -422,9 +343,9 @@ def generate_configs_from_candidates(cand_umap, cand_hdbscan, default_weights):
                     "target": {  # fixed default targets
                         "spread": 0.2,
                         "density_variability": 0.4,
-                        "entropy": 0.3
+                        "entropy": 0.3,
                     }[key],
-                    "min_penalty": 0.5
+                    "min_penalty": 0.5,
                 }
             # Set HDBSCAN weights.
             for j, key in enumerate(hdbscan_keys):
@@ -432,7 +353,7 @@ def generate_configs_from_candidates(cand_umap, cand_hdbscan, default_weights):
                     config["hdbscan"][key] = {
                         "weight": DEFAULT_WEIGHTS["hdbscan"][key] * hdbscan_combo[j],
                         "target": 0.9,
-                        "min_penalty": 0.5
+                        "min_penalty": 0.5,
                     }
                 else:
                     config["hdbscan"][key] = {
@@ -518,7 +439,7 @@ def generate_educated_weight_configs(n_configs=None, random_seed=42):
     # Scenario F: Variation on one parameter at a time.
     base = {
         "umap": {"spread": 1.0, "density_variability": 1.5, "entropy": 1.2},
-        "hdbscan": {"cluster_persistence": 1.0, "noise_ratio": 1.0, "dbcv": 1.0}
+        "hdbscan": {"cluster_persistence": 1.0, "noise_ratio": 1.0, "dbcv": 1.0},
     }
     single_param_candidates = [0.5, 0.8, 1.3, 1.7]
     configs_F = []
@@ -541,74 +462,82 @@ def generate_educated_weight_configs(n_configs=None, random_seed=42):
     cand_umap_A = {
         "spread": [0.8, 1.0],
         "density_variability": [1.0, 1.2],
-        "entropy": [1.0]
+        "entropy": [1.0],
     }
     cand_hdbscan_A = {
         "cluster_persistence": [1.3, 1.5, 1.7, 2.0],
         "noise_ratio": [0.5, 0.8],
-        "dbcv": [1.3, 1.5, 1.7, 2.0]
+        "dbcv": [1.3, 1.5, 1.7, 2.0],
     }
-    configs_A = generate_configs_from_candidates(cand_umap_A, cand_hdbscan_A, DEFAULT_WEIGHTS)
+    configs_A = generate_configs_from_candidates(
+        cand_umap_A, cand_hdbscan_A, DEFAULT_WEIGHTS
+    )
     scenarios.append(("A", configs_A, 8))
 
     # Scenario B:
     cand_umap_B = {
         "spread": [0.5, 0.8],
         "density_variability": [1.7, 2.0],
-        "entropy": [0.8, 1.0]
+        "entropy": [0.8, 1.0],
     }
-    cand_hdbscan_B = {
-        "cluster_persistence": [1.0],
-        "noise_ratio": [1.0],
-        "dbcv": [1.0]
-    }
-    configs_B = generate_configs_from_candidates(cand_umap_B, cand_hdbscan_B, DEFAULT_WEIGHTS)
+    cand_hdbscan_B = {"cluster_persistence": [1.0], "noise_ratio": [1.0], "dbcv": [1.0]}
+    configs_B = generate_configs_from_candidates(
+        cand_umap_B, cand_hdbscan_B, DEFAULT_WEIGHTS
+    )
     scenarios.append(("B", configs_B, 6))
 
     # Scenario C:
     cand_umap_C = {
         "spread": [0.8, 1.0, 1.2],
         "density_variability": [1.2, 1.5, 1.8],
-        "entropy": [0.8, 1.0, 1.2]
+        "entropy": [0.8, 1.0, 1.2],
     }
     cand_hdbscan_C = {
         "cluster_persistence": [0.8, 1.0, 1.2],
         "noise_ratio": [0.8, 1.0, 1.2],
-        "dbcv": [0.8, 1.0, 1.2]
+        "dbcv": [0.8, 1.0, 1.2],
     }
-    configs_C = generate_configs_from_candidates(cand_umap_C, cand_hdbscan_C, DEFAULT_WEIGHTS)
+    configs_C = generate_configs_from_candidates(
+        cand_umap_C, cand_hdbscan_C, DEFAULT_WEIGHTS
+    )
     scenarios.append(("C", configs_C, 6))
 
     # Scenario D:
     cand_umap_D = {
         "spread": [0.5, 0.8],
         "density_variability": [1.7, 2.0],
-        "entropy": [0.8]
+        "entropy": [0.8],
     }
     cand_hdbscan_D = {
         "cluster_persistence": [1.5, 1.7],
         "noise_ratio": [0.5, 0.8],
-        "dbcv": [1.5, 1.7]
+        "dbcv": [1.5, 1.7],
     }
-    configs_D = generate_configs_from_candidates(cand_umap_D, cand_hdbscan_D, DEFAULT_WEIGHTS)
+    configs_D = generate_configs_from_candidates(
+        cand_umap_D, cand_hdbscan_D, DEFAULT_WEIGHTS
+    )
     scenarios.append(("D", configs_D, 8))
 
     # Scenario E:
     cand_umap_E = {
         "spread": [0.8, 1.0],
         "density_variability": [0.8, 1.0],
-        "entropy": [1.0]
+        "entropy": [1.0],
     }
     cand_hdbscan_E = {
         "cluster_persistence": [1.0],
         "noise_ratio": [0.5, 0.8],
-        "dbcv": [1.0]
+        "dbcv": [1.0],
     }
-    configs_E = generate_configs_from_candidates(cand_umap_E, cand_hdbscan_E, DEFAULT_WEIGHTS)
+    configs_E = generate_configs_from_candidates(
+        cand_umap_E, cand_hdbscan_E, DEFAULT_WEIGHTS
+    )
     scenarios.append(("E", configs_E, 4))
 
     # Combine scenarios in the order F, A, B, C, D, E.
-    ordered_scenarios = sorted(scenarios, key=lambda x: {"F": 0, "A": 1, "B": 2, "C": 3, "D": 4, "E": 5}[x[0]])
+    ordered_scenarios = sorted(
+        scenarios, key=lambda x: {"F": 0, "A": 1, "B": 2, "C": 3, "D": 4, "E": 5}[x[0]]
+    )
 
     final_configs = []
     for scenario_name, config_list, sample_n in ordered_scenarios:

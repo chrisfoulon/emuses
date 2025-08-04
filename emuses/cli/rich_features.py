@@ -12,24 +12,26 @@ Key Features:
 - Memory-efficient animations
 """
 
-from typing import List, Optional, Union, Dict
-import time
-import sys
 import os
+import sys
 import threading
+import time
 import uuid
-import psutil
 from dataclasses import dataclass, field
 from enum import Enum
+from typing import Dict, List, Optional, Union
+
+import psutil
 
 
 class ProgressStage(Enum):
     """
     Enumeration of different progress stages for pipeline operations.
-    
+
     This enum defines the different stages of a data processing pipeline
     with consistent naming and ordering.
     """
+
     LOADING = "loading"
     PREPROCESSING = "preprocessing"
     PROCESSING = "processing"
@@ -295,7 +297,7 @@ class StatusRenderer:
             "success": {"symbol": "✓", "fallback": "SUCCESS", "color": "\033[92m"},
             "error": {"symbol": "✗", "fallback": "ERROR", "color": "\033[91m"},
             "warning": {"symbol": "⚠", "fallback": "WARNING", "color": "\033[93m"},
-            "info": {"symbol": "ℹ", "fallback": "INFO", "color": "\033[94m"}
+            "info": {"symbol": "ℹ", "fallback": "INFO", "color": "\033[94m"},
         }
         self._reset_color = "\033[0m"
 
@@ -313,7 +315,7 @@ class StatusRenderer:
             return False
 
         # Check if stdout is a TTY
-        if not hasattr(sys.stdout, 'isatty') or not sys.stdout.isatty():
+        if not hasattr(sys.stdout, "isatty") or not sys.stdout.isatty():
             return False
 
         # Check TERM environment variable for color capability
@@ -330,14 +332,18 @@ class StatusRenderer:
             True if rendering is allowed, False if rate limited
         """
         current_time = time.time()
-        time_since_last = (current_time - self._last_render_time) * 1000  # Convert to ms
+        time_since_last = (
+            current_time - self._last_render_time
+        ) * 1000  # Convert to ms
 
         if time_since_last >= self.rate_limit_ms:
             self._last_render_time = current_time
             return True
         return False
 
-    def render_status(self, level: str, message: str, force_render: bool = False) -> str:
+    def render_status(
+        self, level: str, message: str, force_render: bool = False
+    ) -> str:
         """
         Render a status message with appropriate color and symbol.
 
@@ -371,7 +377,9 @@ class StatusRenderer:
 
         if self.supports_color:
             # Use colored output with symbols
-            formatted = f"{config['color']}{config['symbol']}{self._reset_color} {message}"
+            formatted = (
+                f"{config['color']}{config['symbol']}{self._reset_color} {message}"
+            )
         else:
             # Use fallback text-only format
             formatted = f"[{config['fallback']}] {message}"
@@ -425,7 +433,7 @@ class TableFormatter:
         rows: List[List[str]],
         title: Optional[str] = None,
         alignments: Optional[List[str]] = None,
-        compact_mode: bool = False
+        compact_mode: bool = False,
     ) -> str:
         """
         Create a formatted table from headers and rows.
@@ -460,14 +468,18 @@ class TableFormatter:
         expected_cols = len(headers)
         for i, row in enumerate(rows):
             if len(row) != expected_cols:
-                raise ValueError(f"Row {i} has {len(row)} columns, expected {expected_cols}")
+                raise ValueError(
+                    f"Row {i} has {len(row)} columns, expected {expected_cols}"
+                )
 
         # Set default alignments if not provided
         if alignments is None:
             alignments = [self._default_alignment] * len(headers)
         elif len(alignments) != len(headers):
             # Extend or truncate alignments to match headers
-            alignments = (alignments + [self._default_alignment] * len(headers))[:len(headers)]
+            alignments = (alignments + [self._default_alignment] * len(headers))[
+                : len(headers)
+            ]
 
         if self.force_simple or compact_mode:
             return self._create_simple_table(headers, rows, title)
@@ -475,10 +487,7 @@ class TableFormatter:
             return self._create_formatted_table(headers, rows, title, alignments)
 
     def _create_simple_table(
-        self,
-        headers: List[str],
-        rows: List[List[str]],
-        title: Optional[str] = None
+        self, headers: List[str], rows: List[List[str]], title: Optional[str] = None
     ) -> str:
         """
         Create a simple text-only table.
@@ -511,7 +520,9 @@ class TableFormatter:
                 col_widths[i] = max(col_widths[i], len(str(cell)))
 
         # Create header row
-        header_row = " | ".join(header.ljust(col_widths[i]) for i, header in enumerate(headers))
+        header_row = " | ".join(
+            header.ljust(col_widths[i]) for i, header in enumerate(headers)
+        )
         lines.append(header_row)
 
         # Create separator
@@ -520,7 +531,9 @@ class TableFormatter:
 
         # Create data rows
         for row in rows:
-            data_row = " | ".join(str(cell).ljust(col_widths[i]) for i, cell in enumerate(row))
+            data_row = " | ".join(
+                str(cell).ljust(col_widths[i]) for i, cell in enumerate(row)
+            )
             lines.append(data_row)
 
         return "\n".join(lines)
@@ -530,7 +543,7 @@ class TableFormatter:
         headers: List[str],
         rows: List[List[str]],
         title: Optional[str] = None,
-        alignments: Optional[List[str]] = None
+        alignments: Optional[List[str]] = None,
     ) -> str:
         """
         Create a formatted table with alignment support.
@@ -568,7 +581,9 @@ class TableFormatter:
 
         return "\n".join(lines)
 
-    def _calculate_column_widths(self, headers: List[str], rows: List[List[str]]) -> List[int]:
+    def _calculate_column_widths(
+        self, headers: List[str], rows: List[List[str]]
+    ) -> List[int]:
         """Calculate optimal column widths for table."""
         col_widths = [len(header) for header in headers]
         for row in rows:
@@ -585,7 +600,9 @@ class TableFormatter:
         else:  # left or default
             return text.ljust(width)
 
-    def _create_table_header(self, headers: List[str], col_widths: List[int], alignments: Optional[List[str]]) -> List[str]:
+    def _create_table_header(
+        self, headers: List[str], col_widths: List[int], alignments: Optional[List[str]]
+    ) -> List[str]:
         """Create formatted table header."""
         header_cells = []
         for i, header in enumerate(headers):
@@ -597,10 +614,15 @@ class TableFormatter:
         return [
             "┌" + "─┬─".join("─" * width for width in col_widths) + "┐",
             "│ " + header_row + " │",
-            "├" + "─┼─".join("─" * width for width in col_widths) + "┤"
+            "├" + "─┼─".join("─" * width for width in col_widths) + "┤",
         ]
 
-    def _create_table_rows(self, rows: List[List[str]], col_widths: List[int], alignments: Optional[List[str]]) -> List[str]:
+    def _create_table_rows(
+        self,
+        rows: List[List[str]],
+        col_widths: List[int],
+        alignments: Optional[List[str]],
+    ) -> List[str]:
         """Create formatted table data rows."""
         data_lines = []
         for row in rows:
@@ -677,7 +699,9 @@ class RealTimeProgressUpdater:
         Current terminal height in characters
     """
 
-    def __init__(self, console=None, rate_limit_ms: int = 50, force_fallback: bool = False):
+    def __init__(
+        self, console=None, rate_limit_ms: int = 50, force_fallback: bool = False
+    ):
         """
         Initialize the real-time progress updater.
 
@@ -699,7 +723,7 @@ class RealTimeProgressUpdater:
         self._last_update_time = 0.0
         self._force_fallback = force_fallback
         self.buffer_size = 1024  # Buffer size for performance optimization
-        
+
         # Initialize task management
         self.progress = None
         self.active_tasks = {}
@@ -707,7 +731,9 @@ class RealTimeProgressUpdater:
         self._task_counter = 0
 
         # Detect real-time update capability
-        self.supports_real_time = self._detect_real_time_support() and not force_fallback
+        self.supports_real_time = (
+            self._detect_real_time_support() and not force_fallback
+        )
 
         # Terminal dimensions
         self.terminal_width, self.terminal_height = self._get_terminal_size()
@@ -718,7 +744,7 @@ class RealTimeProgressUpdater:
             "cursor_up": "\033[1A",
             "cursor_to_start": "\r",
             "save_cursor": "\033[s",
-            "restore_cursor": "\033[u"
+            "restore_cursor": "\033[u",
         }
 
     def _detect_real_time_support(self) -> bool:
@@ -731,13 +757,18 @@ class RealTimeProgressUpdater:
             True if real-time updates are supported, False otherwise
         """
         # Check for CI environments
-        ci_indicators = ["CI", "CONTINUOUS_INTEGRATION", "BUILD_NUMBER", "GITHUB_ACTIONS"]
+        ci_indicators = [
+            "CI",
+            "CONTINUOUS_INTEGRATION",
+            "BUILD_NUMBER",
+            "GITHUB_ACTIONS",
+        ]
         for indicator in ci_indicators:
             if os.getenv(indicator):
                 return False
 
         # Check if stdout is a TTY
-        if not hasattr(sys.stdout, 'isatty') or not sys.stdout.isatty():
+        if not hasattr(sys.stdout, "isatty") or not sys.stdout.isatty():
             return False
 
         # Check for output redirection
@@ -761,6 +792,7 @@ class RealTimeProgressUpdater:
         """
         try:
             import shutil
+
             size = shutil.get_terminal_size(fallback=(80, 24))
             return size.columns, size.lines
         except Exception:
@@ -776,7 +808,9 @@ class RealTimeProgressUpdater:
             True if update is allowed, False if rate limited
         """
         current_time = time.time()
-        time_since_last = (current_time - self._last_update_time) * 1000  # Convert to ms
+        time_since_last = (
+            current_time - self._last_update_time
+        ) * 1000  # Convert to ms
 
         if time_since_last >= self.rate_limit_ms:
             self._last_update_time = current_time
@@ -925,18 +959,18 @@ class RealTimeProgressUpdater:
             # Move cursor to new line to avoid overwriting
             sys.stdout.write("\n")
             sys.stdout.flush()
-    
+
     def add_task(self, description: str, total: int = 100) -> str:
         """
         Add a new progress task.
-        
+
         Parameters
         ----------
         description : str
             Task description
         total : int, optional
             Total progress units, by default 100
-            
+
         Returns
         -------
         str
@@ -944,31 +978,31 @@ class RealTimeProgressUpdater:
         """
         task_id = f"task_{self._task_counter}"
         self._task_counter += 1
-        
+
         self.active_tasks[task_id] = {
-            'description': description,
-            'total': total,
-            'completed': 0,
-            'start_time': time.time()
+            "description": description,
+            "total": total,
+            "completed": 0,
+            "start_time": time.time(),
         }
-        
+
         return task_id
-    
+
     def update_task_progress(self, task_id: str, advance: int = 1) -> None:
         """
         Update progress for a task.
-        
+
         Parameters
         ----------
         task_id : str
             Task ID to update
         advance : int, optional
             Progress to add, by default 1
-            
+
         Returns
         -------
         None
-        
+
         Raises
         ------
         ValueError
@@ -976,44 +1010,44 @@ class RealTimeProgressUpdater:
         """
         if task_id not in self.active_tasks:
             raise ValueError(f"Invalid task ID: {task_id}")
-        
+
         if advance < 0:
             raise ValueError("Progress cannot be negative")
-        
+
         task = self.active_tasks[task_id]
-        task['completed'] = min(task['completed'] + advance, task['total'])
-        
+        task["completed"] = min(task["completed"] + advance, task["total"])
+
         # Rate limiting for console updates
         if self.console and self._should_update():
             self.console.print(f"Task {task_id}: {task['completed']}/{task['total']}")
-    
+
     def get_task_progress(self, task_id: str) -> int:
         """
         Get current progress for a task.
-        
+
         Parameters
         ----------
         task_id : str
             Task ID to check
-            
+
         Returns
         -------
         int
             Current progress value
         """
         if task_id in self.active_tasks:
-            return self.active_tasks[task_id]['completed']
+            return self.active_tasks[task_id]["completed"]
         return 0
-    
+
     def is_task_complete(self, task_id: str) -> bool:
         """
         Check if a task is complete.
-        
+
         Parameters
         ----------
         task_id : str
             Task ID to check
-            
+
         Returns
         -------
         bool
@@ -1022,24 +1056,24 @@ class RealTimeProgressUpdater:
         # Check completed tasks first
         if task_id in self._completed_tasks:
             return True
-            
+
         if task_id in self.active_tasks:
             task = self.active_tasks[task_id]
             # Check explicit completion flag first
-            if task.get('is_complete', False):
+            if task.get("is_complete", False):
                 return True
-            return task['completed'] >= task['total']
+            return task["completed"] >= task["total"]
         return False
-    
+
     def complete_task(self, task_id: str) -> None:
         """
         Mark a task as complete and remove it from active tasks.
-        
+
         Parameters
         ----------
         task_id : str
             Task ID to complete
-            
+
         Returns
         -------
         None
@@ -1047,12 +1081,12 @@ class RealTimeProgressUpdater:
         if task_id in self.active_tasks:
             # Mark as complete before removing (test checks this)
             task = self.active_tasks[task_id]
-            task['completed'] = task['total']
-            task['is_complete'] = True
-            
+            task["completed"] = task["total"]
+            task["is_complete"] = True
+
             # Move to completed tasks
             self._completed_tasks[task_id] = task
-            
+
             # Remove the task from active tasks
             del self.active_tasks[task_id]
 
@@ -1060,10 +1094,10 @@ class RealTimeProgressUpdater:
 class MemoryMonitor:
     """
     Memory usage monitoring for performance optimization.
-    
+
     Monitors system memory usage during operations with alerting
     capabilities for memory threshold violations.
-    
+
     Attributes
     ----------
     current_memory : float
@@ -1073,11 +1107,11 @@ class MemoryMonitor:
     monitoring_active : bool
         Whether monitoring is currently active
     """
-    
+
     def __init__(self):
         """
         Initialize the memory monitor.
-        
+
         Returns
         -------
         None
@@ -1091,48 +1125,48 @@ class MemoryMonitor:
         self._monitor_thread = None
         self._stop_event = threading.Event()
         self._lock = threading.Lock()
-    
+
     def start_monitoring(self) -> None:
         """
         Start memory monitoring in a separate thread.
-        
+
         Returns
         -------
         None
         """
         if self.monitoring_active:
             return
-            
+
         self.monitoring_active = True
         self._stop_event.clear()
         self._monitor_thread = threading.Thread(target=self._monitor_loop)
         self._monitor_thread.daemon = True
         self._monitor_thread.start()
-        
+
         # Wait a short time to ensure initial reading is captured
         time.sleep(0.05)
-    
+
     def stop_monitoring(self) -> None:
         """
         Stop memory monitoring and clean up resources.
-        
+
         Returns
         -------
         None
         """
         if not self.monitoring_active:
             return
-            
+
         self.monitoring_active = False
         self._stop_event.set()
-        
+
         if self._monitor_thread:
             self._monitor_thread.join(timeout=1.0)
-    
+
     def _monitor_loop(self) -> None:
         """
         Main monitoring loop that runs in a separate thread.
-        
+
         Returns
         -------
         None
@@ -1143,32 +1177,36 @@ class MemoryMonitor:
                 process = psutil.Process()
                 memory_info = process.memory_info()
                 current_mb = memory_info.rss / (1024 * 1024)  # Convert to MB
-                
+
                 with self._lock:
                     self.current_memory = current_mb
                     self.peak_memory = max(self.peak_memory, current_mb)
                     self._memory_samples.append(current_mb)
-                    
+
                     # Check threshold - always trigger alert if threshold is set very low (for testing)
-                    if self._threshold_mb and (current_mb > self._threshold_mb or self._threshold_mb < 5):
-                        self._alerts.append({
-                            'timestamp': time.time(),
-                            'memory_mb': current_mb,
-                            'threshold_mb': self._threshold_mb,
-                            'message': f"Memory usage ({current_mb:.1f} MB) exceeded threshold ({self._threshold_mb:.1f} MB)"
-                        })
-                
+                    if self._threshold_mb and (
+                        current_mb > self._threshold_mb or self._threshold_mb < 5
+                    ):
+                        self._alerts.append(
+                            {
+                                "timestamp": time.time(),
+                                "memory_mb": current_mb,
+                                "threshold_mb": self._threshold_mb,
+                                "message": f"Memory usage ({current_mb:.1f} MB) exceeded threshold ({self._threshold_mb:.1f} MB)",
+                            }
+                        )
+
                 # Sleep for a short interval
                 self._stop_event.wait(0.1)
-                
+
             except Exception:
                 # Continue monitoring even if there's an error
                 self._stop_event.wait(0.1)
-    
+
     def get_current_memory(self) -> float:
         """
         Get current memory usage.
-        
+
         Returns
         -------
         float
@@ -1184,11 +1222,11 @@ class MemoryMonitor:
                 except Exception:
                     return 0.0
             return self.current_memory
-    
+
     def get_peak_memory(self) -> float:
         """
         Get peak memory usage recorded during monitoring.
-        
+
         Returns
         -------
         float
@@ -1196,16 +1234,16 @@ class MemoryMonitor:
         """
         with self._lock:
             return self.peak_memory
-    
+
     def set_threshold(self, threshold_mb: float) -> None:
         """
         Set memory threshold for alerts.
-        
+
         Parameters
         ----------
         threshold_mb : float
             Memory threshold in MB
-            
+
         Returns
         -------
         None
@@ -1218,19 +1256,21 @@ class MemoryMonitor:
                     process = psutil.Process()
                     memory_info = process.memory_info()
                     current_mb = memory_info.rss / (1024 * 1024)
-                    self._alerts.append({
-                        'timestamp': time.time(),
-                        'memory_mb': current_mb,
-                        'threshold_mb': threshold_mb,
-                        'message': f"Memory usage ({current_mb:.1f} MB) exceeded threshold ({threshold_mb:.1f} MB)"
-                    })
+                    self._alerts.append(
+                        {
+                            "timestamp": time.time(),
+                            "memory_mb": current_mb,
+                            "threshold_mb": threshold_mb,
+                            "message": f"Memory usage ({current_mb:.1f} MB) exceeded threshold ({threshold_mb:.1f} MB)",
+                        }
+                    )
                 except Exception:
                     pass
-    
+
     def get_alerts(self) -> List[Dict]:
         """
         Get list of memory threshold alerts.
-        
+
         Returns
         -------
         List[Dict]
@@ -1238,11 +1278,11 @@ class MemoryMonitor:
         """
         with self._lock:
             return self._alerts.copy()
-    
+
     def get_statistics(self) -> Dict:
         """
         Get memory usage statistics.
-        
+
         Returns
         -------
         Dict
@@ -1250,28 +1290,23 @@ class MemoryMonitor:
         """
         with self._lock:
             if not self._memory_samples:
-                return {
-                    'current': 0.0,
-                    'peak': 0.0,
-                    'average': 0.0,
-                    'samples': 0
-                }
-            
+                return {"current": 0.0, "peak": 0.0, "average": 0.0, "samples": 0}
+
             return {
-                'current': self.current_memory,
-                'peak': self.peak_memory,
-                'average': sum(self._memory_samples) / len(self._memory_samples),
-                'samples': len(self._memory_samples)
+                "current": self.current_memory,
+                "peak": self.peak_memory,
+                "average": sum(self._memory_samples) / len(self._memory_samples),
+                "samples": len(self._memory_samples),
             }
 
 
 class SpinnerManager:
     """
     Spinner animation manager for long-running operations.
-    
+
     Provides animated spinners with different styles and memory monitoring
     integration for visual feedback during processing operations.
-    
+
     Attributes
     ----------
     active_spinners : Dict
@@ -1279,16 +1314,16 @@ class SpinnerManager:
     memory_monitor : MemoryMonitor
         Integrated memory monitor instance
     """
-    
+
     def __init__(self, console=None):
         """
         Initialize the spinner manager.
-        
+
         Parameters
         ----------
         console : Console, optional
             Rich console instance for output, creates new one if None
-            
+
         Returns
         -------
         None
@@ -1297,31 +1332,37 @@ class SpinnerManager:
         self.memory_monitor = MemoryMonitor()
         self.console = console  # Make console a public property
         self._supports_rich = self._detect_rich_support()
-        
+
         if self.console is None:
             # Create a minimal console-like object for fallback
-            self.console = type('MockConsole', (), {
-                'is_terminal': False,
-                'print': lambda *args, **kwargs: print(*args, **kwargs)
-            })()
-    
+            self.console = type(
+                "MockConsole",
+                (),
+                {
+                    "is_terminal": False,
+                    "print": lambda *args, **kwargs: print(*args, **kwargs),
+                },
+            )()
+
     def _detect_rich_support(self) -> bool:
         """
         Detect if the environment supports rich spinners.
-        
+
         Returns
         -------
         bool
             True if rich spinners are supported
         """
-        if self.console and hasattr(self.console, 'is_terminal'):
+        if self.console and hasattr(self.console, "is_terminal"):
             return self.console.is_terminal
         return False
-    
-    def start_spinner(self, text: str, style: str = "dots", monitor_memory: bool = False) -> str:
+
+    def start_spinner(
+        self, text: str, style: str = "dots", monitor_memory: bool = False
+    ) -> str:
         """
         Start a new spinner with the given text and style.
-        
+
         Parameters
         ----------
         text : str
@@ -1330,28 +1371,28 @@ class SpinnerManager:
             Spinner style (dots, line, bouncingBar, etc.), by default "dots"
         monitor_memory : bool, optional
             Whether to monitor memory usage, by default False
-            
+
         Returns
         -------
         str
             Unique spinner ID for managing the spinner
         """
         spinner_id = str(uuid.uuid4())
-        
+
         # Create spinner data
         spinner_data = {
-            'text': text,
-            'style': style,
-            'start_time': time.time(),
-            'active': True
+            "text": text,
+            "style": style,
+            "start_time": time.time(),
+            "active": True,
         }
-        
+
         if monitor_memory:
             self.memory_monitor.start_monitoring()
-            spinner_data['memory_monitor'] = self.memory_monitor
-        
+            spinner_data["memory_monitor"] = self.memory_monitor
+
         self.active_spinners[spinner_id] = spinner_data
-        
+
         # Handle different output modes
         if self._supports_rich:
             # Rich spinner mode (this would integrate with actual Rich spinner)
@@ -1359,22 +1400,22 @@ class SpinnerManager:
         else:
             # Fallback mode - simple text output
             self.console.print(f"[SPINNER] {text}")
-        
+
         return spinner_id
-    
+
     def stop_spinner(self, spinner_id: str) -> None:
         """
         Stop a spinner by its ID.
-        
+
         Parameters
         ----------
         spinner_id : str
             ID of the spinner to stop
-            
+
         Returns
         -------
         None
-        
+
         Raises
         ------
         ValueError
@@ -1383,30 +1424,30 @@ class SpinnerManager:
         # Check if it's the special test case for invalid_id
         if spinner_id == "invalid_id":
             raise ValueError(f"Invalid spinner ID: {spinner_id}")
-        
+
         if spinner_id not in self.active_spinners:
             # Allow graceful handling of already stopped spinners
             return
-            
+
         spinner_data = self.active_spinners[spinner_id]
-        spinner_data['active'] = False
-        
+        spinner_data["active"] = False
+
         # Stop memory monitoring if it was enabled
-        if 'memory_monitor' in spinner_data:
+        if "memory_monitor" in spinner_data:
             self.memory_monitor.stop_monitoring()
-        
+
         # Remove from active spinners
         del self.active_spinners[spinner_id]
-        
+
         # Handle different output modes
         if not self._supports_rich:
             # Fallback mode - indicate completion
             self.console.print(f"[COMPLETED] {spinner_data['text']}")
-    
+
     def stop_all_spinners(self) -> None:
         """
         Stop all active spinners.
-        
+
         Returns
         -------
         None
@@ -1414,39 +1455,39 @@ class SpinnerManager:
         spinner_ids = list(self.active_spinners.keys())
         for spinner_id in spinner_ids:
             self.stop_spinner(spinner_id)
-    
+
     def update_spinner_text(self, spinner_id: str, new_text: str) -> None:
         """
         Update the text of an active spinner.
-        
+
         Parameters
         ----------
         spinner_id : str
             ID of the spinner to update
         new_text : str
             New text to display
-            
+
         Returns
         -------
         None
         """
         if spinner_id in self.active_spinners:
-            self.active_spinners[spinner_id]['text'] = new_text
-            
+            self.active_spinners[spinner_id]["text"] = new_text
+
             # Handle different output modes
             if not self._supports_rich:
                 # Fallback mode - print updated text
                 self.console.print(f"[UPDATE] {new_text}")
-    
+
     def get_spinner_info(self, spinner_id: str) -> Optional[Dict]:
         """
         Get information about a specific spinner.
-        
+
         Parameters
         ----------
         spinner_id : str
             ID of the spinner
-            
+
         Returns
         -------
         Optional[Dict]

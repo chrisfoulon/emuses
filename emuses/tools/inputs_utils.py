@@ -3,21 +3,20 @@ import os
 from pathlib import Path
 from typing import List, Optional, Tuple
 
-import numpy as np
 import nibabel as nib
+import numpy as np
 import pandas as pd
-from bcblib.tools.nifti_utils import reorient_to_canonical
 from bcblib.tools.general_utils import file_to_list
-from tqdm import tqdm
+from bcblib.tools.nifti_utils import reorient_to_canonical
+from bids import BIDSLayout
 from PIL import Image
 from scipy.sparse import lil_matrix
-from bids import BIDSLayout
+from sklearn.datasets import fetch_openml, load_digits
+from sklearn.preprocessing import RobustScaler, StandardScaler
+from tqdm import tqdm
 
 from emuses.tools.data_preproc import find_min_resolution
 from emuses.tools.model_io import ModelIOManager
-
-from sklearn.datasets import fetch_openml, load_digits
-from sklearn.preprocessing import RobustScaler, StandardScaler
 
 
 def load_and_preprocess_digits_dataset(dataset="digits"):
@@ -369,18 +368,28 @@ def spreadsheet_to_input_df(
         # Provide helpful warning about common header/index issues
         if header is None:
             print("⚠️  WARNING: No header row specified (header=None).")
-            print("   If your file has column names in the first row, try adding: --input_header 0 (for input files) or --scores_header 0 (for scores files)")
+            print(
+                "   If your file has column names in the first row, try adding: --input_header 0 (for input files) or --scores_header 0 (for scores files)"
+            )
 
         if index_col is None and len(columns_to_remove) > 0:
             print("⚠️  WARNING: No index column specified (index_col=None).")
-            print("   If your file has row labels/IDs in the first column, try adding: --input_index_column 0 (for input files) or --scores_index_column 0 (for scores files)")
+            print(
+                "   If your file has row labels/IDs in the first column, try adding: --input_index_column 0 (for input files) or --scores_index_column 0 (for scores files)"
+            )
 
         # Check if we're removing many columns (likely a header/formatting issue)
         if len(columns_to_remove) > 10:
-            print("⚠️  WARNING: Many columns were removed - this might indicate a formatting issue.")
+            print(
+                "⚠️  WARNING: Many columns were removed - this might indicate a formatting issue."
+            )
             print("   Common causes:")
-            print("   - Header row not properly specified (use --input_header 0 or --scores_header 0)")
-            print("   - Index column not properly specified (use --input_index_column 0 or --scores_index_column 0)")
+            print(
+                "   - Header row not properly specified (use --input_header 0 or --scores_header 0)"
+            )
+            print(
+                "   - Index column not properly specified (use --input_index_column 0 or --scores_index_column 0)"
+            )
             print("   - Wrong file format or encoding")
 
         df.drop(columns=columns_to_remove, inplace=True)
@@ -598,11 +607,12 @@ def load_or_check_umap_outputs(
         - 'test_embeddings': UMAP embeddings for test data (if available)
         - 'status': Dictionary with info on what was loaded vs. generated
     """
-    import umap
-    import joblib
-    import numpy as np
     import time
     from pathlib import Path
+
+    import joblib
+    import numpy as np
+    import umap
 
     # Initialize results dictionary
     results = {
@@ -905,7 +915,7 @@ def get_array_info(arr, detailed=True):
         # For non-numeric arrays, just count unique values
         try:
             info["unique_values"] = len(np.unique(arr))
-        except:
+        except Exception:
             info["unique_values"] = "Could not compute"
 
     return info

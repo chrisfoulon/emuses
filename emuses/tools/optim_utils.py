@@ -1,32 +1,24 @@
-import numpy as np
 import os
 import time
+from typing import Any, Dict, Union
 
+import numpy as np
 # Optuna imports
 import optuna
 from bcblib.tools.general_utils import save_json
-from optuna.integration import OptunaSearchCV
-
-from typing import Any, Dict, Union
-
-import optuna
-
-# Scikit-learn imports
-from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
-from sklearn.gaussian_process import GaussianProcessRegressor
-from sklearn.gaussian_process.kernels import (
-    RBF,
-    Matern,
-    WhiteKernel,
-    ConstantKernel,
-    RationalQuadratic,
-)
-from sklearn.model_selection import KFold, cross_val_score
-from sklearn.metrics import r2_score, mean_squared_error, mean_absolute_error
-
 # Joblib imports
-from joblib import dump, delayed
-from emuses.tools.parallelism_utils import create_safe_parallel, get_safe_n_jobs
+from joblib import delayed, dump
+from optuna.integration import OptunaSearchCV
+# Scikit-learn imports
+from sklearn.ensemble import GradientBoostingRegressor, RandomForestRegressor
+from sklearn.gaussian_process import GaussianProcessRegressor
+from sklearn.gaussian_process.kernels import (RBF, ConstantKernel, Matern,
+                                              RationalQuadratic, WhiteKernel)
+from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
+from sklearn.model_selection import KFold, cross_val_score
+
+from emuses.tools.parallelism_utils import (create_safe_parallel,
+                                            get_safe_n_jobs)
 
 # Local imports
 # (emuses.tools.kernel_regression_utils will be imported where needed)
@@ -666,12 +658,8 @@ def optuna_model_selection(
         results.update({"r2": r2, "mse": mse, "mae": mae})
     else:
         # Classification metrics
-        from sklearn.metrics import (
-            accuracy_score,
-            balanced_accuracy_score,
-            f1_score,
-            roc_auc_score,
-        )
+        from sklearn.metrics import (accuracy_score, balanced_accuracy_score,
+                                     f1_score, roc_auc_score)
 
         accuracy = accuracy_score(y, y_pred)
         balanced_acc = balanced_accuracy_score(y, y_pred)

@@ -1,18 +1,17 @@
-import numpy as np
 import logging
 from pathlib import Path
 
-from emuses.pipelines.pipeline_stage import PipelineStage
-from emuses.observability import track_scientific_operation, get_logger, track_optimization_trial
-from emuses.tools.UMAP_utils import (
-    train_and_save_umap_optim_with_nested_clustering,
-    load_umap_model,
-)
-from emuses.tools.clustering_utils import load_hdbscan_model
-from emuses.tools.emuses_utils import rescale_embedding
+import numpy as np
 
 # Import the default optimization dictionary from your configuration module.
 from emuses.config.optim_configs import load_optim_dict, optim_dict_default
+from emuses.observability import (get_logger, track_optimization_trial,
+                                  track_scientific_operation)
+from emuses.pipelines.pipeline_stage import PipelineStage
+from emuses.tools.clustering_utils import load_hdbscan_model
+from emuses.tools.emuses_utils import rescale_embedding
+from emuses.tools.UMAP_utils import (
+    load_umap_model, train_and_save_umap_optim_with_nested_clustering)
 
 
 class UMAPStage(PipelineStage):
@@ -34,15 +33,15 @@ class UMAPStage(PipelineStage):
 
     def run(self, context, progress_queue=None):
         logger = get_logger(__name__)
-        
+
         # Get user context for observability
         user_id = context.get("user_id")
         dataset_name = context.get("dataset_name", "unknown")
-        
+
         with track_scientific_operation(
-            "umap_optimization", 
+            "umap_optimization",
             user_id=user_id,
-            additional_attributes={"dataset": dataset_name}
+            additional_attributes={"dataset": dataset_name},
         ) as obs_ctx:
             logger.info("Running UMAP Stage", user_id=user_id, dataset=dataset_name)
 
@@ -53,7 +52,7 @@ class UMAPStage(PipelineStage):
             logger.info(
                 f"Using random seeds - UMAP: {umap_seed}, Clustering: {clustering_seed}"
             )
-            
+
             # Add optimization context to observability
             obs_ctx.set_attribute("umap_seed", umap_seed)
             obs_ctx.set_attribute("clustering_seed", clustering_seed)
@@ -62,7 +61,7 @@ class UMAPStage(PipelineStage):
             train_features = context.get("embedding_train_features")
             test_features = context.get("embedding_test_features")
             # train_indices = context.get("embedding_train_indices")  # Unused variable
-            
+
             if train_features is not None:
                 obs_ctx.set_attribute("train_samples", len(train_features))
             if test_features is not None:

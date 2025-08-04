@@ -5,15 +5,16 @@ This module handles AE/VAE hyperparameter optimization separately from
 the main prediction pipeline.
 """
 
+import logging
+
 import numpy as np
 import optuna
-import logging
-from sklearn.model_selection import KFold
 from sklearn.metrics import mean_squared_error
+from sklearn.model_selection import KFold
 
+from emuses.config.optim_configs_ae import load_optim_dict_ae
 from emuses.tools.ae_utils import AETransformer
 from emuses.tools.optim_utils import suggest_parameters
-from emuses.config.optim_configs_ae import load_optim_dict_ae
 
 logger = logging.getLogger(__name__)
 
@@ -134,8 +135,12 @@ def optimize_ae_pretraining(
     storage_str = None
     temp_sqlite_location = None
     if output_folder:
-        from emuses.utils.network_drive_detection import setup_optuna_storage_with_cleanup_info
-        storage_str, temp_sqlite_location = setup_optuna_storage_with_cleanup_info("ae_pretraining", output_folder)
+        from emuses.utils.network_drive_detection import \
+            setup_optuna_storage_with_cleanup_info
+
+        storage_str, temp_sqlite_location = setup_optuna_storage_with_cleanup_info(
+            "ae_pretraining", output_folder
+        )
 
     study = optuna.create_study(
         direction="minimize",  # Minimize reconstruction error
@@ -180,6 +185,7 @@ def optimize_ae_pretraining(
     if output_folder:
         try:
             from pathlib import Path
+
             from emuses.tools.model_io import ModelIOManager
 
             # Initialize model I/O manager
@@ -205,8 +211,11 @@ def optimize_ae_pretraining(
 
     # Clean up temporary SQLite location if it was used
     if temp_sqlite_location is not None:
-        from emuses.utils.network_drive_detection import cleanup_temp_sqlite_location
         from pathlib import Path
+
+        from emuses.utils.network_drive_detection import \
+            cleanup_temp_sqlite_location
+
         cleanup_temp_sqlite_location(temp_sqlite_location, Path(output_folder))
 
     return {
@@ -269,6 +278,7 @@ def load_pretrained_ae(output_folder, model_name="best_ae_model"):
     """
     try:
         from pathlib import Path
+
         from emuses.tools.model_io import ModelIOManager
 
         # Initialize model I/O manager

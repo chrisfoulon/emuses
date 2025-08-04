@@ -4,8 +4,9 @@ Parallelism utility module for EMUSES.
 Provides safe parallelism handling that detects multiprocessing context
 and adjusts backend/n_jobs accordingly to avoid conflicts.
 """
-import multiprocessing as mp
+
 import logging
+import multiprocessing as mp
 
 logger = logging.getLogger(__name__)
 
@@ -26,12 +27,14 @@ def get_process_hierarchy_depth():
     depth = 0
 
     # Traverse up the process hierarchy
-    while hasattr(current, 'parent') and current.parent is not None:
+    while hasattr(current, "parent") and current.parent is not None:
         depth += 1
         current = current.parent
         # Safety check to prevent infinite loops
         if depth > 10:
-            logger.warning("Process hierarchy depth exceeded 10 levels, stopping traversal")
+            logger.warning(
+                "Process hierarchy depth exceeded 10 levels, stopping traversal"
+            )
             break
 
     return depth
@@ -67,9 +70,11 @@ def configure_parallelism_backend(force_backend=None):
     global _force_backend
 
     if force_backend is not None:
-        valid_backends = ['loky', 'threading', 'multiprocessing']
+        valid_backends = ["loky", "threading", "multiprocessing"]
         if force_backend not in valid_backends:
-            raise ValueError(f"Invalid backend '{force_backend}'. Must be one of: {valid_backends}")
+            raise ValueError(
+                f"Invalid backend '{force_backend}'. Must be one of: {valid_backends}"
+            )
 
     _force_backend = force_backend
     logger.debug(f"Parallelism backend configuration: {force_backend or 'auto-detect'}")
@@ -96,7 +101,9 @@ def get_safe_parallel_backend():
     logger.debug(f"Process hierarchy depth: {hierarchy_depth}")
 
     if hierarchy_depth > 0:
-        logger.debug(f"Subprocess detected (depth {hierarchy_depth}), using threading backend")
+        logger.debug(
+            f"Subprocess detected (depth {hierarchy_depth}), using threading backend"
+        )
         backend = "threading"
     else:
         logger.debug("Main process detected, using loky backend")
@@ -122,7 +129,9 @@ def get_safe_n_jobs(requested_n_jobs):
     """
     if is_subprocess_context() and requested_n_jobs != 1:
         hierarchy_depth = get_process_hierarchy_depth()
-        logger.debug(f"Subprocess detected (depth {hierarchy_depth}), limiting n_jobs from {requested_n_jobs} to 1")
+        logger.debug(
+            f"Subprocess detected (depth {hierarchy_depth}), limiting n_jobs from {requested_n_jobs} to 1"
+        )
         return 1
     return requested_n_jobs
 

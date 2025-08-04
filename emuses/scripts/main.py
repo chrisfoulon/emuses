@@ -1,17 +1,17 @@
 # main.py
 
 import argparse
+import glob
 import logging
 import sys
-from pathlib import Path
 import urllib.parse
-import glob
+from pathlib import Path
 
 # Import pipeline classes
 from emuses.pipelines.emuses_pipeline import EMUSESPipeline
-from emuses.pipelines.umap_stage import UMAPStage
 from emuses.pipelines.heatmap_stage import HeatmapStage
 from emuses.pipelines.prediction_stage import PredictionStage
+from emuses.pipelines.umap_stage import UMAPStage
 
 
 def resolve_path(path_str):

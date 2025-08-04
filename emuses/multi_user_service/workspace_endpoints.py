@@ -6,17 +6,19 @@ with proper authentication and user isolation.
 """
 
 import logging
+from datetime import datetime
 from typing import List, Optional
 from uuid import UUID
-from fastapi import APIRouter, Depends, HTTPException, status, FastAPI
+
+from fastapi import APIRouter, Depends, FastAPI, HTTPException, status
 from pydantic import BaseModel, ConfigDict
-from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-from datetime import datetime
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from emuses.multi_user_service.auth import fastapi_users
-from emuses.multi_user_service.models import User, Workspace, Dataset, TrainingJob
 from emuses.multi_user_service.database import get_async_session
+from emuses.multi_user_service.models import (Dataset, TrainingJob, User,
+                                              Workspace)
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +35,7 @@ class WorkspaceCreate(BaseModel):
     description : str, optional
         Workspace description
     """
+
     name: str
     description: Optional[str] = None
 
@@ -51,6 +54,7 @@ class WorkspaceUpdate(BaseModel):
     is_active : bool, optional
         Whether workspace is active
     """
+
     name: Optional[str] = None
     description: Optional[str] = None
     is_active: Optional[bool] = None
@@ -80,6 +84,7 @@ class WorkspaceRead(BaseModel):
     updated_at : datetime
         Last update timestamp
     """
+
     id: str
     name: str
     description: Optional[str]
@@ -112,6 +117,7 @@ class DatasetCreate(BaseModel):
     dataset_metadata : dict, optional
         Additional dataset metadata
     """
+
     name: str
     description: Optional[str] = None
     workspace_id: str
@@ -136,6 +142,7 @@ class DatasetUpdate(BaseModel):
     dataset_metadata : dict, optional
         Updated dataset metadata
     """
+
     name: Optional[str] = None
     description: Optional[str] = None
     version: Optional[str] = None
@@ -172,6 +179,7 @@ class DatasetRead(BaseModel):
     updated_at : datetime
         Last update timestamp
     """
+
     id: str
     name: str
     description: Optional[str]
@@ -203,6 +211,7 @@ class TrainingJobCreate(BaseModel):
     job_config : dict, optional
         Job configuration parameters
     """
+
     name: str
     description: Optional[str] = None
     workspace_id: str
@@ -225,6 +234,7 @@ class TrainingJobUpdate(BaseModel):
     status : str, optional
         Updated job status
     """
+
     name: Optional[str] = None
     description: Optional[str] = None
     job_config: Optional[dict] = None
@@ -265,6 +275,7 @@ class TrainingJobRead(BaseModel):
     updated_at : datetime
         Last update timestamp
     """
+
     id: str
     name: str
     description: Optional[str]
@@ -299,7 +310,7 @@ def create_workspace_router() -> APIRouter:
     async def create_workspace(
         workspace_data: WorkspaceCreate,
         current_user: User = Depends(fastapi_users.current_user(active=True)),
-        session: AsyncSession = Depends(get_async_session)
+        session: AsyncSession = Depends(get_async_session),
     ):
         """Create a new workspace for the current user.
 
@@ -319,8 +330,11 @@ def create_workspace_router() -> APIRouter:
         """
         # Create user-specific storage path
         from emuses.multi_user_service.job_manager import MultiUserJobManager
+
         job_manager = MultiUserJobManager()
-        storage_path = job_manager.create_user_storage_path(current_user.id, "workspaces")
+        storage_path = job_manager.create_user_storage_path(
+            current_user.id, "workspaces"
+        )
 
         # Create workspace
         workspace = Workspace(
@@ -328,7 +342,7 @@ def create_workspace_router() -> APIRouter:
             description=workspace_data.description,
             owner_id=current_user.id,
             storage_path=str(storage_path),
-            is_active=True
+            is_active=True,
         )
 
         session.add(workspace)
@@ -341,7 +355,7 @@ def create_workspace_router() -> APIRouter:
     @router.get("/", response_model=List[WorkspaceRead])
     async def list_user_workspaces(
         current_user: User = Depends(fastapi_users.current_user(active=True)),
-        session: AsyncSession = Depends(get_async_session)
+        session: AsyncSession = Depends(get_async_session),
     ):
         """List all workspaces owned by the current user.
 
@@ -367,7 +381,7 @@ def create_workspace_router() -> APIRouter:
     async def get_workspace(
         workspace_id: UUID,
         current_user: User = Depends(fastapi_users.current_user(active=True)),
-        session: AsyncSession = Depends(get_async_session)
+        session: AsyncSession = Depends(get_async_session),
     ):
         """Get a specific workspace by ID.
 
@@ -391,16 +405,14 @@ def create_workspace_router() -> APIRouter:
             If workspace not found or user doesn't own it
         """
         stmt = select(Workspace).where(
-            Workspace.id == workspace_id,
-            Workspace.owner_id == current_user.id
+            Workspace.id == workspace_id, Workspace.owner_id == current_user.id
         )
         result = await session.execute(stmt)
         workspace = result.scalar_one_or_none()
 
         if not workspace:
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Workspace not found"
+                status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found"
             )
 
         return WorkspaceRead.from_orm(workspace)
@@ -410,7 +422,7 @@ def create_workspace_router() -> APIRouter:
         workspace_id: UUID,
         workspace_data: WorkspaceUpdate,
         current_user: User = Depends(fastapi_users.current_user(active=True)),
-        session: AsyncSession = Depends(get_async_session)
+        session: AsyncSession = Depends(get_async_session),
     ):
         """Update a workspace.
 
@@ -436,16 +448,14 @@ def create_workspace_router() -> APIRouter:
             If workspace not found or user doesn't own it
         """
         stmt = select(Workspace).where(
-            Workspace.id == workspace_id,
-            Workspace.owner_id == current_user.id
+            Workspace.id == workspace_id, Workspace.owner_id == current_user.id
         )
         result = await session.execute(stmt)
         workspace = result.scalar_one_or_none()
 
         if not workspace:
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Workspace not found"
+                status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found"
             )
 
         # Update fields
@@ -465,7 +475,7 @@ def create_workspace_router() -> APIRouter:
     async def delete_workspace(
         workspace_id: UUID,
         current_user: User = Depends(fastapi_users.current_user(active=True)),
-        session: AsyncSession = Depends(get_async_session)
+        session: AsyncSession = Depends(get_async_session),
     ):
         """Delete a workspace.
 
@@ -484,16 +494,14 @@ def create_workspace_router() -> APIRouter:
             If workspace not found or user doesn't own it
         """
         stmt = select(Workspace).where(
-            Workspace.id == workspace_id,
-            Workspace.owner_id == current_user.id
+            Workspace.id == workspace_id, Workspace.owner_id == current_user.id
         )
         result = await session.execute(stmt)
         workspace = result.scalar_one_or_none()
 
         if not workspace:
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Workspace not found"
+                status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found"
             )
 
         await session.delete(workspace)
@@ -504,50 +512,54 @@ def create_workspace_router() -> APIRouter:
     return router
 
 
-async def _get_user_workspace(workspace_id: UUID, user_id: UUID, session: AsyncSession) -> Workspace:
+async def _get_user_workspace(
+    workspace_id: UUID, user_id: UUID, session: AsyncSession
+) -> Workspace:
     """Get workspace owned by user or raise 404."""
     stmt = select(Workspace).where(
-        Workspace.id == workspace_id,
-        Workspace.owner_id == user_id
+        Workspace.id == workspace_id, Workspace.owner_id == user_id
     )
     result = await session.execute(stmt)
     workspace = result.scalar_one_or_none()
     if not workspace:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Workspace not found"
+            status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found"
         )
     return workspace
 
 
-async def _get_user_dataset(dataset_id: UUID, user_id: UUID, session: AsyncSession) -> Dataset:
+async def _get_user_dataset(
+    dataset_id: UUID, user_id: UUID, session: AsyncSession
+) -> Dataset:
     """Get dataset owned by user or raise 404."""
-    stmt = select(Dataset).join(Workspace).where(
-        Dataset.id == dataset_id,
-        Workspace.owner_id == user_id
+    stmt = (
+        select(Dataset)
+        .join(Workspace)
+        .where(Dataset.id == dataset_id, Workspace.owner_id == user_id)
     )
     result = await session.execute(stmt)
     dataset = result.scalar_one_or_none()
     if not dataset:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Dataset not found"
+            status_code=status.HTTP_404_NOT_FOUND, detail="Dataset not found"
         )
     return dataset
 
 
-async def _get_user_training_job(job_id: UUID, user_id: UUID, session: AsyncSession) -> TrainingJob:
+async def _get_user_training_job(
+    job_id: UUID, user_id: UUID, session: AsyncSession
+) -> TrainingJob:
     """Get training job owned by user or raise 404."""
-    stmt = select(TrainingJob).join(Workspace).where(
-        TrainingJob.id == job_id,
-        Workspace.owner_id == user_id
+    stmt = (
+        select(TrainingJob)
+        .join(Workspace)
+        .where(TrainingJob.id == job_id, Workspace.owner_id == user_id)
     )
     result = await session.execute(stmt)
     job = result.scalar_one_or_none()
     if not job:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Training job not found"
+            status_code=status.HTTP_404_NOT_FOUND, detail="Training job not found"
         )
     return job
 
@@ -569,7 +581,7 @@ def create_dataset_router() -> APIRouter:
     async def create_dataset(
         dataset_data: DatasetCreate,
         current_user: User = Depends(fastapi_users.current_user(active=True)),
-        session: AsyncSession = Depends(get_async_session)
+        session: AsyncSession = Depends(get_async_session),
     ):
         """Create a new dataset in user's workspace.
 
@@ -593,6 +605,7 @@ def create_dataset_router() -> APIRouter:
 
         # Calculate file size if file exists
         import os
+
         file_size = 0
         if os.path.exists(dataset_data.file_path):
             file_size = os.path.getsize(dataset_data.file_path)
@@ -605,21 +618,23 @@ def create_dataset_router() -> APIRouter:
             file_path=dataset_data.file_path,
             file_size_bytes=file_size,
             version=dataset_data.version,
-            dataset_metadata=dataset_data.dataset_metadata
+            dataset_metadata=dataset_data.dataset_metadata,
         )
 
         session.add(dataset)
         await session.commit()
         await session.refresh(dataset)
 
-        logger.info(f"Created dataset {dataset.id} in workspace {workspace_id} for user {current_user.id}")
+        logger.info(
+            f"Created dataset {dataset.id} in workspace {workspace_id} for user {current_user.id}"
+        )
         return DatasetRead.from_orm(dataset)
 
     @router.get("/", response_model=List[DatasetRead])
     async def list_datasets(
         workspace_id: Optional[UUID] = None,
         current_user: User = Depends(fastapi_users.current_user(active=True)),
-        session: AsyncSession = Depends(get_async_session)
+        session: AsyncSession = Depends(get_async_session),
     ):
         """List datasets for the current user.
 
@@ -643,7 +658,11 @@ def create_dataset_router() -> APIRouter:
             stmt = select(Dataset).where(Dataset.workspace_id == workspace_id)
         else:
             # List all datasets in user's workspaces
-            stmt = select(Dataset).join(Workspace).where(Workspace.owner_id == current_user.id)
+            stmt = (
+                select(Dataset)
+                .join(Workspace)
+                .where(Workspace.owner_id == current_user.id)
+            )
 
         result = await session.execute(stmt)
         datasets = result.scalars().all()
@@ -654,7 +673,7 @@ def create_dataset_router() -> APIRouter:
     async def get_dataset(
         dataset_id: UUID,
         current_user: User = Depends(fastapi_users.current_user(active=True)),
-        session: AsyncSession = Depends(get_async_session)
+        session: AsyncSession = Depends(get_async_session),
     ):
         """Get a specific dataset by ID.
 
@@ -685,7 +704,7 @@ def create_dataset_router() -> APIRouter:
         dataset_id: UUID,
         dataset_data: DatasetUpdate,
         current_user: User = Depends(fastapi_users.current_user(active=True)),
-        session: AsyncSession = Depends(get_async_session)
+        session: AsyncSession = Depends(get_async_session),
     ):
         """Update a dataset.
 
@@ -729,7 +748,7 @@ def create_dataset_router() -> APIRouter:
     async def delete_dataset(
         dataset_id: UUID,
         current_user: User = Depends(fastapi_users.current_user(active=True)),
-        session: AsyncSession = Depends(get_async_session)
+        session: AsyncSession = Depends(get_async_session),
     ):
         """Delete a dataset.
 
@@ -770,11 +789,13 @@ def create_training_job_router() -> APIRouter:
     """
     router = APIRouter(prefix="/jobs", tags=["Training Jobs"])
 
-    @router.post("/", response_model=TrainingJobRead, status_code=status.HTTP_201_CREATED)
+    @router.post(
+        "/", response_model=TrainingJobRead, status_code=status.HTTP_201_CREATED
+    )
     async def create_training_job(
         job_data: TrainingJobCreate,
         current_user: User = Depends(fastapi_users.current_user(active=True)),
-        session: AsyncSession = Depends(get_async_session)
+        session: AsyncSession = Depends(get_async_session),
     ):
         """Create a new training job in user's workspace.
 
@@ -803,14 +824,16 @@ def create_training_job_router() -> APIRouter:
             owner_id=current_user.id,
             workspace_id=workspace_id,
             job_config=job_data.job_config,
-            status="pending"
+            status="pending",
         )
 
         session.add(job)
         await session.commit()
         await session.refresh(job)
 
-        logger.info(f"Created training job {job.id} in workspace {workspace_id} for user {current_user.id}")
+        logger.info(
+            f"Created training job {job.id} in workspace {workspace_id} for user {current_user.id}"
+        )
         return TrainingJobRead.from_orm(job)
 
     @router.get("/", response_model=List[TrainingJobRead])
@@ -818,7 +841,7 @@ def create_training_job_router() -> APIRouter:
         workspace_id: Optional[UUID] = None,
         status: Optional[str] = None,
         current_user: User = Depends(fastapi_users.current_user(active=True)),
-        session: AsyncSession = Depends(get_async_session)
+        session: AsyncSession = Depends(get_async_session),
     ):
         """List training jobs for the current user.
 
@@ -844,7 +867,11 @@ def create_training_job_router() -> APIRouter:
             stmt = select(TrainingJob).where(TrainingJob.workspace_id == workspace_id)
         else:
             # List all jobs in user's workspaces
-            stmt = select(TrainingJob).join(Workspace).where(Workspace.owner_id == current_user.id)
+            stmt = (
+                select(TrainingJob)
+                .join(Workspace)
+                .where(Workspace.owner_id == current_user.id)
+            )
 
         if status:
             stmt = stmt.where(TrainingJob.status == status)
@@ -858,7 +885,7 @@ def create_training_job_router() -> APIRouter:
     async def get_training_job(
         job_id: UUID,
         current_user: User = Depends(fastapi_users.current_user(active=True)),
-        session: AsyncSession = Depends(get_async_session)
+        session: AsyncSession = Depends(get_async_session),
     ):
         """Get a specific training job by ID.
 
@@ -889,7 +916,7 @@ def create_training_job_router() -> APIRouter:
         job_id: UUID,
         job_data: TrainingJobUpdate,
         current_user: User = Depends(fastapi_users.current_user(active=True)),
-        session: AsyncSession = Depends(get_async_session)
+        session: AsyncSession = Depends(get_async_session),
     ):
         """Update a training job.
 
@@ -933,7 +960,7 @@ def create_training_job_router() -> APIRouter:
     async def cancel_training_job(
         job_id: UUID,
         current_user: User = Depends(fastapi_users.current_user(active=True)),
-        session: AsyncSession = Depends(get_async_session)
+        session: AsyncSession = Depends(get_async_session),
     ):
         """Cancel/delete a training job.
 
@@ -975,22 +1002,27 @@ def setup_workspace_endpoints(app: FastAPI) -> None:
     app : FastAPI
         The FastAPI application instance to configure
     """
-    logger.info("Setting up workspace, dataset, training job, quota, and task endpoints")
+    logger.info(
+        "Setting up workspace, dataset, training job, quota, and task endpoints"
+    )
 
     workspace_router = create_workspace_router()
     dataset_router = create_dataset_router()
     job_router = create_training_job_router()
-    
+
     # Import and create quota endpoints
     from emuses.multi_user_service.quota_endpoints import create_quota_router
+
     quota_router = create_quota_router()
-    
+
     # Import and create task endpoints
     from emuses.multi_user_service.task_endpoints import create_task_router
+
     task_router = create_task_router()
-    
+
     # Import and create admin endpoints
     from emuses.multi_user_service.admin_endpoints import create_admin_router
+
     admin_router = create_admin_router()
 
     app.include_router(workspace_router)
@@ -1000,4 +1032,6 @@ def setup_workspace_endpoints(app: FastAPI) -> None:
     app.include_router(task_router)
     app.include_router(admin_router)
 
-    logger.info("Workspace, dataset, training job, quota, task, and admin endpoints configured")
+    logger.info(
+        "Workspace, dataset, training job, quota, task, and admin endpoints configured"
+    )

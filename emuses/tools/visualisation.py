@@ -1,17 +1,27 @@
-import numpy as np
-import matplotlib.pyplot as plt
-import plotly
-import plotly.graph_objs as go
-import plotly.express as px
-import plotly.io as pio
-from bcblib.tools.general_utils import open_json
-from plotly.subplots import make_subplots
-import streamlit as st
 from pathlib import Path
 
+import matplotlib.pyplot as plt
+import numpy as np
+import plotly
+import plotly.express as px
+import plotly.graph_objs as go
+import plotly.io as pio
+import streamlit as st
+from bcblib.tools.general_utils import open_json
+from plotly.subplots import make_subplots
 
-def plot_embeddings_with_values(embeddings_dict, colour_dict, size_dict=None, name_dict=None, scale_colours=False,
-                                scale_sizes=False, output_path=None, colourbar_label=None, subplot_title_center=True):
+
+def plot_embeddings_with_values(
+    embeddings_dict,
+    colour_dict,
+    size_dict=None,
+    name_dict=None,
+    scale_colours=False,
+    scale_sizes=False,
+    output_path=None,
+    colourbar_label=None,
+    subplot_title_center=True,
+):
     """
     Plot the embeddings of the labels and each model with colours representing the distances and sizes representing distance.
 
@@ -38,10 +48,12 @@ def plot_embeddings_with_values(embeddings_dict, colour_dict, size_dict=None, na
     """
     # Determine the grid size based on the number of models
     grid_size = int(np.ceil(np.sqrt(len(embeddings_dict))))
-    print(f'Grid size: {grid_size}')
+    print(f"Grid size: {grid_size}")
 
     # Create a figure and a set of subplots
-    fig, axes = plt.subplots(grid_size, grid_size, figsize=(8 * grid_size, 6 * grid_size))
+    fig, axes = plt.subplots(
+        grid_size, grid_size, figsize=(8 * grid_size, 6 * grid_size)
+    )
 
     # Flatten the axes for easier indexing
     axes = axes.flatten() if grid_size > 1 else [axes]
@@ -50,42 +62,55 @@ def plot_embeddings_with_values(embeddings_dict, colour_dict, size_dict=None, na
     label_index = len(axes) // 2 if subplot_title_center else 0
 
     # Plot the label embeddings in the selected subplot
-    scatter = axes[label_index].scatter(embeddings_dict['labels'][:, 0], embeddings_dict['labels'][:, 1], s=5)
-    axes[label_index].set_title('UMAP Embedding of ground truth labels')
+    scatter = axes[label_index].scatter(
+        embeddings_dict["labels"][:, 0], embeddings_dict["labels"][:, 1], s=5
+    )
+    axes[label_index].set_title("UMAP Embedding of ground truth labels")
     cbar = fig.colorbar(scatter, ax=axes[label_index])
     cbar.set_ticks([])  # Remove the numbers from the colorbar
     cbar.solids.set(alpha=0)  # Make the colorbar itself invisible
-    cbar.ax.set_facecolor('white')
+    cbar.ax.set_facecolor("white")
 
     # Initialize a counter for the models
     model_counter = 0
 
     # Plot the embeddings with colors representing the distances and sizes representing distance
     for model_name, model_embedding in embeddings_dict.items():
-        if model_name != 'labels':
+        if model_name != "labels":
             # Calculate the index of the subplot for the current model
             model_index = (label_index + model_counter + 1) % len(axes)
 
             # Scale colours if required
             colours = colour_dict[model_name]
             if scale_colours:
-                colours = (colours - np.min(colours)) / (np.max(colours) - np.min(colours))
+                colours = (colours - np.min(colours)) / (
+                    np.max(colours) - np.min(colours)
+                )
 
             # Scale sizes if required
             sizes = size_dict[model_name] if size_dict else None
             if sizes is not None and scale_sizes:
                 sizes = sizes * 100
 
-            scatter = axes[model_index].scatter(model_embedding[:, 0], model_embedding[:, 1], c=colours, s=sizes,
-                                                alpha=0.7)
-            axes[model_index].set_title(f'{name_dict[model_name] if name_dict else model_name}')
+            scatter = axes[model_index].scatter(
+                model_embedding[:, 0],
+                model_embedding[:, 1],
+                c=colours,
+                s=sizes,
+                alpha=0.7,
+            )
+            axes[model_index].set_title(
+                f"{name_dict[model_name] if name_dict else model_name}"
+            )
             fig.colorbar(scatter, ax=axes[model_index], label=colourbar_label)
 
             # Increment the model counter
             model_counter += 1
 
     # Adjust the spacing between subplots and the margins
-    plt.subplots_adjust(left=0.05, right=0.95, bottom=0.05, top=0.95, wspace=0.2, hspace=0.3)
+    plt.subplots_adjust(
+        left=0.05, right=0.95, bottom=0.05, top=0.95, wspace=0.2, hspace=0.3
+    )
 
     # Save the plot if output_path is provided
     if output_path is not None:
@@ -96,9 +121,18 @@ def plot_embeddings_with_values(embeddings_dict, colour_dict, size_dict=None, na
 
 # Function to plot the clustering of the whole space
 def plot_clustering(
-    embeddings, clusterer, grid_x, grid_y, gaussian_matrix, filtered_indices,
-    filtered_embeddings, cluster_labels, score_tag, highlight_points=True,
-    show_plot=False, save_path=None
+    embeddings,
+    clusterer,
+    grid_x,
+    grid_y,
+    gaussian_matrix,
+    filtered_indices,
+    filtered_embeddings,
+    cluster_labels,
+    score_tag,
+    highlight_points=True,
+    show_plot=False,
+    save_path=None,
 ):
     """
     Plot the clustering of the entire embedding space, including heatmap and filtered points.
@@ -128,32 +162,49 @@ def plot_clustering(
 
     # Heatmap subplot
     cax = axs[0].imshow(
-        gaussian_matrix.T, cmap='hot', interpolation='nearest', origin='lower',
-        extent=[grid_x.min(), grid_x.max(), grid_y.min(), grid_y.max()]
+        gaussian_matrix.T,
+        cmap="hot",
+        interpolation="nearest",
+        origin="lower",
+        extent=[grid_x.min(), grid_x.max(), grid_y.min(), grid_y.max()],
     )
-    axs[0].set_title(f'Gaussian Filter Heatmap for score {score_tag}')
-    axs[0].set_xlabel('Coordinate X')
-    axs[0].set_ylabel('Coordinate Y')
+    axs[0].set_title(f"Gaussian Filter Heatmap for score {score_tag}")
+    axs[0].set_xlabel("Coordinate X")
+    axs[0].set_ylabel("Coordinate Y")
     fig.colorbar(cax, ax=axs[0])
 
     if highlight_points:
         # Highlight filtered points on the heatmap
-        axs[0].scatter(filtered_embeddings[:, 0], filtered_embeddings[:, 1], color='red', s=10, label='Filtered points')
+        axs[0].scatter(
+            filtered_embeddings[:, 0],
+            filtered_embeddings[:, 1],
+            color="red",
+            s=10,
+            label="Filtered points",
+        )
         axs[0].legend()
 
     # Plot the entire space with filtered points in color
     unfiltered_labels = np.full(embeddings.shape[0], -1)
     unfiltered_labels[filtered_indices] = cluster_labels
     scatter = axs[1].scatter(
-        embeddings[:, 0], embeddings[:, 1], c=unfiltered_labels, cmap='viridis', alpha=0.3
+        embeddings[:, 0],
+        embeddings[:, 1],
+        c=unfiltered_labels,
+        cmap="viridis",
+        alpha=0.3,
     )
     axs[1].scatter(
-        filtered_embeddings[:, 0], filtered_embeddings[:, 1], c=cluster_labels, cmap='viridis',
-        edgecolor='k', s=50
+        filtered_embeddings[:, 0],
+        filtered_embeddings[:, 1],
+        c=cluster_labels,
+        cmap="viridis",
+        edgecolor="k",
+        s=50,
     )
-    axs[1].set_title('Filtered Coordinates and Clusters')
-    axs[1].set_xlabel('Coordinate X')
-    axs[1].set_ylabel('Coordinate Y')
+    axs[1].set_title("Filtered Coordinates and Clusters")
+    axs[1].set_xlabel("Coordinate X")
+    axs[1].set_ylabel("Coordinate Y")
     legend1 = axs[1].legend(*scatter.legend_elements(), title="Clusters")
     axs[1].add_artist(legend1)
 
@@ -170,8 +221,9 @@ def plot_clustering(
     return fig
 
 
-def plot_clustering_interactive_with_hover(embeddings, cluster_labels, output_path=None, show_plot=True,
-                                           return_plot=False):
+def plot_clustering_interactive_with_hover(
+    embeddings, cluster_labels, output_path=None, show_plot=True, return_plot=False
+):
     """
     Plot the clustering of the entire embedding space interactively with hover functionality.
 
@@ -189,45 +241,53 @@ def plot_clustering_interactive_with_hover(embeddings, cluster_labels, output_pa
     unique_labels = np.unique(cluster_labels)
 
     # Create a color map for the clusters
-    cmap = plt.colormaps.get_cmap('tab20')
+    cmap = plt.colormaps.get_cmap("tab20")
 
     # Create a Plotly figure with specified size to make it more balanced
     fig = make_subplots(rows=1, cols=1)
-    fig.update_layout(width=800, height=800)  # Set width and height to make the plot more square
+    fig.update_layout(
+        width=800, height=800
+    )  # Set width and height to make the plot more square
 
     # Plot each cluster with a distinct color
     for idx, k in enumerate(unique_labels):
         if k == -1:
             # Noise points: grey color
-            color = 'rgba(128, 128, 128, 0.6)'  # Grey with reduced opacity
+            color = "rgba(128, 128, 128, 0.6)"  # Grey with reduced opacity
         else:
             # Get a color from the colormap
-            color = f'rgba({cmap(idx / len(unique_labels))[0] * 255}, {cmap(idx / len(unique_labels))[1] * 255}, {cmap(idx / len(unique_labels))[2] * 255}, 0.75)'
+            color = f"rgba({cmap(idx / len(unique_labels))[0] * 255}, {cmap(idx / len(unique_labels))[1] * 255}, {cmap(idx / len(unique_labels))[2] * 255}, 0.75)"
 
         # Filter points for the current cluster
-        class_member_mask = (cluster_labels == k)
+        class_member_mask = cluster_labels == k
         cluster_points = embeddings[class_member_mask]
 
         # Add a scatter trace for the current cluster
         fig.add_trace(
-            go.Scatter(x=cluster_points[:, 0],
-                       y=cluster_points[:, 1],
-                       mode='markers',
-                       marker=dict(color=color, size=5, line=dict(width=0.5, color='black')),
-                       name=f'Cluster {k}' if k != -1 else 'Noise',
-                       hoverinfo='text',
-                       text=[f'Cluster {k}' for _ in range(len(cluster_points))])
+            go.Scatter(
+                x=cluster_points[:, 0],
+                y=cluster_points[:, 1],
+                mode="markers",
+                marker=dict(color=color, size=5, line=dict(width=0.5, color="black")),
+                name=f"Cluster {k}" if k != -1 else "Noise",
+                hoverinfo="text",
+                text=[f"Cluster {k}" for _ in range(len(cluster_points))],
+            )
         )
 
     # Update layout
     fig.update_layout(
-        title='Interactive Clustering of the Whole Space',
-        xaxis_title='Coordinate X',
-        yaxis_title='Coordinate Y',
+        title="Interactive Clustering of the Whole Space",
+        xaxis_title="Coordinate X",
+        yaxis_title="Coordinate Y",
         showlegend=True,
-        legend_title='Clusters',
-        xaxis=dict(scaleanchor='y', scaleratio=1),  # Maintain the aspect ratio of the plot
-        yaxis=dict(scaleanchor='x', scaleratio=1)   # Maintain the aspect ratio of the plot
+        legend_title="Clusters",
+        xaxis=dict(
+            scaleanchor="y", scaleratio=1
+        ),  # Maintain the aspect ratio of the plot
+        yaxis=dict(
+            scaleanchor="x", scaleratio=1
+        ),  # Maintain the aspect ratio of the plot
     )
 
     # Optionally save the interactive plot
@@ -253,9 +313,9 @@ def plot_embeddings(
     show_plot=True,
     return_plot=False,
     interactive=True,
-    title='Embeddings',
+    title="Embeddings",
     marker_size=5,
-    opacity=0.75
+    opacity=0.75,
 ):
     """
     Plot embeddings interactively or as static images with optional clustering and hover functionality.
@@ -291,7 +351,7 @@ def plot_embeddings(
         raise ValueError("Embeddings must be a 2D array with either 2 or 3 columns.")
 
     dims = embeddings.shape[1]
-    is_3d = (dims == 3)
+    is_3d = dims == 3
 
     # Handle cluster_labels optional
     if cluster_labels is None:
@@ -301,25 +361,25 @@ def plot_embeddings(
         unique_labels = np.unique(cluster_labels)
 
     # Create a colormap from matplotlib
-    cmap = plt.colormaps.get_cmap('tab20')
+    cmap = plt.colormaps.get_cmap("tab20")
 
     # Initialize a figure
     fig = go.Figure()
 
     # Plot each cluster
     for idx, k in enumerate(unique_labels):
-        class_member_mask = (cluster_labels == k)
+        class_member_mask = cluster_labels == k
         cluster_points = embeddings[class_member_mask]
 
         if k == -1:
             # Noise points: grey color
-            color = 'rgba(128, 128, 128, 0.6)'
-            name = 'Noise'
+            color = "rgba(128, 128, 128, 0.6)"
+            name = "Noise"
         else:
             # Map cluster index to a color
             r, g, b, a = cmap(idx / len(unique_labels))
-            color = f'rgba({int(r*255)}, {int(g*255)}, {int(b*255)}, {opacity})'
-            name = f'Cluster {k}' if len(unique_labels) > 1 else 'All Points'
+            color = f"rgba({int(r*255)}, {int(g*255)}, {int(b*255)}, {opacity})"
+            name = f"Cluster {k}" if len(unique_labels) > 1 else "All Points"
 
         if is_3d:
             fig.add_trace(
@@ -327,11 +387,15 @@ def plot_embeddings(
                     x=cluster_points[:, 0],
                     y=cluster_points[:, 1],
                     z=cluster_points[:, 2],
-                    mode='markers',
-                    marker=dict(color=color, size=marker_size, line=dict(width=0.5, color='black')),
+                    mode="markers",
+                    marker=dict(
+                        color=color,
+                        size=marker_size,
+                        line=dict(width=0.5, color="black"),
+                    ),
                     name=name,
-                    hoverinfo='text',
-                    text=[name for _ in range(len(cluster_points))]
+                    hoverinfo="text",
+                    text=[name for _ in range(len(cluster_points))],
                 )
             )
         else:
@@ -339,11 +403,15 @@ def plot_embeddings(
                 go.Scatter(
                     x=cluster_points[:, 0],
                     y=cluster_points[:, 1],
-                    mode='markers',
-                    marker=dict(color=color, size=marker_size, line=dict(width=0.5, color='black')),
+                    mode="markers",
+                    marker=dict(
+                        color=color,
+                        size=marker_size,
+                        line=dict(width=0.5, color="black"),
+                    ),
                     name=name,
-                    hoverinfo='text',
-                    text=[name for _ in range(len(cluster_points))]
+                    hoverinfo="text",
+                    text=[name for _ in range(len(cluster_points))],
                 )
             )
 
@@ -352,23 +420,23 @@ def plot_embeddings(
         fig.update_layout(
             title=title,
             showlegend=True,
-            legend_title='Clusters',
+            legend_title="Clusters",
             scene=dict(
-                xaxis_title='Dimension 1',
-                yaxis_title='Dimension 2',
-                zaxis_title='Dimension 3',
-                aspectmode='cube'
-            )
+                xaxis_title="Dimension 1",
+                yaxis_title="Dimension 2",
+                zaxis_title="Dimension 3",
+                aspectmode="cube",
+            ),
         )
     else:
         fig.update_layout(
             title=title,
-            xaxis_title='Dimension 1',
-            yaxis_title='Dimension 2',
+            xaxis_title="Dimension 1",
+            yaxis_title="Dimension 2",
             showlegend=True,
-            legend_title='Clusters',
-            xaxis=dict(scaleanchor='y', scaleratio=1),
-            yaxis=dict(scaleanchor='x', scaleratio=1)
+            legend_title="Clusters",
+            xaxis=dict(scaleanchor="y", scaleratio=1),
+            yaxis=dict(scaleanchor="x", scaleratio=1),
         )
 
     # Save output
@@ -376,15 +444,18 @@ def plot_embeddings(
         output_path = str(output_path)
         if interactive:
             # Save as HTML
-            if not output_path.endswith('.html'):
-                output_path += '.html'
+            if not output_path.endswith(".html"):
+                output_path += ".html"
             plotly.io.write_html(fig, output_path)
             print(f"Interactive plot saved at: {output_path}")
         else:
             # Save as a static image (requires kaleido)
             # Common formats: .png, .jpg, .jpeg, .svg, .pdf
-            if not any(output_path.lower().endswith(ext) for ext in ['.png', '.jpg', '.jpeg', '.svg', '.pdf']):
-                output_path += '.png'
+            if not any(
+                output_path.lower().endswith(ext)
+                for ext in [".png", ".jpg", ".jpeg", ".svg", ".pdf"]
+            ):
+                output_path += ".png"
             fig.write_image(output_path)
             print(f"Static image saved at: {output_path}")
 
@@ -395,7 +466,9 @@ def plot_embeddings(
         else:
             # For a static image, we don't have an automatic show in the browser.
             # Inform the user to open the saved image manually or handle it via return_plot.
-            print("Static mode: The plot is not displayed interactively. Open the saved image file to view.")
+            print(
+                "Static mode: The plot is not displayed interactively. Open the saved image file to view."
+            )
 
     # Return figure if requested
     if return_plot:
@@ -404,7 +477,9 @@ def plot_embeddings(
         return None
 
 
-def plot_statistical_map(data, title='', save_path=None, show_plot=False, return_plot=False):
+def plot_statistical_map(
+    data, title="", save_path=None, show_plot=False, return_plot=False
+):
     """
     Plot a 2D statistical map with options to display, save, and/or return the plot.
 
@@ -426,14 +501,16 @@ def plot_statistical_map(data, title='', save_path=None, show_plot=False, return
         Returns the plot object if return_plot is True, otherwise returns None.
     """
     if not save_path and not show_plot and not return_plot:
-        raise ValueError("At least one output option (save, show, or return) must be specified.")
+        raise ValueError(
+            "At least one output option (save, show, or return) must be specified."
+        )
 
     fig, ax = plt.subplots()
-    img = ax.imshow(data, cmap='hot', interpolation='nearest')
+    img = ax.imshow(data, cmap="hot", interpolation="nearest")
     ax.set_title(title)
-    ax.set_xlabel('X-axis')
-    ax.set_ylabel('Y-axis')
-    plt.colorbar(img, label='Effect Size', ax=ax)
+    ax.set_xlabel("X-axis")
+    ax.set_ylabel("Y-axis")
+    plt.colorbar(img, label="Effect Size", ax=ax)
 
     if save_path:
         plt.savefig(save_path)
@@ -445,7 +522,9 @@ def plot_statistical_map(data, title='', save_path=None, show_plot=False, return
         plt.close(fig)
 
 
-def plot_embeddings_old(embeddings, title='', save_path=None, show_plot=False, return_plot=False):
+def plot_embeddings_old(
+    embeddings, title="", save_path=None, show_plot=False, return_plot=False
+):
     """
     Plot UMAP embeddings as a scatter plot with options to display, save, and/or return the plot.
 
@@ -470,19 +549,23 @@ def plot_embeddings_old(embeddings, title='', save_path=None, show_plot=False, r
     - ValueError: If the embeddings array is not 2-dimensional.
     """
     if not save_path and not show_plot and not return_plot:
-        raise ValueError("At least one output option (save, show, or return) must be specified.")
+        raise ValueError(
+            "At least one output option (save, show, or return) must be specified."
+        )
 
     if embeddings.ndim != 2 or embeddings.shape[1] != 2:
         raise ValueError("Embeddings should be a 2D array with shape (n_samples, 2).")
 
     fig, ax = plt.subplots(figsize=(8, 6))
-    scatter = ax.scatter(embeddings[:, 0], embeddings[:, 1], s=10, alpha=0.7, cmap='viridis')
+    ax.scatter(
+        embeddings[:, 0], embeddings[:, 1], s=10, alpha=0.7, cmap="viridis"
+    )
     ax.set_title(title)
-    ax.set_xlabel('Dimension 1')
-    ax.set_ylabel('Dimension 2')
+    ax.set_xlabel("Dimension 1")
+    ax.set_ylabel("Dimension 2")
 
     if save_path:
-        plt.savefig(save_path, bbox_inches='tight')
+        plt.savefig(save_path, bbox_inches="tight")
     if show_plot:
         plt.show()
     if return_plot:
@@ -495,13 +578,13 @@ def plot_spreadsheet_stat_map(
     df_long,
     cluster,
     output_path=None,
-    orientation='h',
+    orientation="h",
     interactive=False,
     width=1200,
     height=None,
     title=None,
     show_plot=False,
-    return_plot=False
+    return_plot=False,
 ):
     """
     Create a bar plot for a melted DataFrame of features and effect sizes.
@@ -542,42 +625,36 @@ def plot_spreadsheet_stat_map(
         title = f"Effect Size Map for Cluster {cluster}"
 
     # Decide how to set x/y depending on orientation
-    if orientation == 'h':
-        x_col = 'Effect Size'
-        y_col = 'Feature'
+    if orientation == "h":
+        x_col = "Effect Size"
+        y_col = "Feature"
     else:
-        x_col = 'Feature'
-        y_col = 'Effect Size'
+        x_col = "Feature"
+        y_col = "Effect Size"
 
-    fig = px.bar(
-        df_long,
-        x=x_col,
-        y=y_col,
-        orientation=orientation,
-        title=title
-    )
+    fig = px.bar(df_long, x=x_col, y=y_col, orientation=orientation, title=title)
 
     # Adjust layout
     fig.update_layout(
         width=width,
-        height=height if height else (25 * len(df_long) if orientation == 'h' else 800),
-        margin=dict(l=100, r=50, b=50, t=80)
+        height=height if height else (25 * len(df_long) if orientation == "h" else 800),
+        margin=dict(l=100, r=50, b=50, t=80),
     )
 
     if output_path:
         output_path = str(output_path)  # ensure string
         if interactive:
             # If user wants HTML but didn't provide .html, we can auto-add
-            if not output_path.lower().endswith('.html'):
-                output_path += '.html'
+            if not output_path.lower().endswith(".html"):
+                output_path += ".html"
             pio.write_html(fig, output_path)
             print(f"Interactive HTML saved to: {output_path}")
         else:
             # For a static image, rely on kaleido
             # If no recognized extension is present, default to .png
-            valid_exts = ('.png', '.jpg', '.jpeg', '.svg', '.pdf')
+            valid_exts = (".png", ".jpg", ".jpeg", ".svg", ".pdf")
             if not any(output_path.lower().endswith(ext) for ext in valid_exts):
-                output_path += '.png'
+                output_path += ".png"
             fig.write_image(output_path)
             print(f"Static bar chart saved to: {output_path}")
 
@@ -618,8 +695,9 @@ def load_umap_tabs(folder, prefix):
             st.components.v1.html(html_content, height=1000, width=1200, scrolling=True)
 
 
-def save_optimization_log_plot(trial_logs, optim_dict, output_folder=".",
-                               plot_filename="optimization_log_plot.png"):
+def save_optimization_log_plot(
+    trial_logs, optim_dict, output_folder=".", plot_filename="optimization_log_plot.png"
+):
     """
     Generate and save a plot showing the evolution of normalized UMAP parameters and metric contributions
     across trials. This function now creates a separate subplot for detailed HDBSCAN metric components,
@@ -682,29 +760,46 @@ def save_optimization_log_plot(trial_logs, optim_dict, output_folder=".",
         # Get detailed HDBSCAN metric components, if available.
         dcomp_hdbscan = log.get("detailed_hdbscan_components", {})
         for metric in hdbscan_metric_keys:
-            detailed_hdbscan_components[metric].append(dcomp_hdbscan.get(metric, np.nan))
+            detailed_hdbscan_components[metric].append(
+                dcomp_hdbscan.get(metric, np.nan)
+            )
 
     # Determine number of subplots.
     if hdbscan_metric_keys:
-        n_subplots = 3
-        fig, (ax_params, ax_umap, ax_hdbscan) = plt.subplots(3, 1, figsize=(12, 12), sharex=True)
+        fig, (ax_params, ax_umap, ax_hdbscan) = plt.subplots(
+            3, 1, figsize=(12, 12), sharex=True
+        )
     else:
-        n_subplots = 2
         fig, (ax_params, ax_umap) = plt.subplots(2, 1, figsize=(12, 10), sharex=True)
 
     # Plot normalized UMAP parameters.
     for param, norm_vals in normalized_params.items():
-        ax_params.plot(trial_numbers, norm_vals, marker='o', linestyle='-', label=f"{param} (norm)")
+        ax_params.plot(
+            trial_numbers, norm_vals, marker="o", linestyle="-", label=f"{param} (norm)"
+        )
     ax_params.set_ylabel("Normalized Parameter Value")
     ax_params.set_title("Evolution of Normalized UMAP Parameters")
     ax_params.legend()
     ax_params.grid(True)
 
     # Plot composite score and detailed UMAP metric components.
-    ax_umap.plot(trial_numbers, composite_scores, marker='o', linestyle='-', linewidth=2,
-                 color='black', label="Composite Score")
+    ax_umap.plot(
+        trial_numbers,
+        composite_scores,
+        marker="o",
+        linestyle="-",
+        linewidth=2,
+        color="black",
+        label="Composite Score",
+    )
     for metric, comp_vals in detailed_umap_components.items():
-        ax_umap.plot(trial_numbers, comp_vals, marker='o', linestyle='--', label=f"UMAP: {metric}")
+        ax_umap.plot(
+            trial_numbers,
+            comp_vals,
+            marker="o",
+            linestyle="--",
+            label=f"UMAP: {metric}",
+        )
     ax_umap.set_ylabel("UMAP Metric Contribution")
     ax_umap.set_title("Composite Score & UMAP Metric Components")
     ax_umap.legend()
@@ -713,7 +808,13 @@ def save_optimization_log_plot(trial_logs, optim_dict, output_folder=".",
     # If HDBSCAN metric components are present, plot them in a separate subplot.
     if hdbscan_metric_keys:
         for metric, comp_vals in detailed_hdbscan_components.items():
-            ax_hdbscan.plot(trial_numbers, comp_vals, marker='o', linestyle='--', label=f"HDBSCAN: {metric}")
+            ax_hdbscan.plot(
+                trial_numbers,
+                comp_vals,
+                marker="o",
+                linestyle="--",
+                label=f"HDBSCAN: {metric}",
+            )
         ax_hdbscan.set_xlabel("Trial Number")
         ax_hdbscan.set_ylabel("HDBSCAN Metric Contribution")
         ax_hdbscan.set_title("HDBSCAN Metric Components")
