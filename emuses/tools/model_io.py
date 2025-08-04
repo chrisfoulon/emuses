@@ -263,11 +263,6 @@ class ModelIOManager:
         except Exception as e:
             logger.error(f"Failed to load model {model_name}: {e}")
             return None
-            return self._try_legacy_loading(model_name, prefix, search_paths)
-
-        except Exception as e:
-            logger.error(f"Failed to load model {model_name}: {e}")
-            return None
 
     def list_models(
         self, model_type: Optional[str] = None, tags: Optional[List[str]] = None

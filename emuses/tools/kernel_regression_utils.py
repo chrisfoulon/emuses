@@ -19,6 +19,7 @@ from sklearn.base import BaseEstimator, RegressorMixin, ClassifierMixin
 from sklearn.model_selection import KFold
 from sklearn.metrics import (
     accuracy_score,
+    balanced_accuracy_score,
     roc_auc_score,
     r2_score,
     mean_squared_error,
