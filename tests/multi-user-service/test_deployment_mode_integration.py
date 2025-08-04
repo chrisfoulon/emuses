@@ -5,6 +5,7 @@ FastAPI service endpoint registration for both solo and enterprise use cases.
 """
 
 import os
+import sys
 import pytest
 import importlib
 from unittest.mock import patch, MagicMock
@@ -168,7 +169,7 @@ class TestDeploymentModeLogging:
         }):
             with patch('emuses.multi_user_service.workspace_endpoints.setup_workspace_endpoints'), \
                  patch('emuses.multi_user_service.endpoints.setup_auth_endpoints'), \
-                 patch('logging.getLogger') as mock_get_logger:
+                 patch('emuses.observability.get_logger') as mock_get_logger:
                 
                 mock_logger = mock_get_logger.return_value
                 
@@ -186,7 +187,7 @@ class TestDeploymentModeLogging:
             del sys.modules['emuses.foundation_fastapi_service.app']
             
         with patch.dict(os.environ, {"EMUSES_DEPLOYMENT_MODE": "local"}):
-            with patch('logging.getLogger') as mock_get_logger:
+            with patch('emuses.observability.get_logger') as mock_get_logger:
                 mock_logger = mock_get_logger.return_value
                 
                 # Import triggers the logging during module initialization
