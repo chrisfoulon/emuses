@@ -41,19 +41,20 @@ def create_span(operation_name: str, attributes: Optional[Dict[str, Any]] = None
     set_pipeline_context(operation_name)
     
     # Initialize span attributes
-    span_attributes = attributes or {}
-    span_attributes.update({
+    user_attributes = attributes or {}
+    span_attributes = {
         'span_id': span_id,
         'operation': operation_name,
-        'start_time': start_time
-    })
+        'start_time': start_time,
+        **user_attributes
+    }
     
     # Log span start
     logger.info(
         "Operation started",
-        operation=operation_name,
         span_id=span_id,
-        **span_attributes
+        operation=operation_name,
+        **user_attributes
     )
     
     class SpanContext:
@@ -76,11 +77,10 @@ def create_span(operation_name: str, attributes: Optional[Dict[str, Any]] = None
             
             logger.error(
                 "Operation failed",
-                operation=self.operation,
                 span_id=self.span_id,
+                operation=self.operation,
                 error_type=exception.__class__.__name__,
-                error_message=str(exception),
-                **self.attributes
+                error_message=str(exception)
             )
     
     span_context = SpanContext(span_id, operation_name, span_attributes)
@@ -95,10 +95,10 @@ def create_span(operation_name: str, attributes: Optional[Dict[str, Any]] = None
         
         logger.info(
             "Operation completed",
-            operation=operation_name,
             span_id=span_id,
+            operation=operation_name,
             duration_seconds=duration,
-            **span_context.attributes
+            status='success'
         )
         
     except Exception as e:
@@ -115,8 +115,8 @@ def create_span(operation_name: str, attributes: Optional[Dict[str, Any]] = None
         duration = time.time() - start_time
         logger.debug(
             "Operation span closed",
-            operation=operation_name,
             span_id=span_id,
+            operation=operation_name,
             total_duration=duration
         )
 

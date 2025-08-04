@@ -295,6 +295,55 @@ optim_dict_ae_test = {
 }
 
 
+# Quick training configuration with fastest models and simplest features
+quick_train_dict = {
+    "meta": {
+        "n_trials": 15,  # Moderate number of trials for decent optimization
+        "description": "Fast training configuration with simple models and features for quick testing"
+    },
+    "param": {
+        "model": {
+            # Only fast models - removed 'rf' as it's slow with high n_estimators
+            "model_type": {"choices": ["kernel", "elastic"]},
+            "kernel": {
+                # Narrower range for faster optimization
+                "sigma": {"low": 0.05, "high": 0.2, "log": True},
+            },
+            "elastic": {
+                # Simplified parameter space
+                "alpha": {"low": 1e-3, "high": 1.0, "log": True},
+                "l1_ratio": {"low": 0.2, "high": 0.8},  # Avoid extremes
+                "C": {"low": 0.1, "high": 10, "log": True},  # Narrower range
+                "penalty": {"choices": ["l2"]},  # Only L2 for speed
+            },
+        },
+        "features": {
+            # Only the fastest feature types - removed kpca_gwd and complex variants
+            "feat_type": {"choices": ["raw_only", "gwd"]},
+            # Simple GWD parameters
+            "sigma_gwd": {
+                "low": 0.08,
+                "high": 0.15,  # Narrow range
+                "log": True,
+                "conditional_on": {"feat_type": ["gwd"]},
+            },
+            # No polynomial features for speed
+            "poly_deg": {"choices": [1]},  # Only linear, no quadratic
+            "use_raw": {
+                "choices": [True],  # Always include raw for best performance
+                "conditional_on": {"feat_type": ["gwd"]},
+            },
+            # Simple correlation threshold
+            "corr_thr": {
+                "low": 0.2,
+                "high": 0.3,  # Narrow range
+                "conditional_on": {"feat_type": ["gwd"]},
+            },
+        },
+    }
+}
+
+
 def load_optim_dict_predict(config_name=None):
     """
     Dynamically load a prediction optimization dictionary from this module.

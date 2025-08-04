@@ -15,11 +15,13 @@ from .metrics import (
     optimization_trials_total,
     http_requests_total,
     http_request_duration_seconds,
-    get_metrics_registry
+    get_metrics_registry,
+    track_optimization_trial,
+    track_http_request
 )
 
 from .logging import setup_structured_logging, get_logger
-from .context import create_span
+from .context import create_span, track_scientific_operation
 
 __all__ = [
     'MetricsRegistry',
@@ -32,7 +34,10 @@ __all__ = [
     'http_requests_total',
     'http_request_duration_seconds',
     'get_metrics_registry',
+    'track_optimization_trial',
+    'track_http_request',
     'setup_structured_logging',
     'get_logger',
-    'create_span'
+    'create_span',
+    'track_scientific_operation'
 ]

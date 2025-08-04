@@ -40,6 +40,7 @@ from emuses.observability import (
     get_metrics_registry,
     track_http_request
 )
+from emuses.observability.logging import set_request_context, clear_context
 
 
 # Configure structured logging for observability
@@ -138,31 +139,49 @@ if RATE_LIMITING_ENABLED and limiter:
     app.state.limiter = limiter
     app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
-# Add observability middleware for HTTP request tracking
+# Add observability middleware for HTTP request tracking and correlation IDs
 @app.middleware("http")
 async def observability_middleware(request: Request, call_next):
-    """Track HTTP requests with metrics and structured logging"""
+    """Track HTTP requests with metrics, structured logging, and correlation IDs"""
+    import uuid
+    
     method = request.method
     # Sanitize endpoint path for metrics (remove dynamic parts)
     endpoint = str(request.url.path)
-    for pattern in ["/api/jobs/", "/api/artifacts/"]:
+    for pattern in ["/api/v1/jobs/", "/api/jobs/", "/api/v1/artifacts/", "/api/artifacts/"]:
         if pattern in endpoint:
             endpoint = pattern + "{id}"
             break
     
-    with track_http_request(method, endpoint):
-        response = await call_next(request)
-        
-        # Log request completion
-        logger.info(
-            "HTTP request completed",
-            method=method,
-            endpoint=endpoint,
-            status_code=response.status_code,
-            user_agent=request.headers.get("user-agent", "unknown")
-        )
-        
-        return response
+    # Generate or extract correlation ID
+    correlation_id = request.headers.get("x-correlation-id") or str(uuid.uuid4())
+    
+    # Extract user ID if available (from headers or auth context)
+    user_id = request.headers.get("x-user-id")
+    
+    # Set request context for structured logging
+    set_request_context(request_id=correlation_id, user_id=user_id)
+    
+    try:
+        with track_http_request(method, endpoint):
+            response = await call_next(request)
+            
+            # Add correlation ID to response headers
+            response.headers["x-correlation-id"] = correlation_id
+            
+            # Log request completion with correlation info
+            logger.info(
+                "HTTP request completed",
+                method=method,
+                endpoint=endpoint,
+                status_code=response.status_code,
+                user_agent=request.headers.get("user-agent", "unknown")
+            )
+            
+            return response
+    finally:
+        # Always clear context to prevent leaks
+        clear_context()
 
 # Set up multi-user service endpoints (conditionally based on deployment mode)
 try:

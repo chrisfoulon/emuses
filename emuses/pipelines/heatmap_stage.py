@@ -1,6 +1,8 @@
 import numpy as np
 import logging
 from pathlib import Path
+
+from emuses.observability import track_scientific_operation, get_logger
 import pandas as pd
 import hdbscan
 import matplotlib.pyplot as plt

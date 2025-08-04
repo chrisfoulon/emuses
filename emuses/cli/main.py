@@ -50,8 +50,7 @@ from .service_client import ServiceHTTPClient, ServiceClientError
 from .rich_features import ProgressTracker, StatusRenderer, TableFormatter
 from .interactive_mode import InteractiveWorkflowManager
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
+# Note: Logging is configured by pipeline_config to ensure file output
 logger = logging.getLogger(__name__)
 
 
@@ -127,6 +126,12 @@ def save_command_to_output_folder(output_folder: Path) -> None:
         
         # Apply cross-platform quoting to all arguments
         quoted_args = [quote_argument_cross_platform(arg) for arg in sys.argv]
+        
+        # Normalize direct __main__.py calls to proper module invocation
+        if (quoted_args and '__main__.py' in quoted_args[0] and 
+                'emuses/cli' in quoted_args[0]):
+            quoted_args[0] = 'python -m emuses.cli'
+        
         command = ' '.join(quoted_args)
 
         # Save command to command.txt

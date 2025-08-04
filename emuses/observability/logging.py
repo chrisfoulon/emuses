@@ -86,10 +86,14 @@ def setup_structured_logging(level: str = 'INFO', output_file: Optional[str] = N
         cache_logger_on_first_use=True,
     )
     
-    # Configure standard library logging
+    # Configure standard library logging with both console and file output
+    handlers = [logging.StreamHandler(sys.stdout)]
+    if output_file:
+        handlers.append(logging.FileHandler(output_file, mode='a'))
+    
     logging.basicConfig(
         format="%(message)s",
-        stream=open(output_file, 'a') if output_file else sys.stdout,
+        handlers=handlers,
         level=getattr(logging, level.upper())
     )
 

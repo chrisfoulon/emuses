@@ -6,6 +6,7 @@ import pandas as pd
 from pathlib import Path
 
 from emuses.pipelines.pipeline_stage import PipelineStage
+from emuses.observability import track_scientific_operation, get_logger
 from emuses.tools.stats_utils import (
     compute_gwd_summary_test,
     train_and_test_model_per_label,
@@ -35,10 +36,20 @@ class PredictionStage(PipelineStage):
         super().__init__(config)
 
     def run(self, context, progress_queue=None):
-        logger = logging.getLogger(__name__)
-        logger.info("Running Prediction Stage (Test Evaluation)")
+        logger = get_logger(__name__)
+        
+        # Get user context for observability
+        user_id = context.get("user_id")
+        dataset_name = context.get("dataset_name", "unknown")
+        
+        with track_scientific_operation(
+            "prediction_modeling",
+            user_id=user_id,
+            additional_attributes={"dataset": dataset_name}
+        ) as obs_ctx:
+            logger.info("Running Prediction Stage (Test Evaluation)", user_id=user_id)
 
-        # Get component-specific seeds from context
+            # Get component-specific seeds from context
         random_seeds = context.get("random_seeds", {})
         prediction_seed = random_seeds.get("prediction_seed", 42)
         cv_seed = random_seeds.get("cv_seed", 42)
