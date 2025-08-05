@@ -158,27 +158,32 @@ emuses compare --model1 /path/to/model_v1 --model2 /path/to/model_v2
 ### Implementation Tasks - Phase 0
 
 #### ModelIOManager Enhancements
-- [ ] Add manifest generation to `save_model()` method
-- [ ] Add manifest verification to `load_model()` method  
-- [ ] Create file hashing utilities using hashlib.sha256()
-- [ ] Implement version auto-increment logic
-- [ ] Add backward compatibility for models without manifests
+- [x] Add manifest generation to `save_model()` method
+- [x] Add manifest verification to `load_model()` method  
+- [x] Create file hashing utilities using hashlib.sha256()
+- [x] Implement version auto-increment logic
+- [x] Add backward compatibility for models without manifests
 
 #### Research Utilities Implementation
-- [ ] Create `verify` command with basic/detailed/strict modes
-- [ ] Create `info` command for model metadata display
-- [ ] Create `cite` command with multiple format support (bibtex, apa, nature)
-- [ ] Create `trace` command for complete provenance export
+- [x] Create `verify` command with basic/detailed/strict modes
+- [x] Create `info` command for model metadata display
+- [x] Create `cite` command with multiple format support (bibtex, apa, nature)
+- [x] Create `trace` command for complete provenance export
 - [ ] Create `reproduce` command for reproducibility guides
 - [ ] Create `diff` command for change detection
 - [ ] Create `compare` command for model version comparison
 
 #### Testing and Validation
-- [ ] Unit tests for manifest generation and verification
-- [ ] Integration tests with existing model storage
-- [ ] Backward compatibility tests with pre-manifest models
-- [ ] Cross-platform compatibility validation
-- [ ] Performance benchmarks for integrity checking
+- [x] Unit tests for manifest generation and verification
+- [x] Integration tests with existing model storage
+- [x] Backward compatibility tests with pre-manifest models
+- [x] Cross-platform compatibility validation
+- [x] Performance benchmarks for integrity checking
+
+#### User Experience Enhancements (Added August 2025)
+- [x] **CSV Output Format**: Default predictions output to CSV format for user-friendly access and consistency with training scores
+- [x] **Optional NPY Format**: Maintain numpy array output option for programmatic access and performance-critical applications
+- [x] **Consistent Data Formats**: Align inference output format with existing EMUSES training pipeline conventions
 
 ## Phase 1: Unified Inference Command (1 week)
 

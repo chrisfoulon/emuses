@@ -1597,6 +1597,95 @@ async def _prediction_async(**kwargs) -> None:
         )
 
 
+async def _inference_async(**kwargs) -> None:
+    """Async implementation of the inference command."""
+    status_renderer = StatusRenderer()
+    progress_tracker = ProgressTracker()
+
+    print(status_renderer.render_status("info", "Starting inference..."))
+
+    # Execute inference locally using InferenceStage
+    try:
+        await _execute_inference_locally(kwargs, status_renderer)
+        print(
+            status_renderer.render_status(
+                "success", "Inference completed successfully!"
+            )
+        )
+    except Exception as e:
+        print(status_renderer.render_status("error", f"Inference failed: {e}"))
+        raise
+
+
+async def _execute_inference_locally(config: dict, status_renderer) -> None:
+    """
+    Execute inference locally using InferenceStage.
+    
+    Parameters
+    ----------
+    config : dict
+        Inference configuration
+    status_renderer : StatusRenderer
+        Status display component
+    """
+    try:
+        from emuses.pipelines.inference_stage import InferenceStage
+        from emuses.pipelines.pipeline_config import PipelineConfig
+        
+        print(status_renderer.render_status("info", "Initializing inference stage..."))
+        
+        # Create pipeline configuration for inference
+        inference_config = PipelineConfig(
+            model_path=str(config["model"]),
+            data_path=str(config["data"]),
+            output_path=str(config["output"]),
+            validate_mode=config.get("validate", False),
+            output_folder=str(config["output"])
+        )
+        
+        # Create and run inference stage
+        stage = InferenceStage(inference_config)
+        
+        print(status_renderer.render_status("info", "Loading trained models..."))
+        
+        context = {
+            "verify_integrity": config.get("verify", True),
+            "output_format": config.get("output_format", "csv")
+        }
+        
+        print(status_renderer.render_status("info", "Running inference..."))
+        
+        # Run inference
+        results = stage.run(context)
+        
+        # Display results summary
+        mode = results.get("mode", "inference")
+        samples_processed = results.get("samples_processed", 0)
+        performance = results.get("performance_breakdown", {})
+        total_time = performance.get("total_ms", 0) / 1000.0  # Convert to seconds
+        
+        print(status_renderer.render_status("success", f"Processed {samples_processed} samples in {mode} mode"))
+        print(status_renderer.render_status("info", f"Total time: {total_time:.2f} seconds"))
+        
+        if "output_files" in results:
+            output_files = results["output_files"]
+            print(status_renderer.render_status("info", f"Results saved to {len(output_files)} files:"))
+            for file_type, file_path in output_files.items():
+                print(status_renderer.render_status("info", f"  {file_type}: {file_path}"))
+        
+        # Show validation results if available
+        if mode == "validation" and "validation_metrics" in results:
+            metrics = results["validation_metrics"]
+            print(status_renderer.render_status("info", "Validation metrics:"))
+            for metric, value in metrics.items():
+                print(status_renderer.render_status("info", f"  {metric}: {value:.4f}"))
+        
+    except ImportError as e:
+        raise ServiceClientError(f"Inference stage not available: {e}")
+    except Exception as e:
+        raise ServiceClientError(f"Local inference execution failed: {e}")
+
+
 async def _execute_stage_locally(
     stage: str, config: dict, status_renderer, progress_tracker
 ) -> None:
@@ -1786,6 +1875,92 @@ def prediction(
             _prediction_async(
                 output_folder=output_folder,
                 input_dataset=input_dataset,
+            )
+        )
+    except KeyboardInterrupt:
+        typer.echo("\n🛑 Operation cancelled by user", err=True)
+        raise typer.Exit(code=130)
+    except Exception as e:
+        typer.echo(f"Error: {e}", err=True)
+        raise typer.Exit(code=1)
+
+
+@app.command(help="Run inference on trained model")
+def inference(
+    model: Annotated[Path, typer.Argument(help="Path to trained model directory")],
+    data: Annotated[Path, typer.Argument(help="Path to input data for inference")],
+    output: Annotated[
+        Optional[Path], 
+        typer.Option("--output", "-o", help="Output path for results (default: model_dir/inference_results)")
+    ] = None,
+    validate: Annotated[
+        bool, 
+        typer.Option("--validate", help="Force validation mode (requires ground truth)")
+    ] = False,
+    verify: Annotated[
+        bool, 
+        typer.Option("--verify/--no-verify", help="Verify model integrity before inference")
+    ] = True,
+    output_format: Annotated[
+        str,
+        typer.Option("--format", help="Output format (csv or npy)")
+    ] = "csv",
+) -> None:
+    """
+    Run inference on trained EMUSES model.
+    
+    This command loads a trained model and runs inference on new data,
+    automatically detecting validation vs pure inference modes.
+
+    Parameters
+    ----------
+    model : Path
+        Path to trained model directory
+    data : Path
+        Path to input data for inference
+    output : Optional[Path]
+        Output path for results (default: model_dir/inference_results)
+    validate : bool
+        Force validation mode (requires ground truth)
+    verify : bool
+        Verify model integrity before inference
+    output_format : str
+        Output format (csv or npy)
+
+    Returns
+    -------
+    None
+    """
+    # Validate arguments
+    if not model.exists():
+        typer.echo(f"❌ Model directory not found: {model}", err=True)
+        raise typer.Exit(code=1)
+        
+    if not data.exists():
+        typer.echo(f"❌ Input data not found: {data}", err=True)
+        raise typer.Exit(code=1)
+        
+    if output_format not in ["csv", "npy"]:
+        typer.echo(f"❌ Unsupported output format: {output_format}. Use 'csv' or 'npy'", err=True)
+        raise typer.Exit(code=1)
+    
+    # Set default output path if not provided
+    if output is None:
+        output = model / "inference_results"
+    
+    # Save command for easy rerun (use output directory for command saving)
+    save_command_to_output_folder(output)
+
+    # Run the async implementation
+    try:
+        asyncio.run(
+            _inference_async(
+                model=model,
+                data=data,
+                output=output,
+                validate=validate,
+                verify=verify,
+                output_format=output_format,
             )
         )
     except KeyboardInterrupt:
@@ -2105,6 +2280,7 @@ umap_command = umap
 clustering_command = clustering
 heatmap_command = heatmap
 prediction_command = prediction
+inference_command = inference
 
 
 # Add commands attribute for test compatibility

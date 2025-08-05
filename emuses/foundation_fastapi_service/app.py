@@ -26,6 +26,8 @@ from slowapi.util import get_remote_address
 from emuses.foundation_fastapi_service.models import (ErrorResponse,
                                                       FileUploadModel,
                                                       FileUploadResponse,
+                                                      InferenceRequest,
+                                                      InferenceResponse,
                                                       JobStatusResponse,
                                                       JobSubmissionRequest,
                                                       PipelineConfigRequest)
@@ -1282,6 +1284,162 @@ async def upload_labels_file(
         raise HTTPException(
             status_code=500, detail=f"Failed to upload labels file: {str(e)}"
         )
+
+
+@app.post("/api/v1/inference", status_code=200)
+@conditional_rate_limit("20/hour")  # Rate limit: 20 inference requests per hour per IP
+async def run_inference(
+    request: Request, inference_request: InferenceRequest
+) -> InferenceResponse:
+    """
+    Run inference on trained EMUSES model.
+    
+    This endpoint executes inference using the InferenceStage pipeline component,
+    supporting both inference and validation modes with comprehensive error handling.
+    
+    Parameters
+    ----------
+    inference_request : InferenceRequest
+        Inference request containing model path, data path, and configuration options
+        
+    Returns
+    -------
+    InferenceResponse
+        Inference results including predictions, performance metrics, and output files
+    
+    Raises
+    ------
+    HTTPException
+        422: Validation error or inference execution failure
+        500: Internal server error during inference
+    """
+    request_id = str(uuid4())
+    set_request_context(request_id=request_id, user_id="inference_user")
+    
+    try:
+        with track_http_request(
+            method="POST", 
+            endpoint="/api/v1/inference"
+        ):
+            logger.info(
+                "Starting inference request",
+                extra={
+                    "request_id": request_id,
+                    "model_path": inference_request.model_path,
+                    "data_path": inference_request.data_path,
+                    "output_format": inference_request.output_format,
+                    "validation_mode": inference_request.validation_mode
+                }
+            )
+            
+            # Import inference components
+            from emuses.pipelines.inference_stage import InferenceStage
+            from emuses.pipelines.pipeline_config import PipelineConfig
+            
+            # Create pipeline configuration
+            inference_config = PipelineConfig(
+                model_path=inference_request.model_path,
+                data_path=inference_request.data_path,
+                output_path=inference_request.output_path,
+                validate_mode=inference_request.validation_mode,
+                output_folder=inference_request.output_path or (inference_request.model_path + "/inference_results")
+            )
+            
+            # Create and run inference stage
+            stage = InferenceStage(inference_config)
+            
+            # Prepare execution context
+            context = {
+                "verify_integrity": inference_request.verify_integrity,
+                "output_format": inference_request.output_format
+            }
+            
+            # Execute inference
+            results = stage.run(context)
+            
+            # Extract results for response
+            predictions = results.get("predictions", [])
+            if hasattr(predictions, 'tolist'):
+                predictions = predictions.tolist()
+                
+            confidence_scores = None
+            if "prediction_details" in results:
+                confidence_scores = results["prediction_details"].get("confidence_scores", [])
+                if hasattr(confidence_scores, 'tolist'):
+                    confidence_scores = confidence_scores.tolist()
+            
+            performance = results.get("performance_breakdown", {})
+            
+            # Create response
+            response = {
+                "status": results.get("status", "completed"),
+                "mode": results.get("mode", "inference"),
+                "samples_processed": results.get("samples_processed", 0),
+                "predictions": predictions,
+                "confidence_scores": confidence_scores,
+                "processing_time_ms": performance.get("total_duration_ms", 0.0),
+                "throughput_samples_per_sec": performance.get("throughput_samples_per_sec", 0.0),
+                "model_info": results.get("model_info", {}),
+                "output_files": results.get("output_files", {}),
+                "validation_metrics": results.get("validation_metrics")
+            }
+            
+            logger.info(
+                "Inference request completed successfully",
+                extra={
+                    "request_id": request_id,
+                    "samples_processed": response["samples_processed"],
+                    "processing_time_ms": response["processing_time_ms"],
+                    "mode": response["mode"]
+                }
+            )
+            
+            return response
+            
+    except FileNotFoundError as e:
+        logger.error(
+            "Model or data file not found",
+            extra={"request_id": request_id, "error": str(e)}
+        )
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "error_code": "FILE_NOT_FOUND",
+                "message": f"Required file not found: {str(e)}",
+                "request_id": request_id,
+                "timestamp": datetime.now(timezone.utc).isoformat() + "Z"
+            }
+        )
+    except ValueError as e:
+        logger.error(
+            "Inference validation error",
+            extra={"request_id": request_id, "error": str(e)}
+        )
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "error_code": "INFERENCE_VALIDATION_ERROR", 
+                "message": f"Inference validation failed: {str(e)}",
+                "request_id": request_id,
+                "timestamp": datetime.now(timezone.utc).isoformat() + "Z"
+            }
+        )
+    except Exception as e:
+        logger.error(
+            "Inference execution failed",
+            extra={"request_id": request_id, "error": str(e)}
+        )
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "error_code": "INFERENCE_EXECUTION_ERROR",
+                "message": f"Inference execution failed: {str(e)}",
+                "request_id": request_id,
+                "timestamp": datetime.now(timezone.utc).isoformat() + "Z"
+            }
+        )
+    finally:
+        clear_context()
 
 
 # Health check endpoint
