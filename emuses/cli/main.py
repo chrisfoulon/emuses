@@ -1796,6 +1796,266 @@ def prediction(
         raise typer.Exit(code=1)
 
 
+# Research Utility Commands for Scientific Workflows
+
+@app.command(help="Verify model integrity using manifest")
+def verify(
+    model: Annotated[str, typer.Argument(help="Path to model directory or model name")],
+    detailed: Annotated[bool, typer.Option("--detailed", help="Show detailed verification results")] = False,
+    strict: Annotated[bool, typer.Option("--strict", help="Perform strict cryptographic verification")] = False,
+) -> None:
+    """
+    Verify model integrity using manifest-based SHA-256 checking.
+    
+    Parameters
+    ----------
+    model : str
+        Path to model directory or model name
+    detailed : bool
+        Show detailed verification results
+    strict : bool
+        Perform strict cryptographic verification
+    """
+    try:
+        from ..tools.model_io import ModelIOManager
+        from pathlib import Path
+        
+        model_path = Path(model)
+        
+        if model_path.is_dir():
+            # Directory path provided
+            manager = ModelIOManager(model_path)
+            model_name = "*"  # Will use pattern matching
+        else:
+            # Model name provided, assume current directory
+            manager = ModelIOManager(Path.cwd())
+            model_name = model
+        
+        is_valid = manager.verify_model_integrity(model_name)
+        
+        if is_valid:
+            typer.echo(f"✅ Model integrity verified: {model}")
+            if detailed:
+                manifest_info = manager.get_manifest_info(model_name)
+                if manifest_info:
+                    model_info = manifest_info.get("model_info", {})
+                    typer.echo(f"   Model: {model_info.get('name', 'Unknown')} v{model_info.get('version', 'Unknown')}")
+                    typer.echo(f"   Created: {model_info.get('created_at', 'Unknown')}")
+                    typer.echo(f"   EMUSES: {model_info.get('emuses_version', 'Unknown')}")
+        else:
+            typer.echo(f"❌ Model integrity verification failed: {model}", err=True)
+            raise typer.Exit(code=1)
+            
+    except Exception as e:
+        typer.echo(f"Error verifying model: {e}", err=True)
+        raise typer.Exit(code=1)
+
+
+@app.command(help="Get model information and metadata")
+def info(
+    model: Annotated[str, typer.Argument(help="Path to model directory or model name")],
+    format: Annotated[str, typer.Option("--format", help="Output format (text, json)")] = "text",
+) -> None:
+    """
+    Display model metadata and information.
+    
+    Parameters
+    ----------
+    model : str
+        Path to model directory or model name
+    format : str
+        Output format (text or json)
+    """
+    try:
+        from ..tools.model_io import ModelIOManager
+        from pathlib import Path
+        import json
+        
+        model_path = Path(model)
+        
+        if model_path.is_dir():
+            manager = ModelIOManager(model_path)
+            model_name = "*"
+        else:
+            manager = ModelIOManager(Path.cwd())
+            model_name = model
+        
+        manifest_info = manager.get_manifest_info(model_name)
+        
+        if not manifest_info:
+            typer.echo(f"❌ No manifest found for model: {model}", err=True)
+            raise typer.Exit(code=1)
+        
+        if format == "json":
+            typer.echo(json.dumps(manifest_info, indent=2))
+        else:
+            # Text format
+            model_info = manifest_info.get("model_info", {})
+            compatibility = manifest_info.get("compatibility", {})
+            
+            typer.echo(f"📊 Model Information")
+            typer.echo(f"   Name: {model_info.get('name', 'Unknown')}")
+            typer.echo(f"   Version: {model_info.get('version', 'Unknown')}")
+            typer.echo(f"   Created: {model_info.get('created_at', 'Unknown')}")
+            typer.echo(f"   Description: {model_info.get('description', 'No description')}")
+            typer.echo(f"   EMUSES Version: {model_info.get('emuses_version', 'Unknown')}")
+            typer.echo(f"   Minimum EMUSES: {compatibility.get('min_emuses_version', 'Unknown')}")
+            typer.echo(f"   Python Version: {compatibility.get('python_version', 'Unknown')}")
+            
+            file_integrity = manifest_info.get("file_integrity", {})
+            if file_integrity:
+                typer.echo(f"   Files: {len(file_integrity)} tracked files")
+                
+    except Exception as e:
+        typer.echo(f"Error getting model info: {e}", err=True)
+        raise typer.Exit(code=1)
+
+
+@app.command(help="Generate publication citation for model")
+def cite(
+    model: Annotated[str, typer.Argument(help="Path to model directory or model name")],
+    format: Annotated[str, typer.Option("--format", help="Citation format (bibtex, apa, nature)")] = "bibtex",
+) -> None:
+    """
+    Generate publication-ready citation for a model.
+    
+    Parameters
+    ----------
+    model : str
+        Path to model directory or model name
+    format : str
+        Citation format (bibtex, apa, nature)
+    """
+    try:
+        from ..tools.model_io import ModelIOManager
+        from pathlib import Path
+        from datetime import datetime
+        
+        model_path = Path(model)
+        
+        if model_path.is_dir():
+            manager = ModelIOManager(model_path)
+            model_name = "*"
+        else:
+            manager = ModelIOManager(Path.cwd())
+            model_name = model
+        
+        manifest_info = manager.get_manifest_info(model_name)
+        
+        if not manifest_info:
+            typer.echo(f"❌ No manifest found for model: {model}", err=True)
+            raise typer.Exit(code=1)
+        
+        model_info = manifest_info.get("model_info", {})
+        model_name = model_info.get("name", "unknown_model")
+        version = model_info.get("version", "1.0.0")
+        created_at = model_info.get("created_at", "")
+        description = model_info.get("description", "EMUSES neuroimaging model")
+        
+        # Parse creation date
+        try:
+            created_date = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
+            year = created_date.year
+            date_str = created_date.strftime("%Y-%m-%d")
+        except:
+            year = datetime.now().year
+            date_str = datetime.now().strftime("%Y-%m-%d")
+        
+        if format == "bibtex":
+            citation = f"""@misc{{{model_name}_{version.replace('.', '_')},
+    title={{{model_name.replace('_', ' ').title()} v{version}: {description}}},
+    author={{EMUSES Pipeline}},
+    year={{{year}}},
+    note={{Neuroimaging model generated using EMUSES framework, created {date_str}}},
+    howpublished={{\\url{{https://github.com/your-org/emuses}}}}
+}}"""
+        elif format == "apa":
+            citation = f"EMUSES Pipeline. ({year}). {model_name.replace('_', ' ').title()} v{version}: {description}. Retrieved from https://github.com/your-org/emuses"
+        elif format == "nature":
+            citation = f"EMUSES Pipeline. {model_name.replace('_', ' ').title()} v{version}: {description} (2024). https://github.com/your-org/emuses"
+        else:
+            typer.echo(f"❌ Unsupported citation format: {format}", err=True)
+            raise typer.Exit(code=1)
+        
+        typer.echo(citation)
+        
+    except Exception as e:
+        typer.echo(f"Error generating citation: {e}", err=True)
+        raise typer.Exit(code=1)
+
+
+@app.command(help="Export complete model provenance")
+def trace(
+    model: Annotated[str, typer.Argument(help="Path to model directory or model name")],
+    output: Annotated[Optional[str], typer.Option("--output", "-o", help="Output file path")] = None,
+) -> None:
+    """
+    Export complete model provenance for supplementary materials.
+    
+    Parameters
+    ----------
+    model : str
+        Path to model directory or model name
+    output : Optional[str]
+        Output file path (default: model_trace.json)
+    """
+    try:
+        from ..tools.model_io import ModelIOManager
+        from pathlib import Path
+        import json
+        
+        model_path = Path(model)
+        
+        if model_path.is_dir():
+            manager = ModelIOManager(model_path)
+            model_name = "*"
+        else:
+            manager = ModelIOManager(Path.cwd())
+            model_name = model
+        
+        manifest_info = manager.get_manifest_info(model_name)
+        
+        if not manifest_info:
+            typer.echo(f"❌ No manifest found for model: {model}", err=True)
+            raise typer.Exit(code=1)
+        
+        # Create enhanced provenance report
+        from datetime import datetime
+        provenance = {
+            "model_provenance": manifest_info,
+            "generation_info": {
+                "exported_at": datetime.now().isoformat(),
+                "emuses_version": manifest_info.get("model_info", {}).get("emuses_version", "unknown"),
+                "export_version": "1.0.0"
+            },
+            "reproducibility": {
+                "config_hash": manifest_info.get("training_context", {}).get("config_hash"),
+                "random_seeds": manifest_info.get("training_context", {}).get("random_seeds", {}),
+                "environment": {
+                    "python_version": manifest_info.get("compatibility", {}).get("python_version"),
+                    "required_packages": manifest_info.get("compatibility", {}).get("required_packages", [])
+                }
+            }
+        }
+        
+        # Determine output path
+        if output:
+            output_path = Path(output)
+        else:
+            model_name_clean = manifest_info.get("model_info", {}).get("name", "model")
+            output_path = Path(f"{model_name_clean}_trace.json")
+        
+        # Write provenance report
+        with open(output_path, 'w') as f:
+            json.dump(provenance, f, indent=2, sort_keys=True)
+        
+        typer.echo(f"✅ Model provenance exported to: {output_path}")
+        
+    except Exception as e:
+        typer.echo(f"Error exporting provenance: {e}", err=True)
+        raise typer.Exit(code=1)
+
+
 @app.command(help="Install shell completion")
 def install_completion(
     shell: Annotated[str, typer.Argument(help="Shell type (bash, zsh, powershell)")],

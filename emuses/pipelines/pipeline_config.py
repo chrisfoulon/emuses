@@ -158,7 +158,10 @@ class PipelineConfig:
     def _configure_logging(self):
         log_dir = self.output_path / "log"
         log_dir.mkdir(exist_ok=True)
-        log_file = log_dir / "pipeline.log"
+        
+        # Use timestamped log filename (same pattern as arguments files)
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S").replace(':','-')
+        log_file = log_dir / f"pipeline_{timestamp}.log"
 
         # Setup observability structured logging with file output
         setup_structured_logging(level="INFO", output_file=str(log_file))
@@ -173,7 +176,7 @@ class PipelineConfig:
         )
 
         if not file_handler_exists:
-            # Add a dedicated file handler to ensure logs go to pipeline.log
+            # Add a dedicated file handler to ensure logs go to timestamped pipeline log
             file_handler = logging.FileHandler(log_file, mode="a")
             file_handler.setLevel(logging.INFO)
             file_handler.setFormatter(

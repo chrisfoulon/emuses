@@ -10,7 +10,7 @@ from pathlib import Path
 # Import pipeline classes
 from emuses.pipelines.emuses_pipeline import EMUSESPipeline
 from emuses.pipelines.heatmap_stage import HeatmapStage
-from emuses.pipelines.prediction_stage import PredictionStage
+# from emuses.pipelines.prediction_stage import PredictionStage  # Retired - use HeatmapStage
 from emuses.pipelines.umap_stage import UMAPStage
 
 
@@ -532,8 +532,10 @@ def main():
             )
         )
 
+    # PredictionStage has been retired - HeatmapStage now handles sophisticated prediction training
     if args.command in ["prediction", "full"]:
-        stages_to_add.append(PredictionStage(pipeline.config))
+        print("WARNING: PredictionStage has been retired. Use 'heatmap' command for sophisticated prediction model training.")
+        # stages_to_add.append(PredictionStage(pipeline.config))  # Disabled
 
     # Add the stages to the pipeline
     for stage in stages_to_add:

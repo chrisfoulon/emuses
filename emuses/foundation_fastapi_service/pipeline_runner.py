@@ -413,12 +413,13 @@ class PipelineRunner:
                     )
                     enabled_stages.append("heatmap")
 
-                if config_dict.get("prediction_stage_enabled", True):
-                    from emuses.pipelines.prediction_stage import \
-                        PredictionStage
-
-                    pipeline.add_stage(PredictionStage(pipeline.config))
-                    enabled_stages.append("prediction")
+                # PredictionStage temporarily disabled - replaced by HeatmapStage
+                # TODO: Replace with InferenceStage in Phase 1 implementation
+                if config_dict.get("prediction_stage_enabled", False):  # Disabled by default
+                    logger.warning("PredictionStage has been retired. Use HeatmapStage for training or InferenceStage for inference (coming soon).")
+                    # from emuses.pipelines.prediction_stage import PredictionStage
+                    # pipeline.add_stage(PredictionStage(pipeline.config))
+                    # enabled_stages.append("prediction")
 
                 obs_ctx.set_attribute("enabled_stages", enabled_stages)
 
