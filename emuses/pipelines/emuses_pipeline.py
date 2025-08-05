@@ -2,27 +2,23 @@
 
 import logging
 import time
-import numpy as np
 from pathlib import Path
+
+import numpy as np
+from bcblib.tools.dataframe_filtering import normalize_dataframe
+from bcblib.tools.general_utils import parse_file_list_argument, save_json
+from bcblib.tools.nifti_utils import load_nifti
 from numpy.random import default_rng
 from sklearn.model_selection import train_test_split
 
+from emuses.observability import get_logger, track_scientific_operation
 from emuses.pipelines.pipeline_config import PipelineConfig
-
-from bcblib.tools.general_utils import parse_file_list_argument, save_json
-from bcblib.tools.dataframe_filtering import normalize_dataframe
-from bcblib.tools.nifti_utils import load_nifti
-from emuses.tools.inputs_utils import (
-    detect_dataset_type,
-    process_images,
-    nifti_dataset_to_matrix,
-    load_and_preprocess_digits_dataset,
-    prepare_scores,
-    spreadsheet_to_input_df,
-    is_bids_dataset,
-    handle_bids_dataset,
-)
 from emuses.tools.data_preproc import find_min_resolution
+from emuses.tools.inputs_utils import (detect_dataset_type,
+                                       handle_bids_dataset, is_bids_dataset,
+                                       load_and_preprocess_digits_dataset,
+                                       nifti_dataset_to_matrix, prepare_scores,
+                                       process_images, spreadsheet_to_input_df)
 
 
 class EMUSESPipeline:
@@ -46,7 +42,7 @@ class EMUSESPipeline:
         self.stages = []
         self.results = {}
         self.context = {}  # Shared context for data between stages
-        self.logger = logging.getLogger(__name__)
+        self.logger = get_logger(__name__)
 
         # Initialize pipeline metadata
         self.context["pipeline_metadata"] = {
@@ -669,35 +665,72 @@ class EMUSESPipeline:
 
     def run(self, progress_callback=None, progress_queue=None):
         total_stages = len(self.stages)
+        user_id = self.context.get("user_id")
+        dataset_name = self.context.get("dataset_name", "unknown")
 
-        for i, stage in enumerate(self.stages):
-            stage_name = stage.__class__.__name__
-            stage_start_time = time.time()
+        with track_scientific_operation(
+            "pipeline_stages_execution",
+            user_id=user_id,
+            additional_attributes={
+                "dataset": dataset_name,
+                "total_stages": total_stages,
+                "pipeline_type": "emuses_full",
+            },
+        ) as obs_ctx:
+            for i, stage in enumerate(self.stages):
+                stage_name = stage.__class__.__name__
+                stage_start_time = time.time()
 
-            if progress_callback:
-                progress = i / total_stages
-                progress_callback(stage_name=stage_name, progress=progress)
+                if progress_callback:
+                    progress = i / total_stages
+                    progress_callback(stage_name=stage_name, progress=progress)
 
-            # Run the stage
-            stage.run(self.context, progress_queue=progress_queue)
+                # Run the stage with individual tracking
+                with track_scientific_operation(
+                    f"stage_{stage_name.lower()}",
+                    user_id=user_id,
+                    additional_attributes={
+                        "stage_index": i,
+                        "stage_name": stage_name,
+                        "dataset": dataset_name,
+                    },
+                ) as stage_obs_ctx:
+                    self.logger.info(
+                        f"Starting stage {i+1}/{total_stages}: {stage_name}"
+                    )
+                    stage.run(self.context, progress_queue=progress_queue)
+                    self.logger.info(f"Completed stage: {stage_name}")
 
-            # Record stage completion and runtime
-            stage_end_time = time.time()
-            stage_runtime = stage_end_time - stage_start_time
+                # Record stage completion and runtime
+                stage_end_time = time.time()
+                stage_runtime = stage_end_time - stage_start_time
 
-            # Update pipeline metadata with completion info
-            self.context["pipeline_metadata"]["stages_completed"].append(stage_name)
-            self.context["pipeline_metadata"]["stages_runtime"][
-                stage_name
-            ] = stage_runtime
+                # Update pipeline metadata with completion info
+                self.context["pipeline_metadata"]["stages_completed"].append(stage_name)
+                self.context["pipeline_metadata"]["stages_runtime"][
+                    stage_name
+                ] = stage_runtime
 
-            if progress_callback:
-                progress = (i + 1) / total_stages
-                progress_callback(stage_name=stage_name, progress=progress)
+                # Add stage metrics to observability
+                stage_obs_ctx.set_attribute("stage_runtime", stage_runtime)
+                stage_obs_ctx.set_attribute("stage_completed", True)
 
-        # Update total pipeline runtime
-        self.context["pipeline_metadata"]["end_time"] = time.time()
-        self.context["pipeline_metadata"]["total_runtime"] = (
-            self.context["pipeline_metadata"]["end_time"]
-            - self.context["pipeline_metadata"]["start_time"]
-        )
+                if progress_callback:
+                    progress = (i + 1) / total_stages
+                    progress_callback(stage_name=stage_name, progress=progress)
+
+            # Update total pipeline runtime
+            self.context["pipeline_metadata"]["end_time"] = time.time()
+            self.context["pipeline_metadata"]["total_runtime"] = (
+                self.context["pipeline_metadata"]["end_time"]
+                - self.context["pipeline_metadata"]["start_time"]
+            )
+
+            # Add final observability metrics
+            obs_ctx.set_attribute(
+                "total_runtime", self.context["pipeline_metadata"]["total_runtime"]
+            )
+            obs_ctx.set_attribute(
+                "stages_completed",
+                len(self.context["pipeline_metadata"]["stages_completed"]),
+            )

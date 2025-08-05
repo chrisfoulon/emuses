@@ -1,0 +1,78 @@
+groups:
+  - name: emuses.alerts
+    rules:
+      # System health alerts
+      - alert: EMUSESAPIDown
+        expr: up{job="emuses-api"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "EMUSES API is down"
+          description: "EMUSES API has been down for more than 1 minute"
+
+      - alert: HighErrorRate
+        expr: rate(emuses_http_requests_total{status_code=~"5.."}[5m]) > 0.1
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High error rate detected"
+          description: "Error rate is {{ $value }} errors per second"
+
+      # Scientific workflow alerts
+      - alert: LongRunningPipeline
+        expr: emuses_pipeline_duration_seconds > 3600
+        for: 0m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Pipeline running longer than expected"
+          description: "Pipeline {{ $labels.stage }} has been running for over 1 hour"
+
+      - alert: HighMemoryUsage
+        expr: emuses_memory_usage_bytes / 1024 / 1024 / 1024 > 16
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High memory usage in pipeline"
+          description: "Pipeline stage {{ $labels.stage }} using {{ $value }}GB memory"
+
+      # Multi-user service alerts
+      - alert: AuthenticationFailureSpike
+        expr: rate(emuses_http_requests_total{endpoint="/auth/jwt/login", status_code="401"}[5m]) > 0.1
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High authentication failure rate"
+          description: "Authentication failures: {{ $value }} per second"
+
+      # System resource alerts
+      - alert: HighCPUUsage
+        expr: 100 - (avg by(instance) (irate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 80
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High CPU usage detected"
+          description: "CPU usage is above 80% for more than 5 minutes"
+
+      - alert: HighMemoryUsage
+        expr: (node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes) / node_memory_MemTotal_bytes * 100 > 85
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High memory usage detected"
+          description: "Memory usage is above 85% for more than 5 minutes"
+
+      - alert: DiskSpaceLow
+        expr: (node_filesystem_avail_bytes / node_filesystem_size_bytes) * 100 < 10
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Disk space is running low"
+          description: "Disk space is below 10% on {{ $labels.mountpoint }}"

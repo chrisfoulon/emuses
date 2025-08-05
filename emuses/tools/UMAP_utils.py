@@ -1,39 +1,33 @@
+import warnings
+from itertools import product
+from pathlib import Path
+
 import hdbscan
 import joblib
-import optuna
-from bcblib.tools.general_utils import save_json
-from joblib import dump, load
-from pathlib import Path
-from itertools import product
 import numpy as np
+import optuna
+import optuna.visualization as ov
 import umap
-import warnings
+from bcblib.tools.general_utils import save_json
 from joblib import __version__ as joblib_version
+from joblib import dump, load
 from scipy.stats import entropy
 from sklearn.manifold import trustworthiness
-from sklearn.metrics import silhouette_score, pairwise_distances
+from sklearn.metrics import pairwise_distances, silhouette_score
 from sklearn.neighbors import NearestNeighbors
-import optuna.visualization as ov
 
-from emuses.tools.clustering_utils import (
-    evaluate_clustering_metrics,
-    inner_optimize_hdbscan,
-    evaluate_hdbscan,
-)
-from emuses.tools.optim_utils import (
-    calculate_composite_score,
-    suggest_parameters,
-    calculate_score,
-    auto_n_neighbors,
-    are_parameters_fixed,
-    compute_detailed_components,
-)
-from emuses.tools.visualisation import (
-    plot_embeddings,
-    plot_clustering_interactive_with_hover,
-    save_optimization_log_plot,
-)
+from emuses.tools.clustering_utils import (evaluate_clustering_metrics,
+                                           evaluate_hdbscan,
+                                           inner_optimize_hdbscan)
 from emuses.tools.model_io import ModelIOManager
+from emuses.tools.optim_utils import (are_parameters_fixed, auto_n_neighbors,
+                                      calculate_composite_score,
+                                      calculate_score,
+                                      compute_detailed_components,
+                                      suggest_parameters)
+from emuses.tools.visualisation import (plot_clustering_interactive_with_hover,
+                                        plot_embeddings,
+                                        save_optimization_log_plot)
 
 
 def evaluate_embedding_statistics(embeddings, metrics_config):
@@ -617,8 +611,12 @@ def train_and_save_umap_optim_with_nested_clustering(
         return composite_score
 
     # Set up Optuna storage - use network-safe location if needed
-    from emuses.utils.network_drive_detection import setup_optuna_storage_with_cleanup_info
-    storage_url, temp_sqlite_location = setup_optuna_storage_with_cleanup_info("umap_nested_optimization", output_folder)
+    from emuses.utils.network_drive_detection import \
+        setup_optuna_storage_with_cleanup_info
+
+    storage_url, temp_sqlite_location = setup_optuna_storage_with_cleanup_info(
+        "umap_nested_optimization", output_folder
+    )
 
     # Run the outer optimization using the storage backend for parallelization.
     outer_study = optuna.create_study(
@@ -765,7 +763,9 @@ def train_and_save_umap_optim_with_nested_clustering(
 
     # Clean up temporary SQLite location if it was used
     if temp_sqlite_location is not None:
-        from emuses.utils.network_drive_detection import cleanup_temp_sqlite_location
+        from emuses.utils.network_drive_detection import \
+            cleanup_temp_sqlite_location
+
         cleanup_temp_sqlite_location(temp_sqlite_location, output_folder)
 
     return (
@@ -1055,7 +1055,9 @@ def is_umap_file(umap_path):
     return str(umap_path).endswith(".joblib")
 
 
-def load_umap_model(base_path, prefix="", model_name="umap_model", joblib_version_override=None):
+def load_umap_model(
+    base_path, prefix="", model_name="umap_model", joblib_version_override=None
+):
     """
     Load a UMAP model using the enhanced model I/O system.
 
@@ -1112,7 +1114,9 @@ def load_umap_model(base_path, prefix="", model_name="umap_model", joblib_versio
 
     # Fallback to legacy loading method
     current_joblib_version = joblib.__version__
-    effective_joblib_version = joblib_version_override if joblib_version_override else current_joblib_version
+    effective_joblib_version = (
+        joblib_version_override if joblib_version_override else current_joblib_version
+    )
 
     if prefix:
         filename = f"{prefix}_{model_name}_joblib{effective_joblib_version}.joblib"

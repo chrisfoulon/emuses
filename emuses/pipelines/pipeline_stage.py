@@ -1,5 +1,6 @@
 # pipelines/pipeline_stage.py
 
+
 class PipelineStage:
     def __init__(self, config):
         self.config = config

@@ -11,26 +11,27 @@ Key Features:
 """
 
 import os
-from pathlib import Path, PurePath
 import re
 import urllib.parse
+from pathlib import Path, PurePath
 from typing import Union
 
 
 class SecurityError(Exception):
     """Custom exception for security-related errors."""
+
     pass
 
 
 def _check_command_injection_in_path(path_str: str) -> None:
     """
     Check for command injection patterns in a path.
-    
+
     Parameters
     ----------
     path_str : str
         The path string to check
-        
+
     Raises
     ------
     ValueError
@@ -50,13 +51,13 @@ def _check_command_injection_in_path(path_str: str) -> None:
         "</script>",
         "<script>",
     ]
-    
+
     # Check for URL-encoded injection attempts
     try:
         decoded_path = urllib.parse.unquote(path_str)
     except Exception:
         decoded_path = path_str
-    
+
     # Check both original and decoded paths
     for pattern in injection_patterns:
         if pattern in path_str or pattern in decoded_path:
@@ -66,12 +67,12 @@ def _check_command_injection_in_path(path_str: str) -> None:
 def _check_directory_traversal(path_str: str) -> None:
     """
     Check for directory traversal patterns in a path.
-    
+
     Parameters
     ----------
     path_str : str
         The path string to check
-        
+
     Raises
     ------
     SecurityError
@@ -90,13 +91,13 @@ def _check_directory_traversal(path_str: str) -> None:
         "..%2f",
         "..%5c",
     ]
-    
+
     # Check for URL-encoded traversal attempts
     try:
         decoded_path = urllib.parse.unquote(path_str)
     except Exception:
         decoded_path = path_str
-    
+
     # Check both original and decoded paths
     for pattern in dangerous_patterns:
         if pattern in path_str.lower() or pattern in decoded_path.lower():
@@ -106,12 +107,12 @@ def _check_directory_traversal(path_str: str) -> None:
 def _check_sensitive_directories(normalized_path: str) -> None:
     """
     Check if path attempts to access sensitive directories.
-    
+
     Parameters
     ----------
     normalized_path : str
         The normalized path to check
-        
+
     Raises
     ------
     ValueError
@@ -135,25 +136,29 @@ def _check_sensitive_directories(normalized_path: str) -> None:
         "c:\\users\\administrator\\",
         "c:/users/administrator/",
     ]
-    
+
     path_lower = normalized_path.lower()
     for sensitive_dir in sensitive_dirs:
         if path_lower.startswith(sensitive_dir):
             raise ValueError(f"Access to sensitive directory denied: {sensitive_dir}")
-    
+
     # Additional check: detect if the path contains sensitive directory components anywhere
     sensitive_components = ["etc", "sys", "proc", "dev", "root", "windows", "system32"]
-    path_parts = [part.lower() for part in normalized_path.replace("\\", "/").split("/")]
-    
+    path_parts = [
+        part.lower() for part in normalized_path.replace("\\", "/").split("/")
+    ]
+
     for component in sensitive_components:
         if component in path_parts:
-            raise ValueError(f"Access to sensitive directory component denied: {component}")
+            raise ValueError(
+                f"Access to sensitive directory component denied: {component}"
+            )
 
 
 def validate_path(path_str: str) -> str:
     """
     Validate a path string for security vulnerabilities.
-    
+
     This function checks for directory traversal attacks, command injection attempts,
     and other path-based security issues while preserving legitimate path formats.
 
@@ -178,14 +183,14 @@ def validate_path(path_str: str) -> str:
     --------
     >>> validate_path("/home/user/data.txt")
     '/home/user/data.txt'
-    
+
     >>> validate_path("../../../etc/passwd")  # doctest: +IGNORE_EXCEPTION_DETAIL
     Traceback (most recent call last):
     SecurityError: Directory traversal detected
     """
     if not path_str or path_str.strip() == "":
         raise ValueError("Path cannot be empty")
-    
+
     # Special case for non-path identifiers
     if path_str.lower() in [
         "mnist",
@@ -193,32 +198,32 @@ def validate_path(path_str: str) -> str:
         "input_matrix",
     ]:
         return path_str
-    
+
     # Check for command injection patterns in paths
     _check_command_injection_in_path(path_str)
-    
+
     # Check for directory traversal patterns
     _check_directory_traversal(path_str)
-    
+
     # Normalize and check sensitive directories
     normalized_path = os.path.normpath(path_str)
     _check_sensitive_directories(normalized_path)
-    
+
     # Additional security checks
     if len(normalized_path) > 4096:  # Reasonable path length limit
         raise ValueError("Path too long")
-    
+
     # Check for null bytes
     if "\x00" in path_str:
         raise ValueError("Null byte detected in path")
-    
+
     return path_str
 
 
 def sanitize_input(input_str: str) -> str:
     """
     Sanitize input strings to prevent injection attacks.
-    
+
     This function removes or escapes potentially dangerous characters
     while preserving legitimate input. For highly malicious input,
     it raises an error instead of attempting sanitization.
@@ -242,23 +247,23 @@ def sanitize_input(input_str: str) -> str:
     --------
     >>> sanitize_input("normal_string")
     'normal_string'
-    
+
     >>> sanitize_input("string; rm -rf /")  # doctest: +IGNORE_EXCEPTION_DETAIL
     Traceback (most recent call last):
     ValueError: Malicious input detected
     """
     if input_str is None:
         raise ValueError("Input cannot be None")
-    
+
     if not isinstance(input_str, str):
         input_str = str(input_str)
-    
+
     # URL decode the input to check for encoded malicious patterns
     try:
         decoded_input = urllib.parse.unquote(input_str)
     except Exception:
         decoded_input = input_str
-    
+
     # Check for highly malicious patterns in both original and decoded input
     malicious_patterns = [
         "rm -rf",
@@ -287,38 +292,38 @@ def sanitize_input(input_str: str) -> str:
         "system32",
         "windows\\system32",
     ]
-    
+
     # Check both original and decoded versions
     for pattern in malicious_patterns:
         if pattern in input_str.lower() or pattern in decoded_input.lower():
             raise ValueError(f"Malicious input detected: contains '{pattern}'")
-    
+
     # Check for control characters (especially null bytes)
-    if any(ord(c) < 32 for c in input_str if c not in ['\t', '\n', '\r', ' ']):
+    if any(ord(c) < 32 for c in input_str if c not in ["\t", "\n", "\r", " "]):
         raise ValueError("Invalid control characters detected")
-    
+
     # Remove or replace dangerous characters
     # Remove shell metacharacters
     dangerous_chars = [";", "&", "|", "$", "(", ")", "{", "}", "[", "]"]
-    
+
     sanitized = input_str
     for char in dangerous_chars:
         sanitized = sanitized.replace(char, "")
-    
+
     # Remove control characters except common whitespace
-    sanitized = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]', '', sanitized)
-    
+    sanitized = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]", "", sanitized)
+
     # Limit length to prevent buffer overflow
     if len(sanitized) > 10000:
         sanitized = sanitized[:10000]
-    
+
     return sanitized.strip()
 
 
 def secure_file_exists(file_path: Union[str, Path]) -> bool:
     """
     Securely check if a file exists.
-    
+
     This function safely checks for file existence while protecting
     against path traversal and other security issues.
 
@@ -336,7 +341,7 @@ def secure_file_exists(file_path: Union[str, Path]) -> bool:
     --------
     >>> secure_file_exists("existing_file.txt")  # doctest: +SKIP
     True
-    
+
     >>> secure_file_exists("nonexistent_file.txt")  # doctest: +SKIP
     False
     """
@@ -346,10 +351,10 @@ def secure_file_exists(file_path: Union[str, Path]) -> bool:
             path_obj = Path(validated_path)
         else:
             path_obj = file_path
-        
+
         # Check if path exists and is a file
         return path_obj.exists() and path_obj.is_file()
-    
+
     except (SecurityError, ValueError, OSError):
         return False
 
@@ -357,7 +362,7 @@ def secure_file_exists(file_path: Union[str, Path]) -> bool:
 def secure_mkdir(dir_path: Union[str, Path]) -> bool:
     """
     Securely create a directory.
-    
+
     This function safely creates directories while protecting
     against path traversal and other security issues.
 
@@ -382,11 +387,11 @@ def secure_mkdir(dir_path: Union[str, Path]) -> bool:
             path_obj = Path(validated_path)
         else:
             path_obj = dir_path
-        
+
         # Create directory if it doesn't exist
         path_obj.mkdir(parents=True, exist_ok=True)
         return True
-    
+
     except (SecurityError, ValueError, OSError):
         return False
 
@@ -394,7 +399,7 @@ def secure_mkdir(dir_path: Union[str, Path]) -> bool:
 def is_safe_filename(filename: str) -> bool:
     """
     Check if a filename is safe to use.
-    
+
     This function validates filenames to prevent security issues
     with file operations.
 
@@ -412,7 +417,7 @@ def is_safe_filename(filename: str) -> bool:
     --------
     >>> is_safe_filename("data.txt")
     True
-    
+
     >>> is_safe_filename("../../../etc/passwd")
     False
     """
@@ -420,28 +425,47 @@ def is_safe_filename(filename: str) -> bool:
         # Check if it's just a filename (no path components)
         if os.path.sep in filename or "/" in filename or "\\" in filename:
             return False
-        
+
         # Validate the filename
         validate_path(filename)
-        
+
         # Additional filename-specific checks
         if filename.startswith("."):
             return False  # Hidden files
-        
+
         if len(filename) > 255:  # Common filesystem limit
             return False
-        
+
         # Check for reserved names on Windows
         reserved_names = [
-            "CON", "PRN", "AUX", "NUL",
-            "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9",
-            "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9"
+            "CON",
+            "PRN",
+            "AUX",
+            "NUL",
+            "COM1",
+            "COM2",
+            "COM3",
+            "COM4",
+            "COM5",
+            "COM6",
+            "COM7",
+            "COM8",
+            "COM9",
+            "LPT1",
+            "LPT2",
+            "LPT3",
+            "LPT4",
+            "LPT5",
+            "LPT6",
+            "LPT7",
+            "LPT8",
+            "LPT9",
         ]
-        
+
         if filename.upper().split(".")[0] in reserved_names:
             return False
-        
+
         return True
-    
+
     except (SecurityError, ValueError):
         return False

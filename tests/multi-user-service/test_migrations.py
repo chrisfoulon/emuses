@@ -397,9 +397,19 @@ class TestMigrationManagement:
         if not Path("alembic.ini").exists():
             pytest.skip("Alembic not configured yet")
 
+        import tempfile
+        import os
         from emuses.multi_user_service.database import run_migrations, get_migration_status
 
+        # Use a temporary file-based database to persist migration state
+        with tempfile.NamedTemporaryFile(suffix='.db', delete=False) as tmp_file:
+            test_db_url = f"sqlite:///{tmp_file.name}"
+            
         try:
+            # Set DATABASE_URL to use file-based SQLite for this test
+            original_db_url = os.getenv("DATABASE_URL")
+            os.environ["DATABASE_URL"] = test_db_url
+
             # Run migrations
             run_migrations("head")
 
@@ -412,6 +422,18 @@ class TestMigrationManagement:
 
         except Exception as e:
             pytest.fail(f"Run migrations function failed: {e}")
+        finally:
+            # Clean up
+            if original_db_url:
+                os.environ["DATABASE_URL"] = original_db_url
+            elif "DATABASE_URL" in os.environ:
+                del os.environ["DATABASE_URL"]
+            
+            # Remove temporary database file
+            try:
+                os.unlink(tmp_file.name)
+            except FileNotFoundError:
+                pass
 
     def test_migration_rollback_function(self):
         """Test rollback_migration function."""

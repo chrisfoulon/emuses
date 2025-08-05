@@ -7,14 +7,11 @@ import optuna
 from hdbscan import validity
 from sklearn.metrics import silhouette_score
 
+from emuses.tools.optim_utils import (calculate_composite_score,
+                                      calculate_score, suggest_parameters)
+
 # Import new model I/O system
 from .model_io import ModelIOManager
-
-from emuses.tools.optim_utils import (
-    calculate_score,
-    suggest_parameters,
-    calculate_composite_score,
-)
 
 
 def compute_cluster_persistence(clusterer, normalized=True, max_value=1.0):

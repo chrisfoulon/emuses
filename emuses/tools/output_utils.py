@@ -1,16 +1,23 @@
 from pathlib import Path
+
+import matplotlib.pyplot as plt
 import nibabel as nib
 import pandas as pd
-import matplotlib.pyplot as plt
-from nilearn.plotting import plot_stat_map
 import plotly.express as px
+from nilearn.plotting import plot_stat_map
 
-from emuses.tools.visualisation import plot_statistical_map, plot_spreadsheet_stat_map
+from emuses.tools.visualisation import (plot_spreadsheet_stat_map,
+                                        plot_statistical_map)
 
 
 def save_statistical_maps(
-    stat_maps, output_folder, input_type, output_format_info,
-    filename_prefix='stat_map', save_output=True, generate_plots=False
+    stat_maps,
+    output_folder,
+    input_type,
+    output_format_info,
+    filename_prefix="stat_map",
+    save_output=True,
+    generate_plots=False,
 ):
     """
     Save statistical maps in the format matching the input type, and optionally generate plots.
@@ -42,14 +49,16 @@ def save_statistical_maps(
     plots = {} if generate_plots else None
 
     for cluster, stat_map in stat_maps.items():
-        if input_type == 'nifti':
+        if input_type == "nifti":
             # For NIfTI, output_format_info is a tuple of (output_shape, affine)
             output_shape, affine = output_format_info
             stat_image = stat_map.reshape(output_shape)
             nifti_img = nib.Nifti1Image(stat_image, affine)
 
             # Generate the plot once
-            display = plot_stat_map(nifti_img, title=f'Effect Size Map for Cluster {cluster}')
+            display = plot_stat_map(
+                nifti_img, title=f"Effect Size Map for Cluster {cluster}"
+            )
             # fig = list(display.axes.values())[0].figure
             # try:
             #     fig = display.figure
@@ -58,10 +67,14 @@ def save_statistical_maps(
 
             if save_output:
                 # Save the NIfTI file
-                nifti_filename = output_folder / f"{filename_prefix}_cluster_{cluster}.nii.gz"
+                nifti_filename = (
+                    output_folder / f"{filename_prefix}_cluster_{cluster}.nii.gz"
+                )
                 nib.save(nifti_img, nifti_filename)
                 # Save the plot as PNG
-                png_filename = output_folder / f"{filename_prefix}_cluster_{cluster}.png"
+                png_filename = (
+                    output_folder / f"{filename_prefix}_cluster_{cluster}.png"
+                )
                 display.savefig(png_filename)
                 # fig.savefig(png_filename)
                 print(f"Saved NIfTI image and plot for cluster {cluster}.")
@@ -73,13 +86,13 @@ def save_statistical_maps(
             # # Close the figure to free memory
             # plt.close(fig)
 
-        elif input_type == 'image' or input_type == 'mnist':
+        elif input_type == "image" or input_type == "mnist":
             # For images, output_format_info is the output shape
             output_shape = output_format_info
             stat_image = stat_map.reshape(output_shape)
 
             # Use the provided plot_statistical_map function
-            plot_title = f'Effect Size Map for Cluster {cluster}'
+            plot_title = f"Effect Size Map for Cluster {cluster}"
             save_path = None
             if save_output:
                 save_path = output_folder / f"{filename_prefix}_cluster_{cluster}.png"
@@ -89,15 +102,13 @@ def save_statistical_maps(
                 title=plot_title,
                 save_path=save_path,
                 show_plot=False,
-                return_plot=generate_plots
+                return_plot=generate_plots,
             )
 
             if generate_plots:
                 plots[cluster] = fig
 
-
-
-        elif input_type == 'spreadsheet':
+        elif input_type == "spreadsheet":
 
             # For spreadsheets, output_format_info is the list of column names
 
@@ -108,7 +119,9 @@ def save_statistical_maps(
             # Save the DataFrame to CSV
 
             if save_output:
-                csv_filename = output_folder / f"{filename_prefix}_cluster_{cluster}.csv"
+                csv_filename = (
+                    output_folder / f"{filename_prefix}_cluster_{cluster}.csv"
+                )
 
                 df.to_csv(csv_filename, index=False)
 
@@ -116,7 +129,7 @@ def save_statistical_maps(
 
             # Convert to long format for bar chart
 
-            df_long = df.melt(var_name='Feature', value_name='Effect Size')
+            df_long = df.melt(var_name="Feature", value_name="Effect Size")
 
             # For demonstration, let's pick orientation='h' and interactive=False by default
 
@@ -127,30 +140,21 @@ def save_statistical_maps(
             if save_output:
                 # We'll produce a static PNG in this example
 
-                bar_output_path = output_folder / f"{filename_prefix}_cluster_{cluster}.png"
+                bar_output_path = (
+                    output_folder / f"{filename_prefix}_cluster_{cluster}.png"
+                )
 
             fig = plot_spreadsheet_stat_map(
-
                 df_long=df_long,
-
                 cluster=cluster,
-
                 output_path=bar_output_path,
-
-                orientation='h',  # horizontal
-
+                orientation="h",  # horizontal
                 interactive=True,
-
                 width=1200,
-
                 height=None,  # auto-based on number of features
-
-                title=f'Effect Size Map for Cluster {cluster}',
-
+                title=f"Effect Size Map for Cluster {cluster}",
                 show_plot=False,  # or True if you want to see it pop up
-
-                return_plot=generate_plots
-
+                return_plot=generate_plots,
             )
 
             if generate_plots and fig is not None:

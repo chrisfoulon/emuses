@@ -1,52 +1,52 @@
-import numpy as np
 import logging
-from pathlib import Path
-import pandas as pd
-import hdbscan
-import matplotlib.pyplot as plt
-import umap
-import joblib
-from sklearn.model_selection import StratifiedKFold, KFold
 from datetime import datetime
+from pathlib import Path
+
+import hdbscan
+import joblib
+import matplotlib.pyplot as plt
+import numpy as np
+import openpyxl
+import optuna
+import pandas as pd
+import umap
+from bcblib.tools.general_utils import save_json
+from sklearn.metrics import (accuracy_score, balanced_accuracy_score,
+                             confusion_matrix, mean_squared_error, r2_score)
+from sklearn.model_selection import KFold, StratifiedKFold
+
+from emuses.config.optim_configs_predict import (load_optim_dict_predict,
+                                                 optim_dict_predict)
+from emuses.observability import get_logger, track_scientific_operation
+from emuses.pipelines.pipeline_stage import PipelineStage
+from emuses.tools.ae_optuna import optimize_ae_pretraining
+from emuses.tools.data_preproc import filter_nan_rows
+from emuses.tools.inputs_utils import (get_array_info,
+                                       load_and_preprocess_digits_dataset)
+from emuses.tools.kernel_regression_utils import (KernelLogisticRegressor,
+                                                  KernelRegressor,
+                                                  ensemble_predict,
+                                                  nested_cv_kernel_regression,
+                                                  run_kernel_heatmap_analysis)
+from emuses.tools.optim_utils import suggest_parameters_conditional
+from emuses.tools.optuna_cv import nested_optuna_cv
+from emuses.tools.visualisation import plot_clustering_interactive_with_hover
 
 # Import new model I/O system
 from ..tools.model_io import ModelIOManager
-from sklearn.metrics import (
-    accuracy_score,
-    balanced_accuracy_score,
-    r2_score,
-    mean_squared_error,
-    confusion_matrix,
-)
-
-from emuses.pipelines.pipeline_stage import PipelineStage
-from emuses.tools.data_preproc import filter_nan_rows
-from emuses.tools.kernel_regression_utils import (
-    run_kernel_heatmap_analysis,
-    ensemble_predict,
-    nested_cv_kernel_regression,
-)
-from emuses.tools.kernel_regression_utils import (
-    KernelLogisticRegressor,
-    KernelRegressor,
-)
-from emuses.tools.visualisation import plot_clustering_interactive_with_hover
-from emuses.tools.inputs_utils import load_and_preprocess_digits_dataset, get_array_info
-from bcblib.tools.general_utils import save_json
-
-import optuna
-from emuses.config.optim_configs_predict import (
-    load_optim_dict_predict,
-    optim_dict_predict,
-)
-from emuses.tools.optim_utils import suggest_parameters_conditional
-from emuses.tools.optuna_cv import nested_optuna_cv
-from emuses.tools.ae_optuna import optimize_ae_pretraining
-import openpyxl
 
 
 def _optimise_target(
-    col_idx, X, Y, task, cfg, out_dir, logger_name, optim_dict, pretrained_ae=None, n_jobs=-1
+    col_idx,
+    X,
+    Y,
+    task,
+    cfg,
+    out_dir,
+    logger_name,
+    optim_dict,
+    pretrained_ae=None,
+    n_jobs=-1,
 ):
     """
     Runs nested Optuna-CV for one target column and returns artefacts.
@@ -100,7 +100,7 @@ class HeatmapStage(PipelineStage):
         # Get embedding coordinates (UMAP embeddings for unlabelled data used for UMAP training)
         # embedding_train_coords = context.get("embedding_train_coords")  # Unused
 
-        # Get feature data for input matrices  
+        # Get feature data for input matrices
         # embedding_train_features = context.get("embedding_train_features")  # Unused
         # prediction_train_features = context.get("prediction_train_features")  # Unused
 
@@ -261,6 +261,7 @@ class HeatmapStage(PipelineStage):
 
                 # Get AE optimization parameters from config
                 from emuses.config.optim_configs_ae import optim_dict_ae
+
                 ae_trials = optim_dict_ae.get("meta", {}).get("n_trials", 30)
 
                 try:
@@ -287,6 +288,7 @@ class HeatmapStage(PipelineStage):
                     if "model_path" in ae_results and ae_results["model_path"]:
                         try:
                             from pathlib import Path
+
                             from emuses.tools.model_io import ModelIOManager
 
                             # Initialize model I/O manager and save as "best_ae_model" too
@@ -376,8 +378,10 @@ class HeatmapStage(PipelineStage):
             fitted_ae = ae_results.get("fitted_ae")
 
         n_jobs = getattr(self.config, "n_jobs", -1)
-        from emuses.tools.parallelism_utils import create_safe_parallel
         from joblib import delayed
+
+        from emuses.tools.parallelism_utils import create_safe_parallel
+
         parallel = create_safe_parallel(n_jobs)
         results = parallel(
             delayed(_optimise_target)(

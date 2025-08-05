@@ -4,13 +4,15 @@ Extends the foundation JobManager with user workspace isolation, quota validatio
 and secure user-scoped storage management for EMUSES multi-user environment.
 """
 
-from pathlib import Path
-from typing import Dict, Any, List, Optional, Union
-from uuid import UUID, uuid4
 from datetime import datetime
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Union
+from uuid import UUID, uuid4
+
+from sqlalchemy.orm import Session
+
 from emuses.foundation_fastapi_service.job_manager import JobManager
 from emuses.multi_user_service.quota_manager import QuotaManager
-from sqlalchemy.orm import Session
 
 
 class MultiUserJobManager(JobManager):
@@ -28,9 +30,7 @@ class MultiUserJobManager(JobManager):
     """
 
     def __init__(
-        self,
-        base_directory: Union[str, Path],
-        cleanup_after_days: float = 7.0
+        self, base_directory: Union[str, Path], cleanup_after_days: float = 7.0
     ):
         """Initialize multi-user job manager.
 
@@ -84,7 +84,7 @@ class MultiUserJobManager(JobManager):
         description: Optional[str] = None,
         db_session: Optional[Session] = None,
         expected_storage_gb: float = 0.0,
-        expected_compute_hours: float = 0.0
+        expected_compute_hours: float = 0.0,
     ) -> UUID:
         """Create a new job with user context and isolation.
 
@@ -121,10 +121,12 @@ class MultiUserJobManager(JobManager):
         # Validate quotas if database session provided
         if db_session is not None:
             # Check concurrent job limit
-            concurrent_result = self.quota_manager.validate_concurrent_job_limit(db_session, user_id)
+            concurrent_result = self.quota_manager.validate_concurrent_job_limit(
+                db_session, user_id
+            )
             if not concurrent_result.is_valid:
                 raise ValueError(f"Quota exceeded: {concurrent_result.message}")
-            
+
             # Check storage and compute quotas if specified
             if expected_storage_gb > 0 or expected_compute_hours > 0:
                 if not self.quota_manager.is_quota_available(
@@ -134,7 +136,8 @@ class MultiUserJobManager(JobManager):
                         db_session, user_id, expected_storage_gb, expected_compute_hours
                     )
                     failed_quotas = [
-                        name for name, result in quota_results.items() 
+                        name
+                        for name, result in quota_results.items()
                         if not result.is_valid
                     ]
                     raise ValueError(f"Quota exceeded for: {', '.join(failed_quotas)}")
@@ -216,6 +219,7 @@ class MultiUserJobManager(JobManager):
             metadata_file = job_dir / "metadata.json"
             if metadata_file.exists():
                 import json
+
                 with open(metadata_file, "r") as f:
                     metadata = json.load(f)
                 return metadata.get("user_id") == str(user_id)
@@ -229,7 +233,7 @@ class MultiUserJobManager(JobManager):
         self,
         user_id: UUID,
         expected_storage_gb: float = 0.0,
-        expected_compute_hours: float = 0.0
+        expected_compute_hours: float = 0.0,
     ) -> bool:
         """Check if user has sufficient quota for resource allocation.
 
@@ -290,7 +294,7 @@ class MultiUserJobManager(JobManager):
         user_id: UUID,
         status: Optional[str] = None,
         limit: int = 50,
-        offset: int = 0
+        offset: int = 0,
     ) -> List[Dict[str, Any]]:
         """List jobs for a specific user with filtering and pagination.
 
@@ -330,7 +334,7 @@ class MultiUserJobManager(JobManager):
             self.jobs_directory = original_jobs_dir
 
         # Apply pagination
-        return jobs[offset:offset + limit]
+        return jobs[offset : offset + limit]
 
     def cancel_user_job(self, job_id: UUID, user_id: UUID) -> bool:
         """Cancel a user's job with ownership validation.
@@ -369,9 +373,7 @@ class MultiUserJobManager(JobManager):
 
             # Update status to cancelled
             self.update_job_status(
-                job_id=job_id,
-                status="cancelled",
-                message="Job cancelled by user"
+                job_id=job_id, status="cancelled", message="Job cancelled by user"
             )
 
             self.add_job_log(job_id, "Job cancelled by user", "INFO")
@@ -419,7 +421,7 @@ class MultiUserJobManager(JobManager):
         job_id: UUID,
         user_id: UUID,
         compute_hours_used: float = 0.0,
-        storage_bytes_used: int = 0
+        storage_bytes_used: int = 0,
     ) -> None:
         """Update user resource usage for a job.
 
@@ -494,7 +496,7 @@ class MultiUserJobManager(JobManager):
 
         return {
             "compute_hours_used": total_compute,
-            "storage_bytes_used": total_storage
+            "storage_bytes_used": total_storage,
         }
 
     def get_job_directory(self, job_id: Union[str, UUID]) -> Path:
@@ -647,13 +649,10 @@ class MultiUserJobManager(JobManager):
         super().add_job_log(job_id, message, level)
 
     def start_job_tracking(
-        self, 
-        job_id: UUID, 
-        user_id: UUID, 
-        db_session: Optional[Session] = None
+        self, job_id: UUID, user_id: UUID, db_session: Optional[Session] = None
     ) -> None:
         """Start tracking job execution time and resource usage.
-        
+
         Parameters
         ----------
         job_id : UUID
@@ -666,18 +665,18 @@ class MultiUserJobManager(JobManager):
         # Validate ownership
         if not self.validate_job_ownership(job_id, user_id):
             raise ValueError("User not authorized to track this job")
-        
+
         # Record start time in job metadata
         start_metadata = {
             "tracking_started_at": datetime.utcnow().isoformat(),
-            "resource_tracking_enabled": True
+            "resource_tracking_enabled": True,
         }
-        
+
         # Temporarily update jobs_directory for compatibility
         user_storage = self.base_directory / "users" / str(user_id) / "jobs"
         original_jobs_dir = self.jobs_directory
         self.jobs_directory = user_storage
-        
+
         try:
             self.update_job_metadata(job_id, start_metadata)
             self.add_job_log(job_id, "Started resource usage tracking", "INFO")
@@ -690,10 +689,10 @@ class MultiUserJobManager(JobManager):
         user_id: UUID,
         compute_hours_delta: float = 0.0,
         storage_bytes_delta: int = 0,
-        db_session: Optional[Session] = None
+        db_session: Optional[Session] = None,
     ) -> None:
         """Update job's resource usage and sync with user quotas.
-        
+
         Parameters
         ----------
         job_id : UUID
@@ -710,22 +709,22 @@ class MultiUserJobManager(JobManager):
         # Validate ownership
         if not self.validate_job_ownership(job_id, user_id):
             raise ValueError("User not authorized to update this job")
-        
+
         # Update job-level resource tracking
         self.update_user_resource_usage(
             job_id, user_id, compute_hours_delta, storage_bytes_delta
         )
-        
+
         # Update user-level quotas if database session provided
         if db_session is not None:
             # Convert bytes to GB for storage quota update
-            storage_gb_delta = storage_bytes_delta / (1024 ** 3)
-            
+            storage_gb_delta = storage_bytes_delta / (1024**3)
+
             if compute_hours_delta != 0:
                 self.quota_manager.update_user_compute_usage(
                     db_session, user_id, compute_hours_delta
                 )
-            
+
             if storage_gb_delta != 0:
                 self.quota_manager.update_user_storage_usage(
                     db_session, user_id, storage_gb_delta
@@ -737,10 +736,10 @@ class MultiUserJobManager(JobManager):
         user_id: UUID,
         final_compute_hours: float,
         final_storage_bytes: int,
-        db_session: Optional[Session] = None
+        db_session: Optional[Session] = None,
     ) -> Dict[str, Any]:
         """Complete job tracking and finalize resource usage.
-        
+
         Parameters
         ----------
         job_id : UUID
@@ -753,7 +752,7 @@ class MultiUserJobManager(JobManager):
             Final storage bytes used by job
         db_session : Optional[Session]
             Database session for updating user quotas
-        
+
         Returns
         -------
         Dict[str, Any]
@@ -762,46 +761,46 @@ class MultiUserJobManager(JobManager):
         # Validate ownership
         if not self.validate_job_ownership(job_id, user_id):
             raise ValueError("User not authorized to complete tracking for this job")
-        
+
         # Get current metadata to calculate deltas
         current_metadata = self.get_user_job_metadata(job_id, user_id)
         current_compute = current_metadata.get("compute_hours_used", 0.0)
         current_storage = current_metadata.get("storage_bytes_used", 0)
-        
+
         # Calculate deltas
         compute_delta = final_compute_hours - current_compute
         storage_delta = final_storage_bytes - current_storage
-        
+
         # Update resource usage
         completion_metadata = {
             "tracking_completed_at": datetime.utcnow().isoformat(),
             "compute_hours_used": final_compute_hours,
             "storage_bytes_used": final_storage_bytes,
-            "resource_tracking_completed": True
+            "resource_tracking_completed": True,
         }
-        
+
         # Temporarily update jobs_directory for compatibility
         user_storage = self.base_directory / "users" / str(user_id) / "jobs"
         original_jobs_dir = self.jobs_directory
         self.jobs_directory = user_storage
-        
+
         try:
             self.update_job_metadata(job_id, completion_metadata)
             self.add_job_log(
-                job_id, 
+                job_id,
                 f"Completed tracking: {final_compute_hours:.2f}h compute, "
-                f"{final_storage_bytes / (1024**3):.2f}GB storage", 
-                "INFO"
+                f"{final_storage_bytes / (1024**3):.2f}GB storage",
+                "INFO",
             )
         finally:
             self.jobs_directory = original_jobs_dir
-        
+
         # Update user-level quotas
         if db_session is not None and (compute_delta != 0 or storage_delta != 0):
             self.update_job_resource_usage(
                 job_id, user_id, compute_delta, storage_delta, db_session
             )
-        
+
         # Return usage summary
         return {
             "job_id": str(job_id),
@@ -810,19 +809,19 @@ class MultiUserJobManager(JobManager):
             "storage_bytes_used": final_storage_bytes,
             "compute_hours_delta": compute_delta,
             "storage_bytes_delta": storage_delta,
-            "tracking_completed": True
+            "tracking_completed": True,
         }
 
     def get_job_resource_usage(self, job_id: UUID, user_id: UUID) -> Dict[str, Any]:
         """Get current resource usage for a job.
-        
+
         Parameters
         ----------
         job_id : UUID
             Job ID to get usage for
         user_id : UUID
             User ID for ownership validation
-        
+
         Returns
         -------
         Dict[str, Any]
@@ -831,9 +830,9 @@ class MultiUserJobManager(JobManager):
         # Validate ownership
         if not self.validate_job_ownership(job_id, user_id):
             raise ValueError("User not authorized to access this job")
-        
+
         metadata = self.get_user_job_metadata(job_id, user_id)
-        
+
         return {
             "job_id": str(job_id),
             "compute_hours_used": metadata.get("compute_hours_used", 0.0),
@@ -841,6 +840,13 @@ class MultiUserJobManager(JobManager):
             "tracking_started": metadata.get("tracking_started_at"),
             "tracking_completed": metadata.get("tracking_completed_at"),
             "tracking_enabled": metadata.get("resource_tracking_enabled", False),
-            "tracking_status": "completed" if metadata.get("resource_tracking_completed") 
-                             else ("active" if metadata.get("resource_tracking_enabled") else "inactive")
+            "tracking_status": (
+                "completed"
+                if metadata.get("resource_tracking_completed")
+                else (
+                    "active"
+                    if metadata.get("resource_tracking_enabled")
+                    else "inactive"
+                )
+            ),
         }

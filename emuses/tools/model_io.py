@@ -15,17 +15,17 @@ Key Features:
 - Support for all model types used in EMUSES (UMAP, HDBSCAN, autoencoders, sklearn pipelines)
 """
 
+import hashlib
 import json
 import logging
+import sys
+from dataclasses import asdict, dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
-from datetime import datetime
-import hashlib
+
 import joblib
 import numpy as np
-from dataclasses import dataclass, asdict
-import sys
-
 # Import bcblib save_json for consistent serialization
 from bcblib.tools.general_utils import save_json
 
@@ -259,11 +259,6 @@ class ModelIOManager:
 
             logger.warning(f"Could not find model: {model_name}")
             return None
-
-        except Exception as e:
-            logger.error(f"Failed to load model {model_name}: {e}")
-            return None
-            return self._try_legacy_loading(model_name, prefix, search_paths)
 
         except Exception as e:
             logger.error(f"Failed to load model {model_name}: {e}")

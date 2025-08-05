@@ -4,17 +4,14 @@ This module provides database configuration, async session management,
 and connection pooling for PostgreSQL with SQLAlchemy async patterns.
 """
 
-import os
 import logging
-from typing import AsyncGenerator, Optional
-from sqlalchemy.ext.asyncio import (
-    AsyncSession,
-    async_sessionmaker,
-    create_async_engine,
-    AsyncEngine
-)
-from sqlalchemy.exc import SQLAlchemyError
+import os
 from contextlib import asynccontextmanager
+from typing import AsyncGenerator, Optional
+
+from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.ext.asyncio import (AsyncEngine, AsyncSession,
+                                    async_sessionmaker, create_async_engine)
 
 logger = logging.getLogger(__name__)
 
@@ -103,16 +100,20 @@ def create_engine() -> AsyncEngine:
 
     # Add pool settings for PostgreSQL
     if database_url.startswith("postgresql"):
-        engine_kwargs.update({
-            "pool_size": config.pool_size,
-            "max_overflow": config.max_overflow,
-            "pool_timeout": config.pool_timeout,
-            "pool_pre_ping": config.pool_pre_ping,
-        })
+        engine_kwargs.update(
+            {
+                "pool_size": config.pool_size,
+                "max_overflow": config.max_overflow,
+                "pool_timeout": config.pool_timeout,
+                "pool_pre_ping": config.pool_pre_ping,
+            }
+        )
 
     _engine = create_async_engine(database_url, **engine_kwargs)
 
-    logger.info(f"Database engine created for deployment mode: {config.deployment_mode}")
+    logger.info(
+        f"Database engine created for deployment mode: {config.deployment_mode}"
+    )
     return _engine
 
 
@@ -208,6 +209,7 @@ async def create_all_tables():
     """
     try:
         from emuses.multi_user_service.models import Base
+
         engine = create_engine()
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
@@ -224,6 +226,7 @@ async def drop_all_tables():
     """
     try:
         from emuses.multi_user_service.models import Base
+
         engine = create_engine()
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.drop_all)
@@ -247,9 +250,10 @@ def run_migrations(target_revision: str = "head"):
         If migration fails
     """
     try:
-        from alembic.config import Config
-        from alembic import command
         import os
+
+        from alembic import command
+        from alembic.config import Config
 
         # Get alembic configuration
         config = Config("alembic.ini")
@@ -257,7 +261,9 @@ def run_migrations(target_revision: str = "head"):
         # Set database URL if not already configured
         db_config = DatabaseConfig()
         if db_config.database_url:
-            sync_url = db_config.database_url.replace("+asyncpg", "").replace("+aiosqlite", "")
+            sync_url = db_config.database_url.replace("+asyncpg", "").replace(
+                "+aiosqlite", ""
+            )
             config.set_main_option("sqlalchemy.url", sync_url)
 
         # Run migration
@@ -283,8 +289,8 @@ def rollback_migration(target_revision: str):
         If rollback fails
     """
     try:
-        from alembic.config import Config
         from alembic import command
+        from alembic.config import Config
 
         # Get alembic configuration
         config = Config("alembic.ini")
@@ -292,7 +298,9 @@ def rollback_migration(target_revision: str):
         # Set database URL if not already configured
         db_config = DatabaseConfig()
         if db_config.database_url:
-            sync_url = db_config.database_url.replace("+asyncpg", "").replace("+aiosqlite", "")
+            sync_url = db_config.database_url.replace("+asyncpg", "").replace(
+                "+aiosqlite", ""
+            )
             config.set_main_option("sqlalchemy.url", sync_url)
 
         # Run downgrade
@@ -313,13 +321,15 @@ def get_migration_status():
         Dictionary containing current revision, head revision, and pending migrations
     """
     try:
-        from alembic.config import Config
-        from alembic import command
-        from alembic.script import ScriptDirectory
-        from alembic.runtime.migration import MigrationContext
-        from sqlalchemy import create_engine as sync_create_engine
         import io
         import sys
+
+        from sqlalchemy import create_engine as sync_create_engine
+
+        from alembic import command
+        from alembic.config import Config
+        from alembic.runtime.migration import MigrationContext
+        from alembic.script import ScriptDirectory
 
         # Get alembic configuration
         config = Config("alembic.ini")
@@ -327,7 +337,9 @@ def get_migration_status():
         # Set database URL
         db_config = DatabaseConfig()
         if db_config.database_url:
-            sync_url = db_config.database_url.replace("+asyncpg", "").replace("+aiosqlite", "")
+            sync_url = db_config.database_url.replace("+asyncpg", "").replace(
+                "+aiosqlite", ""
+            )
         else:
             sync_url = "sqlite:///:memory:"
 
@@ -356,7 +368,7 @@ def get_migration_status():
             "head_revision": head_rev,
             "all_revisions": all_revisions,
             "is_up_to_date": is_up_to_date,
-            "pending_migrations": len(all_revisions) if current_rev is None else 0
+            "pending_migrations": len(all_revisions) if current_rev is None else 0,
         }
 
     except Exception as e:
@@ -373,12 +385,16 @@ def validate_database_schema():
         Validation results with any discrepancies found
     """
     try:
+        from sqlalchemy import create_engine as sync_create_engine
+        from sqlalchemy import inspect
+
         from emuses.multi_user_service.models import Base
-        from sqlalchemy import create_engine as sync_create_engine, inspect
 
         db_config = DatabaseConfig()
         if db_config.database_url:
-            sync_url = db_config.database_url.replace("+asyncpg", "").replace("+aiosqlite", "")
+            sync_url = db_config.database_url.replace("+asyncpg", "").replace(
+                "+aiosqlite", ""
+            )
         else:
             sync_url = "sqlite:///:memory:"
 
@@ -400,7 +416,7 @@ def validate_database_schema():
             "expected_tables": list(expected_tables),
             "actual_tables": list(actual_tables),
             "missing_tables": list(missing_tables),
-            "extra_tables": list(extra_tables)
+            "extra_tables": list(extra_tables),
         }
 
     except Exception as e:

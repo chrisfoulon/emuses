@@ -4,20 +4,18 @@ This module provides JWT authentication using FastAPI-Users with EMUSES-specific
 user management logic, token handling, and role-based access control.
 """
 
-import os
 import logging
+import os
 from typing import Optional, Type
+
 from fastapi import Depends, Request, Response
 from fastapi_users import BaseUserManager, FastAPIUsers, UUIDIDMixin
-from fastapi_users.authentication import (
-    AuthenticationBackend,
-    BearerTransport,
-    JWTStrategy,
-)
+from fastapi_users.authentication import (AuthenticationBackend,
+                                          BearerTransport, JWTStrategy)
 from fastapi_users.db import SQLAlchemyUserDatabase
 
-from emuses.multi_user_service.models import User, UserSettings
 from emuses.multi_user_service.database import get_async_session
+from emuses.multi_user_service.models import User, UserSettings
 
 logger = logging.getLogger(__name__)
 

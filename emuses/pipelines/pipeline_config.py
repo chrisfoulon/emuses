@@ -2,17 +2,19 @@
 
 import argparse
 import atexit
-from dataclasses import dataclass, field
 import logging
-from logging.handlers import QueueHandler, QueueListener
 import multiprocessing as mp
-from pathlib import Path
-from datetime import datetime
 import sys
+from dataclasses import dataclass, field
+from datetime import datetime
+from logging.handlers import QueueHandler, QueueListener
+from pathlib import Path
 from typing import Union
 
-from bcblib.tools.general_utils import save_json
 import optuna
+from bcblib.tools.general_utils import save_json
+
+from emuses.observability.logging import setup_structured_logging
 
 # create ONE queue at module load, so children can see it
 LOG_QUEUE = mp.Queue(-1)
@@ -104,7 +106,7 @@ class PipelineConfig:
                 kwargs.update(namespace_dict)
             else:
                 # Handle any object with attributes (like MinimalArgs)
-                if hasattr(args[0], '__dict__'):
+                if hasattr(args[0], "__dict__"):
                     obj_dict = vars(args[0])
                     kwargs.update(obj_dict)
 
@@ -126,29 +128,10 @@ class PipelineConfig:
         self._configure_logging()
 
         # ------------------------------------------------------------------
-        # Configure global logging (only once)
+        # Quiet down very chatty libs
         # ------------------------------------------------------------------
-        log_path = self.output_path / "log"
-        log_path.mkdir(exist_ok=True)
-
-        log_file = log_path / "pipeline.log"
-
-        # Avoid duplicate handlers in interactive sessions
-        if not any(
-            isinstance(h, logging.FileHandler) and h.baseFilename == str(log_file)
-            for h in logging.getLogger().handlers
-        ):
-            logging.basicConfig(
-                level=logging.INFO,  # default level
-                format="%(asctime)s %(levelname)-8s %(name)s  %(message)s",
-                handlers=[
-                    logging.StreamHandler(sys.stdout),  # console
-                    logging.FileHandler(log_file, mode="w"),  # file
-                ],
-            )
-            # Quiet down very chatty libs if you like:
-            logging.getLogger("urllib3").setLevel(logging.WARNING)
-            logging.getLogger("matplotlib").setLevel(logging.WARNING)
+        logging.getLogger("urllib3").setLevel(logging.WARNING)
+        logging.getLogger("matplotlib").setLevel(logging.WARNING)
 
         # ------------------------------------------------------------------
         # Store heat-map / clustering params
@@ -164,6 +147,7 @@ class PipelineConfig:
         # ------------------------------------------------------------------
         # Persist the full config snapshot
         # ------------------------------------------------------------------
+        log_path = self.output_path / "log"
         dict_args = vars(self).copy()
         dict_args["datetime"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         save_json(
@@ -176,6 +160,31 @@ class PipelineConfig:
         log_dir.mkdir(exist_ok=True)
         log_file = log_dir / "pipeline.log"
 
+        # Setup observability structured logging with file output
+        setup_structured_logging(level="INFO", output_file=str(log_file))
+
+        # Ensure file logging works by adding a dedicated FileHandler
+        root = logging.getLogger()
+
+        # Check if we already have a file handler for this specific file
+        file_handler_exists = any(
+            isinstance(h, logging.FileHandler) and h.baseFilename == str(log_file)
+            for h in root.handlers
+        )
+
+        if not file_handler_exists:
+            # Add a dedicated file handler to ensure logs go to pipeline.log
+            file_handler = logging.FileHandler(log_file, mode="a")
+            file_handler.setLevel(logging.INFO)
+            file_handler.setFormatter(
+                logging.Formatter("%(asctime)s [%(levelname)8s] %(name)s: %(message)s")
+            )
+            root.addHandler(file_handler)
+
+        # Log successful configuration
+        config_logger = logging.getLogger("emuses.pipeline_config")
+        config_logger.info("Pipeline logging configured successfully")
+
         root = logging.getLogger()
         root.setLevel(logging.INFO)
 
@@ -186,15 +195,16 @@ class PipelineConfig:
             return
 
         # ➌ MAIN process: create listener & real handlers
+        # Use only console handler for QueueListener since file logging is handled by observability
         stream = logging.StreamHandler(sys.stdout)
-        file = logging.FileHandler(log_file, mode="a", encoding="utf-8")
 
-        listener = QueueListener(LOG_QUEUE, file, stream, respect_handler_level=True)
+        listener = QueueListener(LOG_QUEUE, stream, respect_handler_level=True)
         listener.start()
 
-        # remove any default handlers added by basicConfig
-        root.handlers.clear()
-        root.addHandler(QueueHandler(LOG_QUEUE))
+        # Don't clear handlers - let observability logging coexist
+        # Only add QueueHandler if not already present
+        if not any(isinstance(h, QueueHandler) for h in root.handlers):
+            root.addHandler(QueueHandler(LOG_QUEUE))
 
         # make sure everything is flushed on shutdown
         atexit.register(listener.stop)

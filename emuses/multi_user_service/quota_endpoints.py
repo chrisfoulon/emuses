@@ -6,17 +6,18 @@ with proper authentication and authorization.
 """
 
 import logging
-from typing import List, Optional, Dict, Any
-from uuid import UUID
 from datetime import datetime, timedelta
+from typing import Any, Dict, List, Optional
+from uuid import UUID
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, ConfigDict
-from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from emuses.multi_user_service.auth import fastapi_users
-from emuses.multi_user_service.models import User
 from emuses.multi_user_service.database import get_async_session
+from emuses.multi_user_service.models import User
 from emuses.multi_user_service.quota_manager import QuotaManager
 
 logger = logging.getLogger(__name__)
@@ -36,6 +37,7 @@ class QuotaStatusResponse(BaseModel):
     compute : Dict[str, Any]
         Compute hours usage and quota information
     """
+
     concurrent_jobs: Dict[str, Any]
     storage: Dict[str, Any]
     compute: Dict[str, Any]
@@ -55,6 +57,7 @@ class QuotaAdjustmentRequest(BaseModel):
     new_value : float
         New quota value to set
     """
+
     user_id: UUID
     quota_type: str
     new_value: float
@@ -74,6 +77,7 @@ class UsageHistoryResponse(BaseModel):
     compute_history : List[Dict[str, Any]]
         Historical compute usage data
     """
+
     user_id: UUID
     storage_history: List[Dict[str, Any]]
     compute_history: List[Dict[str, Any]]
@@ -93,7 +97,7 @@ def create_quota_router() -> APIRouter:
     @router.get("/status", response_model=QuotaStatusResponse)
     async def get_quota_status(
         current_user: User = Depends(fastapi_users.current_user(active=True)),
-        db: AsyncSession = Depends(get_async_session)
+        db: AsyncSession = Depends(get_async_session),
     ):
         """Get current user's quota status and usage information.
 
@@ -112,21 +116,28 @@ def create_quota_router() -> APIRouter:
         # Convert async session to sync for quota manager compatibility
         # In a real implementation, we'd update quota manager to use async
         from sqlalchemy.orm import Session
+
         sync_db = Session(bind=db.bind.sync_engine)
         try:
-            concurrent_result = quota_manager.validate_concurrent_job_limit(sync_db, current_user.id)
-            storage_usage = quota_manager.get_user_storage_usage(sync_db, current_user.id)
-            compute_usage = quota_manager.get_user_compute_usage(sync_db, current_user.id)
+            concurrent_result = quota_manager.validate_concurrent_job_limit(
+                sync_db, current_user.id
+            )
+            storage_usage = quota_manager.get_user_storage_usage(
+                sync_db, current_user.id
+            )
+            compute_usage = quota_manager.get_user_compute_usage(
+                sync_db, current_user.id
+            )
 
             return QuotaStatusResponse(
                 concurrent_jobs={
                     "current": concurrent_result.current_jobs,
                     "limit": concurrent_result.limit,
                     "is_valid": concurrent_result.is_valid,
-                    "message": concurrent_result.message
+                    "message": concurrent_result.message,
                 },
                 storage=storage_usage,
-                compute=compute_usage
+                compute=compute_usage,
             )
         finally:
             sync_db.close()
@@ -134,8 +145,10 @@ def create_quota_router() -> APIRouter:
     @router.post("/admin/adjust")
     async def adjust_user_quota(
         request: QuotaAdjustmentRequest,
-        current_user: User = Depends(fastapi_users.current_user(active=True, superuser=True)),
-        db: AsyncSession = Depends(get_async_session)
+        current_user: User = Depends(
+            fastapi_users.current_user(active=True, superuser=True)
+        ),
+        db: AsyncSession = Depends(get_async_session),
     ):
         """Adjust user quota (admin only).
 
@@ -154,13 +167,15 @@ def create_quota_router() -> APIRouter:
             Success message
         """
         # Implementation placeholder for admin quota adjustment
-        return {"message": f"Quota {request.quota_type} adjusted for user {request.user_id}"}
+        return {
+            "message": f"Quota {request.quota_type} adjusted for user {request.user_id}"
+        }
 
     @router.get("/usage/history", response_model=UsageHistoryResponse)
     async def get_usage_history(
         days: int = 30,
         current_user: User = Depends(fastapi_users.current_user(active=True)),
-        db: AsyncSession = Depends(get_async_session)
+        db: AsyncSession = Depends(get_async_session),
     ):
         """Get user's usage history.
 
@@ -180,16 +195,16 @@ def create_quota_router() -> APIRouter:
         """
         # Implementation placeholder for usage history
         return UsageHistoryResponse(
-            user_id=current_user.id,
-            storage_history=[],
-            compute_history=[]
+            user_id=current_user.id, storage_history=[], compute_history=[]
         )
 
     @router.get("/admin/users-near-limit")
     async def get_users_near_quota_limit(
         threshold: float = 80.0,
-        current_user: User = Depends(fastapi_users.current_user(active=True, superuser=True)),
-        db: AsyncSession = Depends(get_async_session)
+        current_user: User = Depends(
+            fastapi_users.current_user(active=True, superuser=True)
+        ),
+        db: AsyncSession = Depends(get_async_session),
     ):
         """Get users near quota limits (admin only).
 
@@ -209,9 +224,12 @@ def create_quota_router() -> APIRouter:
         """
         # Convert async session to sync for quota manager compatibility
         from sqlalchemy.orm import Session
+
         sync_db = Session(bind=db.bind.sync_engine)
         try:
-            users_near_limit = quota_manager.get_users_near_quota_limit(sync_db, threshold)
+            users_near_limit = quota_manager.get_users_near_quota_limit(
+                sync_db, threshold
+            )
             return users_near_limit
         finally:
             sync_db.close()
@@ -220,8 +238,10 @@ def create_quota_router() -> APIRouter:
     async def reset_user_quotas(
         user_id: Optional[UUID] = None,
         organization: Optional[str] = None,
-        current_user: User = Depends(fastapi_users.current_user(active=True, superuser=True)),
-        db: AsyncSession = Depends(get_async_session)
+        current_user: User = Depends(
+            fastapi_users.current_user(active=True, superuser=True)
+        ),
+        db: AsyncSession = Depends(get_async_session),
     ):
         """Reset user quotas (admin only).
 
@@ -243,13 +263,16 @@ def create_quota_router() -> APIRouter:
         """
         # Convert async session to sync for quota manager compatibility
         from sqlalchemy.orm import Session
+
         sync_db = Session(bind=db.bind.sync_engine)
         try:
             if user_id:
                 quota_manager.reset_user_usage(sync_db, user_id)
                 return {"message": f"Quotas reset for user {user_id}"}
             else:
-                quota_manager.reset_all_users_usage(sync_db, organization_filter=organization)
+                quota_manager.reset_all_users_usage(
+                    sync_db, organization_filter=organization
+                )
                 org_msg = f" in organization {organization}" if organization else ""
                 return {"message": f"Quotas reset for all users{org_msg}"}
         finally:

@@ -1,57 +1,42 @@
 import os
-import time
-import numpy as np
-import pandas as pd
-import matplotlib.pyplot as plt
 import pickle
-import optuna
-from bcblib.tools.general_utils import save_json
+import time
 from multiprocessing import Pool, cpu_count
 from pathlib import Path
-from bcblib.tools.arrays_utils import (
-    separate_clusters_and_extract_coords,
-    find_centroid_and_check,
-)
-from narwhals.selectors import categorical
-from scipy.stats import mannwhitneyu, ttest_ind, mode, entropy
-from scipy.spatial.distance import pdist, squareform, cdist
-from sklearn.linear_model import LinearRegression
-from tqdm import tqdm
-from sklearn.ensemble import (
-    RandomForestRegressor,
-    RandomForestClassifier,
-    GradientBoostingRegressor,
-    ExtraTreesRegressor,
-)
-from sklearn.gaussian_process import GaussianProcessRegressor
-from sklearn.gaussian_process.kernels import (
-    RBF,
-    Matern,
-    WhiteKernel,
-    RationalQuadratic,
-    ConstantKernel,
-    ExpSineSquared,
-)
-from sklearn.metrics import (
-    mean_squared_error,
-    mean_absolute_error,
-    r2_score,
-    confusion_matrix,
-    accuracy_score,
-    pairwise_distances,
-    f1_score,
-    precision_score,
-    recall_score,
-)
-from sklearn.model_selection import KFold, GridSearchCV, cross_val_score
-from sklearn.decomposition import PCA
-from sklearn.svm import SVR
-from pykrige.rk import Krige
-from joblib import dump, delayed
-from emuses.tools.parallelism_utils import create_safe_parallel, get_safe_n_jobs
+
 import GPy
-import xgboost as xgb
+import matplotlib.pyplot as plt
+import numpy as np
+import optuna
+import pandas as pd
 import seaborn as sns
+import xgboost as xgb
+from bcblib.tools.arrays_utils import (find_centroid_and_check,
+                                       separate_clusters_and_extract_coords)
+from bcblib.tools.general_utils import save_json
+from joblib import delayed, dump
+from narwhals.selectors import categorical
+from pykrige.rk import Krige
+from scipy.spatial.distance import cdist, pdist, squareform
+from scipy.stats import entropy, mannwhitneyu, mode, ttest_ind
+from sklearn.decomposition import PCA
+from sklearn.ensemble import (ExtraTreesRegressor, GradientBoostingRegressor,
+                              RandomForestClassifier, RandomForestRegressor)
+from sklearn.gaussian_process import GaussianProcessRegressor
+from sklearn.gaussian_process.kernels import (RBF, ConstantKernel,
+                                              ExpSineSquared, Matern,
+                                              RationalQuadratic, WhiteKernel)
+from sklearn.linear_model import LinearRegression
+from sklearn.metrics import (accuracy_score, confusion_matrix, f1_score,
+                             mean_absolute_error, mean_squared_error,
+                             pairwise_distances, precision_score, r2_score,
+                             recall_score)
+from sklearn.model_selection import GridSearchCV, KFold, cross_val_score
+from sklearn.svm import SVR
+from tqdm import tqdm
+
+from emuses.tools.parallelism_utils import (create_safe_parallel,
+                                            get_safe_n_jobs)
 
 try:
     import lightgbm as lgb
@@ -1637,25 +1622,25 @@ def new_pipeline_test(
               grid coordinates, a heatmap dictionary, CV performance, final_sigma, test performance,
               and model comparison results.
     """
+    import json
     import os
-    from matplotlib import pyplot as plt
+    import time
+
+    import joblib
     import numpy as np
     import optuna
-    from sklearn.metrics import r2_score, mean_squared_error, mean_absolute_error
-    from sklearn.model_selection import KFold
-    import time
-    import joblib
     from joblib import delayed
-    from emuses.tools.parallelism_utils import create_safe_parallel, get_safe_n_jobs
-    import json
+    from matplotlib import pyplot as plt
+    from sklearn.metrics import (mean_absolute_error, mean_squared_error,
+                                 r2_score)
+    from sklearn.model_selection import KFold
 
+    from emuses.tools.correlation_maps_utils import calculate_correlation_grid
     # Import functions from elsewhere in the codebase
     from emuses.tools.kernel_regression_utils import (
-        KernelRegressor,
-        nested_cv_kernel_regression,
-        ensemble_predict,
-    )
-    from emuses.tools.correlation_maps_utils import calculate_correlation_grid
+        KernelRegressor, ensemble_predict, nested_cv_kernel_regression)
+    from emuses.tools.parallelism_utils import (create_safe_parallel,
+                                                get_safe_n_jobs)
 
     # Set default model selection if not provided
     if model_selection is None:
@@ -1780,7 +1765,8 @@ def new_pipeline_test(
     )
 
     # Import the kernel_regression_utils to get access to nested_cv_kernel_regression
-    from emuses.tools.kernel_regression_utils import nested_cv_kernel_regression
+    from emuses.tools.kernel_regression_utils import \
+        nested_cv_kernel_regression
 
     # Call nested_cv_kernel_regression without the kernel parameter since it's not expected
     outer_models, cv_perf, unseen_preds, sigma_values_list = (
@@ -2276,19 +2262,16 @@ def optuna_model_selection(
     Returns:
         dict: Results dictionary containing best model, scores, and parameters
     """
+    import os
+    import time
+
+    import joblib
+    import matplotlib.pyplot as plt
     import numpy as np
     import optuna
-    import time
-    from sklearn.model_selection import cross_val_score, KFold
-    from sklearn.metrics import (
-        make_scorer,
-        r2_score,
-        mean_squared_error,
-        mean_absolute_error,
-    )
-    import matplotlib.pyplot as plt
-    import os
-    import joblib
+    from sklearn.metrics import (make_scorer, mean_absolute_error,
+                                 mean_squared_error, r2_score)
+    from sklearn.model_selection import KFold, cross_val_score
 
     # Set default models if not provided
     if models is None:
@@ -2323,13 +2306,9 @@ def optuna_model_selection(
         if model_type == "gp":
             # Gaussian Process
             from sklearn.gaussian_process import GaussianProcessRegressor
-            from sklearn.gaussian_process.kernels import (
-                RBF,
-                WhiteKernel,
-                ConstantKernel,
-                Matern,
-                ExpSineSquared,
-            )
+            from sklearn.gaussian_process.kernels import (RBF, ConstantKernel,
+                                                          ExpSineSquared,
+                                                          Matern, WhiteKernel)
 
             # Instead of using suggest_categorical, use a fixed option first and
             # set other parameters based on this fixed choice
@@ -2561,12 +2540,8 @@ def optuna_model_selection(
     # Recreate and train the best model
     if best_model_type == "gp":
         from sklearn.gaussian_process import GaussianProcessRegressor
-        from sklearn.gaussian_process.kernels import (
-            RBF,
-            WhiteKernel,
-            ConstantKernel,
-            Matern,
-        )
+        from sklearn.gaussian_process.kernels import (RBF, ConstantKernel,
+                                                      Matern, WhiteKernel)
 
         # Set up kernel
         if best_params["kernel_option"] == "rbf":
@@ -2782,7 +2757,7 @@ def compute_all_gwd(embeddings, sigma, inference_mode=False, reference_embedding
                    If inference_mode=True and reference_embeddings provided,
                    returns shape (n_samples, n_reference)
     """
-    from scipy.spatial.distance import pdist, squareform, cdist
+    from scipy.spatial.distance import cdist, pdist, squareform
 
     if inference_mode and reference_embeddings is not None:
         # Compute distances between embeddings and reference embeddings

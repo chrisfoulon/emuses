@@ -4,18 +4,19 @@ This module provides Alembic migration configuration, environment setup,
 and migration generation functionality for database schema management.
 """
 
-import os
 import logging
+import os
 from pathlib import Path
-from typing import Optional, Any
-from alembic.config import Config
-from alembic import command
-from alembic.runtime.migration import MigrationContext
-from alembic.operations import Operations
+from typing import Any, Optional
+
 from sqlalchemy import MetaData
 
-from emuses.multi_user_service.models import Base
+from alembic import command
+from alembic.config import Config
+from alembic.operations import Operations
+from alembic.runtime.migration import MigrationContext
 from emuses.multi_user_service.database import create_engine
+from emuses.multi_user_service.models import Base
 
 logger = logging.getLogger(__name__)
 
@@ -39,13 +40,18 @@ def get_alembic_config() -> Config:
 
     # Set configuration values
     alembic_cfg.set_main_option("script_location", str(MIGRATION_DIR))
-    alembic_cfg.set_main_option("file_template", "%%(year)d_%%(month).2d_%%(day).2d_%%(hour).2d%%(minute).2d-%%(rev)s_%%(slug)s")
+    alembic_cfg.set_main_option(
+        "file_template",
+        "%%(year)d_%%(month).2d_%%(day).2d_%%(hour).2d%%(minute).2d-%%(rev)s_%%(slug)s",
+    )
     alembic_cfg.set_main_option("timezone", "UTC")
 
     # Set database URL
     database_url = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///:memory:")
     # Convert async URL to sync for Alembic
-    sync_database_url = database_url.replace("+aiosqlite", "").replace("+asyncpg", "+psycopg2")
+    sync_database_url = database_url.replace("+aiosqlite", "").replace(
+        "+asyncpg", "+psycopg2"
+    )
     alembic_cfg.set_main_option("sqlalchemy.url", sync_database_url)
 
     return alembic_cfg
@@ -125,7 +131,7 @@ def generate_initial_migration() -> Optional[str]:
         command.revision(
             alembic_cfg,
             message="Initial migration: users and user_settings tables",
-            autogenerate=True
+            autogenerate=True,
         )
 
         logger.info("Initial migration generated successfully")
@@ -260,7 +266,7 @@ else:
     run_migrations_online()
 '''
 
-    with open(env_py_path, 'w') as f:
+    with open(env_py_path, "w") as f:
         f.write(env_py_content)
 
 
@@ -300,5 +306,5 @@ def downgrade() -> None:
     ${downgrades if downgrades else "pass"}
 '''
 
-    with open(script_mako_path, 'w') as f:
+    with open(script_mako_path, "w") as f:
         f.write(script_mako_content)

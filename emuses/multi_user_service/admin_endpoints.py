@@ -6,23 +6,24 @@ with proper authentication and authorization.
 """
 
 import logging
-from typing import List, Optional, Dict, Any
+from typing import Any, Dict, List, Optional
 from uuid import UUID
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, ConfigDict
-from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from emuses.multi_user_service.auth import get_current_superuser
-from emuses.multi_user_service.models import User
 from emuses.multi_user_service.database import get_async_session
+from emuses.multi_user_service.models import User
 
 logger = logging.getLogger(__name__)
 
 
 class AdminUserCreateRequest(BaseModel):
     """Schema for admin user creation request.
-    
+
     Attributes
     ----------
     email : str
@@ -36,6 +37,7 @@ class AdminUserCreateRequest(BaseModel):
     is_verified : bool, optional
         Whether user is verified (default True)
     """
+
     email: str
     password: str
     organization: str
@@ -45,7 +47,7 @@ class AdminUserCreateRequest(BaseModel):
 
 class AdminUserResponse(BaseModel):
     """Schema for admin user response.
-    
+
     Attributes
     ----------
     id : UUID
@@ -61,8 +63,9 @@ class AdminUserResponse(BaseModel):
     is_verified : bool
         Whether user is verified
     """
+
     model_config = ConfigDict(from_attributes=True)
-    
+
     id: UUID
     email: str
     organization: str
@@ -73,7 +76,7 @@ class AdminUserResponse(BaseModel):
 
 class AdminUserUpdateRequest(BaseModel):
     """Schema for admin user update request.
-    
+
     Attributes
     ----------
     organization : str, optional
@@ -83,6 +86,7 @@ class AdminUserUpdateRequest(BaseModel):
     is_verified : bool, optional
         Updated verification status
     """
+
     organization: Optional[str] = None
     is_active: Optional[bool] = None
     is_verified: Optional[bool] = None
@@ -90,7 +94,7 @@ class AdminUserUpdateRequest(BaseModel):
 
 class AdminQuotaAdjustRequest(BaseModel):
     """Schema for admin quota adjustment request.
-    
+
     Attributes
     ----------
     user_id : UUID
@@ -100,6 +104,7 @@ class AdminQuotaAdjustRequest(BaseModel):
     new_value : float
         New quota value
     """
+
     user_id: UUID
     quota_type: str
     new_value: float
@@ -107,7 +112,7 @@ class AdminQuotaAdjustRequest(BaseModel):
 
 class AdminQuotaResetRequest(BaseModel):
     """Schema for admin quota reset request.
-    
+
     Attributes
     ----------
     user_id : UUID
@@ -115,13 +120,14 @@ class AdminQuotaResetRequest(BaseModel):
     quota_type : str
         Type of quota to reset (storage_gb, concurrent_jobs, compute_hours)
     """
+
     user_id: UUID
     quota_type: str
 
 
 class AdminQuotaUsageResponse(BaseModel):
     """Schema for admin quota usage response.
-    
+
     Attributes
     ----------
     user_id : UUID
@@ -135,6 +141,7 @@ class AdminQuotaUsageResponse(BaseModel):
     usage : Dict[str, Any]
         Current usage information
     """
+
     user_id: UUID
     email: str
     organization: str
@@ -144,7 +151,7 @@ class AdminQuotaUsageResponse(BaseModel):
 
 class AdminSystemStatusResponse(BaseModel):
     """Schema for admin system status response.
-    
+
     Attributes
     ----------
     status : str
@@ -156,6 +163,7 @@ class AdminSystemStatusResponse(BaseModel):
     metrics : Dict[str, Any]
         System metrics
     """
+
     status: str
     timestamp: str
     components: Dict[str, Any]
@@ -164,7 +172,7 @@ class AdminSystemStatusResponse(BaseModel):
 
 class AdminJobQueuesStatusResponse(BaseModel):
     """Schema for admin job queues status response.
-    
+
     Attributes
     ----------
     total_jobs : int
@@ -180,6 +188,7 @@ class AdminJobQueuesStatusResponse(BaseModel):
     queue_details : Dict[str, Any]
         Detailed queue information
     """
+
     total_jobs: int
     pending_jobs: int
     running_jobs: int
@@ -190,7 +199,7 @@ class AdminJobQueuesStatusResponse(BaseModel):
 
 class AdminHealthResponse(BaseModel):
     """Schema for admin health check response.
-    
+
     Attributes
     ----------
     healthy : bool
@@ -202,6 +211,7 @@ class AdminHealthResponse(BaseModel):
     checks : Dict[str, Any]
         Individual health checks
     """
+
     healthy: bool
     version: str
     uptime: str
@@ -210,7 +220,7 @@ class AdminHealthResponse(BaseModel):
 
 def create_admin_router() -> APIRouter:
     """Create admin endpoints router.
-    
+
     Returns
     -------
     APIRouter
@@ -218,14 +228,16 @@ def create_admin_router() -> APIRouter:
     """
     router = APIRouter(prefix="/admin", tags=["admin"])
 
-    @router.post("/users", response_model=AdminUserResponse, status_code=status.HTTP_201_CREATED)
+    @router.post(
+        "/users", response_model=AdminUserResponse, status_code=status.HTTP_201_CREATED
+    )
     async def create_user(
         request: AdminUserCreateRequest,
         current_user: User = Depends(get_current_superuser),
-        db: AsyncSession = Depends(get_async_session)
+        db: AsyncSession = Depends(get_async_session),
     ) -> AdminUserResponse:
         """Create a new user (admin only).
-        
+
         Parameters
         ----------
         request : AdminUserCreateRequest
@@ -234,12 +246,12 @@ def create_admin_router() -> APIRouter:
             Current authenticated superuser
         db : AsyncSession
             Database session
-            
+
         Returns
         -------
         AdminUserResponse
             Created user information
-            
+
         Raises
         ------
         HTTPException
@@ -248,13 +260,13 @@ def create_admin_router() -> APIRouter:
         # Check if user already exists
         result = await db.execute(select(User).where(User.email == request.email))
         existing_user = result.scalar_one_or_none()
-        
+
         if existing_user:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail="User with this email already exists"
+                detail="User with this email already exists",
             )
-        
+
         # For now, return a mock response to make the test pass
         # TODO: Implement actual user creation logic
         mock_user = User(
@@ -263,9 +275,9 @@ def create_admin_router() -> APIRouter:
             is_active=request.is_active,
             is_verified=request.is_verified,
             is_superuser=False,
-            hashed_password="mock_hash"
+            hashed_password="mock_hash",
         )
-        
+
         return AdminUserResponse.model_validate(mock_user)
 
     @router.get("/users", response_model=List[AdminUserResponse])
@@ -273,10 +285,10 @@ def create_admin_router() -> APIRouter:
         skip: int = 0,
         limit: int = 100,
         current_user: User = Depends(get_current_superuser),
-        db: AsyncSession = Depends(get_async_session)
+        db: AsyncSession = Depends(get_async_session),
     ) -> List[AdminUserResponse]:
         """List all users (admin only).
-        
+
         Parameters
         ----------
         skip : int
@@ -287,7 +299,7 @@ def create_admin_router() -> APIRouter:
             Current authenticated superuser
         db : AsyncSession
             Database session
-            
+
         Returns
         -------
         List[AdminUserResponse]
@@ -301,10 +313,10 @@ def create_admin_router() -> APIRouter:
     async def get_user(
         user_id: UUID,
         current_user: User = Depends(get_current_superuser),
-        db: AsyncSession = Depends(get_async_session)
+        db: AsyncSession = Depends(get_async_session),
     ) -> AdminUserResponse:
         """Get user by ID (admin only).
-        
+
         Parameters
         ----------
         user_id : UUID
@@ -313,12 +325,12 @@ def create_admin_router() -> APIRouter:
             Current authenticated superuser
         db : AsyncSession
             Database session
-            
+
         Returns
         -------
         AdminUserResponse
             User information
-            
+
         Raises
         ------
         HTTPException
@@ -333,9 +345,9 @@ def create_admin_router() -> APIRouter:
             is_active=True,
             is_verified=True,
             is_superuser=False,
-            hashed_password="mock_hash"
+            hashed_password="mock_hash",
         )
-        
+
         return AdminUserResponse.model_validate(mock_user)
 
     @router.put("/users/{user_id}", response_model=AdminUserResponse)
@@ -343,10 +355,10 @@ def create_admin_router() -> APIRouter:
         user_id: UUID,
         request: AdminUserUpdateRequest,
         current_user: User = Depends(get_current_superuser),
-        db: AsyncSession = Depends(get_async_session)
+        db: AsyncSession = Depends(get_async_session),
     ) -> AdminUserResponse:
         """Update user by ID (admin only).
-        
+
         Parameters
         ----------
         user_id : UUID
@@ -357,12 +369,12 @@ def create_admin_router() -> APIRouter:
             Current authenticated superuser
         db : AsyncSession
             Database session
-            
+
         Returns
         -------
         AdminUserResponse
             Updated user information
-            
+
         Raises
         ------
         HTTPException
@@ -375,21 +387,23 @@ def create_admin_router() -> APIRouter:
             email="updated@example.com",
             organization=request.organization or "Updated Org",
             is_active=request.is_active if request.is_active is not None else True,
-            is_verified=request.is_verified if request.is_verified is not None else True,
+            is_verified=(
+                request.is_verified if request.is_verified is not None else True
+            ),
             is_superuser=False,
-            hashed_password="mock_hash"
+            hashed_password="mock_hash",
         )
-        
+
         return AdminUserResponse.model_validate(mock_user)
 
     @router.delete("/users/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
     async def delete_user(
         user_id: UUID,
         current_user: User = Depends(get_current_superuser),
-        db: AsyncSession = Depends(get_async_session)
+        db: AsyncSession = Depends(get_async_session),
     ) -> None:
         """Delete user by ID (admin only).
-        
+
         Parameters
         ----------
         user_id : UUID
@@ -398,7 +412,7 @@ def create_admin_router() -> APIRouter:
             Current authenticated superuser
         db : AsyncSession
             Database session
-            
+
         Raises
         ------
         HTTPException
@@ -412,10 +426,10 @@ def create_admin_router() -> APIRouter:
     async def adjust_user_quota(
         request: AdminQuotaAdjustRequest,
         current_user: User = Depends(get_current_superuser),
-        db: AsyncSession = Depends(get_async_session)
+        db: AsyncSession = Depends(get_async_session),
     ) -> Dict[str, Any]:
         """Adjust user quota (admin only).
-        
+
         Parameters
         ----------
         request : AdminQuotaAdjustRequest
@@ -424,12 +438,12 @@ def create_admin_router() -> APIRouter:
             Current authenticated superuser
         db : AsyncSession
             Database session
-            
+
         Returns
         -------
         Dict[str, Any]
             Success response with adjustment details
-            
+
         Raises
         ------
         HTTPException
@@ -442,7 +456,7 @@ def create_admin_router() -> APIRouter:
             "user_id": str(request.user_id),
             "quota_type": request.quota_type,
             "new_value": request.new_value,
-            "message": f"Quota {request.quota_type} updated to {request.new_value}"
+            "message": f"Quota {request.quota_type} updated to {request.new_value}",
         }
 
     @router.get("/quota/usage", response_model=List[AdminQuotaUsageResponse])
@@ -450,10 +464,10 @@ def create_admin_router() -> APIRouter:
         skip: int = 0,
         limit: int = 100,
         current_user: User = Depends(get_current_superuser),
-        db: AsyncSession = Depends(get_async_session)
+        db: AsyncSession = Depends(get_async_session),
     ) -> List[AdminQuotaUsageResponse]:
         """List quota usage for all users (admin only).
-        
+
         Parameters
         ----------
         skip : int
@@ -464,7 +478,7 @@ def create_admin_router() -> APIRouter:
             Current authenticated superuser
         db : AsyncSession
             Database session
-            
+
         Returns
         -------
         List[AdminQuotaUsageResponse]
@@ -478,10 +492,10 @@ def create_admin_router() -> APIRouter:
     async def reset_user_quota(
         request: AdminQuotaResetRequest,
         current_user: User = Depends(get_current_superuser),
-        db: AsyncSession = Depends(get_async_session)
+        db: AsyncSession = Depends(get_async_session),
     ) -> Dict[str, Any]:
         """Reset user quota to default (admin only).
-        
+
         Parameters
         ----------
         request : AdminQuotaResetRequest
@@ -490,12 +504,12 @@ def create_admin_router() -> APIRouter:
             Current authenticated superuser
         db : AsyncSession
             Database session
-            
+
         Returns
         -------
         Dict[str, Any]
             Success response with reset details
-            
+
         Raises
         ------
         HTTPException
@@ -507,30 +521,30 @@ def create_admin_router() -> APIRouter:
             "success": True,
             "user_id": str(request.user_id),
             "quota_type": request.quota_type,
-            "message": f"Quota {request.quota_type} reset to default value"
+            "message": f"Quota {request.quota_type} reset to default value",
         }
 
     @router.get("/system/status", response_model=AdminSystemStatusResponse)
     async def get_system_status(
         current_user: User = Depends(get_current_superuser),
-        db: AsyncSession = Depends(get_async_session)
+        db: AsyncSession = Depends(get_async_session),
     ) -> AdminSystemStatusResponse:
         """Get overall system status (admin only).
-        
+
         Parameters
         ----------
         current_user : User
             Current authenticated superuser
         db : AsyncSession
             Database session
-            
+
         Returns
         -------
         AdminSystemStatusResponse
             System status information
         """
         from datetime import datetime
-        
+
         # For now, return mock status to make test pass
         # TODO: Implement actual system status monitoring
         return AdminSystemStatusResponse(
@@ -540,30 +554,30 @@ def create_admin_router() -> APIRouter:
                 "database": "healthy",
                 "task_manager": "healthy",
                 "job_manager": "healthy",
-                "storage": "healthy"
+                "storage": "healthy",
             },
             metrics={
                 "active_users": 0,
                 "total_jobs": 0,
                 "system_load": 0.1,
-                "memory_usage": "512MB"
-            }
+                "memory_usage": "512MB",
+            },
         )
 
     @router.get("/system/job-queues", response_model=AdminJobQueuesStatusResponse)
     async def get_job_queues_status(
         current_user: User = Depends(get_current_superuser),
-        db: AsyncSession = Depends(get_async_session)
+        db: AsyncSession = Depends(get_async_session),
     ) -> AdminJobQueuesStatusResponse:
         """Get job queues status (admin only).
-        
+
         Parameters
         ----------
         current_user : User
             Current authenticated superuser
         db : AsyncSession
             Database session
-            
+
         Returns
         -------
         AdminJobQueuesStatusResponse
@@ -581,29 +595,26 @@ def create_admin_router() -> APIRouter:
                 "background_tasks": {
                     "active_workers": 0,
                     "max_workers": 4,
-                    "queue_size": 0
+                    "queue_size": 0,
                 },
-                "pipeline_jobs": {
-                    "active": 0,
-                    "queued": 0
-                }
-            }
+                "pipeline_jobs": {"active": 0, "queued": 0},
+            },
         )
 
     @router.get("/system/health", response_model=AdminHealthResponse)
     async def get_health_status(
         current_user: User = Depends(get_current_superuser),
-        db: AsyncSession = Depends(get_async_session)
+        db: AsyncSession = Depends(get_async_session),
     ) -> AdminHealthResponse:
         """Get detailed health check (admin only).
-        
+
         Parameters
         ----------
         current_user : User
             Current authenticated superuser
         db : AsyncSession
             Database session
-            
+
         Returns
         -------
         AdminHealthResponse
@@ -620,8 +631,8 @@ def create_admin_router() -> APIRouter:
                 "storage_access": True,
                 "background_tasks": True,
                 "memory_usage": True,
-                "disk_space": True
-            }
+                "disk_space": True,
+            },
         )
 
     return router

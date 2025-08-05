@@ -4,11 +4,11 @@ This module provides deployment mode detection and configuration management
 for three deployment modes: local, multi-user, and production.
 """
 
-import os
 import logging
-from enum import Enum
-from typing import Optional, Dict, Any
+import os
 from dataclasses import dataclass
+from enum import Enum
+from typing import Any, Dict, Optional
 from urllib.parse import urlparse
 
 logger = logging.getLogger(__name__)
@@ -16,23 +16,23 @@ logger = logging.getLogger(__name__)
 
 def normalize_deployment_mode(mode_str: str) -> str:
     """Convert any deployment mode format to enum-compatible format.
-    
+
     This function provides dual-format support for deployment modes:
     - POSIX-compliant format: "multi_user" (enterprise/production)
     - User-friendly format: "multi-user" (solo/local usage)
-    
+
     Both formats are normalized to the internal enum format ("multi-user").
-    
+
     Parameters
     ----------
     mode_str : str
         Deployment mode string in any supported format
-        
+
     Returns
     -------
     str
         Normalized deployment mode string compatible with DeploymentMode enum
-        
+
     Examples
     --------
     >>> normalize_deployment_mode("multi_user")
@@ -46,7 +46,7 @@ def normalize_deployment_mode(mode_str: str) -> str:
     """
     if not mode_str:
         return mode_str
-    
+
     # Convert to lowercase and replace underscores with hyphens
     # This normalizes both "multi_user" and "multi-user" to "multi-user"
     return mode_str.lower().replace("_", "-")
@@ -54,7 +54,7 @@ def normalize_deployment_mode(mode_str: str) -> str:
 
 class DeploymentMode(Enum):
     """Supported deployment modes for EMUSES service."""
-    
+
     LOCAL = "local"
     MULTI_USER = "multi-user"
     PRODUCTION = "production"
@@ -63,7 +63,7 @@ class DeploymentMode(Enum):
 @dataclass
 class DeploymentConfig:
     """Configuration settings for each deployment mode.
-    
+
     Attributes
     ----------
     mode : DeploymentMode
@@ -77,7 +77,7 @@ class DeploymentConfig:
     health_check_enabled : bool
         Whether health checks are enabled
     """
-    
+
     mode: DeploymentMode
     requires_auth: bool
     requires_database: bool
@@ -87,15 +87,15 @@ class DeploymentConfig:
 
 def detect_deployment_mode() -> DeploymentMode:
     """Detect current deployment mode from environment variables.
-    
-    Supports both POSIX-compliant (multi_user) and user-friendly (multi-user) 
+
+    Supports both POSIX-compliant (multi_user) and user-friendly (multi-user)
     formats for dual-use case compatibility.
-    
+
     Returns
     -------
     DeploymentMode
         Detected deployment mode
-        
+
     Examples
     --------
     >>> import os
@@ -108,7 +108,7 @@ def detect_deployment_mode() -> DeploymentMode:
     """
     mode_str = os.getenv("EMUSES_DEPLOYMENT_MODE", "local")
     normalized_mode = normalize_deployment_mode(mode_str)
-    
+
     try:
         return DeploymentMode(normalized_mode)
     except ValueError:
@@ -120,12 +120,12 @@ def detect_deployment_mode() -> DeploymentMode:
 
 def get_deployment_config() -> DeploymentConfig:
     """Get configuration for current deployment mode.
-    
+
     Returns
     -------
     DeploymentConfig
         Configuration for current deployment mode
-        
+
     Examples
     --------
     >>> config = get_deployment_config()
@@ -135,7 +135,7 @@ def get_deployment_config() -> DeploymentConfig:
     False
     """
     mode = detect_deployment_mode()
-    
+
     if mode == DeploymentMode.LOCAL:
         return DeploymentConfig(
             mode=mode,
@@ -167,17 +167,17 @@ def get_deployment_config() -> DeploymentConfig:
 
 def validate_deployment_config(config: DeploymentConfig) -> Dict[str, Any]:
     """Validate deployment configuration and return validation results.
-    
+
     Parameters
     ----------
     config : DeploymentConfig
         Configuration to validate
-        
+
     Returns
     -------
     Dict[str, Any]
         Validation results with 'valid' boolean and 'errors' list
-        
+
     Examples
     --------
     >>> config = get_deployment_config()
@@ -186,12 +186,14 @@ def validate_deployment_config(config: DeploymentConfig) -> Dict[str, Any]:
     True
     """
     errors = []
-    
+
     # Validate required environment variables
     if config.requires_auth:
         if not os.getenv("EMUSES_JWT_SECRET"):
-            errors.append("EMUSES_JWT_SECRET environment variable is required for authentication")
-    
+            errors.append(
+                "EMUSES_JWT_SECRET environment variable is required for authentication"
+            )
+
     if config.requires_database:
         database_url = os.getenv("DATABASE_URL")
         if not database_url:
@@ -204,7 +206,7 @@ def validate_deployment_config(config: DeploymentConfig) -> Dict[str, Any]:
                     errors.append("DATABASE_URL must be a valid URL")
             except Exception as e:
                 errors.append(f"Invalid DATABASE_URL: {e}")
-    
+
     # Validate service URL
     if config.service_url:
         try:
@@ -213,7 +215,7 @@ def validate_deployment_config(config: DeploymentConfig) -> Dict[str, Any]:
                 errors.append("Service URL must be a valid URL")
         except Exception as e:
             errors.append(f"Invalid service URL: {e}")
-    
+
     return {
         "valid": len(errors) == 0,
         "errors": errors,
@@ -223,12 +225,12 @@ def validate_deployment_config(config: DeploymentConfig) -> Dict[str, Any]:
 
 def is_service_mode_enabled() -> bool:
     """Check if current deployment mode supports service operation.
-    
+
     Returns
     -------
     bool
         True if service mode is enabled (multi-user or production)
-        
+
     Examples
     --------
     >>> is_service_mode_enabled()
@@ -240,22 +242,22 @@ def is_service_mode_enabled() -> bool:
 
 def get_service_discovery_url() -> Optional[str]:
     """Get service discovery URL for multi-user mode.
-    
+
     Returns
     -------
     Optional[str]
         Service discovery URL or None if not in service mode
-        
+
     Examples
     --------
     >>> get_service_discovery_url()
     'http://localhost:8000'  # In multi-user mode
     """
     config = get_deployment_config()
-    
+
     if config.mode == DeploymentMode.LOCAL:
         return None
-    
+
     return config.service_url
 
 

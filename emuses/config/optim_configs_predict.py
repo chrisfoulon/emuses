@@ -246,7 +246,7 @@ optim_dict_raw_only = {
 optim_dict_test = {
     "meta": {
         "n_trials": 10,  # Reduced for integration testing
-        "description": "Fast test configuration for CI/integration tests"
+        "description": "Fast test configuration for CI/integration tests",
     },
     "param": {
         "model": {
@@ -280,7 +280,7 @@ optim_dict_test = {
 optim_dict_ae_test = {
     "meta": {
         "n_trials": 5,  # Very few trials for fast testing
-        "description": "Fast autoencoder test configuration"
+        "description": "Fast autoencoder test configuration",
     },
     "param": {
         "ae": {
@@ -291,7 +291,56 @@ optim_dict_ae_test = {
             "ae_batch_size": {"choices": [32]},  # Fixed batch size
             "ae_weight_decay": {"low": 1e-5, "high": 1e-4, "log": True},
         }
-    }
+    },
+}
+
+
+# Quick training configuration with fastest models and simplest features
+quick_train_dict = {
+    "meta": {
+        "n_trials": 15,  # Moderate number of trials for decent optimization
+        "description": "Fast training configuration with simple models and features for quick testing",
+    },
+    "param": {
+        "model": {
+            # Only fast models - removed 'rf' as it's slow with high n_estimators
+            "model_type": {"choices": ["kernel", "elastic"]},
+            "kernel": {
+                # Narrower range for faster optimization
+                "sigma": {"low": 0.05, "high": 0.2, "log": True},
+            },
+            "elastic": {
+                # Simplified parameter space
+                "alpha": {"low": 1e-3, "high": 1.0, "log": True},
+                "l1_ratio": {"low": 0.2, "high": 0.8},  # Avoid extremes
+                "C": {"low": 0.1, "high": 10, "log": True},  # Narrower range
+                "penalty": {"choices": ["l2"]},  # Only L2 for speed
+            },
+        },
+        "features": {
+            # Only the fastest feature types - removed kpca_gwd and complex variants
+            "feat_type": {"choices": ["raw_only", "gwd"]},
+            # Simple GWD parameters
+            "sigma_gwd": {
+                "low": 0.08,
+                "high": 0.15,  # Narrow range
+                "log": True,
+                "conditional_on": {"feat_type": ["gwd"]},
+            },
+            # No polynomial features for speed
+            "poly_deg": {"choices": [1]},  # Only linear, no quadratic
+            "use_raw": {
+                "choices": [True],  # Always include raw for best performance
+                "conditional_on": {"feat_type": ["gwd"]},
+            },
+            # Simple correlation threshold
+            "corr_thr": {
+                "low": 0.2,
+                "high": 0.3,  # Narrow range
+                "conditional_on": {"feat_type": ["gwd"]},
+            },
+        },
+    },
 }
 
 
@@ -316,7 +365,7 @@ def load_optim_dict_predict(config_name=None):
     # Return default if no name provided
     if config_name is None:
         return optim_dict_predict
-        
+
     globals_dict = globals()
 
     # First, check if the full name exists.
@@ -345,4 +394,6 @@ def load_optim_dict_predict(config_name=None):
         else:
             raise ValueError(f"Variable '{base}' not found in optim_configs_predict.")
     else:
-        raise ValueError(f"Variable '{config_name}' not found in optim_configs_predict.")
+        raise ValueError(
+            f"Variable '{config_name}' not found in optim_configs_predict."
+        )

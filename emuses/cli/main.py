@@ -23,40 +23,36 @@ pattern of calling save_command_to_output_folder() and their respective async fu
 Consider refactoring to reduce duplication while maintaining functionality.
 """
 
-import typer
-from typing import Union
-from typing import Optional, List, Annotated
-from pathlib import Path
-import urllib.parse
-import re
-import sys
-import logging
 import asyncio
-from enum import Enum
-import threading
-import time
-import requests
-import uvicorn
-from multiprocessing import Process
-import os
-import signal
+import logging
+import re
 import subprocess
+import sys
+import time
+import urllib.parse
+from enum import Enum
+from multiprocessing import Process
+from pathlib import Path
+from typing import Annotated, List, Optional, Union
 
-# Import security functions
-from .security import validate_path, sanitize_input
+import requests
+import typer
+import uvicorn
 
-# Import service client and rich features
-from .service_client import ServiceHTTPClient, ServiceClientError
-from .rich_features import ProgressTracker, StatusRenderer, TableFormatter
 from .interactive_mode import InteractiveWorkflowManager
+from .rich_features import ProgressTracker, StatusRenderer
+# Import security functions
+from .security import validate_path
+# Import service client and rich features
+from .service_client import ServiceClientError, ServiceHTTPClient
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
+# Note: Logging is configured by pipeline_config to ensure file output
 logger = logging.getLogger(__name__)
 
 
 class InputNormalization(str, Enum):
     """Input normalization options."""
+
     none = "none"
     zscore = "zscore"
     min_max = "min-max"
@@ -66,6 +62,7 @@ class InputNormalization(str, Enum):
 
 class CorrelationMethod(str, Enum):
     """Correlation calculation methods."""
+
     pearson = "pearson"
     spearman = "spearman"
     pointbiserial = "pointbiserial"
@@ -73,6 +70,7 @@ class CorrelationMethod(str, Enum):
 
 class ScoresNormalization(str, Enum):
     """Scores normalization options."""
+
     none = "none"
     zscore = "zscore"
     min_max = "min-max"
@@ -96,46 +94,74 @@ def save_command_to_output_folder(output_folder: Path) -> None:
         def quote_argument_cross_platform(arg: str) -> str:
             """
             Quote a command-line argument in a cross-platform way.
-            
-            This function handles file paths and arguments safely across Unix, Linux, 
+
+            This function handles file paths and arguments safely across Unix, Linux,
             macOS, and Windows systems without relying on shlex.quote (which is Unix-only).
-            
+
             For file paths, we use simple double-quote wrapping since:
             1. Double quotes work on both Unix and Windows shells
-            2. Double quote is a reserved character in all major filesystems, 
+            2. Double quote is a reserved character in all major filesystems,
                so no valid file path can contain it
             3. This avoids the complex platform-specific quoting rules
-            
+
             Parameters
             ----------
             arg : str
                 The argument to quote
-                
+
             Returns
             -------
             str
                 Safely quoted argument
             """
             # If argument doesn't need quoting, return as-is
-            if not any(char in arg for char in [' ', '\t', '\n', '"', "'", '\\', '&', '|', ';', '<', '>', '(', ')', '$', '`']):
+            if not any(
+                char in arg
+                for char in [
+                    " ",
+                    "\t",
+                    "\n",
+                    '"',
+                    "'",
+                    "\\",
+                    "&",
+                    "|",
+                    ";",
+                    "<",
+                    ">",
+                    "(",
+                    ")",
+                    "$",
+                    "`",
+                ]
+            ):
                 return arg
-            
+
             # For arguments that need quoting, use double quotes
             # Handle any existing double quotes and backslashes properly
-            escaped_arg = arg.replace('\\', '\\\\').replace('"', '\\"')
+            escaped_arg = arg.replace("\\", "\\\\").replace('"', '\\"')
             return f'"{escaped_arg}"'
-        
+
         # Apply cross-platform quoting to all arguments
         quoted_args = [quote_argument_cross_platform(arg) for arg in sys.argv]
-        command = ' '.join(quoted_args)
+
+        # Normalize direct __main__.py calls to proper module invocation
+        if (
+            quoted_args
+            and "__main__.py" in quoted_args[0]
+            and "emuses/cli" in quoted_args[0]
+        ):
+            quoted_args[0] = "python -m emuses.cli"
+
+        command = " ".join(quoted_args)
 
         # Save command to command.txt
         command_file = output_folder / "command.txt"
-        with open(command_file, 'w', encoding='utf-8') as f:
+        with open(command_file, "w", encoding="utf-8") as f:
             f.write("# EMUSES Pipeline Command\n")
             f.write(f"# Generated on: {time.strftime('%Y-%m-%d %H:%M:%S')}\n")
             f.write(f"# To rerun: {command}\n")
-            f.write(f"# Or use: emuses rerun \"{output_folder}\"\n\n")
+            f.write(f'# Or use: emuses rerun "{output_folder}"\n\n')
             f.write(command + "\n")
 
         logger.info(f"Command saved to: {command_file}")
@@ -147,7 +173,7 @@ def save_command_to_output_folder(output_folder: Path) -> None:
 def load_command_from_folder(folder_path: Path) -> str:
     """
     Load a previously saved command from an output folder.
-    
+
     Handles both new (properly quoted) and old (unquoted) command formats
     for backward compatibility with existing command files.
 
@@ -173,14 +199,14 @@ def load_command_from_folder(folder_path: Path) -> str:
     if not command_file.exists():
         raise FileNotFoundError(f"No command.txt found in {folder_path}")
 
-    with open(command_file, 'r', encoding='utf-8') as f:
+    with open(command_file, "r", encoding="utf-8") as f:
         lines = f.readlines()
 
     # Find the actual command line (last non-comment line)
     command_line = None
     for line in reversed(lines):
         line = line.strip()
-        if line and not line.startswith('#'):
+        if line and not line.startswith("#"):
             command_line = line
             break
 
@@ -189,25 +215,32 @@ def load_command_from_folder(folder_path: Path) -> str:
 
     # Try to parse with shlex first (handles new quoted format)
     import shlex
+
     try:
         parsed_parts = shlex.split(command_line)
-        
+
         # Check if the command has intact paths with spaces
         # If paths with spaces are properly quoted, they should appear as single parts
         has_split_paths = False
         for part in parsed_parts:
             # Look for typical signs of split paths
-            if ('Dropbox/Chris' in part and not part.startswith('/mnt/s/GIN') or
-                'Foulon/EMUSE' in part and not part.startswith('/mnt/') or
-                part.endswith('/selected_columns_data.csv') and not part.startswith('/mnt/') or
-                part.endswith('/fluid_int_adj.csv') and not part.startswith('/mnt/')):
+            if (
+                "Dropbox/Chris" in part
+                and not part.startswith("/mnt/s/GIN")
+                or "Foulon/EMUSE" in part
+                and not part.startswith("/mnt/")
+                or part.endswith("/selected_columns_data.csv")
+                and not part.startswith("/mnt/")
+                or part.endswith("/fluid_int_adj.csv")
+                and not part.startswith("/mnt/")
+            ):
                 has_split_paths = True
                 break
-        
+
         # If no split paths detected and parsing succeeded, command is properly quoted
         if not has_split_paths and len(parsed_parts) >= 3:
             return command_line
-            
+
     except ValueError:
         # Parsing failed, probably due to unmatched quotes or other issues
         pass
@@ -224,90 +257,96 @@ def load_command_from_folder(folder_path: Path) -> str:
 def _fix_unquoted_command(command_line: str) -> str:
     """
     Fix old command files that don't have proper quoting for paths with spaces.
-    
+
     This function handles backward compatibility with command files created
     before the cross-platform quoting fix was implemented.
-    
+
     Parameters
     ----------
     command_line : str
         The unquoted command line from an old command file
-        
+
     Returns
     -------
     str
         The command line with proper quoting applied
-        
+
     Algorithm
     ---------
     Uses regex pattern matching to identify and reconstruct split file paths
     while preserving all other command line arguments.
     """
     import re
-    
+
     # Pattern to match file paths that got split by spaces
     # Look for patterns like: /mnt/s/GIN Dropbox/Chris Foulon/...filename.ext
-    path_pattern = r'(/mnt/s/GIN)\s+(Dropbox/\S+)\s+(Foulon/\S+\.csv)'
-    
+    path_pattern = r"(/mnt/s/GIN)\s+(Dropbox/\S+)\s+(Foulon/\S+\.csv)"
+
     def replace_split_path(match):
         """Reconstruct and quote a split path."""
         prefix = match.group(1)  # /mnt/s/GIN
-        middle = match.group(2)  # Dropbox/Chris  
+        middle = match.group(2)  # Dropbox/Chris
         suffix = match.group(3)  # Foulon/EMUSE/HCP_psy/filename.csv
-        
+
         full_path = f"{prefix} {middle} {suffix}"
         return f'"{full_path}"'
-    
+
     # Apply the pattern replacement
     fixed_command = re.sub(path_pattern, replace_split_path, command_line)
-    
+
     return fixed_command
 
 
 def _is_complete_file_path(path_str: str) -> bool:
     """
     Check if a string looks like a complete file path.
-    
+
     Used to detect when we've successfully reconstructed a full path.
     """
     # Must end with a file extension
-    if not re.search(r'\.[a-zA-Z0-9]{1,6}$', path_str):
+    if not re.search(r"\.[a-zA-Z0-9]{1,6}$", path_str):
         return False
-    
+
     # Check for reasonable path patterns
-    if (path_str.endswith(('.csv', '.json', '.txt', '.py', '.db', '.xlsx', '.parquet')) and
-        ('/' in path_str or '\\' in path_str)):
+    if path_str.endswith(
+        (".csv", ".json", ".txt", ".py", ".db", ".xlsx", ".parquet")
+    ) and ("/" in path_str or "\\" in path_str):
         return True
-    
+
     return False
 
 
 def _looks_like_reasonable_path(path_str: str) -> bool:
     """
     Check if a string looks like a reasonable file path.
-    
+
     Used for heuristic path reconstruction when paths don't exist yet.
     """
     # Check for common path patterns
-    if (path_str.endswith(('.csv', '.json', '.txt', '.py', '.db')) or
-        '/mnt/' in path_str or
-        'Dropbox' in path_str or
-        'GIN' in path_str or
-        'EMUSE' in path_str or
-        'HCP' in path_str):
+    if (
+        path_str.endswith((".csv", ".json", ".txt", ".py", ".db"))
+        or "/mnt/" in path_str
+        or "Dropbox" in path_str
+        or "GIN" in path_str
+        or "EMUSE" in path_str
+        or "HCP" in path_str
+    ):
         return True
-    
+
     # Check for reasonable path structure (more than just spaces)
-    if '/' in path_str and not path_str.count('/') == path_str.count(' '):
+    if "/" in path_str and not path_str.count("/") == path_str.count(" "):
         return True
-        
+
     return False
 
 
 def _quote_path_if_needed(path_str: str) -> str:
     """Apply quoting to a path if it contains spaces or special characters."""
-    if ' ' in path_str or any(char in path_str for char in ['"', "'", '\\', '&', '|', ';', '<', '>', '(', ')', '$', '`']):
-        escaped_path = path_str.replace('\\', '\\\\').replace('"', '\\"')
+    if " " in path_str or any(
+        char in path_str
+        for char in ['"', "'", "\\", "&", "|", ";", "<", ">", "(", ")", "$", "`"]
+    ):
+        escaped_path = path_str.replace("\\", "\\\\").replace('"', '\\"')
         return f'"{escaped_path}"'
     return path_str
 
@@ -390,7 +429,9 @@ app = create_typer_app()
 
 @app.command()
 def rerun(
-    output_folder: Annotated[Path, typer.Argument(help="Output folder containing command.txt file")]
+    output_folder: Annotated[
+        Path, typer.Argument(help="Output folder containing command.txt file")
+    ],
 ) -> None:
     """
     Rerun a previously executed command from its output folder.
@@ -419,13 +460,14 @@ def rerun(
 
         # Remove executable path (emuses or absolute path) from the beginning
         command_parts = shlex.split(command)
-        if command_parts and ('emuses' in command_parts[0] or command_parts[0].startswith('/')):
+        if command_parts and (
+            "emuses" in command_parts[0] or command_parts[0].startswith("/")
+        ):
             command_parts = command_parts[1:]  # Remove first element (executable path)
 
         # Execute in subprocess to prevent infinite recursion
         result = subprocess.run(
-            [sys.executable, '-m', 'emuses.cli'] + command_parts,
-            check=False
+            [sys.executable, "-m", "emuses.cli"] + command_parts, check=False
         )
         if result.returncode != 0:
             raise typer.Exit(code=result.returncode)
@@ -445,58 +487,281 @@ app.name = "emuses"
 @app.command(help="Run the full pipeline")
 def full(
     output_folder: Annotated[Path, typer.Argument(help="Output folder")],
-    input_dataset: Annotated[Path, typer.Argument(help="Input dataset of images (jpg), NIfTI, or MNIST")],
+    input_dataset: Annotated[
+        Path, typer.Argument(help="Input dataset of images (jpg), NIfTI, or MNIST")
+    ],
     # Optional arguments start here
-    scores: Annotated[Optional[Path], typer.Option(help="Path to scores file associated with the dataset")] = None,
-    label_dataset: Annotated[Optional[Path], typer.Option(help="Path to a separate labelled dataset")] = None,
-    recursive_search: Annotated[bool, typer.Option("--recursive-input-file-search", help="Search recursively in the input dataset folder")] = False,
-    input_file_types: Annotated[Optional[List[str]], typer.Option("--input_file_types", help="File types to search for in the input dataset folder")] = None,
-    arg_separator: Annotated[str, typer.Option("--arg_separator", help="Separator for the input dataset list")] = ",",
-    input_header: Annotated[Optional[int], typer.Option("--input_header", help="Header for the spreadsheet input dataset")] = None,
-    inputs_columns: Annotated[Optional[List[str]], typer.Option("--inputs_columns", help="List of columns for inputs in the scores file")] = None,
-    input_index_column: Annotated[Optional[int], typer.Option("--input_index_column", help="Index column for the spreadsheet input dataset")] = None,
-    columns_are_features: Annotated[bool, typer.Option("--columns_are_features", help="Columns are features in the spreadsheet input dataset")] = False,
-    bids_filters: Annotated[Optional[List[str]], typer.Option(help="BIDS filters for the input dataset")] = None,
-    input_normalization: Annotated[InputNormalization, typer.Option("-inorm", "--input_normalization", help="Normalization method for input data")] = InputNormalization.none,
-    scores_header: Annotated[Optional[int], typer.Option("--scores_header", help="Header for the scores spreadsheet")] = None,
-    scores_index_column: Annotated[Optional[int], typer.Option("--scores_index_column", help="Index column for the scores spreadsheet")] = None,
-    scores_are_rows: Annotated[bool, typer.Option("--scores_are_rows", help="Scores are in the columns of the spreadsheet input dataset")] = False,
-    scores_column: Annotated[Optional[List[str]], typer.Option("--scores_column", help="Column(s) for scores in the scores file")] = None,
-    classification: Annotated[bool, typer.Option(help="Scores are integer classes in one column")] = False,
-    correlation_method: Annotated[CorrelationMethod, typer.Option("--correlation_method", help="Method to use for correlation calculation")] = CorrelationMethod.pearson,
-    scores_normalization: Annotated[ScoresNormalization, typer.Option("-snorm", "--scores_normalization", help="Normalization method for scores data")] = ScoresNormalization.none,
-    filter_labelled_by_scores: Annotated[bool, typer.Option("--filter_labelled_by_scores", help="Filter the labelled dataset to only keep files referenced in the scores file")] = False,
-    load_umap: Annotated[Optional[str], typer.Option(help="Path to a pre-trained UMAP model")] = None,
-    load_embeddings: Annotated[Optional[str], typer.Option(help="Path to precomputed embeddings")] = None,
-    test_size: Annotated[float, typer.Option("--test_size", help="Test size for splitting the dataset")] = 0.2,
+    scores: Annotated[
+        Optional[Path],
+        typer.Option(help="Path to scores file associated with the dataset"),
+    ] = None,
+    label_dataset: Annotated[
+        Optional[Path], typer.Option(help="Path to a separate labelled dataset")
+    ] = None,
+    recursive_search: Annotated[
+        bool,
+        typer.Option(
+            "--recursive-input-file-search",
+            help="Search recursively in the input dataset folder",
+        ),
+    ] = False,
+    input_file_types: Annotated[
+        Optional[List[str]],
+        typer.Option(
+            "--input_file_types",
+            help="File types to search for in the input dataset folder",
+        ),
+    ] = None,
+    arg_separator: Annotated[
+        str,
+        typer.Option("--arg_separator", help="Separator for the input dataset list"),
+    ] = ",",
+    input_header: Annotated[
+        Optional[int],
+        typer.Option("--input_header", help="Header for the spreadsheet input dataset"),
+    ] = None,
+    inputs_columns: Annotated[
+        Optional[List[str]],
+        typer.Option(
+            "--inputs_columns", help="List of columns for inputs in the scores file"
+        ),
+    ] = None,
+    input_index_column: Annotated[
+        Optional[int],
+        typer.Option(
+            "--input_index_column",
+            help="Index column for the spreadsheet input dataset",
+        ),
+    ] = None,
+    columns_are_features: Annotated[
+        bool,
+        typer.Option(
+            "--columns_are_features",
+            help="Columns are features in the spreadsheet input dataset",
+        ),
+    ] = False,
+    bids_filters: Annotated[
+        Optional[List[str]], typer.Option(help="BIDS filters for the input dataset")
+    ] = None,
+    input_normalization: Annotated[
+        InputNormalization,
+        typer.Option(
+            "-inorm",
+            "--input_normalization",
+            help="Normalization method for input data",
+        ),
+    ] = InputNormalization.none,
+    scores_header: Annotated[
+        Optional[int],
+        typer.Option("--scores_header", help="Header for the scores spreadsheet"),
+    ] = None,
+    scores_index_column: Annotated[
+        Optional[int],
+        typer.Option(
+            "--scores_index_column", help="Index column for the scores spreadsheet"
+        ),
+    ] = None,
+    scores_are_rows: Annotated[
+        bool,
+        typer.Option(
+            "--scores_are_rows",
+            help="Scores are in the columns of the spreadsheet input dataset",
+        ),
+    ] = False,
+    scores_column: Annotated[
+        Optional[List[str]],
+        typer.Option("--scores_column", help="Column(s) for scores in the scores file"),
+    ] = None,
+    classification: Annotated[
+        bool, typer.Option(help="Scores are integer classes in one column")
+    ] = False,
+    correlation_method: Annotated[
+        CorrelationMethod,
+        typer.Option(
+            "--correlation_method", help="Method to use for correlation calculation"
+        ),
+    ] = CorrelationMethod.pearson,
+    scores_normalization: Annotated[
+        ScoresNormalization,
+        typer.Option(
+            "-snorm",
+            "--scores_normalization",
+            help="Normalization method for scores data",
+        ),
+    ] = ScoresNormalization.none,
+    filter_labelled_by_scores: Annotated[
+        bool,
+        typer.Option(
+            "--filter_labelled_by_scores",
+            help="Filter the labelled dataset to only keep files referenced in the scores file",
+        ),
+    ] = False,
+    load_umap: Annotated[
+        Optional[str], typer.Option(help="Path to a pre-trained UMAP model")
+    ] = None,
+    load_embeddings: Annotated[
+        Optional[str], typer.Option(help="Path to precomputed embeddings")
+    ] = None,
+    test_size: Annotated[
+        float, typer.Option("--test_size", help="Test size for splitting the dataset")
+    ] = 0.2,
     prefix: Annotated[str, typer.Option(help="Prefix for the output path names")] = "",
-    optim_dict: Annotated[str, typer.Option("--optim_dict", help="Name of an optim_dict in optim_configs.py")] = "optim_dict_default",
-    umap_trials: Annotated[int, typer.Option("--umap_trials", help="Number of outer (UMAP) optimization trials")] = 50,
-    hdbscan_trials: Annotated[int, typer.Option("--hdbscan_trials", help="Number of inner (HDBSCAN) optimization trials")] = 20,
-    load_hdbscan: Annotated[Optional[str], typer.Option(help="Path to a pre-trained HDBSCAN model")] = None,
-    min_cluster_size: Annotated[int, typer.Option("--min_cluster_size", help="Minimum cluster size")] = 5,
-    interactive_plot: Annotated[bool, typer.Option("--interactive_plot", help="Option to create interactive clustering plots")] = False,
-    hdbscan_approx_min_span_tree: Annotated[bool, typer.Option("--hdbscan_approx_min_span_tree", help="When set to False, ensures reproducibility but with much longer runtime")] = True,
-    hdbscan_core_dist_n_jobs: Annotated[int, typer.Option("--hdbscan_core_dist_n_jobs", help="Number of parallel jobs for core distance computation in HDBSCAN")] = -1,
-    inspect_data_state: Annotated[bool, typer.Option("--inspect_data_state", help="Inspect data state before model training (for debugging)")] = False,
-    use_enhanced_pipeline: Annotated[bool, typer.Option("--use_enhanced_pipeline", help="Use the enhanced pipeline with Optuna optimization for model selection")] = False,
-    optuna_trials: Annotated[int, typer.Option("--optuna_trials", help="Number of trials for Optuna optimization per model/feature set")] = 60,
-    parallel_models: Annotated[bool, typer.Option("--parallel_models", help="Train models in parallel across different feature sets")] = False,
-    n_jobs: Annotated[int, typer.Option("--n_jobs", help="Number of parallel jobs for model training (-1 uses all cores)")] = -1,
-    service_timeout: Annotated[float, typer.Option("--service-timeout", help="Service request timeout in seconds (0 for unlimited)")] = 0.0,
-    umap_timeout: Annotated[float, typer.Option("--umap-timeout", help="UMAP stage timeout in seconds (0 for unlimited)")] = 0.0,
-    heatmap_timeout: Annotated[float, typer.Option("--heatmap-timeout", help="Heatmap stage timeout in seconds (0 for unlimited)")] = 0.0,
-    prediction_timeout: Annotated[float, typer.Option("--prediction-timeout", help="Prediction stage timeout in seconds (0 for unlimited)")] = 0.0,
-    model_selection: Annotated[Optional[List[str]], typer.Option("--model_selection", help="List of models to try. Options: gp, rf, gb, kr, xgb, lgb, et, svr")] = None,
-    prediction_optim_dict: Annotated[str, typer.Option("--prediction_optim_dict", help="Name of a prediction optim_dict in optim_configs_predict.py")] = "optim_dict_predict",
-    random_state: Annotated[int, typer.Option("--random_state", help="Master random seed for reproducibility")] = 42,
-    run_old_prediction: Annotated[bool, typer.Option("--run_old_prediction", help="Run the old prediction pipeline")] = False,
-    umap_jobs: Annotated[Optional[int], typer.Option("--umap_jobs", help="Number of parallel jobs for outer (UMAP) optimization")] = None,
-    hdbscan_jobs: Annotated[Optional[int], typer.Option("--hdbscan_jobs", help="Number of parallel jobs for inner (HDBSCAN) optimization")] = None,
-    interactive: Annotated[bool, typer.Option("--interactive", help="Run in interactive mode")] = False,
-    use_service: Annotated[bool, typer.Option("--service", help="Use remote service for execution")] = False,
-    service_url: Annotated[Optional[str], typer.Option("--service-url", help="URL of the remote service (auto-detected in multi-user mode)")] = None,
-    token: Annotated[Optional[str], typer.Option("--token", help="Authentication token for multi-user mode")] = None,
+    optim_dict: Annotated[
+        str,
+        typer.Option("--optim_dict", help="Name of an optim_dict in optim_configs.py"),
+    ] = "optim_dict_default",
+    umap_trials: Annotated[
+        int,
+        typer.Option(
+            "--umap_trials", help="Number of outer (UMAP) optimization trials"
+        ),
+    ] = 50,
+    hdbscan_trials: Annotated[
+        int,
+        typer.Option(
+            "--hdbscan_trials", help="Number of inner (HDBSCAN) optimization trials"
+        ),
+    ] = 20,
+    load_hdbscan: Annotated[
+        Optional[str], typer.Option(help="Path to a pre-trained HDBSCAN model")
+    ] = None,
+    min_cluster_size: Annotated[
+        int, typer.Option("--min_cluster_size", help="Minimum cluster size")
+    ] = 5,
+    interactive_plot: Annotated[
+        bool,
+        typer.Option(
+            "--interactive_plot", help="Option to create interactive clustering plots"
+        ),
+    ] = False,
+    hdbscan_approx_min_span_tree: Annotated[
+        bool,
+        typer.Option(
+            "--hdbscan_approx_min_span_tree",
+            help="When set to False, ensures reproducibility but with much longer runtime",
+        ),
+    ] = True,
+    hdbscan_core_dist_n_jobs: Annotated[
+        int,
+        typer.Option(
+            "--hdbscan_core_dist_n_jobs",
+            help="Number of parallel jobs for core distance computation in HDBSCAN",
+        ),
+    ] = -1,
+    inspect_data_state: Annotated[
+        bool,
+        typer.Option(
+            "--inspect_data_state",
+            help="Inspect data state before model training (for debugging)",
+        ),
+    ] = False,
+    use_enhanced_pipeline: Annotated[
+        bool,
+        typer.Option(
+            "--use_enhanced_pipeline",
+            help="Use the enhanced pipeline with Optuna optimization for model selection",
+        ),
+    ] = False,
+    optuna_trials: Annotated[
+        int,
+        typer.Option(
+            "--optuna_trials",
+            help="Number of trials for Optuna optimization per model/feature set",
+        ),
+    ] = 60,
+    parallel_models: Annotated[
+        bool,
+        typer.Option(
+            "--parallel_models",
+            help="Train models in parallel across different feature sets",
+        ),
+    ] = False,
+    n_jobs: Annotated[
+        int,
+        typer.Option(
+            "--n_jobs",
+            help="Number of parallel jobs for model training (-1 uses all cores)",
+        ),
+    ] = -1,
+    service_timeout: Annotated[
+        float,
+        typer.Option(
+            "--service-timeout",
+            help="Service request timeout in seconds (0 for unlimited)",
+        ),
+    ] = 0.0,
+    umap_timeout: Annotated[
+        float,
+        typer.Option(
+            "--umap-timeout", help="UMAP stage timeout in seconds (0 for unlimited)"
+        ),
+    ] = 0.0,
+    heatmap_timeout: Annotated[
+        float,
+        typer.Option(
+            "--heatmap-timeout",
+            help="Heatmap stage timeout in seconds (0 for unlimited)",
+        ),
+    ] = 0.0,
+    prediction_timeout: Annotated[
+        float,
+        typer.Option(
+            "--prediction-timeout",
+            help="Prediction stage timeout in seconds (0 for unlimited)",
+        ),
+    ] = 0.0,
+    model_selection: Annotated[
+        Optional[List[str]],
+        typer.Option(
+            "--model_selection",
+            help="List of models to try. Options: gp, rf, gb, kr, xgb, lgb, et, svr",
+        ),
+    ] = None,
+    prediction_optim_dict: Annotated[
+        str,
+        typer.Option(
+            "--prediction_optim_dict",
+            help="Name of a prediction optim_dict in optim_configs_predict.py",
+        ),
+    ] = "optim_dict_predict",
+    random_state: Annotated[
+        int,
+        typer.Option("--random_state", help="Master random seed for reproducibility"),
+    ] = 42,
+    run_old_prediction: Annotated[
+        bool,
+        typer.Option("--run_old_prediction", help="Run the old prediction pipeline"),
+    ] = False,
+    umap_jobs: Annotated[
+        Optional[int],
+        typer.Option(
+            "--umap_jobs", help="Number of parallel jobs for outer (UMAP) optimization"
+        ),
+    ] = None,
+    hdbscan_jobs: Annotated[
+        Optional[int],
+        typer.Option(
+            "--hdbscan_jobs",
+            help="Number of parallel jobs for inner (HDBSCAN) optimization",
+        ),
+    ] = None,
+    interactive: Annotated[
+        bool, typer.Option("--interactive", help="Run in interactive mode")
+    ] = False,
+    use_service: Annotated[
+        bool, typer.Option("--service", help="Use remote service for execution")
+    ] = False,
+    service_url: Annotated[
+        Optional[str],
+        typer.Option(
+            "--service-url",
+            help="URL of the remote service (auto-detected in multi-user mode)",
+        ),
+    ] = None,
+    token: Annotated[
+        Optional[str],
+        typer.Option("--token", help="Authentication token for multi-user mode"),
+    ] = None,
 ) -> None:
     """
     Run the full pipeline.
@@ -619,60 +884,62 @@ def full(
 
     # Run the async implementation
     try:
-        asyncio.run(_full_async(
-            output_folder=output_folder,
-            input_dataset=input_dataset,
-            scores=scores,
-            label_dataset=label_dataset,
-            recursive_search=recursive_search,
-            input_file_types=input_file_types,
-            arg_separator=arg_separator,
-            input_header=input_header,
-            inputs_columns=inputs_columns,
-            input_index_column=input_index_column,
-            columns_are_features=columns_are_features,
-            bids_filters=bids_filters,
-            input_normalization=input_normalization,
-            scores_header=scores_header,
-            scores_index_column=scores_index_column,
-            scores_are_rows=scores_are_rows,
-            scores_column=scores_column,
-            classification=classification,
-            correlation_method=correlation_method,
-            scores_normalization=scores_normalization,
-            filter_labelled_by_scores=filter_labelled_by_scores,
-            load_umap=load_umap,
-            load_embeddings=load_embeddings,
-            test_size=test_size,
-            prefix=prefix,
-            optim_dict=optim_dict,
-            umap_trials=umap_trials,
-            hdbscan_trials=hdbscan_trials,
-            load_hdbscan=load_hdbscan,
-            min_cluster_size=min_cluster_size,
-            interactive_plot=interactive_plot,
-            hdbscan_approx_min_span_tree=hdbscan_approx_min_span_tree,
-            hdbscan_core_dist_n_jobs=hdbscan_core_dist_n_jobs,
-            inspect_data_state=inspect_data_state,
-            use_enhanced_pipeline=use_enhanced_pipeline,
-            optuna_trials=optuna_trials,
-            parallel_models=parallel_models,
-            n_jobs=n_jobs,
-            service_timeout=service_timeout,
-            umap_timeout=umap_timeout,
-            heatmap_timeout=heatmap_timeout,
-            prediction_timeout=prediction_timeout,
-            model_selection=model_selection,
-            prediction_optim_dict=prediction_optim_dict,
-            random_state=random_state,
-            run_old_prediction=run_old_prediction,
-            umap_jobs=umap_jobs,
-            hdbscan_jobs=hdbscan_jobs,
-            interactive=interactive,
-            use_service=use_service,
-            service_url=service_url,
-            token=token,
-        ))
+        asyncio.run(
+            _full_async(
+                output_folder=output_folder,
+                input_dataset=input_dataset,
+                scores=scores,
+                label_dataset=label_dataset,
+                recursive_search=recursive_search,
+                input_file_types=input_file_types,
+                arg_separator=arg_separator,
+                input_header=input_header,
+                inputs_columns=inputs_columns,
+                input_index_column=input_index_column,
+                columns_are_features=columns_are_features,
+                bids_filters=bids_filters,
+                input_normalization=input_normalization,
+                scores_header=scores_header,
+                scores_index_column=scores_index_column,
+                scores_are_rows=scores_are_rows,
+                scores_column=scores_column,
+                classification=classification,
+                correlation_method=correlation_method,
+                scores_normalization=scores_normalization,
+                filter_labelled_by_scores=filter_labelled_by_scores,
+                load_umap=load_umap,
+                load_embeddings=load_embeddings,
+                test_size=test_size,
+                prefix=prefix,
+                optim_dict=optim_dict,
+                umap_trials=umap_trials,
+                hdbscan_trials=hdbscan_trials,
+                load_hdbscan=load_hdbscan,
+                min_cluster_size=min_cluster_size,
+                interactive_plot=interactive_plot,
+                hdbscan_approx_min_span_tree=hdbscan_approx_min_span_tree,
+                hdbscan_core_dist_n_jobs=hdbscan_core_dist_n_jobs,
+                inspect_data_state=inspect_data_state,
+                use_enhanced_pipeline=use_enhanced_pipeline,
+                optuna_trials=optuna_trials,
+                parallel_models=parallel_models,
+                n_jobs=n_jobs,
+                service_timeout=service_timeout,
+                umap_timeout=umap_timeout,
+                heatmap_timeout=heatmap_timeout,
+                prediction_timeout=prediction_timeout,
+                model_selection=model_selection,
+                prediction_optim_dict=prediction_optim_dict,
+                random_state=random_state,
+                run_old_prediction=run_old_prediction,
+                umap_jobs=umap_jobs,
+                hdbscan_jobs=hdbscan_jobs,
+                interactive=interactive,
+                use_service=use_service,
+                service_url=service_url,
+                token=token,
+            )
+        )
     except KeyboardInterrupt:
         typer.echo("\n🛑 Operation cancelled by user", err=True)
         raise typer.Exit(code=130)
@@ -689,17 +956,14 @@ async def _full_async(**kwargs) -> None:
     """
     # Import deployment configuration
     from emuses.multi_user_service.deployment_config import (
-        get_deployment_config, 
-        validate_deployment_config,
-        get_service_discovery_url
-    )
-    
+        get_deployment_config, get_service_discovery_url,
+        validate_deployment_config)
     # Configure parallelism context for CLI environment
     from emuses.tools.parallelism_utils import configure_parallelism_backend
-    
+
     # CLI runs in main process context - use default (loky) backend
     configure_parallelism_backend(force_backend=None)
-    
+
     # Initialize components
     status_renderer = StatusRenderer()
     progress_tracker = ProgressTracker()
@@ -707,20 +971,28 @@ async def _full_async(**kwargs) -> None:
     # Get deployment configuration
     deployment_config = get_deployment_config()
     config_validation = validate_deployment_config(deployment_config)
-    
+
     if not config_validation["valid"]:
-        print(status_renderer.render_status("error", "Deployment configuration validation failed:"))
+        print(
+            status_renderer.render_status(
+                "error", "Deployment configuration validation failed:"
+            )
+        )
         for error in config_validation["errors"]:
             print(status_renderer.render_status("error", f"  - {error}"))
         raise typer.Exit(code=1)
 
-    print(status_renderer.render_status("info", f"Running in {deployment_config.mode.value} mode"))
+    print(
+        status_renderer.render_status(
+            "info", f"Running in {deployment_config.mode.value} mode"
+        )
+    )
 
     # Handle interactive mode
-    interactive = kwargs.pop('interactive', False)
-    use_service = kwargs.pop('use_service', False)
-    service_url = kwargs.pop('service_url', None)
-    token = kwargs.pop('token', None)
+    interactive = kwargs.pop("interactive", False)
+    kwargs.pop("use_service", False)  # Remove unused parameter
+    service_url = kwargs.pop("service_url", None)
+    token = kwargs.pop("token", None)
 
     if interactive:
         print(status_renderer.render_status("info", "Starting Interactive Mode..."))
@@ -740,23 +1012,37 @@ async def _full_async(**kwargs) -> None:
     # Determine service URL based on deployment mode and parameters
     if service_url is None:
         service_url = get_service_discovery_url() or "http://localhost:8000"
-    
+
     # Handle authentication for multi-user modes
     if deployment_config.requires_auth and token:
-        print(status_renderer.render_status("info", "Using provided authentication token"))
+        print(
+            status_renderer.render_status("info", "Using provided authentication token")
+        )
         # Token will be handled by the service client
 
     # Execution logic based on deployment mode
     try:
         if deployment_config.mode.value == "local":
             # Local mode - auto-start local service
-            await _execute_via_unified_service(pipeline_config, status_renderer, progress_tracker)
+            await _execute_via_unified_service(
+                pipeline_config, status_renderer, progress_tracker
+            )
         else:
             # Multi-user or production mode - use remote service
-            service_timeout = kwargs.get('service_timeout', 0.0)
-            await _execute_via_remote_service("full", pipeline_config, status_renderer, progress_tracker, service_url=service_url, service_timeout=service_timeout, auth_token=token)
+            service_timeout = kwargs.get("service_timeout", 0.0)
+            await _execute_via_remote_service(
+                "full",
+                pipeline_config,
+                status_renderer,
+                progress_tracker,
+                service_url=service_url,
+                service_timeout=service_timeout,
+                auth_token=token,
+            )
 
-        print(status_renderer.render_status("success", "Pipeline completed successfully!"))
+        print(
+            status_renderer.render_status("success", "Pipeline completed successfully!")
+        )
     except Exception as e:
         print(status_renderer.render_status("error", f"Pipeline execution failed: {e}"))
         raise e
@@ -791,7 +1077,7 @@ def _convert_typer_args_to_service_config(**kwargs) -> dict:
             config[key] = [str(item) for item in value]
         elif isinstance(value, (str, int, float, bool)):
             config[key] = value
-        elif hasattr(value, 'value'):  # Enum types
+        elif hasattr(value, "value"):  # Enum types
             config[key] = value.value
         else:
             config[key] = str(value)
@@ -799,7 +1085,15 @@ def _convert_typer_args_to_service_config(**kwargs) -> dict:
     return config
 
 
-async def _execute_via_remote_service(pipeline_type: str, config: dict, status_renderer, progress_tracker, service_url: str = "http://localhost:8000", service_timeout: float = 0.0, auth_token: Optional[str] = None) -> None:
+async def _execute_via_remote_service(
+    pipeline_type: str,
+    config: dict,
+    status_renderer,
+    progress_tracker,
+    service_url: str = "http://localhost:8000",
+    service_timeout: float = 0.0,
+    auth_token: Optional[str] = None,
+) -> None:
     """
     Execute pipeline via remote FastAPI service.
 
@@ -818,7 +1112,9 @@ async def _execute_via_remote_service(pipeline_type: str, config: dict, status_r
     """
     # Convert 0.0 to None for unlimited timeout
     timeout = None if service_timeout <= 0 else service_timeout
-    service_client = ServiceHTTPClient(base_url=service_url, timeout=timeout, auth_token=auth_token)
+    service_client = ServiceHTTPClient(
+        base_url=service_url, timeout=timeout, auth_token=auth_token
+    )
     shutdown_handler = None
 
     try:
@@ -834,15 +1130,18 @@ async def _execute_via_remote_service(pipeline_type: str, config: dict, status_r
         job_request = {
             "pipeline_config": config,
             "job_name": f"CLI Pipeline - {pipeline_type}",
-            "description": f"Pipeline execution via CLI for {pipeline_type}"
+            "description": f"Pipeline execution via CLI for {pipeline_type}",
         }
 
-        job_response = await service_client.submit_pipeline_job(pipeline_type, job_request)
+        job_response = await service_client.submit_pipeline_job(
+            pipeline_type, job_request
+        )
         job_id = job_response["job_id"]
         print(status_renderer.render_status("info", f"Job submitted with ID: {job_id}"))
 
         # Initialize shutdown handler for graceful interruption
         from emuses.cli.shutdown_handler import SimpleShutdownHandler
+
         shutdown_handler = SimpleShutdownHandler(service_client, job_id)
 
         # Poll for completion with progress display and interrupt handling
@@ -868,17 +1167,17 @@ async def _execute_via_remote_service(pipeline_type: str, config: dict, status_r
             raise typer.Exit(code=130)
 
     finally:
-        if hasattr(service_client, '_session') and service_client._session:
+        if hasattr(service_client, "_session") and service_client._session:
             await service_client._session.aclose()
 
 
 async def _poll_job_completion(service_client, job_id: str, shutdown_handler) -> None:
     """
     Poll for job completion with graceful interrupt handling.
-    
+
     This function can be resumed after a user chooses to continue
     following a Ctrl+C interruption.
-    
+
     Parameters
     ----------
     service_client : ServiceHTTPClient
@@ -910,7 +1209,9 @@ async def _poll_job_completion(service_client, job_id: str, shutdown_handler) ->
             progress = status.get("progress", 0)
             if isinstance(progress, (int, float)):
                 progress_pct = min(progress * 100, 99)
-                if abs(progress_pct - last_progress) >= 5 or poll_count % 15 == 0:  # Show every 5% or every 30 seconds
+                if (
+                    abs(progress_pct - last_progress) >= 5 or poll_count % 15 == 0
+                ):  # Show every 5% or every 30 seconds
                     print(f"Progress: {progress_pct:.1f}%")
                     last_progress = progress_pct
 
@@ -920,7 +1221,9 @@ async def _poll_job_completion(service_client, job_id: str, shutdown_handler) ->
 
             # Check for timeout (30 minutes max)
             if time.time() - start_time > 1800:
-                raise ServiceClientError("Pipeline execution timed out after 30 minutes")
+                raise ServiceClientError(
+                    "Pipeline execution timed out after 30 minutes"
+                )
 
             await asyncio.sleep(2)  # Poll every 2 seconds
 
@@ -954,12 +1257,15 @@ def create_fastapi_app():
     try:
         # Import the FastAPI app creation function
         from emuses.api.main import create_app
+
         return create_app()
     except ImportError as e:
         raise ServiceClientError(f"FastAPI service not available: {e}")
 
 
-async def _execute_via_unified_service(config: dict, status_renderer, progress_tracker) -> None:
+async def _execute_via_unified_service(
+    config: dict, status_renderer, progress_tracker
+) -> None:
     """
     Execute pipeline via unified auto-start service architecture.
 
@@ -979,15 +1285,24 @@ async def _execute_via_unified_service(config: dict, status_renderer, progress_t
     service_process = None
 
     try:
-        print(status_renderer.render_status("info", "Auto-starting local EMUSES service..."))
+        print(
+            status_renderer.render_status(
+                "info", "Auto-starting local EMUSES service..."
+            )
+        )
 
         # Find available port for service
         from emuses.cli.service_manager import ServiceManager
+
         service_manager = ServiceManager()
         available_port = service_manager.find_available_port()
         service_url = f"http://localhost:{available_port}"
 
-        print(status_renderer.render_status("info", f"Starting FastAPI service on port {available_port}..."))
+        print(
+            status_renderer.render_status(
+                "info", f"Starting FastAPI service on port {available_port}..."
+            )
+        )
 
         # Start local service
         service_process = _start_local_service(port=available_port)
@@ -995,20 +1310,30 @@ async def _execute_via_unified_service(config: dict, status_renderer, progress_t
             raise ServiceClientError("Failed to start local service")
 
         # Wait for service to be ready
-        print(status_renderer.render_status("info", "Waiting for service to be ready..."))
+        print(
+            status_renderer.render_status("info", "Waiting for service to be ready...")
+        )
         if not _wait_for_service_ready(service_url, timeout=30):
             raise ServiceClientError("Service failed to become ready within timeout")
 
-        print(status_renderer.render_status("success", "Local service started successfully!"))
+        print(
+            status_renderer.render_status(
+                "success", "Local service started successfully!"
+            )
+        )
 
         # Execute via the service (determine pipeline type from config)
-        pipeline_type = config.get('command', 'full')
-        await _execute_via_remote_service(pipeline_type, config, status_renderer, progress_tracker, service_url)
+        pipeline_type = config.get("command", "full")
+        await _execute_via_remote_service(
+            pipeline_type, config, status_renderer, progress_tracker, service_url
+        )
 
     finally:
         # Always clean up the service
         if service_process:
-            print(status_renderer.render_status("info", "Shutting down local service..."))
+            print(
+                status_renderer.render_status("info", "Shutting down local service...")
+            )
             _stop_local_service(service_process)
 
 
@@ -1027,11 +1352,13 @@ def _start_local_service(port: int = 8000) -> Optional[Process]:
         Service process if successful, None if failed
     """
     try:
+
         def run_service():
             """Run the FastAPI service."""
             try:
                 logger.info(f"Starting FastAPI service on port {port}...")
                 from emuses.api.main import create_app
+
                 app = create_app()
                 logger.info("FastAPI app created successfully")
                 # Use info level to see startup messages
@@ -1039,6 +1366,7 @@ def _start_local_service(port: int = 8000) -> Optional[Process]:
             except Exception as e:
                 logger.error(f"Service failed to start: {e}")
                 import traceback
+
                 traceback.print_exc()
 
         # Start service in background process
@@ -1049,7 +1377,9 @@ def _start_local_service(port: int = 8000) -> Optional[Process]:
         time.sleep(2)
 
         if service_process.is_alive():
-            logger.info(f"Service process started successfully (PID: {service_process.pid})")
+            logger.info(
+                f"Service process started successfully (PID: {service_process.pid})"
+            )
             return service_process
         else:
             logger.error("Service process died immediately after startup")
@@ -1058,6 +1388,7 @@ def _start_local_service(port: int = 8000) -> Optional[Process]:
     except Exception as e:
         logger.error(f"Failed to start service: {e}")
         import traceback
+
         traceback.print_exc()
         return None
 
@@ -1131,12 +1462,29 @@ async def _umap_async(**kwargs) -> None:
     pipeline_config = _convert_typer_args_to_service_config(**kwargs)
 
     try:
-        await _execute_via_remote_service("umap", pipeline_config, status_renderer, progress_tracker)
-        print(status_renderer.render_status("success", "UMAP training completed successfully via service!"))
+        await _execute_via_remote_service(
+            "umap", pipeline_config, status_renderer, progress_tracker
+        )
+        print(
+            status_renderer.render_status(
+                "success", "UMAP training completed successfully via service!"
+            )
+        )
     except ServiceClientError as e:
-        print(status_renderer.render_status("warning", f"Service unavailable ({e}), falling back to local execution..."))
-        await _execute_via_unified_service(pipeline_config, status_renderer, progress_tracker)
-        print(status_renderer.render_status("success", "UMAP training completed successfully via local execution!"))
+        print(
+            status_renderer.render_status(
+                "warning",
+                f"Service unavailable ({e}), falling back to local execution...",
+            )
+        )
+        await _execute_via_unified_service(
+            pipeline_config, status_renderer, progress_tracker
+        )
+        print(
+            status_renderer.render_status(
+                "success", "UMAP training completed successfully via local execution!"
+            )
+        )
 
 
 async def _clustering_async(**kwargs) -> None:
@@ -1149,12 +1497,29 @@ async def _clustering_async(**kwargs) -> None:
     pipeline_config = _convert_typer_args_to_service_config(**kwargs)
 
     try:
-        await _execute_via_remote_service("clustering", pipeline_config, status_renderer, progress_tracker)
-        print(status_renderer.render_status("success", "Clustering completed successfully via service!"))
+        await _execute_via_remote_service(
+            "clustering", pipeline_config, status_renderer, progress_tracker
+        )
+        print(
+            status_renderer.render_status(
+                "success", "Clustering completed successfully via service!"
+            )
+        )
     except ServiceClientError as e:
-        print(status_renderer.render_status("warning", f"Service unavailable ({e}), falling back to local execution..."))
-        await _execute_via_unified_service(pipeline_config, status_renderer, progress_tracker)
-        print(status_renderer.render_status("success", "Clustering completed successfully via local execution!"))
+        print(
+            status_renderer.render_status(
+                "warning",
+                f"Service unavailable ({e}), falling back to local execution...",
+            )
+        )
+        await _execute_via_unified_service(
+            pipeline_config, status_renderer, progress_tracker
+        )
+        print(
+            status_renderer.render_status(
+                "success", "Clustering completed successfully via local execution!"
+            )
+        )
 
 
 async def _heatmap_async(**kwargs) -> None:
@@ -1167,12 +1532,30 @@ async def _heatmap_async(**kwargs) -> None:
     pipeline_config = _convert_typer_args_to_service_config(**kwargs)
 
     try:
-        await _execute_via_remote_service("heatmap", pipeline_config, status_renderer, progress_tracker)
-        print(status_renderer.render_status("success", "Heatmap generation completed successfully via service!"))
+        await _execute_via_remote_service(
+            "heatmap", pipeline_config, status_renderer, progress_tracker
+        )
+        print(
+            status_renderer.render_status(
+                "success", "Heatmap generation completed successfully via service!"
+            )
+        )
     except ServiceClientError as e:
-        print(status_renderer.render_status("warning", f"Service unavailable ({e}), falling back to local execution..."))
-        await _execute_via_unified_service(pipeline_config, status_renderer, progress_tracker)
-        print(status_renderer.render_status("success", "Heatmap generation completed successfully via local execution!"))
+        print(
+            status_renderer.render_status(
+                "warning",
+                f"Service unavailable ({e}), falling back to local execution...",
+            )
+        )
+        await _execute_via_unified_service(
+            pipeline_config, status_renderer, progress_tracker
+        )
+        print(
+            status_renderer.render_status(
+                "success",
+                "Heatmap generation completed successfully via local execution!",
+            )
+        )
 
 
 async def _prediction_async(**kwargs) -> None:
@@ -1180,20 +1563,43 @@ async def _prediction_async(**kwargs) -> None:
     status_renderer = StatusRenderer()
     progress_tracker = ProgressTracker()
 
-    print(status_renderer.render_status("info", "Starting prediction model training..."))
+    print(
+        status_renderer.render_status("info", "Starting prediction model training...")
+    )
 
     pipeline_config = _convert_typer_args_to_service_config(**kwargs)
 
     try:
-        await _execute_via_remote_service("prediction", pipeline_config, status_renderer, progress_tracker)
-        print(status_renderer.render_status("success", "Prediction model training completed successfully via service!"))
+        await _execute_via_remote_service(
+            "prediction", pipeline_config, status_renderer, progress_tracker
+        )
+        print(
+            status_renderer.render_status(
+                "success",
+                "Prediction model training completed successfully via service!",
+            )
+        )
     except ServiceClientError as e:
-        print(status_renderer.render_status("warning", f"Service unavailable ({e}), falling back to local execution..."))
-        await _execute_via_unified_service(pipeline_config, status_renderer, progress_tracker)
-        print(status_renderer.render_status("success", "Prediction model training completed successfully via local execution!"))
+        print(
+            status_renderer.render_status(
+                "warning",
+                f"Service unavailable ({e}), falling back to local execution...",
+            )
+        )
+        await _execute_via_unified_service(
+            pipeline_config, status_renderer, progress_tracker
+        )
+        print(
+            status_renderer.render_status(
+                "success",
+                "Prediction model training completed successfully via local execution!",
+            )
+        )
 
 
-async def _execute_stage_locally(stage: str, config: dict, status_renderer, progress_tracker) -> None:
+async def _execute_stage_locally(
+    stage: str, config: dict, status_renderer, progress_tracker
+) -> None:
     """
     Execute individual pipeline stage locally.
 
@@ -1213,7 +1619,7 @@ async def _execute_stage_locally(stage: str, config: dict, status_renderer, prog
             "umap": "UMAPStage",
             "clustering": "ClusteringStage",
             "heatmap": "HeatmapStage",
-            "prediction": "PredictionStage"
+            "prediction": "PredictionStage",
         }
 
         if stage not in stage_classes:
@@ -1222,8 +1628,10 @@ async def _execute_stage_locally(stage: str, config: dict, status_renderer, prog
         # For individual stages, fall back to full pipeline execution
         # This ensures all the context and dependencies are properly set up
         stage_config = config.copy()
-        stage_config['command'] = stage
-        await _execute_via_unified_service(stage_config, status_renderer, progress_tracker)
+        stage_config["command"] = stage
+        await _execute_via_unified_service(
+            stage_config, status_renderer, progress_tracker
+        )
 
         print("✓ Stage completed")
         print("✓ Execution completed")
@@ -1237,7 +1645,9 @@ async def _execute_stage_locally(stage: str, config: dict, status_renderer, prog
 @app.command(help="Train the UMAP and get the embeddings")
 def umap(
     output_folder: Annotated[Path, typer.Argument(help="Output folder")],
-    input_dataset: Annotated[Path, typer.Argument(help="Input dataset of images (jpg), NIfTI, or MNIST")],
+    input_dataset: Annotated[
+        Path, typer.Argument(help="Input dataset of images (jpg), NIfTI, or MNIST")
+    ],
 ) -> None:
     """
     Train the UMAP and get the embeddings.
@@ -1258,10 +1668,12 @@ def umap(
 
     # Run the async implementation
     try:
-        asyncio.run(_umap_async(
-            output_folder=output_folder,
-            input_dataset=input_dataset,
-        ))
+        asyncio.run(
+            _umap_async(
+                output_folder=output_folder,
+                input_dataset=input_dataset,
+            )
+        )
     except KeyboardInterrupt:
         typer.echo("\n🛑 Operation cancelled by user", err=True)
         raise typer.Exit(code=130)
@@ -1291,9 +1703,11 @@ def clustering(
 
     # Run the async implementation
     try:
-        asyncio.run(_clustering_async(
-            output_folder=output_folder,
-        ))
+        asyncio.run(
+            _clustering_async(
+                output_folder=output_folder,
+            )
+        )
     except KeyboardInterrupt:
         typer.echo("\n🛑 Operation cancelled by user", err=True)
         raise typer.Exit(code=130)
@@ -1305,7 +1719,9 @@ def clustering(
 @app.command(help="Create a heatmap")
 def heatmap(
     output_folder: Annotated[Path, typer.Argument(help="Output folder")],
-    input_dataset: Annotated[Path, typer.Argument(help="Input dataset of images (jpg), NIfTI, or MNIST")],
+    input_dataset: Annotated[
+        Path, typer.Argument(help="Input dataset of images (jpg), NIfTI, or MNIST")
+    ],
 ) -> None:
     """
     Create a heatmap.
@@ -1326,10 +1742,12 @@ def heatmap(
 
     # Run the async implementation
     try:
-        asyncio.run(_heatmap_async(
-            output_folder=output_folder,
-            input_dataset=input_dataset,
-        ))
+        asyncio.run(
+            _heatmap_async(
+                output_folder=output_folder,
+                input_dataset=input_dataset,
+            )
+        )
     except KeyboardInterrupt:
         typer.echo("\n🛑 Operation cancelled by user", err=True)
         raise typer.Exit(code=130)
@@ -1341,7 +1759,9 @@ def heatmap(
 @app.command(help="Train a prediction model")
 def prediction(
     output_folder: Annotated[Path, typer.Argument(help="Output folder")],
-    input_dataset: Annotated[Path, typer.Argument(help="Input dataset of images (jpg), NIfTI, or MNIST")],
+    input_dataset: Annotated[
+        Path, typer.Argument(help="Input dataset of images (jpg), NIfTI, or MNIST")
+    ],
 ) -> None:
     """
     Train a prediction model.
@@ -1362,10 +1782,12 @@ def prediction(
 
     # Run the async implementation
     try:
-        asyncio.run(_prediction_async(
-            output_folder=output_folder,
-            input_dataset=input_dataset,
-        ))
+        asyncio.run(
+            _prediction_async(
+                output_folder=output_folder,
+                input_dataset=input_dataset,
+            )
+        )
     except KeyboardInterrupt:
         typer.echo("\n🛑 Operation cancelled by user", err=True)
         raise typer.Exit(code=130)
@@ -1411,6 +1833,7 @@ def install_completion(
 # Add admin subcommand
 try:
     from .admin_commands import admin_app
+
     app.add_typer(admin_app, name="admin")
 except ImportError:
     # Admin commands not available (likely missing dependencies)
@@ -1439,6 +1862,7 @@ def main():
     # Quick dependency check on startup (fast, non-blocking)
     try:
         from emuses.utils.dependency_check import validate_on_cli_startup
+
         validate_on_cli_startup(show_warnings=True)
     except ImportError:
         # If our own utils can't be imported, we have bigger problems

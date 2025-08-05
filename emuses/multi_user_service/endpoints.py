@@ -6,12 +6,13 @@ including registration, login, logout, and user management functionality.
 
 import logging
 from typing import Optional
-from fastapi import FastAPI, APIRouter, Depends, HTTPException, Request
+
+from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request
 from pydantic import BaseModel, EmailStr
 
 from emuses.multi_user_service.auth import fastapi_users, get_auth_backend
-from emuses.multi_user_service.models import User
 from emuses.multi_user_service.database import get_async_session
+from emuses.multi_user_service.models import User
 
 logger = logging.getLogger(__name__)
 
@@ -22,6 +23,7 @@ class UserCreate(BaseModel):
     Extends the base FastAPI-Users user creation schema with
     organization and role information.
     """
+
     email: EmailStr
     password: str
     organization: str = "Default Organization"
@@ -36,6 +38,7 @@ class UserRead(BaseModel):
     Defines which user fields are returned in API responses,
     excluding sensitive information like passwords.
     """
+
     id: str
     email: str
     organization: str
@@ -55,6 +58,7 @@ class UserUpdate(BaseModel):
     Allows users to update their profile information,
     excluding sensitive fields like quotas.
     """
+
     organization: Optional[str] = None
     password: Optional[str] = None
 
@@ -121,23 +125,11 @@ def setup_auth_endpoints(app: FastAPI) -> None:
     users_router = get_users_router()
 
     # Add routers to app with prefixes
-    app.include_router(
-        auth_router,
-        prefix="/auth/jwt",
-        tags=["Authentication"]
-    )
+    app.include_router(auth_router, prefix="/auth/jwt", tags=["Authentication"])
 
-    app.include_router(
-        register_router,
-        prefix="/auth",
-        tags=["Authentication"]
-    )
+    app.include_router(register_router, prefix="/auth", tags=["Authentication"])
 
-    app.include_router(
-        users_router,
-        prefix="/users",
-        tags=["Users"]
-    )
+    app.include_router(users_router, prefix="/users", tags=["Users"])
 
     # Add custom endpoints
     setup_custom_auth_endpoints(app)
@@ -160,7 +152,7 @@ def setup_custom_auth_endpoints(app: FastAPI) -> None:
 
     @router.get("/validate")
     async def validate_token(
-        user: User = Depends(fastapi_users.current_user(active=True))
+        user: User = Depends(fastapi_users.current_user(active=True)),
     ):
         """Validate JWT token and return user information.
 
@@ -179,7 +171,7 @@ def setup_custom_auth_endpoints(app: FastAPI) -> None:
             "user_id": str(user.id),
             "email": user.email,
             "organization": user.organization,
-            "role": user.role
+            "role": user.role,
         }
 
     @router.get("/status")
@@ -197,7 +189,7 @@ def setup_custom_auth_endpoints(app: FastAPI) -> None:
         return {
             "authentication": "enabled",
             "backend": "jwt",
-            "registration": "enabled"
+            "registration": "enabled",
         }
 
     app.include_router(router)

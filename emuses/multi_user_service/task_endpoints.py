@@ -6,23 +6,21 @@ with proper user context isolation and authentication.
 """
 
 import logging
-from typing import List, Optional, Dict, Any
+from datetime import datetime
+from typing import Any, Dict, List, Optional
 from uuid import UUID
-from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
+
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.ext.asyncio import AsyncSession
-from datetime import datetime
 
 from emuses.multi_user_service.auth import fastapi_users
-from emuses.multi_user_service.models import User
+from emuses.multi_user_service.background_tasks import (BackgroundTask,
+                                                        BackgroundTaskManager,
+                                                        TaskStatus)
 from emuses.multi_user_service.database import get_async_session
-from emuses.multi_user_service.background_tasks import (
-    BackgroundTaskManager, 
-    BackgroundTask, 
-    TaskStatus
-)
 from emuses.multi_user_service.job_manager import MultiUserJobManager
-
+from emuses.multi_user_service.models import User
 
 logger = logging.getLogger(__name__)
 
@@ -32,12 +30,12 @@ _task_manager: Optional[BackgroundTaskManager] = None
 
 def get_task_manager() -> BackgroundTaskManager:
     """Get the global task manager instance.
-    
+
     Returns
     -------
     BackgroundTaskManager
         Global task manager instance
-        
+
     Raises
     ------
     HTTPException
@@ -46,14 +44,14 @@ def get_task_manager() -> BackgroundTaskManager:
     if _task_manager is None:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Background task manager not initialized"
+            detail="Background task manager not initialized",
         )
     return _task_manager
 
 
 def set_task_manager(task_manager: BackgroundTaskManager) -> None:
     """Set the global task manager instance.
-    
+
     Parameters
     ----------
     task_manager : BackgroundTaskManager
@@ -65,9 +63,9 @@ def set_task_manager(task_manager: BackgroundTaskManager) -> None:
 
 class TaskSubmitRequest(BaseModel):
     """Background task submission request schema.
-    
+
     Schema for submitting new background tasks with pipeline configuration.
-    
+
     Attributes
     ----------
     job_id : str
@@ -79,6 +77,7 @@ class TaskSubmitRequest(BaseModel):
     expected_storage_gb : float, optional
         Expected storage usage for quota validation
     """
+
     job_id: str
     config: Dict[str, Any]
     expected_compute_hours: float = Field(default=0.0, ge=0.0)
@@ -87,9 +86,9 @@ class TaskSubmitRequest(BaseModel):
 
 class TaskResponse(BaseModel):
     """Background task response schema.
-    
+
     Schema for returning task information in API responses.
-    
+
     Attributes
     ----------
     task_id : str
@@ -117,6 +116,7 @@ class TaskResponse(BaseModel):
     expected_storage_gb : float
         Expected storage usage
     """
+
     task_id: str
     job_id: str
     user_id: str
@@ -135,9 +135,9 @@ class TaskResponse(BaseModel):
 
 class TaskResultResponse(BaseModel):
     """Task execution result response schema.
-    
+
     Schema for returning task execution results.
-    
+
     Attributes
     ----------
     task_id : str
@@ -155,6 +155,7 @@ class TaskResultResponse(BaseModel):
     completed_at : datetime, optional
         Completion timestamp
     """
+
     task_id: str
     job_id: str
     status: str
@@ -168,9 +169,9 @@ class TaskResultResponse(BaseModel):
 
 class SystemStatusResponse(BaseModel):
     """System status response schema.
-    
+
     Schema for returning background task system status.
-    
+
     Attributes
     ----------
     max_workers : int
@@ -186,6 +187,7 @@ class SystemStatusResponse(BaseModel):
     executor_active : bool
         Whether executor is active
     """
+
     max_workers: int
     active_workers: int
     task_counts: Dict[str, int]
@@ -198,12 +200,12 @@ class SystemStatusResponse(BaseModel):
 
 def _task_to_response(task: BackgroundTask) -> TaskResponse:
     """Convert BackgroundTask to TaskResponse.
-    
+
     Parameters
     ----------
     task : BackgroundTask
         Task object to convert
-        
+
     Returns
     -------
     TaskResponse
@@ -221,16 +223,16 @@ def _task_to_response(task: BackgroundTask) -> TaskResponse:
         message=task.message,
         error_message=task.error_message,
         expected_compute_hours=task.expected_compute_hours,
-        expected_storage_gb=task.expected_storage_gb
+        expected_storage_gb=task.expected_storage_gb,
     )
 
 
 def create_task_router() -> APIRouter:
     """Create background task management router.
-    
+
     Creates FastAPI router with background task management endpoints
     including task submission, status checking, and cancellation.
-    
+
     Returns
     -------
     APIRouter
@@ -239,9 +241,9 @@ def create_task_router() -> APIRouter:
     router = APIRouter(
         prefix="/tasks",
         tags=["Background Tasks"],
-        responses={404: {"description": "Not found"}}
+        responses={404: {"description": "Not found"}},
     )
-    
+
     current_user = fastapi_users.current_user()
 
     @router.post("/", response_model=TaskResponse, status_code=status.HTTP_201_CREATED)
@@ -250,13 +252,13 @@ def create_task_router() -> APIRouter:
         background_tasks: BackgroundTasks,
         current_user: User = Depends(current_user),
         session: AsyncSession = Depends(get_async_session),
-        task_manager: BackgroundTaskManager = Depends(get_task_manager)
+        task_manager: BackgroundTaskManager = Depends(get_task_manager),
     ) -> TaskResponse:
         """Submit a new background task for execution.
-        
+
         Creates a new background task for pipeline execution with user context
         isolation and quota validation.
-        
+
         Parameters
         ----------
         request : TaskSubmitRequest
@@ -269,12 +271,12 @@ def create_task_router() -> APIRouter:
             Database session for quota validation
         task_manager : BackgroundTaskManager
             Background task manager instance
-            
+
         Returns
         -------
         TaskResponse
             Created task information
-            
+
         Raises
         ------
         HTTPException
@@ -284,10 +286,9 @@ def create_task_router() -> APIRouter:
             job_id = UUID(request.job_id)
         except ValueError:
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Invalid job ID format"
+                status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid job ID format"
             )
-        
+
         try:
             # Create background task with quota validation
             task_id = task_manager.create_task(
@@ -296,37 +297,32 @@ def create_task_router() -> APIRouter:
                 config=request.config,
                 expected_compute_hours=request.expected_compute_hours,
                 expected_storage_gb=request.expected_storage_gb,
-                db_session=session
+                db_session=session,
             )
-            
+
             # Submit task for execution in background
-            background_tasks.add_task(
-                _submit_task_async, 
-                task_manager, 
-                task_id
-            )
-            
+            background_tasks.add_task(_submit_task_async, task_manager, task_id)
+
             # Get created task
             task = task_manager.get_task(task_id)
             if not task:
                 raise HTTPException(
                     status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail="Failed to create task"
+                    detail="Failed to create task",
                 )
-            
-            logger.info(f"Created background task {task_id} for job {job_id} by user {current_user.id}")
-            return _task_to_response(task)
-            
-        except ValueError as e:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=str(e)
+
+            logger.info(
+                f"Created background task {task_id} for job {job_id} by user {current_user.id}"
             )
+            return _task_to_response(task)
+
+        except ValueError as e:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
         except Exception as e:
             logger.error(f"Failed to create background task: {e}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Failed to create background task"
+                detail="Failed to create background task",
             )
 
     @router.get("/", response_model=List[TaskResponse])
@@ -335,13 +331,13 @@ def create_task_router() -> APIRouter:
         limit: int = 50,
         offset: int = 0,
         current_user: User = Depends(current_user),
-        task_manager: BackgroundTaskManager = Depends(get_task_manager)
+        task_manager: BackgroundTaskManager = Depends(get_task_manager),
     ) -> List[TaskResponse]:
         """List background tasks for the current user.
-        
+
         Returns paginated list of user's background tasks with optional
         status filtering.
-        
+
         Parameters
         ----------
         status_filter : Optional[str]
@@ -354,7 +350,7 @@ def create_task_router() -> APIRouter:
             Current authenticated user
         task_manager : BackgroundTaskManager
             Background task manager instance
-            
+
         Returns
         -------
         List[TaskResponse]
@@ -368,30 +364,27 @@ def create_task_router() -> APIRouter:
             except ValueError:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=f"Invalid status filter: {status_filter}"
+                    detail=f"Invalid status filter: {status_filter}",
                 )
-        
+
         # Get user tasks
         tasks = task_manager.list_user_tasks(
-            user_id=current_user.id,
-            status=status_enum,
-            limit=limit,
-            offset=offset
+            user_id=current_user.id, status=status_enum, limit=limit, offset=offset
         )
-        
+
         return [_task_to_response(task) for task in tasks]
 
     @router.get("/{task_id}", response_model=TaskResponse)
     async def get_task(
         task_id: str,
         current_user: User = Depends(current_user),
-        task_manager: BackgroundTaskManager = Depends(get_task_manager)
+        task_manager: BackgroundTaskManager = Depends(get_task_manager),
     ) -> TaskResponse:
         """Get background task by ID.
-        
+
         Returns detailed information about a specific background task
         with user ownership validation.
-        
+
         Parameters
         ----------
         task_id : str
@@ -400,12 +393,12 @@ def create_task_router() -> APIRouter:
             Current authenticated user
         task_manager : BackgroundTaskManager
             Background task manager instance
-            
+
         Returns
         -------
         TaskResponse
             Task information
-            
+
         Raises
         ------
         HTTPException
@@ -415,37 +408,35 @@ def create_task_router() -> APIRouter:
             task_uuid = UUID(task_id)
         except ValueError:
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Invalid task ID format"
+                status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid task ID format"
             )
-        
+
         task = task_manager.get_task(task_uuid)
         if not task:
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Task not found"
+                status_code=status.HTTP_404_NOT_FOUND, detail="Task not found"
             )
-        
+
         # Validate user ownership
         if task.user_id != current_user.id:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Not authorized to access this task"
+                detail="Not authorized to access this task",
             )
-        
+
         return _task_to_response(task)
 
     @router.get("/{task_id}/result", response_model=TaskResultResponse)
     async def get_task_result(
         task_id: str,
         current_user: User = Depends(current_user),
-        task_manager: BackgroundTaskManager = Depends(get_task_manager)
+        task_manager: BackgroundTaskManager = Depends(get_task_manager),
     ) -> TaskResultResponse:
         """Get background task execution result.
-        
+
         Returns execution results for a completed background task
         with user ownership validation.
-        
+
         Parameters
         ----------
         task_id : str
@@ -454,12 +445,12 @@ def create_task_router() -> APIRouter:
             Current authenticated user
         task_manager : BackgroundTaskManager
             Background task manager instance
-            
+
         Returns
         -------
         TaskResultResponse
             Task execution result
-            
+
         Raises
         ------
         HTTPException
@@ -469,40 +460,37 @@ def create_task_router() -> APIRouter:
             task_uuid = UUID(task_id)
         except ValueError:
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Invalid task ID format"
+                status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid task ID format"
             )
-        
+
         task = task_manager.get_task(task_uuid)
         if not task:
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Task not found"
+                status_code=status.HTTP_404_NOT_FOUND, detail="Task not found"
             )
-        
+
         # Validate user ownership
         if task.user_id != current_user.id:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Not authorized to access this task"
+                detail="Not authorized to access this task",
             )
-        
+
         # Check if task is completed
         if task.status not in [TaskStatus.COMPLETED, TaskStatus.FAILED]:
             raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="Task is not completed yet"
+                status_code=status.HTTP_409_CONFLICT, detail="Task is not completed yet"
             )
-        
+
         # Extract result information
         result_data = task.result if task.status == TaskStatus.COMPLETED else None
         execution_time = None
         storage_bytes = None
-        
+
         if result_data:
             execution_time = result_data.get("execution_time_hours")
             storage_bytes = result_data.get("storage_bytes")
-        
+
         return TaskResultResponse(
             task_id=str(task.task_id),
             job_id=str(task.job_id),
@@ -510,20 +498,20 @@ def create_task_router() -> APIRouter:
             result=result_data,
             execution_time_hours=execution_time,
             storage_bytes=storage_bytes,
-            completed_at=task.completed_at
+            completed_at=task.completed_at,
         )
 
     @router.post("/{task_id}/cancel", status_code=status.HTTP_204_NO_CONTENT)
     async def cancel_task(
         task_id: str,
         current_user: User = Depends(current_user),
-        task_manager: BackgroundTaskManager = Depends(get_task_manager)
+        task_manager: BackgroundTaskManager = Depends(get_task_manager),
     ) -> None:
         """Cancel a background task.
-        
+
         Cancels a pending, queued, or running background task with user
         ownership validation.
-        
+
         Parameters
         ----------
         task_id : str
@@ -532,7 +520,7 @@ def create_task_router() -> APIRouter:
             Current authenticated user
         task_manager : BackgroundTaskManager
             Background task manager instance
-            
+
         Raises
         ------
         HTTPException
@@ -542,68 +530,67 @@ def create_task_router() -> APIRouter:
             task_uuid = UUID(task_id)
         except ValueError:
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Invalid task ID format"
+                status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid task ID format"
             )
-        
+
         try:
             cancelled = task_manager.cancel_task(task_uuid, current_user.id)
             if not cancelled:
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT,
-                    detail="Task cannot be cancelled (already completed or failed)"
+                    detail="Task cannot be cancelled (already completed or failed)",
                 )
-                
-            logger.info(f"Cancelled background task {task_id} by user {current_user.id}")
-            
+
+            logger.info(
+                f"Cancelled background task {task_id} by user {current_user.id}"
+            )
+
         except ValueError as e:
             if "not found" in str(e).lower():
                 raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail="Task not found"
+                    status_code=status.HTTP_404_NOT_FOUND, detail="Task not found"
                 )
             elif "not authorized" in str(e).lower():
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
-                    detail="Not authorized to cancel this task"
+                    detail="Not authorized to cancel this task",
                 )
             else:
                 raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=str(e)
+                    status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)
                 )
 
     @router.get("/system/status", response_model=SystemStatusResponse)
     async def get_system_status(
         current_user: User = Depends(current_user),
-        task_manager: BackgroundTaskManager = Depends(get_task_manager)
+        task_manager: BackgroundTaskManager = Depends(get_task_manager),
     ) -> SystemStatusResponse:
         """Get background task system status.
-        
+
         Returns system metrics and status information for background
         task processing. Available to all authenticated users.
-        
+
         Parameters
         ----------
         current_user : User
             Current authenticated user
         task_manager : BackgroundTaskManager
             Background task manager instance
-            
+
         Returns
         -------
         SystemStatusResponse
             System status information
         """
         status_info = task_manager.get_system_status()
-        
+
         return SystemStatusResponse(
             max_workers=status_info["max_workers"],
             active_workers=status_info["active_workers"],
             task_counts=status_info["task_counts"],
             total_tasks=status_info["total_tasks"],
             process_memory_limit_gb=status_info["process_memory_limit_gb"],
-            executor_active=status_info["executor_active"]
+            executor_active=status_info["executor_active"],
         )
 
     return router
@@ -611,10 +598,10 @@ def create_task_router() -> APIRouter:
 
 def _submit_task_async(task_manager: BackgroundTaskManager, task_id: UUID) -> None:
     """Submit task for execution asynchronously.
-    
+
     This function is called as a FastAPI background task to submit
     the task for execution without blocking the API response.
-    
+
     Parameters
     ----------
     task_manager : BackgroundTaskManager
@@ -626,7 +613,7 @@ def _submit_task_async(task_manager: BackgroundTaskManager, task_id: UUID) -> No
         task_manager.submit_task(task_id)
     except Exception as e:
         logger.error(f"Failed to submit task {task_id} for execution: {e}")
-        
+
         # Update task status to failed
         task = task_manager.get_task(task_id)
         if task:

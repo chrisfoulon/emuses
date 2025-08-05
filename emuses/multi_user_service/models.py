@@ -4,16 +4,19 @@ This module contains user authentication models extending FastAPI-Users
 with EMUSES-specific fields for organization, roles, and resource quotas.
 """
 
+import uuid
+from datetime import datetime
+
 from fastapi_users.db import SQLAlchemyBaseUserTableUUID
-from sqlalchemy import Column, String, Float, Integer, Boolean, ForeignKey, DateTime, Text, JSON
+from sqlalchemy import (JSON, Boolean, Column, DateTime, Float, ForeignKey,
+                        Integer, String, Text)
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import DeclarativeBase, relationship
-from datetime import datetime
-import uuid
 
 
 class Base(DeclarativeBase):
     """Base class for SQLAlchemy models."""
+
     pass
 
 
@@ -130,15 +133,21 @@ class Workspace(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     name = Column(String(255), nullable=False, index=True)
     description = Column(Text, nullable=True)
-    owner_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True)
+    owner_id = Column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True
+    )
     storage_path = Column(String(512), nullable=False)
     is_active = Column(Boolean, nullable=False, default=True)
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
-    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+    updated_at = Column(
+        DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
 
     # Relationships
     owner = relationship("User", back_populates="workspaces")
-    datasets = relationship("Dataset", back_populates="workspace", cascade="all, delete-orphan")
+    datasets = relationship(
+        "Dataset", back_populates="workspace", cascade="all, delete-orphan"
+    )
     training_jobs = relationship("TrainingJob", back_populates="workspace")
 
 
@@ -182,11 +191,15 @@ class Dataset(Base):
     file_path = Column(String(512), nullable=False)
     file_size_bytes = Column(Integer, nullable=False, default=0)
     file_hash = Column(String(128), nullable=True)
-    workspace_id = Column(UUID(as_uuid=True), ForeignKey("workspaces.id"), nullable=False, index=True)
+    workspace_id = Column(
+        UUID(as_uuid=True), ForeignKey("workspaces.id"), nullable=False, index=True
+    )
     version = Column(String(50), nullable=False, default="1.0.0")
     dataset_metadata = Column(JSON, nullable=True)
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
-    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+    updated_at = Column(
+        DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
 
     # Relationships
     workspace = relationship("Workspace", back_populates="datasets")
@@ -233,8 +246,12 @@ class TrainingJob(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     name = Column(String(255), nullable=False, index=True)
     description = Column(Text, nullable=True)
-    owner_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True)
-    workspace_id = Column(UUID(as_uuid=True), ForeignKey("workspaces.id"), nullable=False, index=True)
+    owner_id = Column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True
+    )
+    workspace_id = Column(
+        UUID(as_uuid=True), ForeignKey("workspaces.id"), nullable=False, index=True
+    )
     job_config = Column(JSON, nullable=True)
     status = Column(String(50), nullable=False, default="pending", index=True)
     compute_hours_used = Column(Float, nullable=False, default=0.0)
@@ -242,7 +259,9 @@ class TrainingJob(Base):
     started_at = Column(DateTime, nullable=True)
     completed_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
-    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+    updated_at = Column(
+        DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
 
     # Relationships
     owner = relationship("User", back_populates="training_jobs")
