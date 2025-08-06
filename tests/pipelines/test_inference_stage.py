@@ -501,8 +501,10 @@ class TestInferenceStageIntegration(unittest.TestCase):
         """Test complete inference workflow with mock model artifacts."""
         stage = InferenceStage(self.config)
         
-        # Create context with realistic settings
+        # Create context with inference features using semantic aliasing pattern
+        test_features = np.random.rand(20, 50)  # 20 samples, 50 features
         context = {
+            "inference_features": test_features,  # Standalone context key
             "verify_integrity": False,  # Skip integrity check for mock models
             "output_format": "csv"
         }
@@ -531,13 +533,8 @@ class TestInferenceStageIntegration(unittest.TestCase):
                 }
             }
         
-        # Mock the feature loading to return realistic data
-        def mock_load_features(data_path):
-            return np.random.rand(20, 50)  # 20 samples, 50 features
-        
-        # Patch methods for testing
-        stage._load_trained_models = mock_load_models
-        stage._load_features = mock_load_features
+        # Patch model loading method for testing
+        stage._load_trained_models_with_context = lambda ctx: mock_load_models()
         
         # Run inference
         results = stage.run(context)
@@ -570,7 +567,12 @@ class TestInferenceStageIntegration(unittest.TestCase):
         stage = InferenceStage(self.config)
         stage.validate_mode = True  # Force validation mode
         
+        # Create context with inference features and labels for validation
+        test_features = np.random.rand(15, 30)  # 15 samples, 30 features
+        test_labels = np.random.rand(15)  # Ground truth for validation
         context = {
+            "inference_features": test_features,  # Standalone context key
+            "inference_labels": test_labels,     # Labels for validation mode
             "verify_integrity": False,
             "output_format": "csv"
         }
@@ -592,11 +594,8 @@ class TestInferenceStageIntegration(unittest.TestCase):
                 'metadata': {}
             }
         
-        def mock_load_features(data_path):
-            return np.random.rand(15, 30)
-        
-        stage._load_trained_models = mock_load_models
-        stage._load_features = mock_load_features
+        # Patch model loading method for testing
+        stage._load_trained_models_with_context = lambda ctx: mock_load_models()
         
         # Run inference in validation mode
         results = stage.run(context)
@@ -616,7 +615,12 @@ class TestInferenceStageIntegration(unittest.TestCase):
         """Test error handling when model files are missing."""
         stage = InferenceStage(self.config)
         
-        context = {"verify_integrity": True}
+        # Create context with inference features but no models available
+        test_features = np.random.rand(10, 25)
+        context = {
+            "inference_features": test_features,  # Provide features to get past context validation
+            "verify_integrity": True
+        }
         
         # Run inference with missing models (should raise ValueError for UMAP model not available)
         with self.assertRaises(ValueError) as cm:
@@ -646,14 +650,16 @@ class TestInferenceStageIntegration(unittest.TestCase):
                 'metadata': {}
             }
         
-        def mock_load_features(data_path):
-            return np.random.rand(10, 25)
-        
-        stage._load_trained_models = mock_load_models
-        stage._load_features = mock_load_features
+        # Create test features for both format tests
+        test_features = np.random.rand(10, 25)
+        stage._load_trained_models_with_context = lambda ctx: mock_load_models()
         
         # Test CSV format
-        context_csv = {"verify_integrity": False, "output_format": "csv"}
+        context_csv = {
+            "inference_features": test_features,
+            "verify_integrity": False, 
+            "output_format": "csv"
+        }
         results_csv = stage.run(context_csv)
         
         output_files_csv = results_csv['output_files']
@@ -661,7 +667,11 @@ class TestInferenceStageIntegration(unittest.TestCase):
         self.assertTrue(output_files_csv['predictions_csv'].endswith('.csv'))
         
         # Test NPY format
-        context_npy = {"verify_integrity": False, "output_format": "npy"}
+        context_npy = {
+            "inference_features": test_features,
+            "verify_integrity": False, 
+            "output_format": "npy"
+        }
         results_npy = stage.run(context_npy)
         
         output_files_npy = results_npy['output_files']
@@ -698,13 +708,14 @@ class TestInferenceStageIntegration(unittest.TestCase):
                 'metadata': {}
             }
         
-        def mock_load_features(data_path):
-            return np.random.rand(5, 20)
+        # Create test features and provide through context
+        test_features = np.random.rand(5, 20)
+        stage._load_trained_models_with_context = lambda ctx: mock_load_models()
         
-        stage._load_trained_models = mock_load_models
-        stage._load_features = mock_load_features
-        
-        context = {"verify_integrity": False}
+        context = {
+            "inference_features": test_features,
+            "verify_integrity": False
+        }
         results = stage.run(context)
         
         # Verify confidence scores are computed

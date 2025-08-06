@@ -59,7 +59,9 @@ class InferenceStage(PipelineStage):
         # Extract inference-specific configuration
         self.model_path = getattr(config, 'model_path', None)
         self.data_path = getattr(config, 'data_path', None)
-        self.output_path = getattr(config, 'output_path', None)
+        # Convert output_path to string for JSON serialization compatibility
+        output_path = getattr(config, 'output_path', None)
+        self.output_path = str(output_path) if output_path is not None else None
         self.validate_mode = getattr(config, 'validate_mode', False)
 
         # Initialize model storage
@@ -167,7 +169,7 @@ class InferenceStage(PipelineStage):
                 progress.advance(save_task, 1)
 
                 # Display summary
-                console.print(f"✅ [bold green]Inference completed successfully![/bold green]")
+                console.print("✅ [bold green]Inference completed successfully![/bold green]")
                 console.print(f"   • Processed {sample_count} samples in {total_duration:.2f}s")
                 console.print(f"   • Throughput: {performance_data['throughput_samples_per_sec']:.1f} samples/sec")
                 console.print(f"   • Mode: {mode}")
@@ -473,23 +475,32 @@ class InferenceStage(PipelineStage):
         np.ndarray
             Feature matrix for inference from context
         """
-        # Get inference features from context (standard stage pattern)
-        features = context.get("inference_features")
+        # Get inference features from context using semantic aliasing pattern
+        # Priority order: pipeline context -> standalone context -> generic fallbacks
+        features = context.get("prediction_test_features")  # Full pipeline context (existing standard)
         if features is None:
-            # Fallback: check for other common feature keys in context
-            features = context.get("features") or context.get("input_matrix")
+            features = context.get("inference_features")    # Standalone context (new)
+        if features is None:
+            # Generic fallbacks for compatibility
+            features = context.get("features")
+            if features is None:
+                features = context.get("input_matrix")
             
         if features is None:
             raise ValueError("No inference features found in context. InferenceStage must receive data from EMUSESPipeline.")
             
         logger.info(f"Retrieved features from context: shape {features.shape}")
         
-        # Check for labels in context for validation mode
-        labels = context.get("inference_labels") 
+        # Check for labels in context for validation mode using semantic aliasing
+        # Priority order: pipeline context -> standalone context -> generic fallbacks
+        labels = context.get("prediction_test_labels")  # Full pipeline context (existing standard)
         if labels is None:
+            labels = context.get("inference_labels")    # Standalone context (new)
+        if labels is None:
+            # Generic fallbacks for compatibility
             labels = context.get("labels")
-        if labels is None:
-            labels = context.get("scores")
+            if labels is None:
+                labels = context.get("scores")
             
         if labels is not None:
             logger.info(f"Labels found in context: shape {labels.shape}")
@@ -882,7 +893,7 @@ class InferenceStage(PipelineStage):
             Dictionary containing validation metrics (MSE, MAE, R², etc.)
         """
         import numpy as np
-        from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score, accuracy_score, classification_report
+        from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score, accuracy_score
 
         predictions = np.array(predictions)
         ground_truth = np.array(ground_truth)
@@ -923,7 +934,8 @@ class InferenceStage(PipelineStage):
 
             # Check if data appears to be classification (integer values in small range)
             unique_gt = np.unique(ground_truth)
-            unique_pred = np.unique(predictions)
+            # Check unique predictions for classification detection
+            np.unique(predictions)
             
             if len(unique_gt) <= 10 and np.all(unique_gt == unique_gt.astype(int)):
                 # Classification-like data

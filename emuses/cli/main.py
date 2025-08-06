@@ -1487,40 +1487,6 @@ async def _umap_async(**kwargs) -> None:
         )
 
 
-async def _clustering_async(**kwargs) -> None:
-    """Async implementation of the clustering command."""
-    status_renderer = StatusRenderer()
-    progress_tracker = ProgressTracker()
-
-    print(status_renderer.render_status("info", "Starting clustering..."))
-
-    pipeline_config = _convert_typer_args_to_service_config(**kwargs)
-
-    try:
-        await _execute_via_remote_service(
-            "clustering", pipeline_config, status_renderer, progress_tracker
-        )
-        print(
-            status_renderer.render_status(
-                "success", "Clustering completed successfully via service!"
-            )
-        )
-    except ServiceClientError as e:
-        print(
-            status_renderer.render_status(
-                "warning",
-                f"Service unavailable ({e}), falling back to local execution...",
-            )
-        )
-        await _execute_via_unified_service(
-            pipeline_config, status_renderer, progress_tracker
-        )
-        print(
-            status_renderer.render_status(
-                "success", "Clustering completed successfully via local execution!"
-            )
-        )
-
 
 async def _heatmap_async(**kwargs) -> None:
     """Async implementation of the heatmap generation command."""
@@ -1558,43 +1524,6 @@ async def _heatmap_async(**kwargs) -> None:
         )
 
 
-async def _prediction_async(**kwargs) -> None:
-    """Async implementation of the prediction model training command."""
-    status_renderer = StatusRenderer()
-    progress_tracker = ProgressTracker()
-
-    print(
-        status_renderer.render_status("info", "Starting prediction model training...")
-    )
-
-    pipeline_config = _convert_typer_args_to_service_config(**kwargs)
-
-    try:
-        await _execute_via_remote_service(
-            "prediction", pipeline_config, status_renderer, progress_tracker
-        )
-        print(
-            status_renderer.render_status(
-                "success",
-                "Prediction model training completed successfully via service!",
-            )
-        )
-    except ServiceClientError as e:
-        print(
-            status_renderer.render_status(
-                "warning",
-                f"Service unavailable ({e}), falling back to local execution...",
-            )
-        )
-        await _execute_via_unified_service(
-            pipeline_config, status_renderer, progress_tracker
-        )
-        print(
-            status_renderer.render_status(
-                "success",
-                "Prediction model training completed successfully via local execution!",
-            )
-        )
 
 
 async def _inference_async(**kwargs) -> None:
@@ -1786,40 +1715,6 @@ def umap(
         raise typer.Exit(code=1)
 
 
-@app.command(help="Perform clustering on embeddings")
-def clustering(
-    output_folder: Annotated[Path, typer.Argument(help="Output folder")],
-) -> None:
-    """
-    Perform clustering on embeddings.
-
-    Parameters
-    ----------
-    output_folder : Path
-        Output folder for results
-
-    Returns
-    -------
-    None
-    """
-    # Save command for easy rerun
-    save_command_to_output_folder(output_folder)
-
-    # Run the async implementation
-    try:
-        asyncio.run(
-            _clustering_async(
-                output_folder=output_folder,
-            )
-        )
-    except KeyboardInterrupt:
-        typer.echo("\n🛑 Operation cancelled by user", err=True)
-        raise typer.Exit(code=130)
-    except Exception as e:
-        typer.echo(f"Error: {e}", err=True)
-        raise typer.Exit(code=1)
-
-
 @app.command(help="Create a heatmap")
 def heatmap(
     output_folder: Annotated[Path, typer.Argument(help="Output folder")],
@@ -1848,46 +1743,6 @@ def heatmap(
     try:
         asyncio.run(
             _heatmap_async(
-                output_folder=output_folder,
-                input_dataset=input_dataset,
-            )
-        )
-    except KeyboardInterrupt:
-        typer.echo("\n🛑 Operation cancelled by user", err=True)
-        raise typer.Exit(code=130)
-    except Exception as e:
-        typer.echo(f"Error: {e}", err=True)
-        raise typer.Exit(code=1)
-
-
-@app.command(help="Train a prediction model")
-def prediction(
-    output_folder: Annotated[Path, typer.Argument(help="Output folder")],
-    input_dataset: Annotated[
-        Path, typer.Argument(help="Input dataset of images (jpg), NIfTI, or MNIST")
-    ],
-) -> None:
-    """
-    Train a prediction model.
-
-    Parameters
-    ----------
-    output_folder : Path
-        Output folder for results
-    input_dataset : Path
-        Input dataset of images (jpg), NIfTI, or MNIST
-
-    Returns
-    -------
-    None
-    """
-    # Save command for easy rerun
-    save_command_to_output_folder(output_folder)
-
-    # Run the async implementation
-    try:
-        asyncio.run(
-            _prediction_async(
                 output_folder=output_folder,
                 input_dataset=input_dataset,
             )
