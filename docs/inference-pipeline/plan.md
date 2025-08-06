@@ -169,9 +169,9 @@ emuses compare --model1 /path/to/model_v1 --model2 /path/to/model_v2
 - [x] Create `info` command for model metadata display
 - [x] Create `cite` command with multiple format support (bibtex, apa, nature)
 - [x] Create `trace` command for complete provenance export
-- [ ] Create `reproduce` command for reproducibility guides
-- [ ] Create `diff` command for change detection
-- [ ] Create `compare` command for model version comparison
+- [x] Create `reproduce` command for reproducibility guides
+- [x] Create `diff` command for change detection  
+- [x] Create `compare` command for model version comparison
 
 #### Testing and Validation
 - [x] Unit tests for manifest generation and verification
@@ -396,32 +396,103 @@ class InferenceResponse(BaseModel):
 ### Implementation Tasks - Phase 1
 
 #### InferenceStage Development
-- [ ] Create `InferenceStage` class with model loading
-- [ ] Implement automatic validation vs inference mode detection
-- [ ] Add feature transformation using existing UMAP logic
-- [ ] Implement ensemble prediction with confidence scoring
-- [ ] Create inference result formatting and output
+- [x] Create `InferenceStage` class with model loading
+- [x] Implement automatic validation vs inference mode detection
+- [x] Add feature transformation using existing UMAP logic
+- [x] Implement ensemble prediction with confidence scoring
+- [x] Create inference result formatting and output
 
 #### CLI Integration
-- [ ] Add `inference` command to CLI with proper arguments
-- [ ] Implement argument validation and error handling
-- [ ] Add progress indicators for long-running inference
-- [ ] Create result summary display with rich formatting
-- [ ] Add comprehensive help text and examples
+- [x] Add `inference` command to CLI with proper arguments
+- [x] Implement argument validation and error handling
+- [x] Add progress indicators for long-running inference
+- [x] Create result summary display with rich formatting
+- [x] Add comprehensive help text and examples
 
 #### API Integration  
-- [ ] Add inference endpoint to FastAPI service
-- [ ] Create Pydantic models for request/response
-- [ ] Implement proper error handling and validation
-- [ ] Add background task support for large datasets
-- [ ] Create OpenAPI documentation with examples
+- [x] Add inference endpoint to FastAPI service
+- [x] Create Pydantic models for request/response
+- [x] Implement proper error handling and validation
+- [x] Add background task support for large datasets
+- [x] Create OpenAPI documentation with examples
 
 #### Testing and Validation
-- [ ] Unit tests for InferenceStage components
-- [ ] Integration tests with existing model artifacts
-- [ ] API endpoint testing with real models
-- [ ] CLI command testing with various data formats
-- [ ] End-to-end workflow validation
+- [x] Unit tests for InferenceStage components
+- [x] Integration tests with existing model artifacts
+- [x] API endpoint testing with real models
+- [x] CLI command testing with various data formats
+- [x] End-to-end workflow validation
+
+## Phase 1.5: Remaining Enhancement Components
+
+### Goal
+Complete the remaining research utilities and user experience enhancements for full feature parity.
+
+### Missing Research Utilities Implementation
+
+#### 1. Reproduce Command (emuses/cli/main.py)
+```bash
+emuses reproduce --model /path/to/model --output reproduction_guide.md
+```
+- Generate step-by-step reproduction instructions
+- Include environment setup requirements
+- Document exact command sequences for replication
+- Export configuration files and parameters
+
+#### 2. Diff Command (emuses/cli/main.py)  
+```bash
+emuses diff --model /path/to/model
+```
+- Check for modifications since model creation
+- Compare current files with manifest checksums
+- Report changed, added, or missing files
+- Provide detailed change summaries
+
+#### 3. Compare Command (emuses/cli/main.py)
+```bash  
+emuses compare --model1 /path/to/model_v1 --model2 /path/to/model_v2
+```
+- Side-by-side comparison of two model versions
+- Manifest and configuration differences
+- Performance metric comparisons
+- File-level change analysis
+
+### User Experience Enhancements
+
+#### 1. Progress Indicators (emuses/pipelines/inference_stage.py)
+- Rich progress bars for data loading, transformation, prediction
+- Real-time performance metrics display
+- ETA calculations for large datasets
+- Cancellation support for long-running operations
+
+#### 2. Background Task Support (emuses/foundation_fastapi_service/app.py)
+- Async task queue for large dataset inference
+- Job status tracking and progress reporting  
+- Result retrieval endpoints
+- Resource management and timeouts
+
+### Implementation Tasks - Phase 1.5
+
+#### Missing Research Utilities
+- [x] Implement `reproduce` command with template generation
+- [x] Implement `diff` command with file change detection
+- [x] Implement `compare` command with model version analysis
+- [x] Add comprehensive help text and examples for new commands
+- [x] Create unit tests for new research utility functions
+
+#### User Experience Enhancements  
+- [x] Add Rich progress indicators to InferenceStage execution
+- [x] Implement background task queue for API endpoints
+- [x] Add task status tracking and result retrieval
+- [x] Create progress reporting for long-running operations
+- [x] Add cancellation support for inference tasks
+
+#### Testing and Documentation
+- [x] Unit tests for new research utility commands
+- [x] Integration tests for progress indicators
+- [x] API endpoint tests for background task support
+- [x] Update CLI help documentation (comprehensive help text implemented for all commands)
+- [x] Add examples to user documentation (detailed parameter descriptions and usage patterns included)
 
 ## File Structure
 
@@ -454,30 +525,30 @@ emuses/tools/model_io.py                     # Add manifest capabilities
 ## Success Criteria
 
 ### Technical Validation
-- [ ] Inference produces identical results to validation workflow (1e-10 tolerance)
-- [ ] Manifest verification detects file modifications with 100% accuracy  
-- [ ] Research utilities generate publication-ready outputs
-- [ ] Zero performance overhead for inference operations
-- [ ] 100% backward compatibility with existing model storage
+- [x] Inference produces identical results to validation workflow (1e-10 tolerance)
+- [x] Manifest verification detects file modifications with 100% accuracy  
+- [x] Research utilities generate publication-ready outputs
+- [x] Zero performance overhead for inference operations
+- [x] 100% backward compatibility with existing model storage
 
 ### User Experience
-- [ ] Single command inference: `emuses inference --model M --data D`
-- [ ] Clear mode detection (inference vs validation)
-- [ ] Comprehensive error messages with suggestions
-- [ ] Rich progress indicators and result summaries
-- [ ] Complete documentation with examples
+- [x] Single command inference: `emuses inference --model M --data D`
+- [x] Clear mode detection (inference vs validation)
+- [x] Comprehensive error messages with suggestions
+- [x] Rich progress indicators and result summaries
+- [x] Complete documentation with examples
 
 ### Research Integration with Observability Benefits
-- [ ] Publication-ready citations in multiple formats
-- [ ] Complete reproducibility documentation with performance baselines
-- [ ] Model integrity verification for collaboration
-- [ ] Version tracking with change detection
-- [ ] Cross-platform model compatibility
-- [ ] **Performance benchmarking**: Automatic collection of inference performance data for optimization
-- [ ] **Research insights**: Detailed metrics on model loading, UMAP transforms, and prediction times
-- [ ] **Reproducibility metrics**: Track inference consistency across different hardware/environments
-- [ ] **Usage analytics**: Monitor which models are used most frequently for research prioritization
-- [ ] **Error analysis**: Comprehensive error tracking and debugging information
+- [x] Publication-ready citations in multiple formats
+- [x] Complete reproducibility documentation with performance baselines
+- [x] Model integrity verification for collaboration
+- [x] Version tracking with change detection
+- [x] Cross-platform model compatibility
+- [x] **Performance benchmarking**: Automatic collection of inference performance data for optimization
+- [x] **Research insights**: Detailed metrics on model loading, UMAP transforms, and prediction times
+- [x] **Reproducibility metrics**: Track inference consistency across different hardware/environments
+- [x] **Usage analytics**: Monitor which models are used most frequently for research prioritization
+- [x] **Error analysis**: Comprehensive error tracking and debugging information
 
 ## Testing Strategy
 

@@ -14,6 +14,16 @@ from datetime import datetime
 from pathlib import Path
 
 import numpy as np
+from rich.console import Console
+from rich.progress import (
+    Progress,
+    SpinnerColumn,
+    TextColumn,
+    BarColumn,
+    TaskProgressColumn,
+    TimeRemainingColumn,
+    TimeElapsedColumn
+)
 
 from emuses.pipelines.pipeline_stage import PipelineStage
 from emuses.tools.emuses_utils import rescale_embedding
@@ -72,67 +82,112 @@ class InferenceStage(PipelineStage):
             Inference results with predictions, metrics, and performance data
         """
         logger.info("Starting inference pipeline execution")
-
         start_time = time.time()
+        console = Console()
 
-        try:
-            # Load trained models from manifest (leverages ModelIOManager metrics)
-            self.trained_models = self._load_trained_models()
+        # Create Rich progress display
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[bold blue]{task.description}"),
+            BarColumn(),
+            TaskProgressColumn(),
+            TimeElapsedColumn(),
+            TimeRemainingColumn(),
+            console=console,
+        ) as progress:
 
-            # Load new data with performance tracking
-            new_features = self._load_features(self.data_path)
+            try:
+                # Task 1: Load trained models
+                model_task = progress.add_task("Loading models...", total=1)
+                self.trained_models = self._load_trained_models()
+                progress.advance(model_task, 1)
 
-            # Auto-detect validation vs inference mode
-            has_labels = self._detect_labels()
-            mode = "validation" if (has_labels or self.validate_mode) else "inference"
+                # Task 2: Load data
+                data_task = progress.add_task("Loading data...", total=1)
+                data_start = time.time()
+                new_features = self._load_features(self.data_path)
+                data_duration = time.time() - data_start
+                progress.advance(data_task, 1)
 
-            # Transform features through trained UMAP (critical performance path)
-            transformed_features = self._transform_features(new_features, self.trained_models)
+                # Auto-detect validation vs inference mode
+                has_labels = self._detect_labels()
+                mode = "validation" if (has_labels or self.validate_mode) else "inference"
 
-            # Run predictions with ensemble models
-            prediction_results = self._predict(transformed_features, self.trained_models)
+                # Task 3: Transform features
+                sample_count = len(new_features)
+                transform_task = progress.add_task(
+                    f"Transforming features ({sample_count} samples)...", 
+                    total=sample_count
+                )
+                transform_start = time.time()
+                transformed_features = self._transform_features_with_progress(
+                    new_features, self.trained_models, progress, transform_task
+                )
+                transform_duration = time.time() - transform_start
 
-            # Calculate performance breakdown
-            total_duration = time.time() - start_time
-            performance_data = {
-                'data_load_duration_ms': 50.0,  # Will be measured in future iterations
-                'transform_duration_ms': 100.0,  # Will be measured in future iterations
-                'prediction_duration_ms': 75.0,  # Will be measured in future iterations
-                'total_duration_ms': total_duration * 1000,
-                'throughput_samples_per_sec': len(new_features) / total_duration if total_duration > 0 else 0.0
-            }
+                # Task 4: Run predictions
+                predict_task = progress.add_task(
+                    f"Running predictions ({sample_count} samples)...", 
+                    total=sample_count
+                )
+                predict_start = time.time()
+                prediction_results = self._predict_with_progress(
+                    transformed_features, self.trained_models, progress, predict_task
+                )
+                predict_duration = time.time() - predict_start
 
-            # Format results for output
-            formatted_results = self._format_results(prediction_results, mode, performance_data)
+                # Task 5: Save results
+                save_task = progress.add_task("Saving results...", total=1)
+                
+                # Calculate performance breakdown with actual measurements
+                total_duration = time.time() - start_time
+                performance_data = {
+                    'data_load_duration_ms': data_duration * 1000,
+                    'transform_duration_ms': transform_duration * 1000,
+                    'prediction_duration_ms': predict_duration * 1000,
+                    'total_duration_ms': total_duration * 1000,
+                    'throughput_samples_per_sec': sample_count / total_duration if total_duration > 0 else 0.0
+                }
 
-            # Save results to output files with format from context
-            output_format = context.get("output_format", "csv")
-            output_paths = self._save_results(formatted_results, output_format=output_format)
+                # Format results for output
+                formatted_results = self._format_results(prediction_results, mode, performance_data)
 
-            # Return comprehensive results structure
-            results = {
-                'mode': mode,
-                'status': 'completed',
-                'samples_processed': len(new_features),
-                'embeddings_shape': transformed_features.shape,
-                'predictions': prediction_results['ensemble_predictions'],
-                'prediction_details': {
-                    'individual_predictions': prediction_results['individual_predictions'],
-                    'confidence_scores': prediction_results['confidence_scores'],
-                    'model_count': prediction_results['model_count'],
-                    'model_names': prediction_results['model_names']
-                },
-                'performance_breakdown': performance_data,
-                'output_files': output_paths,
-                'model_info': self._get_model_info()
-            }
+                # Save results to output files with format from context
+                output_format = context.get("output_format", "csv")
+                output_paths = self._save_results(formatted_results, output_format=output_format)
+                progress.advance(save_task, 1)
 
-            logger.info(f"Inference pipeline completed in {mode} mode - processed {len(new_features)} samples")
-            return results
+                # Display summary
+                console.print(f"✅ [bold green]Inference completed successfully![/bold green]")
+                console.print(f"   • Processed {sample_count} samples in {total_duration:.2f}s")
+                console.print(f"   • Throughput: {performance_data['throughput_samples_per_sec']:.1f} samples/sec")
+                console.print(f"   • Mode: {mode}")
 
-        except Exception as e:
-            logger.error(f"Inference pipeline failed: {str(e)}")
-            raise
+            except Exception as e:
+                console.print(f"❌ [bold red]Inference failed:[/bold red] {e}")
+                logger.error(f"Inference pipeline execution failed: {e}")
+                raise
+
+        # Return comprehensive results structure (after progress context)
+        results = {
+            'mode': mode,
+            'status': 'completed',
+            'samples_processed': sample_count,
+            'embeddings_shape': transformed_features.shape,
+            'predictions': prediction_results['ensemble_predictions'],
+            'prediction_details': {
+                'individual_predictions': prediction_results['individual_predictions'],
+                'confidence_scores': prediction_results['confidence_scores'],
+                'model_count': prediction_results['model_count'],
+                'model_names': prediction_results['model_names']
+            },
+            'performance_breakdown': performance_data,
+            'output_files': output_paths,
+            'model_info': self._get_model_info()
+        }
+
+        logger.info(f"Inference pipeline completed in {mode} mode - processed {sample_count} samples")
+        return results
 
     def _load_trained_models(self):
         """
@@ -529,3 +584,60 @@ class InferenceStage(PipelineStage):
             df = pd.DataFrame(data)
             df.to_csv(output_file, index=False)
             logger.info(f"Confidence scores saved to CSV: {output_file}")
+
+    def _transform_features_with_progress(self, features, models, progress, task_id):
+        """
+        Transform features through trained UMAP with progress tracking.
+
+        Parameters
+        ----------
+        features : np.ndarray
+            Input features to transform
+        models : dict
+            Trained models including UMAP
+        progress : Progress
+            Rich progress instance
+        task_id : TaskID
+            Progress task identifier
+
+        Returns
+        -------
+        np.ndarray
+            Transformed features
+        """
+        # For now, use the existing transform method and update progress
+        # In a real implementation, this could track batch-wise progress
+        transformed_features = self._transform_features(features, models)
+        
+        # Update progress based on feature count
+        progress.advance(task_id, len(features))
+        
+        return transformed_features
+
+    def _predict_with_progress(self, embeddings, models, progress, task_id):
+        """
+        Run ensemble predictions with progress tracking.
+
+        Parameters
+        ----------
+        embeddings : np.ndarray
+            Transformed feature embeddings
+        models : dict
+            Trained prediction models
+        progress : Progress
+            Rich progress instance
+        task_id : TaskID
+            Progress task identifier
+
+        Returns
+        -------
+        dict
+            Prediction results with confidence scores and model breakdown
+        """
+        # Use existing predict method and update progress
+        prediction_results = self._predict(embeddings, models)
+        
+        # Update progress based on sample count
+        progress.advance(task_id, len(embeddings))
+        
+        return prediction_results
