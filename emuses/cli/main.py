@@ -1619,7 +1619,7 @@ async def _inference_async(**kwargs) -> None:
 
 async def _execute_inference_locally(config: dict, status_renderer) -> None:
     """
-    Execute inference locally using InferenceStage.
+    Execute inference locally using EMUSESPipeline with InferenceStage.
     
     Parameters
     ----------
@@ -1630,33 +1630,48 @@ async def _execute_inference_locally(config: dict, status_renderer) -> None:
     """
     try:
         from emuses.pipelines.inference_stage import InferenceStage
-        from emuses.pipelines.pipeline_config import PipelineConfig
+        from emuses.pipelines.emuses_pipeline import EMUSESPipeline
         
-        print(status_renderer.render_status("info", "Initializing inference stage..."))
+        print(status_renderer.render_status("info", "Initializing inference pipeline..."))
         
-        # Create pipeline configuration for inference
-        inference_config = PipelineConfig(
-            model_path=str(config["model"]),
-            data_path=str(config["data"]),
-            output_path=str(config["output"]),
-            validate_mode=config.get("validate", False),
-            output_folder=str(config["output"])
-        )
+        # Create args object for EMUSESPipeline (required for data processing)
+        args = type('Args', (), {})()
+        args.input_dataset = str(config["data"])
+        args.output_folder = str(config["output"])
+        args.random_state = 42
+        args.load_embeddings = None
+        args.bids_filters = None
         
-        # Create and run inference stage
-        stage = InferenceStage(inference_config)
+        print(status_renderer.render_status("info", "Processing input data..."))
         
-        print(status_renderer.render_status("info", "Loading trained models..."))
+        # Create EMUSESPipeline for data processing (standard pattern)
+        pipeline = EMUSESPipeline(args)
         
+        # Process dataset to get features and labels in context format
+        input_matrix, dataset_type, output_format_info, scores = pipeline.process_dataset(config["data"])
+        
+        # Prepare context with processed data (standard stage pattern)
         context = {
+            "inference_features": input_matrix,
+            "inference_labels": scores,
+            "dataset_type": dataset_type,
+            "output_format_info": output_format_info,
             "verify_integrity": config.get("verify", True),
             "output_format": config.get("output_format", "csv")
         }
         
+        print(status_renderer.render_status("info", "Adding inference stage..."))
+        
+        # Create inference stage with proper configuration
+        inference_stage = InferenceStage(pipeline.config)
+        inference_stage.model_path = str(config["model"])
+        inference_stage.output_path = str(config["output"])
+        inference_stage.validate_mode = config.get("validate", False)
+        
         print(status_renderer.render_status("info", "Running inference..."))
         
-        # Run inference
-        results = stage.run(context)
+        # Run inference stage with processed data in context (standard pattern)
+        results = inference_stage.run(context)
         
         # Display results summary
         mode = results.get("mode", "inference")

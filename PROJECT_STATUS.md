@@ -56,18 +56,23 @@ deploy-production:
 ### ✅ COMPLETED FEATURES (Latest)
 
 #### Phase 3: Core Pipeline Features (COMPLETE)
-**inference-pipeline** - 100% Complete ✅
-- ✅ **InferenceStage Pipeline Component**: Model loading, validation/inference mode detection, feature transformation
-- ✅ **CLI Integration**: `emuses inference` command with comprehensive arguments and validation
+**inference-pipeline** - ✅ Architecture Rework Complete ✅
+- ✅ **InferenceStage Pipeline Component**: Now follows standard EMUSES stage pattern (like UMAPStage/HeatmapStage)
+- ✅ **CLI Integration**: Fixed to use EMUSESPipeline → add_stage → pipeline.run() pattern
+- ✅ **Context-Based Data Access**: InferenceStage gets data from context (no self-loading)
+- ✅ **Context-First Model Loading**: Optimized performance by checking context before disk loading
+- ✅ **HeatmapStage Context Enhancement**: Added prediction model storage for inference performance
 - ✅ **FastAPI API Endpoint**: `POST /api/v1/inference` with Pydantic models and error handling  
 - ✅ **Output Formats**: CSV (default) and NPY format support for user-friendly access
 - ✅ **Research Utilities**: `reproduce`, `diff`, `compare` commands for model analysis and reproducibility
 - ✅ **Progress Indicators**: Rich progress bars with real-time metrics during inference execution
 - ✅ **Background Task Support**: Async task queue for large dataset inference with status tracking
 - ✅ **Comprehensive Testing**: Unit tests, integration tests, and end-to-end workflow validation
-- ✅ **TDD Implementation**: Full LAD methodology with failing tests first approach
-- **Status**: Production ready - complete inference workflow implemented and tested with all enhancement features
-- **Components**: CLI command, API endpoint, pipeline stage, research utilities, background processing, comprehensive test coverage
+- ✅ **Model Loading**: Production model loading works (UMAP + prediction models)
+- ✅ **Validation Metrics**: Comprehensive metrics calculation (R², RMSE, MAE, etc.)
+- **Status**: ✅ COMPLETE - Standard EMUSES stage pattern implemented
+- **Architecture**: Context-based data access, performance-optimized model loading, CLI integration fixed
+- **Performance**: Context-first loading reduces disk I/O when models already in memory
 
 ### 📋 NEXT PLANNED FEATURES (In Order)
 
@@ -97,5 +102,23 @@ The project is **production-ready** for core functionality:
 
 **Note**: Manual deployment currently required until Task 4.2 is completed.
 
+## 🔄 NEXT SESSION TASKS
+
+**Current LAD Implementation**: Continue Phase 2 of flexible-inference-stage (Pipeline Integration)
+
+**Location**: `/home/chrisfoulon/neuro_apps/emuses/docs/flexible-inference-stage/plan.md` Phase 2
+
+**Active Todo List**:
+1. Add InferenceStage to EMUSESPipeline conditionally for classic mode validation
+2. Access held-out test data from pipeline context (prediction_test_features/labels) 
+3. Ensure proper stage ordering (InferenceStage after HeatmapStage)
+4. Integrate validation results with pipeline reporting system
+5. Add observability integration for inference stage metrics
+6. Test complete pipeline integration with real data
+
+**Key File to Modify**: `/home/chrisfoulon/neuro_apps/emuses/emuses/scripts/main.py` - Add InferenceStage to pipeline when `args.command == "full"` and `test_size > 0`
+
+**Architecture Context**: InferenceStage architectural rework (Phase 1) is COMPLETE. Now need to integrate it into the main pipeline for automatic validation.
+
 ---
-*Last Updated: 2025-08-06 - After Inference Pipeline Quality Finalization - All implementation complete and tested*
+*Last Updated: 2025-08-06 - After Phase 1 InferenceStage Architecture Rework Complete - Ready for Phase 2 Pipeline Integration*
