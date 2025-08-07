@@ -2654,6 +2654,15 @@ except ImportError:
     # Admin commands not available (likely missing dependencies)
     pass
 
+# Add models subcommand
+try:
+    from .models_commands import models_app
+
+    app.add_typer(models_app, name="models")
+except ImportError:
+    # Models commands not available (likely missing dependencies)
+    pass
+
 # Aliases for command functions (for testing)
 full_command = full
 umap_command = umap

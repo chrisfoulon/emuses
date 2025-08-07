@@ -195,9 +195,12 @@ try:
         from emuses.multi_user_service.endpoints import setup_auth_endpoints
         from emuses.multi_user_service.workspace_endpoints import \
             setup_workspace_endpoints
+        from emuses.multi_user_service.model_registry_endpoints import \
+            setup_model_registry_endpoints
 
         setup_workspace_endpoints(app)
         setup_auth_endpoints(app)
+        setup_model_registry_endpoints(app)
         logger.info(
             f"Multi-user service endpoints enabled for {deployment_mode.value} mode"
         )
