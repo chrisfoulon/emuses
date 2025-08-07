@@ -53,3 +53,8 @@ optuna-dashboard
 # Observability packages (lightweight approach)
 prometheus-client>=0.19.0
 structlog>=23.2.0
+
+# Cloud storage packages (for model-registry Sub-Plan 3)
+boto3
+azure-storage-blob
+google-cloud-storage
