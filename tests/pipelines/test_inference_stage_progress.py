@@ -60,7 +60,7 @@ class TestInferenceStageProgress(unittest.TestCase):
         
         # Mock the required methods
         with patch.object(stage, '_load_trained_models', return_value={}):
-            with patch.object(stage, '_load_features', return_value=np.array([[1, 2], [3, 4]])):
+            with patch.object(stage, '_load_features_from_context', return_value=np.array([[1, 2], [3, 4]])):
                 with patch.object(stage, '_detect_labels', return_value=False):
                     with patch.object(stage, '_transform_features', return_value=np.array([[0.1, 0.2], [0.3, 0.4]])):
                         with patch.object(stage, '_predict', return_value={'predictions': [0.7, 0.8]}):
@@ -88,7 +88,7 @@ class TestInferenceStageProgress(unittest.TestCase):
         
         # Mock all dependencies
         with patch.object(stage, '_load_trained_models', return_value={}):
-            with patch.object(stage, '_load_features', return_value=np.array([[1, 2]])):
+            with patch.object(stage, '_load_features_from_context', return_value=np.array([[1, 2]])):
                 with patch.object(stage, '_detect_labels', return_value=False):
                     with patch.object(stage, '_transform_features', return_value=np.array([[0.1, 0.2]])):
                         with patch.object(stage, '_predict', return_value={'predictions': [0.7]}):
@@ -136,7 +136,7 @@ class TestInferenceStageProgress(unittest.TestCase):
             return np.array([[1, 2], [3, 4], [5, 6]])
             
         with patch.object(stage, '_load_trained_models', return_value={}):
-            with patch.object(stage, '_load_features', side_effect=mock_load_features):
+            with patch.object(stage, '_load_features_from_context', side_effect=mock_load_features):
                 with patch.object(stage, '_detect_labels', return_value=False):
                     with patch.object(stage, '_transform_features', return_value=np.array([[0.1], [0.2], [0.3]])):
                         with patch.object(stage, '_predict', return_value={'predictions': [0.7, 0.8, 0.9]}):
@@ -164,7 +164,7 @@ class TestInferenceStageProgress(unittest.TestCase):
         large_dataset = np.random.rand(1000, 10)
         
         with patch.object(stage, '_load_trained_models', return_value={}):
-            with patch.object(stage, '_load_features', return_value=large_dataset):
+            with patch.object(stage, '_load_features_from_context', return_value=large_dataset):
                 with patch.object(stage, '_detect_labels', return_value=False):
                     with patch.object(stage, '_transform_features', return_value=np.random.rand(1000, 2)):
                         with patch.object(stage, '_predict', return_value={'predictions': np.random.rand(1000)}):
@@ -192,7 +192,7 @@ class TestInferenceStageProgress(unittest.TestCase):
         stage = InferenceStage(config)
         
         with patch.object(stage, '_load_trained_models', return_value={}):
-            with patch.object(stage, '_load_features', return_value=np.array([[1, 2]])):
+            with patch.object(stage, '_load_features_from_context', return_value=np.array([[1, 2]])):
                 with patch.object(stage, '_detect_labels', return_value=False):
                     with patch.object(stage, '_transform_features', return_value=np.array([[0.1, 0.2]])):
                         with patch.object(stage, '_predict', return_value={'predictions': [0.7]}):

@@ -425,11 +425,11 @@ class PipelineRunner:
                     pipeline.add_stage(InferenceStage(pipeline.config))
                     enabled_stages.append("inference")
                     
-                    logger.info(f"Added InferenceStage for automatic validation (test_size={config_dict.get('test_size', 0.0)})")
+                    self.logger.info(f"Added InferenceStage for automatic validation (test_size={config_dict.get('test_size', 0.0)})")
 
                 # PredictionStage retired - replaced by HeatmapStage + InferenceStage
                 if config_dict.get("prediction_stage_enabled", False):  # Disabled by default
-                    logger.warning("PredictionStage has been retired. Use HeatmapStage for training and InferenceStage for validation.")
+                    self.logger.warning("PredictionStage has been retired. Use HeatmapStage for training and InferenceStage for validation.")
                     # from emuses.pipelines.prediction_stage import PredictionStage
                     # pipeline.add_stage(PredictionStage(pipeline.config))
                     # enabled_stages.append("prediction")

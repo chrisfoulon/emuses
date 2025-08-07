@@ -13,7 +13,9 @@ import time
 from datetime import datetime
 from pathlib import Path
 
+import joblib
 import numpy as np
+import pandas as pd
 from rich.console import Console
 from rich.progress import (
     Progress,
@@ -24,7 +26,9 @@ from rich.progress import (
     TimeRemainingColumn,
     TimeElapsedColumn
 )
+from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score, accuracy_score
 
+from bcblib.tools.general_utils import save_json
 from emuses.pipelines.pipeline_stage import PipelineStage
 from emuses.tools.emuses_utils import rescale_embedding
 from emuses.tools.model_io import ModelIOManager
@@ -118,7 +122,7 @@ class InferenceStage(PipelineStage):
                 # Task 3: Transform features
                 sample_count = len(new_features)
                 transform_task = progress.add_task(
-                    f"Transforming features ({sample_count} samples)...", 
+                    f"Transforming features ({sample_count} samples)...",
                     total=sample_count
                 )
                 transform_start = time.time()
@@ -129,7 +133,7 @@ class InferenceStage(PipelineStage):
 
                 # Task 4: Run predictions
                 predict_task = progress.add_task(
-                    f"Running predictions ({sample_count} samples)...", 
+                    f"Running predictions ({sample_count} samples)...",
                     total=sample_count
                 )
                 predict_start = time.time()
@@ -140,7 +144,7 @@ class InferenceStage(PipelineStage):
 
                 # Task 5: Save results
                 save_task = progress.add_task("Saving results...", total=1)
-                
+
                 # Calculate performance breakdown with actual measurements
                 total_duration = time.time() - start_time
                 performance_data = {
@@ -155,7 +159,7 @@ class InferenceStage(PipelineStage):
                 validation_metrics = None
                 if mode == "validation" and hasattr(self, '_detected_labels') and self._detected_labels is not None:
                     validation_metrics = self._calculate_validation_metrics(
-                        prediction_results['ensemble_predictions'], 
+                        prediction_results['ensemble_predictions'],
                         self._detected_labels
                     )
                     logger.info("Validation metrics calculated successfully")
@@ -225,11 +229,11 @@ class InferenceStage(PipelineStage):
         # 1. Check context for in-memory models first (pipeline-integrated mode)
         umap_model = context.get("embedding_train_umap_model")
         prediction_models = context.get("prediction_models")
-        
+
         if umap_model is not None:
             models['umap_model'] = umap_model
             logger.info("Using UMAP model from pipeline context (fast)")
-            
+
             # Get scaling parameters from context or model attributes
             models['metadata']['min_embeddings'] = getattr(umap_model, 'min_embeddings_', None)
             models['metadata']['max_embeddings'] = getattr(umap_model, 'max_embeddings_', None)
@@ -239,20 +243,20 @@ class InferenceStage(PipelineStage):
             if umap_model is not None:
                 models['umap_model'] = umap_model
                 logger.info("Loaded UMAP model from disk (slower)")
-                
+
                 # Load scaling parameters needed for rescaling
                 models['metadata']['min_embeddings'] = getattr(umap_model, 'min_embeddings_', None)
                 models['metadata']['max_embeddings'] = getattr(umap_model, 'max_embeddings_', None)
             else:
                 logger.warning("UMAP model not available - inference will be limited")
-            
+
         if prediction_models is not None and len(prediction_models) > 0:
             models['prediction_models'] = prediction_models
             logger.info(f"Using {len(prediction_models)} prediction models from pipeline context (fast)")
         else:
             # 3. Load prediction models from disk only if not in context
             models['prediction_models'] = self._load_prediction_models_from_disk()
-            
+
         return models
 
     def _load_umap_from_disk(self):
@@ -267,7 +271,7 @@ class InferenceStage(PipelineStage):
         if not self.model_path:
             logger.warning("No model_path specified - cannot load UMAP from disk")
             return None
-            
+
         model_dir = Path(self.model_path)
         if not model_dir.exists():
             logger.warning(f"Model directory not found: {model_dir}")
@@ -297,27 +301,26 @@ class InferenceStage(PipelineStage):
         if not self.model_path:
             logger.warning("No model_path specified - cannot load prediction models from disk")
             return []
-            
+
         model_dir = Path(self.model_path)
         if not model_dir.exists():
             logger.warning(f"Model directory not found: {model_dir}")
             return []
 
         prediction_models = []
-        
+
         # Search for prediction model files (pattern: target_*/best_pipeline_fold*_*.joblib)
         target_dirs = list(model_dir.glob('target_*'))
         logger.info(f"Found {len(target_dirs)} target directories for model loading")
-        
+
         for target_dir in target_dirs:
             if target_dir.is_dir():
                 # Find best pipeline models
                 model_files = list(target_dir.glob('best_pipeline_fold*_*.joblib'))
                 logger.info(f"Found {len(model_files)} model files in {target_dir.name}")
-                
+
                 for model_file in model_files:
                     try:
-                        import joblib
                         model = joblib.load(model_file)
                         prediction_models.append({
                             'model': model,
@@ -328,7 +331,7 @@ class InferenceStage(PipelineStage):
                         logger.info(f"Successfully loaded prediction model: {model_file.name}")
                     except Exception as e:
                         logger.warning(f"Failed to load model {model_file}: {e}")
-        
+
         logger.info(f"Successfully loaded {len(prediction_models)} prediction models from disk")
         return prediction_models
 
@@ -382,20 +385,19 @@ class InferenceStage(PipelineStage):
 
         # Load prediction models from HeatmapStage outputs
         prediction_models = []
-        
+
         # Search for prediction model files (pattern: target_*/best_pipeline_fold*_*.joblib)
         target_dirs = list(model_dir.glob('target_*'))
         logger.info(f"Found {len(target_dirs)} target directories for model loading")
-        
+
         for target_dir in target_dirs:
             if target_dir.is_dir():
                 # Find best pipeline models
                 model_files = list(target_dir.glob('best_pipeline_fold*_*.joblib'))
                 logger.info(f"Found {len(model_files)} model files in {target_dir.name}")
-                
+
                 for model_file in model_files:
                     try:
-                        import joblib
                         model = joblib.load(model_file)
                         prediction_models.append({
                             'model': model,
@@ -406,14 +408,14 @@ class InferenceStage(PipelineStage):
                         logger.info(f"Successfully loaded prediction model: {model_file.name}")
                     except Exception as e:
                         logger.warning(f"Failed to load model {model_file}: {e}")
-        
+
         models['prediction_models'] = prediction_models
         logger.info(f"Successfully loaded {len(prediction_models)} prediction models")
-        
+
         # If no prediction models found, log warning but continue
         if len(prediction_models) == 0:
             logger.warning("No prediction models found - inference will be limited to UMAP transformation")
-            
+
         return models
 
     def _detect_labels(self):
@@ -429,12 +431,12 @@ class InferenceStage(PipelineStage):
         if hasattr(self, '_detected_labels') and self._detected_labels is not None:
             logger.info(f"Labels detected during data loading: shape {self._detected_labels.shape}")
             return True
-            
+
         # Check for explicit validation mode flag
         if self.validate_mode:
             logger.info("Validation mode explicitly enabled")
             return True
-            
+
         # Check data path for label indicators
         if self.data_path:
             data_path_str = str(self.data_path).lower()
@@ -443,7 +445,7 @@ class InferenceStage(PipelineStage):
             if has_indicators:
                 logger.info(f"Label indicators found in data path: {self.data_path}")
                 return True
-                
+
         logger.info("No labels detected - running in inference-only mode")
         return False
 
@@ -485,12 +487,12 @@ class InferenceStage(PipelineStage):
             features = context.get("features")
             if features is None:
                 features = context.get("input_matrix")
-            
+
         if features is None:
             raise ValueError("No inference features found in context. InferenceStage must receive data from EMUSESPipeline.")
-            
+
         logger.info(f"Retrieved features from context: shape {features.shape}")
-        
+
         # Check for labels in context for validation mode using semantic aliasing
         # Priority order: pipeline context -> standalone context -> generic fallbacks
         labels = context.get("prediction_test_labels")  # Full pipeline context (existing standard)
@@ -501,13 +503,13 @@ class InferenceStage(PipelineStage):
             labels = context.get("labels")
             if labels is None:
                 labels = context.get("scores")
-            
+
         if labels is not None:
             logger.info(f"Labels found in context: shape {labels.shape}")
             self._detected_labels = labels
         else:
             self._detected_labels = None
-            
+
         return features
 
     def _transform_features(self, features, models):
@@ -734,7 +736,6 @@ class InferenceStage(PipelineStage):
             metadata_content['validation_metrics'] = results['validation_metrics']
 
         # Use bcblib save_json for consistency
-        from bcblib.tools.general_utils import save_json
         save_json(metadata_file, metadata_content)
 
         output_paths = {'metadata_file': str(metadata_file)}
@@ -777,7 +778,6 @@ class InferenceStage(PipelineStage):
         output_file : Path
             Path to output CSV file
         """
-        import pandas as pd
 
         # Create DataFrame with consistent structure
         n_samples = len(results['predictions'])
@@ -807,7 +807,6 @@ class InferenceStage(PipelineStage):
         output_file : Path
             Path to output CSV file
         """
-        import pandas as pd
 
         confidence_scores = results.get('confidence_scores', [])
         if len(confidence_scores) > 0:
@@ -842,10 +841,10 @@ class InferenceStage(PipelineStage):
         # For now, use the existing transform method and update progress
         # In a real implementation, this could track batch-wise progress
         transformed_features = self._transform_features(features, models)
-        
+
         # Update progress based on feature count
         progress.advance(task_id, len(features))
-        
+
         return transformed_features
 
     def _predict_with_progress(self, embeddings, models, progress, task_id):
@@ -870,10 +869,10 @@ class InferenceStage(PipelineStage):
         """
         # Use existing predict method and update progress
         prediction_results = self._predict(embeddings, models)
-        
+
         # Update progress based on sample count
         progress.advance(task_id, len(embeddings))
-        
+
         return prediction_results
 
     def _calculate_validation_metrics(self, predictions, ground_truth):
@@ -892,12 +891,9 @@ class InferenceStage(PipelineStage):
         dict
             Dictionary containing validation metrics (MSE, MAE, R², etc.)
         """
-        import numpy as np
-        from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score, accuracy_score
-
         predictions = np.array(predictions)
         ground_truth = np.array(ground_truth)
-        
+
         # Ensure same length
         if len(predictions) != len(ground_truth):
             min_len = min(len(predictions), len(ground_truth))
@@ -915,7 +911,7 @@ class InferenceStage(PipelineStage):
             },
             'ground_truth_range': {
                 'min': float(np.min(ground_truth)),
-                'max': float(np.max(ground_truth)), 
+                'max': float(np.max(ground_truth)),
                 'mean': float(np.mean(ground_truth)),
                 'std': float(np.std(ground_truth))
             }
@@ -927,7 +923,7 @@ class InferenceStage(PipelineStage):
             metrics['mae'] = float(mean_absolute_error(ground_truth, predictions))
             metrics['rmse'] = float(np.sqrt(metrics['mse']))
             metrics['r2_score'] = float(r2_score(ground_truth, predictions))
-            
+
             # Correlation coefficient
             correlation = np.corrcoef(ground_truth, predictions)[0, 1]
             metrics['correlation'] = float(correlation) if not np.isnan(correlation) else 0.0
@@ -936,22 +932,22 @@ class InferenceStage(PipelineStage):
             unique_gt = np.unique(ground_truth)
             # Check unique predictions for classification detection
             np.unique(predictions)
-            
+
             if len(unique_gt) <= 10 and np.all(unique_gt == unique_gt.astype(int)):
                 # Classification-like data
                 # Round predictions to nearest integers for classification metrics
                 pred_rounded = np.round(predictions).astype(int)
-                
+
                 try:
                     metrics['accuracy'] = float(accuracy_score(ground_truth.astype(int), pred_rounded))
                     logger.info("Added classification metrics (accuracy) for discrete target values")
                 except Exception as e:
                     logger.warning(f"Could not calculate classification metrics: {e}")
-                    
+
             logger.info(f"Calculated validation metrics: R² = {metrics['r2_score']:.3f}, RMSE = {metrics['rmse']:.3f}")
-            
+
         except Exception as e:
             logger.error(f"Error calculating validation metrics: {e}")
             metrics['error'] = str(e)
-            
+
         return metrics

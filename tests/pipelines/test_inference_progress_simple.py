@@ -48,7 +48,9 @@ class TestInferenceProgressSimple(unittest.TestCase):
         # Mock all the methods that would be called to prevent actual execution
         with patch.object(stage, '_load_trained_models', side_effect=Exception("Test complete")):
             try:
-                stage.run({})
+                # Provide a minimal context with features to avoid context validation error
+                context = {"prediction_test_features": [[1, 2], [3, 4]]}
+                stage.run(context)
             except Exception as e:
                 if "Test complete" in str(e):
                     pass  # Expected - we want to stop early
