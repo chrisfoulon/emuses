@@ -1,3 +1,19 @@
+# [1.3.0](https://github.com/chrisfoulon/emuses/compare/v1.2.0...v1.3.0) (2025-08-07)
+
+
+### Bug Fixes
+
+* **inference-pipeline:** resolve logger error and complete quality finalization ([67f3f74](https://github.com/chrisfoulon/emuses/commit/67f3f748926ce57891eaaac22ae84320d4b2446b))
+
+
+### Features
+
+* Complete inference pipeline implementation with LAD TDD methodology ([de6617b](https://github.com/chrisfoulon/emuses/commit/de6617b3d5ac82e4fb0a11201099c8c9b9b11b9e))
+* Complete inference pipeline Phase 0 - Universal Model Format with enhanced ModelIOManager ([ddce739](https://github.com/chrisfoulon/emuses/commit/ddce73979b67d747fce30fd8752af96f2ffa1e3e))
+* Complete InferenceStage architecture rework following LAD methodology ([d6d13b9](https://github.com/chrisfoulon/emuses/commit/d6d13b926f36c37697f22aa77a84eafcabbd1894))
+* Complete legacy CLI cleanup and finalize flexible-inference-stage implementation ([f5c9912](https://github.com/chrisfoulon/emuses/commit/f5c991263f6d89a379acac4fed0b6a614c60cd18))
+* **inference-pipeline:** Complete inference pipeline implementation with LAD TDD methodology ([9734841](https://github.com/chrisfoulon/emuses/commit/973484119085ef9867f679114591ec1fedda8588))
+
 # [1.2.0](https://github.com/chrisfoulon/emuses/compare/v1.1.0...v1.2.0) (2025-08-05)
 
 
