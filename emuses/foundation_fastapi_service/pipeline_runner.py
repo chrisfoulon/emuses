@@ -413,12 +413,26 @@ class PipelineRunner:
                     )
                     enabled_stages.append("heatmap")
 
-                if config_dict.get("prediction_stage_enabled", True):
-                    from emuses.pipelines.prediction_stage import \
-                        PredictionStage
+                # InferenceStage for classic mode validation when test_size > 0
+                # Automatically added after HeatmapStage for held-out test set validation
+                if (config_dict.get("inference_stage_enabled", True) and 
+                    config_dict.get("test_size", 0.0) > 0.0 and 
+                    config_dict.get("label_dataset") is None):  # Classic mode only
+                    
+                    from emuses.pipelines.inference_stage import InferenceStage
+                    
+                    # InferenceStage will access prediction_test_features and prediction_test_labels from context
+                    pipeline.add_stage(InferenceStage(pipeline.config))
+                    enabled_stages.append("inference")
+                    
+                    self.logger.info(f"Added InferenceStage for automatic validation (test_size={config_dict.get('test_size', 0.0)})")
 
-                    pipeline.add_stage(PredictionStage(pipeline.config))
-                    enabled_stages.append("prediction")
+                # PredictionStage retired - replaced by HeatmapStage + InferenceStage
+                if config_dict.get("prediction_stage_enabled", False):  # Disabled by default
+                    self.logger.warning("PredictionStage has been retired. Use HeatmapStage for training and InferenceStage for validation.")
+                    # from emuses.pipelines.prediction_stage import PredictionStage
+                    # pipeline.add_stage(PredictionStage(pipeline.config))
+                    # enabled_stages.append("prediction")
 
                 obs_ctx.set_attribute("enabled_stages", enabled_stages)
 

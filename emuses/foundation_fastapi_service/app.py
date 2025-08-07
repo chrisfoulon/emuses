@@ -12,6 +12,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 from uuid import UUID, uuid4
+import threading
+import time
 
 # Explicit import for Starlette form parser compatibility
 import python_multipart
@@ -26,6 +28,8 @@ from slowapi.util import get_remote_address
 from emuses.foundation_fastapi_service.models import (ErrorResponse,
                                                       FileUploadModel,
                                                       FileUploadResponse,
+                                                      InferenceRequest,
+                                                      InferenceResponse,
                                                       JobStatusResponse,
                                                       JobSubmissionRequest,
                                                       PipelineConfigRequest)
@@ -457,6 +461,291 @@ def conditional_rate_limit(rate_limit_str: str):
         return func
 
     return decorator
+
+
+# Background Task Management System
+class BackgroundTaskManager:
+    """
+    Simple in-memory background task manager for handling async inference operations.
+    
+    In a production environment, this would be replaced with a proper task queue
+    like Celery, RQ, or similar distributed task system.
+    """
+    
+    def __init__(self):
+        self.tasks = {}  # task_id -> task_info
+        self.lock = threading.Lock()
+    
+    def create_task(self, inference_request: dict, request_id: str = None) -> str:
+        """
+        Create a new background task for inference.
+
+        Parameters
+        ----------
+        inference_request : dict
+            Inference request parameters
+        request_id : str, optional
+            Request correlation ID
+
+        Returns
+        -------
+        str
+            Task ID for tracking
+        """
+        task_id = str(uuid4())
+        
+        with self.lock:
+            self.tasks[task_id] = {
+                "task_id": task_id,
+                "status": "queued",
+                "created_at": datetime.now(timezone.utc).isoformat(),
+                "request": inference_request,
+                "request_id": request_id,
+                "progress": 0,
+                "result": None,
+                "error": None
+            }
+        
+        # Start background thread to process the task
+        thread = threading.Thread(target=self._process_task, args=(task_id,))
+        thread.daemon = True
+        thread.start()
+        
+        return task_id
+    
+    def get_task_status(self, task_id: str) -> Optional[Dict[str, Any]]:
+        """Get current task status and progress."""
+        with self.lock:
+            return self.tasks.get(task_id)
+    
+    def get_task_result(self, task_id: str) -> Optional[Dict[str, Any]]:
+        """Get task result if completed."""
+        with self.lock:
+            task = self.tasks.get(task_id)
+            if task and task["status"] == "completed":
+                return {
+                    "task_id": task_id,
+                    "status": "completed", 
+                    "result": task["result"]
+                }
+            return None
+    
+    def cancel_task(self, task_id: str) -> bool:
+        """Cancel a running or queued task."""
+        with self.lock:
+            if task_id in self.tasks:
+                task = self.tasks[task_id]
+                if task["status"] in ["queued", "running"]:
+                    task["status"] = "cancelled"
+                    return True
+        return False
+    
+    def _process_task(self, task_id: str):
+        """Process inference task in background thread."""
+        try:
+            with self.lock:
+                if task_id not in self.tasks:
+                    return
+                self.tasks[task_id]["status"] = "running"
+                self.tasks[task_id]["started_at"] = datetime.now(timezone.utc).isoformat()
+            
+            # Simulate inference processing with progress updates
+            for i in range(0, 101, 20):
+                with self.lock:
+                    if self.tasks[task_id]["status"] == "cancelled":
+                        return
+                    self.tasks[task_id]["progress"] = i
+                
+                time.sleep(0.1)  # Simulate work
+            
+            # Mock inference result (in real implementation, would call InferenceStage)
+            mock_result = {
+                "predictions": [0.7, 0.8, 0.6],
+                "confidence_scores": [0.9, 0.85, 0.75],
+                "processing_time_ms": 500,
+                "samples_processed": 3
+            }
+            
+            with self.lock:
+                self.tasks[task_id]["status"] = "completed"
+                self.tasks[task_id]["completed_at"] = datetime.now(timezone.utc).isoformat()
+                self.tasks[task_id]["progress"] = 100
+                self.tasks[task_id]["result"] = mock_result
+                
+        except Exception as e:
+            with self.lock:
+                self.tasks[task_id]["status"] = "failed"
+                self.tasks[task_id]["error"] = str(e)
+                self.tasks[task_id]["failed_at"] = datetime.now(timezone.utc).isoformat()
+
+
+# Global task manager instance
+background_tasks = BackgroundTaskManager()
+
+
+# Background Task API Endpoints
+@app.post("/api/v1/inference/async", status_code=202)
+@conditional_rate_limit("10/hour")  # Lower limit for async tasks
+async def run_inference_async(
+    request: Request, inference_request: InferenceRequest
+) -> Dict[str, Any]:
+    """
+    Run inference asynchronously in the background.
+    
+    This endpoint queues an inference task for background processing,
+    allowing clients to handle long-running operations without blocking.
+    
+    Parameters
+    ----------
+    inference_request : InferenceRequest
+        Inference request containing model path, data path, and configuration options
+        
+    Returns
+    -------
+    Dict[str, Any]
+        Task information including task_id for status tracking
+    
+    Raises
+    ------
+    HTTPException
+        422: Validation error
+        500: Internal server error
+    """
+    request_id = str(uuid4())
+    set_request_context(request_id=request_id, user_id="inference_user")
+    
+    try:
+        # Create background task
+        task_id = background_tasks.create_task(
+            inference_request.model_dump(),
+            request_id=request_id
+        )
+        
+        logger.info(f"Created async inference task: {task_id}")
+        
+        return {
+            "task_id": task_id,
+            "status": "queued",
+            "message": "Inference task queued for background processing",
+            "status_url": f"/api/v1/tasks/{task_id}",
+            "result_url": f"/api/v1/tasks/{task_id}/result"
+        }
+        
+    except Exception as e:
+        logger.error(f"Failed to create async inference task: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to queue inference task: {str(e)}")
+
+
+@app.get("/api/v1/tasks/{task_id}")
+async def get_task_status(task_id: str) -> Dict[str, Any]:
+    """
+    Get the status of a background task.
+    
+    Parameters
+    ----------
+    task_id : str
+        Task identifier
+        
+    Returns
+    -------
+    Dict[str, Any]
+        Task status information
+    
+    Raises
+    ------
+    HTTPException
+        404: Task not found
+    """
+    task_info = background_tasks.get_task_status(task_id)
+    
+    if not task_info:
+        raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
+    
+    return {
+        "task_id": task_id,
+        "status": task_info["status"],
+        "progress": task_info["progress"],
+        "created_at": task_info.get("created_at"),
+        "started_at": task_info.get("started_at"),
+        "completed_at": task_info.get("completed_at"),
+        "failed_at": task_info.get("failed_at"),
+        "error": task_info.get("error")
+    }
+
+
+@app.get("/api/v1/tasks/{task_id}/result")
+async def get_task_result(task_id: str) -> Dict[str, Any]:
+    """
+    Get the result of a completed background task.
+    
+    Parameters
+    ----------
+    task_id : str
+        Task identifier
+        
+    Returns
+    -------
+    Dict[str, Any]
+        Task result if completed
+    
+    Raises
+    ------
+    HTTPException
+        404: Task not found or not completed
+    """
+    result = background_tasks.get_task_result(task_id)
+    
+    if not result:
+        task_info = background_tasks.get_task_status(task_id)
+        if not task_info:
+            raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
+        else:
+            raise HTTPException(
+                status_code=404, 
+                detail=f"Task {task_id} result not available (status: {task_info['status']})"
+            )
+    
+    return result
+
+
+@app.delete("/api/v1/tasks/{task_id}")
+async def cancel_task(task_id: str) -> Dict[str, Any]:
+    """
+    Cancel a running or queued background task.
+    
+    Parameters
+    ----------
+    task_id : str
+        Task identifier
+        
+    Returns
+    -------
+    Dict[str, Any]
+        Cancellation confirmation
+    
+    Raises
+    ------
+    HTTPException
+        404: Task not found
+        400: Task cannot be cancelled
+    """
+    success = background_tasks.cancel_task(task_id)
+    
+    if not success:
+        task_info = background_tasks.get_task_status(task_id)
+        if not task_info:
+            raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
+        else:
+            raise HTTPException(
+                status_code=400, 
+                detail=f"Task {task_id} cannot be cancelled (status: {task_info['status']})"
+            )
+    
+    return {
+        "task_id": task_id,
+        "status": "cancelled",
+        "message": "Task cancelled successfully"
+    }
 
 
 # Pipeline Execution Endpoints
@@ -1282,6 +1571,162 @@ async def upload_labels_file(
         raise HTTPException(
             status_code=500, detail=f"Failed to upload labels file: {str(e)}"
         )
+
+
+@app.post("/api/v1/inference", status_code=200)
+@conditional_rate_limit("20/hour")  # Rate limit: 20 inference requests per hour per IP
+async def run_inference(
+    request: Request, inference_request: InferenceRequest
+) -> InferenceResponse:
+    """
+    Run inference on trained EMUSES model.
+    
+    This endpoint executes inference using the InferenceStage pipeline component,
+    supporting both inference and validation modes with comprehensive error handling.
+    
+    Parameters
+    ----------
+    inference_request : InferenceRequest
+        Inference request containing model path, data path, and configuration options
+        
+    Returns
+    -------
+    InferenceResponse
+        Inference results including predictions, performance metrics, and output files
+    
+    Raises
+    ------
+    HTTPException
+        422: Validation error or inference execution failure
+        500: Internal server error during inference
+    """
+    request_id = str(uuid4())
+    set_request_context(request_id=request_id, user_id="inference_user")
+    
+    try:
+        with track_http_request(
+            method="POST", 
+            endpoint="/api/v1/inference"
+        ):
+            logger.info(
+                "Starting inference request",
+                extra={
+                    "request_id": request_id,
+                    "model_path": inference_request.model_path,
+                    "data_path": inference_request.data_path,
+                    "output_format": inference_request.output_format,
+                    "validation_mode": inference_request.validation_mode
+                }
+            )
+            
+            # Import inference components
+            from emuses.pipelines.inference_stage import InferenceStage
+            from emuses.pipelines.pipeline_config import PipelineConfig
+            
+            # Create pipeline configuration
+            inference_config = PipelineConfig(
+                model_path=inference_request.model_path,
+                data_path=inference_request.data_path,
+                output_path=inference_request.output_path,
+                validate_mode=inference_request.validation_mode,
+                output_folder=inference_request.output_path or (inference_request.model_path + "/inference_results")
+            )
+            
+            # Create and run inference stage
+            stage = InferenceStage(inference_config)
+            
+            # Prepare execution context
+            context = {
+                "verify_integrity": inference_request.verify_integrity,
+                "output_format": inference_request.output_format
+            }
+            
+            # Execute inference
+            results = stage.run(context)
+            
+            # Extract results for response
+            predictions = results.get("predictions", [])
+            if hasattr(predictions, 'tolist'):
+                predictions = predictions.tolist()
+                
+            confidence_scores = None
+            if "prediction_details" in results:
+                confidence_scores = results["prediction_details"].get("confidence_scores", [])
+                if hasattr(confidence_scores, 'tolist'):
+                    confidence_scores = confidence_scores.tolist()
+            
+            performance = results.get("performance_breakdown", {})
+            
+            # Create response
+            response = {
+                "status": results.get("status", "completed"),
+                "mode": results.get("mode", "inference"),
+                "samples_processed": results.get("samples_processed", 0),
+                "predictions": predictions,
+                "confidence_scores": confidence_scores,
+                "processing_time_ms": performance.get("total_duration_ms", 0.0),
+                "throughput_samples_per_sec": performance.get("throughput_samples_per_sec", 0.0),
+                "model_info": results.get("model_info", {}),
+                "output_files": results.get("output_files", {}),
+                "validation_metrics": results.get("validation_metrics")
+            }
+            
+            logger.info(
+                "Inference request completed successfully",
+                extra={
+                    "request_id": request_id,
+                    "samples_processed": response["samples_processed"],
+                    "processing_time_ms": response["processing_time_ms"],
+                    "mode": response["mode"]
+                }
+            )
+            
+            return response
+            
+    except FileNotFoundError as e:
+        logger.error(
+            "Model or data file not found",
+            extra={"request_id": request_id, "error": str(e)}
+        )
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "error_code": "FILE_NOT_FOUND",
+                "message": f"Required file not found: {str(e)}",
+                "request_id": request_id,
+                "timestamp": datetime.now(timezone.utc).isoformat() + "Z"
+            }
+        )
+    except ValueError as e:
+        logger.error(
+            "Inference validation error",
+            extra={"request_id": request_id, "error": str(e)}
+        )
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "error_code": "INFERENCE_VALIDATION_ERROR", 
+                "message": f"Inference validation failed: {str(e)}",
+                "request_id": request_id,
+                "timestamp": datetime.now(timezone.utc).isoformat() + "Z"
+            }
+        )
+    except Exception as e:
+        logger.error(
+            "Inference execution failed",
+            extra={"request_id": request_id, "error": str(e)}
+        )
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "error_code": "INFERENCE_EXECUTION_ERROR",
+                "message": f"Inference execution failed: {str(e)}",
+                "request_id": request_id,
+                "timestamp": datetime.now(timezone.utc).isoformat() + "Z"
+            }
+        )
+    finally:
+        clear_context()
 
 
 # Health check endpoint

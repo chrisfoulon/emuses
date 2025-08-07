@@ -1,0 +1,50 @@
+{
+  "generation_info": {
+    "emuses_version": "1.0.0",
+    "export_version": "1.0.0",
+    "exported_at": "2025-08-05T15:47:52.376065"
+  },
+  "model_provenance": {
+    "compatibility": {
+      "min_emuses_version": "2.0.0",
+      "python_version": "3.11+",
+      "required_packages": [
+        "numpy",
+        "scipy",
+        "sklearn",
+        "pandas"
+      ]
+    },
+    "file_integrity": {
+      "test_model_v1_0_0_joblib1_3_1.joblib": {
+        "modified": "2025-08-05T15:47:52.367279",
+        "sha256": "0a45dc10a1a2ea351c15c80c2c0ccb94633cade996aac4aae528c633109a2cdf",
+        "size": 124
+      }
+    },
+    "model_info": {
+      "created_at": "2025-08-05T15:47:52.367279",
+      "description": "Test model for CLI testing",
+      "emuses_version": "1.0.0",
+      "name": "test_model",
+      "version": "1.0.0"
+    },
+    "training_context": {
+      "config_hash": "no_config",
+      "random_seeds": {}
+    }
+  },
+  "reproducibility": {
+    "config_hash": "no_config",
+    "environment": {
+      "python_version": "3.11+",
+      "required_packages": [
+        "numpy",
+        "scipy",
+        "sklearn",
+        "pandas"
+      ]
+    },
+    "random_seeds": {}
+  }
+}

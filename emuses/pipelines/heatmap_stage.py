@@ -404,6 +404,22 @@ class HeatmapStage(PipelineStage):
                 "cv_scores": scores,
                 "best_pipelines": pipes,
             }
+        
+        # Collect trained models for InferenceStage context (performance optimization)
+        prediction_models = []
+        for tag, result_data in context.get("prediction_results", {}).items():
+            best_pipelines = result_data.get("best_pipelines", [])
+            for i, pipeline in enumerate(best_pipelines):
+                prediction_models.append({
+                    'model': pipeline,
+                    'target': tag,
+                    'fold_info': f"fold_{i}",
+                    'name': f"{tag}_fold_{i}"
+                })
+        
+        # Store prediction models in context for InferenceStage performance optimization
+        context["prediction_models"] = prediction_models
+        logger.info(f"Stored {len(prediction_models)} prediction models in context for inference stage")
 
         # ------------------------------------------------------------------
         # Generate performance measures CSV files

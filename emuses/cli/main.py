@@ -1487,40 +1487,6 @@ async def _umap_async(**kwargs) -> None:
         )
 
 
-async def _clustering_async(**kwargs) -> None:
-    """Async implementation of the clustering command."""
-    status_renderer = StatusRenderer()
-    progress_tracker = ProgressTracker()
-
-    print(status_renderer.render_status("info", "Starting clustering..."))
-
-    pipeline_config = _convert_typer_args_to_service_config(**kwargs)
-
-    try:
-        await _execute_via_remote_service(
-            "clustering", pipeline_config, status_renderer, progress_tracker
-        )
-        print(
-            status_renderer.render_status(
-                "success", "Clustering completed successfully via service!"
-            )
-        )
-    except ServiceClientError as e:
-        print(
-            status_renderer.render_status(
-                "warning",
-                f"Service unavailable ({e}), falling back to local execution...",
-            )
-        )
-        await _execute_via_unified_service(
-            pipeline_config, status_renderer, progress_tracker
-        )
-        print(
-            status_renderer.render_status(
-                "success", "Clustering completed successfully via local execution!"
-            )
-        )
-
 
 async def _heatmap_async(**kwargs) -> None:
     """Async implementation of the heatmap generation command."""
@@ -1558,43 +1524,110 @@ async def _heatmap_async(**kwargs) -> None:
         )
 
 
-async def _prediction_async(**kwargs) -> None:
-    """Async implementation of the prediction model training command."""
+
+
+async def _inference_async(**kwargs) -> None:
+    """Async implementation of the inference command."""
     status_renderer = StatusRenderer()
-    progress_tracker = ProgressTracker()
+    # progress_tracker = ProgressTracker()  # Currently unused
 
-    print(
-        status_renderer.render_status("info", "Starting prediction model training...")
-    )
+    print(status_renderer.render_status("info", "Starting inference..."))
 
-    pipeline_config = _convert_typer_args_to_service_config(**kwargs)
-
+    # Execute inference locally using InferenceStage
     try:
-        await _execute_via_remote_service(
-            "prediction", pipeline_config, status_renderer, progress_tracker
-        )
+        await _execute_inference_locally(kwargs, status_renderer)
         print(
             status_renderer.render_status(
-                "success",
-                "Prediction model training completed successfully via service!",
+                "success", "Inference completed successfully!"
             )
         )
-    except ServiceClientError as e:
-        print(
-            status_renderer.render_status(
-                "warning",
-                f"Service unavailable ({e}), falling back to local execution...",
-            )
-        )
-        await _execute_via_unified_service(
-            pipeline_config, status_renderer, progress_tracker
-        )
-        print(
-            status_renderer.render_status(
-                "success",
-                "Prediction model training completed successfully via local execution!",
-            )
-        )
+    except Exception as e:
+        print(status_renderer.render_status("error", f"Inference failed: {e}"))
+        raise
+
+
+async def _execute_inference_locally(config: dict, status_renderer) -> None:
+    """
+    Execute inference locally using EMUSESPipeline with InferenceStage.
+
+    Parameters
+    ----------
+    config : dict
+        Inference configuration
+    status_renderer : StatusRenderer
+        Status display component
+    """
+    try:
+        from emuses.pipelines.inference_stage import InferenceStage
+        from emuses.pipelines.emuses_pipeline import EMUSESPipeline
+
+        print(status_renderer.render_status("info", "Initializing inference pipeline..."))
+
+        # Create args object for EMUSESPipeline (required for data processing)
+        args = type('Args', (), {})()
+        args.input_dataset = str(config["data"])
+        args.output_folder = str(config["output"])
+        args.random_state = 42
+        args.load_embeddings = None
+        args.bids_filters = None
+
+        print(status_renderer.render_status("info", "Processing input data..."))
+
+        # Create EMUSESPipeline for data processing (standard pattern)
+        pipeline = EMUSESPipeline(args)
+
+        # Process dataset to get features and labels in context format
+        input_matrix, dataset_type, output_format_info, scores = pipeline.process_dataset(config["data"])
+
+        # Prepare context with processed data (standard stage pattern)
+        context = {
+            "inference_features": input_matrix,
+            "inference_labels": scores,
+            "dataset_type": dataset_type,
+            "output_format_info": output_format_info,
+            "verify_integrity": config.get("verify", True),
+            "output_format": config.get("output_format", "csv")
+        }
+
+        print(status_renderer.render_status("info", "Adding inference stage..."))
+
+        # Create inference stage with proper configuration
+        inference_stage = InferenceStage(pipeline.config)
+        inference_stage.model_path = str(config["model"])
+        inference_stage.output_path = str(config["output"])
+        inference_stage.validate_mode = config.get("validate", False)
+
+        print(status_renderer.render_status("info", "Running inference..."))
+
+        # Run inference stage with processed data in context (standard pattern)
+        results = inference_stage.run(context)
+
+        # Display results summary
+        mode = results.get("mode", "inference")
+        samples_processed = results.get("samples_processed", 0)
+        performance = results.get("performance_breakdown", {})
+        total_time = performance.get("total_ms", 0) / 1000.0  # Convert to seconds
+
+        print(status_renderer.render_status("success", f"Processed {samples_processed} samples in {mode} mode"))
+        print(status_renderer.render_status("info", f"Total time: {total_time:.2f} seconds"))
+
+        if "output_files" in results:
+            output_files = results["output_files"]
+            print(status_renderer.render_status("info", f"Results saved to {len(output_files)} files:"))
+            for file_type, file_path in output_files.items():
+                print(status_renderer.render_status("info", f"  {file_type}: {file_path}"))
+
+        # Show validation results if available
+        if mode == "validation" and "validation_metrics" in results:
+            metrics = results["validation_metrics"]
+            print(status_renderer.render_status("info", "Validation metrics:"))
+            for metric, value in metrics.items():
+                print(status_renderer.render_status("info", f"  {metric}: {value:.4f}"))
+
+    except ImportError as e:
+        raise ServiceClientError(f"Inference stage not available: {e}")
+    except Exception as e:
+        raise ServiceClientError(f"Local inference execution failed: {e}")
 
 
 async def _execute_stage_locally(
@@ -1682,40 +1715,6 @@ def umap(
         raise typer.Exit(code=1)
 
 
-@app.command(help="Perform clustering on embeddings")
-def clustering(
-    output_folder: Annotated[Path, typer.Argument(help="Output folder")],
-) -> None:
-    """
-    Perform clustering on embeddings.
-
-    Parameters
-    ----------
-    output_folder : Path
-        Output folder for results
-
-    Returns
-    -------
-    None
-    """
-    # Save command for easy rerun
-    save_command_to_output_folder(output_folder)
-
-    # Run the async implementation
-    try:
-        asyncio.run(
-            _clustering_async(
-                output_folder=output_folder,
-            )
-        )
-    except KeyboardInterrupt:
-        typer.echo("\n🛑 Operation cancelled by user", err=True)
-        raise typer.Exit(code=130)
-    except Exception as e:
-        typer.echo(f"Error: {e}", err=True)
-        raise typer.Exit(code=1)
-
-
 @app.command(help="Create a heatmap")
 def heatmap(
     output_folder: Annotated[Path, typer.Argument(help="Output folder")],
@@ -1756,36 +1755,82 @@ def heatmap(
         raise typer.Exit(code=1)
 
 
-@app.command(help="Train a prediction model")
-def prediction(
-    output_folder: Annotated[Path, typer.Argument(help="Output folder")],
-    input_dataset: Annotated[
-        Path, typer.Argument(help="Input dataset of images (jpg), NIfTI, or MNIST")
-    ],
+@app.command(help="Run inference on trained model")
+def inference(
+    model: Annotated[Path, typer.Argument(help="Path to trained model directory")],
+    data: Annotated[Path, typer.Argument(help="Path to input data for inference")],
+    output: Annotated[
+        Optional[Path],
+        typer.Option("--output", "-o", help="Output path for results (default: model_dir/inference_results)")
+    ] = None,
+    validate: Annotated[
+        bool,
+        typer.Option("--validate", help="Force validation mode (requires ground truth)")
+    ] = False,
+    verify: Annotated[
+        bool,
+        typer.Option("--verify/--no-verify", help="Verify model integrity before inference")
+    ] = True,
+    output_format: Annotated[
+        str,
+        typer.Option("--format", help="Output format (csv or npy)")
+    ] = "csv",
 ) -> None:
     """
-    Train a prediction model.
+    Run inference on trained EMUSES model.
+
+    This command loads a trained model and runs inference on new data,
+    automatically detecting validation vs pure inference modes.
 
     Parameters
     ----------
-    output_folder : Path
-        Output folder for results
-    input_dataset : Path
-        Input dataset of images (jpg), NIfTI, or MNIST
+    model : Path
+        Path to trained model directory
+    data : Path
+        Path to input data for inference
+    output : Optional[Path]
+        Output path for results (default: model_dir/inference_results)
+    validate : bool
+        Force validation mode (requires ground truth)
+    verify : bool
+        Verify model integrity before inference
+    output_format : str
+        Output format (csv or npy)
 
     Returns
     -------
     None
     """
-    # Save command for easy rerun
-    save_command_to_output_folder(output_folder)
+    # Validate arguments
+    if not model.exists():
+        typer.echo(f"❌ Model directory not found: {model}", err=True)
+        raise typer.Exit(code=1)
+
+    if not data.exists():
+        typer.echo(f"❌ Input data not found: {data}", err=True)
+        raise typer.Exit(code=1)
+
+    if output_format not in ["csv", "npy"]:
+        typer.echo(f"❌ Unsupported output format: {output_format}. Use 'csv' or 'npy'", err=True)
+        raise typer.Exit(code=1)
+
+    # Set default output path if not provided
+    if output is None:
+        output = model / "inference_results"
+
+    # Save command for easy rerun (use output directory for command saving)
+    save_command_to_output_folder(output)
 
     # Run the async implementation
     try:
         asyncio.run(
-            _prediction_async(
-                output_folder=output_folder,
-                input_dataset=input_dataset,
+            _inference_async(
+                model=model,
+                data=data,
+                output=output,
+                validate=validate,
+                verify=verify,
+                output_format=output_format,
             )
         )
     except KeyboardInterrupt:
@@ -1794,6 +1839,776 @@ def prediction(
     except Exception as e:
         typer.echo(f"Error: {e}", err=True)
         raise typer.Exit(code=1)
+
+
+# Research Utility Commands for Scientific Workflows
+
+@app.command(help="Verify model integrity using manifest")
+def verify(
+    model: Annotated[str, typer.Argument(help="Path to model directory or model name")],
+    detailed: Annotated[bool, typer.Option("--detailed", help="Show detailed verification results")] = False,
+    strict: Annotated[bool, typer.Option("--strict", help="Perform strict cryptographic verification")] = False,
+) -> None:
+    """
+    Verify model integrity using manifest-based SHA-256 checking.
+
+    Parameters
+    ----------
+    model : str
+        Path to model directory or model name
+    detailed : bool
+        Show detailed verification results
+    strict : bool
+        Perform strict cryptographic verification
+    """
+    try:
+        from ..tools.model_io import ModelIOManager
+        from pathlib import Path
+
+        model_path = Path(model)
+
+        if model_path.is_dir():
+            # Directory path provided
+            manager = ModelIOManager(model_path)
+            model_name = "*"  # Will use pattern matching
+        else:
+            # Model name provided, assume current directory
+            manager = ModelIOManager(Path.cwd())
+            model_name = model
+
+        is_valid = manager.verify_model_integrity(model_name)
+
+        if is_valid:
+            typer.echo(f"✅ Model integrity verified: {model}")
+            if detailed:
+                manifest_info = manager.get_manifest_info(model_name)
+                if manifest_info:
+                    model_info = manifest_info.get("model_info", {})
+                    typer.echo(f"   Model: {model_info.get('name', 'Unknown')} v{model_info.get('version', 'Unknown')}")
+                    typer.echo(f"   Created: {model_info.get('created_at', 'Unknown')}")
+                    typer.echo(f"   EMUSES: {model_info.get('emuses_version', 'Unknown')}")
+        else:
+            typer.echo(f"❌ Model integrity verification failed: {model}", err=True)
+            raise typer.Exit(code=1)
+
+    except Exception as e:
+        typer.echo(f"Error verifying model: {e}", err=True)
+        raise typer.Exit(code=1)
+
+
+@app.command(help="Get model information and metadata")
+def info(
+    model: Annotated[str, typer.Argument(help="Path to model directory or model name")],
+    format: Annotated[str, typer.Option("--format", help="Output format (text, json)")] = "text",
+) -> None:
+    """
+    Display model metadata and information.
+
+    Parameters
+    ----------
+    model : str
+        Path to model directory or model name
+    format : str
+        Output format (text or json)
+    """
+    try:
+        from ..tools.model_io import ModelIOManager
+        from pathlib import Path
+        import json
+
+        model_path = Path(model)
+
+        if model_path.is_dir():
+            manager = ModelIOManager(model_path)
+            model_name = "*"
+        else:
+            manager = ModelIOManager(Path.cwd())
+            model_name = model
+
+        manifest_info = manager.get_manifest_info(model_name)
+
+        if not manifest_info:
+            typer.echo(f"❌ No manifest found for model: {model}", err=True)
+            raise typer.Exit(code=1)
+
+        if format == "json":
+            typer.echo(json.dumps(manifest_info, indent=2))
+        else:
+            # Text format
+            model_info = manifest_info.get("model_info", {})
+            compatibility = manifest_info.get("compatibility", {})
+
+            typer.echo("📊 Model Information")
+            typer.echo(f"   Name: {model_info.get('name', 'Unknown')}")
+            typer.echo(f"   Version: {model_info.get('version', 'Unknown')}")
+            typer.echo(f"   Created: {model_info.get('created_at', 'Unknown')}")
+            typer.echo(f"   Description: {model_info.get('description', 'No description')}")
+            typer.echo(f"   EMUSES Version: {model_info.get('emuses_version', 'Unknown')}")
+            typer.echo(f"   Minimum EMUSES: {compatibility.get('min_emuses_version', 'Unknown')}")
+            typer.echo(f"   Python Version: {compatibility.get('python_version', 'Unknown')}")
+
+            file_integrity = manifest_info.get("file_integrity", {})
+            if file_integrity:
+                typer.echo(f"   Files: {len(file_integrity)} tracked files")
+
+    except Exception as e:
+        typer.echo(f"Error getting model info: {e}", err=True)
+        raise typer.Exit(code=1)
+
+
+@app.command(help="Generate publication citation for model")
+def cite(
+    model: Annotated[str, typer.Argument(help="Path to model directory or model name")],
+    format: Annotated[str, typer.Option("--format", help="Citation format (bibtex, apa, nature)")] = "bibtex",
+) -> None:
+    """
+    Generate publication-ready citation for a model.
+
+    Parameters
+    ----------
+    model : str
+        Path to model directory or model name
+    format : str
+        Citation format (bibtex, apa, nature)
+    """
+    try:
+        from ..tools.model_io import ModelIOManager
+        from pathlib import Path
+        from datetime import datetime
+
+        model_path = Path(model)
+
+        if model_path.is_dir():
+            manager = ModelIOManager(model_path)
+            model_name = "*"
+        else:
+            manager = ModelIOManager(Path.cwd())
+            model_name = model
+
+        manifest_info = manager.get_manifest_info(model_name)
+
+        if not manifest_info:
+            typer.echo(f"❌ No manifest found for model: {model}", err=True)
+            raise typer.Exit(code=1)
+
+        model_info = manifest_info.get("model_info", {})
+        model_name = model_info.get("name", "unknown_model")
+        version = model_info.get("version", "1.0.0")
+        created_at = model_info.get("created_at", "")
+        description = model_info.get("description", "EMUSES neuroimaging model")
+
+        # Parse creation date
+        try:
+            created_date = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
+            year = created_date.year
+            date_str = created_date.strftime("%Y-%m-%d")
+        except Exception:
+            year = datetime.now().year
+            date_str = datetime.now().strftime("%Y-%m-%d")
+
+        if format == "bibtex":
+            citation = f"""@misc{{{model_name}_{version.replace('.', '_')},
+    title={{{model_name.replace('_', ' ').title()} v{version}: {description}}},
+    author={{EMUSES Pipeline}},
+    year={{{year}}},
+    note={{Neuroimaging model generated using EMUSES framework, created {date_str}}},
+    howpublished={{\\url{{https://github.com/your-org/emuses}}}}
+}}"""
+        elif format == "apa":
+            citation = f"EMUSES Pipeline. ({year}). {model_name.replace('_', ' ').title()} v{version}: {description}. Retrieved from https://github.com/your-org/emuses"
+        elif format == "nature":
+            citation = f"EMUSES Pipeline. {model_name.replace('_', ' ').title()} v{version}: {description} (2024). https://github.com/your-org/emuses"
+        else:
+            typer.echo(f"❌ Unsupported citation format: {format}", err=True)
+            raise typer.Exit(code=1)
+
+        typer.echo(citation)
+
+    except Exception as e:
+        typer.echo(f"Error generating citation: {e}", err=True)
+        raise typer.Exit(code=1)
+
+
+@app.command(help="Export complete model provenance")
+def trace(
+    model: Annotated[str, typer.Argument(help="Path to model directory or model name")],
+    output: Annotated[Optional[str], typer.Option("--output", "-o", help="Output file path")] = None,
+) -> None:
+    """
+    Export complete model provenance for supplementary materials.
+
+    Parameters
+    ----------
+    model : str
+        Path to model directory or model name
+    output : Optional[str]
+        Output file path (default: model_trace.json)
+    """
+    try:
+        from ..tools.model_io import ModelIOManager
+        from pathlib import Path
+        import json
+
+        model_path = Path(model)
+
+        if model_path.is_dir():
+            manager = ModelIOManager(model_path)
+            model_name = "*"
+        else:
+            manager = ModelIOManager(Path.cwd())
+            model_name = model
+
+        manifest_info = manager.get_manifest_info(model_name)
+
+        if not manifest_info:
+            typer.echo(f"❌ No manifest found for model: {model}", err=True)
+            raise typer.Exit(code=1)
+
+        # Create enhanced provenance report
+        from datetime import datetime
+        provenance = {
+            "model_provenance": manifest_info,
+            "generation_info": {
+                "exported_at": datetime.now().isoformat(),
+                "emuses_version": manifest_info.get("model_info", {}).get("emuses_version", "unknown"),
+                "export_version": "1.0.0"
+            },
+            "reproducibility": {
+                "config_hash": manifest_info.get("training_context", {}).get("config_hash"),
+                "random_seeds": manifest_info.get("training_context", {}).get("random_seeds", {}),
+                "environment": {
+                    "python_version": manifest_info.get("compatibility", {}).get("python_version"),
+                    "required_packages": manifest_info.get("compatibility", {}).get("required_packages", [])
+                }
+            }
+        }
+
+        # Determine output path
+        if output:
+            output_path = Path(output)
+        else:
+            model_name_clean = manifest_info.get("model_info", {}).get("name", "model")
+            output_path = Path(f"{model_name_clean}_trace.json")
+
+        # Write provenance report
+        with open(output_path, 'w') as f:
+            json.dump(provenance, f, indent=2, sort_keys=True)
+
+        typer.echo(f"✅ Model provenance exported to: {output_path}")
+
+    except Exception as e:
+        typer.echo(f"Error exporting provenance: {e}", err=True)
+        raise typer.Exit(code=1)
+
+
+@app.command()
+def reproduce(
+    model: Annotated[str, typer.Argument(help="Path to model directory or model name")],
+    output: Annotated[Optional[str], typer.Option("--output", "-o", help="Output file path for reproduction guide")] = None,
+) -> None:
+    """
+    Generate reproduction guide for a model.
+
+    This command creates a comprehensive markdown guide that enables exact
+    reproduction of the model training process, including environment setup,
+    configuration details, and step-by-step instructions.
+
+    Parameters
+    ----------
+    model : str
+        Path to model directory or model name to generate reproduction guide for
+    output : str, optional
+        Output file path for the reproduction guide (default: model_dir/reproduction_guide.md)
+
+    Returns
+    -------
+    None
+    """
+    try:
+        # Determine if model is a path or name
+        model_path = Path(model)
+        if not model_path.exists():
+            typer.echo(f"❌ Model path not found: {model}", err=True)
+            raise typer.Exit(code=1)
+
+        # Load manifest
+        manifest_path = model_path / "model_manifest.json"
+        if not manifest_path.exists():
+            typer.echo(f"❌ No manifest found at: {manifest_path}", err=True)
+            typer.echo("Model must have a manifest for reproduction guide generation")
+            raise typer.Exit(code=1)
+
+        import json
+        with open(manifest_path, 'r') as f:
+            manifest = json.load(f)
+
+        # Determine output path
+        if output is None:
+            output_path = model_path / "reproduction_guide.md"
+        else:
+            output_path = Path(output)
+
+        # Generate reproduction guide
+        guide_content = _generate_reproduction_guide(manifest, model_path)
+
+        # Write guide to file
+        with open(output_path, 'w') as f:
+            f.write(guide_content)
+
+        typer.echo(f"✅ Reproduction guide generated: {output_path}")
+
+    except Exception as e:
+        typer.echo(f"❌ Error generating reproduction guide: {e}", err=True)
+        raise typer.Exit(code=1)
+
+
+def _generate_reproduction_guide(manifest: dict, model_path: Path) -> str:
+    """
+    Generate reproduction guide content from manifest.
+
+    Parameters
+    ----------
+    manifest : dict
+        Model manifest containing metadata and training context
+    model_path : Path
+        Path to model directory
+
+    Returns
+    -------
+    str
+        Markdown content for reproduction guide
+    """
+    model_info = manifest.get("model_info", {})
+    training_context = manifest.get("training_context", {})
+    compatibility = manifest.get("compatibility", {})
+
+    guide_content = f"""# Model Reproduction Guide
+
+## Model Information
+
+- **Model Name**: {model_info.get('name', 'Unknown')}
+- **Version**: v{model_info.get('version', '1.0.0')}
+- **Created**: {model_info.get('created_at', 'Unknown')}
+- **EMUSES Version**: {model_info.get('emuses_version', 'Unknown')}
+- **Description**: {model_info.get('description', 'No description available')}
+
+## Environment Setup
+
+### Python Environment
+- **Python Version**: {compatibility.get('python_version', '3.9+')}
+- **Minimum EMUSES Version**: {compatibility.get('min_emuses_version', '2.0.0')}
+
+### Required Packages
+"""
+
+    # Add required packages
+    packages = compatibility.get('required_packages', [])
+    for package in packages:
+        guide_content += f"- {package}\n"
+
+    guide_content += """
+### Installation Commands
+```bash
+# Create virtual environment
+python -m venv emuses_env
+source emuses_env/bin/activate  # On Windows: emuses_env\\Scripts\\activate
+
+# Install EMUSES and dependencies
+pip install emuses>=""" + compatibility.get('min_emuses_version', '2.0.0') + '"'
+
+    for package in packages:
+        guide_content += f"\npip install {package}"
+
+    guide_content += """
+```
+
+## Reproduction Steps
+
+### Random Seeds
+The following random seeds must be used for exact reproduction:
+"""
+
+    # Add random seeds
+    seeds = training_context.get('random_seeds', {})
+    for seed_name, seed_value in seeds.items():
+        guide_content += f"- **{seed_name}**: {seed_value}\n"
+
+    guide_content += f"""
+
+### Configuration
+- **Config Hash**: {training_context.get('config_hash', 'Not available')}
+
+### Training Command
+```bash
+# Navigate to your data directory
+cd /path/to/your/data
+
+# Run EMUSES training with exact reproduction settings
+emuses full \\
+    --input your_input_file \\
+    --scores your_scores_file \\
+    --output_directory {model_path.name} \\
+    --random_seed {seeds.get('master', 42)}
+```
+
+## Verification
+
+After training, verify the model matches by:
+
+1. Checking model integrity:
+```bash
+emuses verify --model {model_path.name}
+```
+
+2. Comparing model information:
+```bash
+emuses info --model {model_path.name}
+```
+
+## Notes
+
+- Ensure exact same input data and preprocessing steps
+- Use identical random seeds as specified above
+- Environment should match the requirements exactly
+- Any deviations may result in slightly different model parameters
+
+---
+*Generated by EMUSES reproduction utility*
+"""
+
+    return guide_content
+
+
+@app.command()
+def diff(
+    model: Annotated[str, typer.Argument(help="Path to model directory or model name")],
+    detailed: Annotated[bool, typer.Option("--detailed", help="Show detailed change information")] = False,
+) -> None:
+    """
+    Check for modifications since model creation.
+
+    This command compares current files with manifest checksums to detect
+    any changes, additions, or deletions since the model was created.
+
+    Parameters
+    ----------
+    model : str
+        Path to model directory or model name to check for changes
+    detailed : bool, optional
+        Show detailed change information including file sizes and checksums
+
+    Returns
+    -------
+    None
+    """
+    try:
+        # Determine if model is a path or name
+        model_path = Path(model)
+        if not model_path.exists():
+            typer.echo(f"❌ Model path not found: {model}", err=True)
+            raise typer.Exit(code=1)
+
+        # Load manifest
+        manifest_path = model_path / "model_manifest.json"
+        if not manifest_path.exists():
+            typer.echo(f"❌ No manifest found at: {manifest_path}", err=True)
+            typer.echo("Model must have a manifest for change detection")
+            raise typer.Exit(code=1)
+
+        import json
+        with open(manifest_path, 'r') as f:
+            manifest = json.load(f)
+
+        # Get file integrity information from manifest
+        file_integrity = manifest.get("file_integrity", {})
+
+        # Analyze changes
+        changes = _analyze_file_changes(model_path, file_integrity)
+
+        # Display results
+        if not changes["modified"] and not changes["added"] and not changes["deleted"]:
+            typer.echo("✅ No changes detected - model files match manifest")
+        else:
+            typer.echo("📝 Changes detected:")
+
+            # Show modified files
+            for file_path, change_info in changes["modified"]:
+                if detailed:
+                    typer.echo(f"   MODIFIED: {file_path}")
+                    typer.echo(f"     - Expected size: {change_info['expected_size']}, Current size: {change_info['current_size']}")
+                    typer.echo(f"     - Expected SHA256: {change_info['expected_sha256'][:16]}...")
+                    typer.echo(f"     - Current SHA256:  {change_info['current_sha256'][:16]}...")
+                else:
+                    typer.echo(f"   MODIFIED: {file_path}")
+
+            # Show added files
+            for file_path in changes["added"]:
+                typer.echo(f"   ADDED: {file_path}")
+
+            # Show deleted files
+            for file_path in changes["deleted"]:
+                typer.echo(f"   DELETED: {file_path}")
+
+    except Exception as e:
+        typer.echo(f"❌ Error analyzing changes: {e}", err=True)
+        raise typer.Exit(code=1)
+
+
+def _analyze_file_changes(model_path: Path, file_integrity: dict) -> dict:
+    """
+    Analyze file changes compared to manifest.
+
+    Parameters
+    ----------
+    model_path : Path
+        Path to model directory
+    file_integrity : dict
+        File integrity information from manifest
+
+    Returns
+    -------
+    dict
+        Dictionary containing lists of modified, added, and deleted files
+    """
+    import hashlib
+
+    changes = {
+        "modified": [],
+        "added": [],
+        "deleted": []
+    }
+
+    # Get current files (excluding manifest itself)
+    current_files = set()
+    for file_path in model_path.iterdir():
+        if file_path.is_file() and file_path.name != "model_manifest.json":
+            current_files.add(file_path.name)
+
+    # Get expected files from manifest
+    expected_files = set(file_integrity.keys())
+
+    # Check for deleted files
+    for expected_file in expected_files:
+        if expected_file not in current_files:
+            changes["deleted"].append(expected_file)
+
+    # Check for added files
+    for current_file in current_files:
+        if current_file not in expected_files:
+            changes["added"].append(current_file)
+
+    # Check for modified files
+    for file_name in expected_files.intersection(current_files):
+        file_path = model_path / file_name
+        expected_info = file_integrity[file_name]
+
+        # Calculate current file hash
+        with open(file_path, 'rb') as f:
+            current_content = f.read()
+            current_sha256 = hashlib.sha256(current_content).hexdigest()
+            current_size = len(current_content)
+
+        # Compare with expected values
+        expected_sha256 = expected_info.get("sha256", "")
+        expected_size = expected_info.get("size", 0)
+
+        if current_sha256 != expected_sha256 or current_size != expected_size:
+            changes["modified"].append((file_name, {
+                "expected_sha256": expected_sha256,
+                "current_sha256": current_sha256,
+                "expected_size": expected_size,
+                "current_size": current_size
+            }))
+
+    return changes
+
+
+@app.command()
+def compare(
+    model1: Annotated[str, typer.Argument(help="Path to first model directory")],
+    model2: Annotated[str, typer.Argument(help="Path to second model directory")],
+) -> None:
+    """
+    Compare two model versions.
+
+    This command provides a side-by-side comparison of two model versions,
+    including manifest differences, configuration changes, and dependency updates.
+
+    Parameters
+    ----------
+    model1 : str
+        Path to first model directory for comparison
+    model2 : str
+        Path to second model directory for comparison
+
+    Returns
+    -------
+    None
+    """
+    try:
+        # Validate model paths
+        model1_path = Path(model1)
+        model2_path = Path(model2)
+
+        if not model1_path.exists():
+            typer.echo(f"❌ Model 1 path not found: {model1}", err=True)
+            raise typer.Exit(code=1)
+
+        if not model2_path.exists():
+            typer.echo(f"❌ Model 2 path not found: {model2}", err=True)
+            raise typer.Exit(code=1)
+
+        # Load manifests
+        manifest1_path = model1_path / "model_manifest.json"
+        manifest2_path = model2_path / "model_manifest.json"
+
+        if not manifest1_path.exists():
+            typer.echo(f"❌ No manifest found for model 1: {manifest1_path}", err=True)
+            raise typer.Exit(code=1)
+
+        if not manifest2_path.exists():
+            typer.echo(f"❌ No manifest found for model 2: {manifest2_path}", err=True)
+            raise typer.Exit(code=1)
+
+        import json
+        with open(manifest1_path, 'r') as f:
+            manifest1 = json.load(f)
+
+        with open(manifest2_path, 'r') as f:
+            manifest2 = json.load(f)
+
+        # Generate comparison report
+        _display_model_comparison(manifest1, manifest2, model1_path.name, model2_path.name)
+
+    except Exception as e:
+        typer.echo(f"❌ Error comparing models: {e}", err=True)
+        raise typer.Exit(code=1)
+
+
+def _display_model_comparison(manifest1: dict, manifest2: dict, name1: str, name2: str) -> None:
+    """
+    Display side-by-side comparison of two models.
+
+    Parameters
+    ----------
+    manifest1 : dict
+        First model's manifest data
+    manifest2 : dict
+        Second model's manifest data
+    name1 : str
+        First model's display name
+    name2 : str
+        Second model's display name
+
+    Returns
+    -------
+    None
+    """
+    typer.echo("🔍 Model Version Comparison")
+    typer.echo("=" * 50)
+
+    # Model information comparison
+    info1 = manifest1.get("model_info", {})
+    info2 = manifest2.get("model_info", {})
+
+    typer.echo("\n📊 Model Information")
+    typer.echo(f"   Model 1 ({name1}): {info1.get('name', 'Unknown')} v{info1.get('version', '1.0.0')}")
+    typer.echo(f"   Model 2 ({name2}): {info2.get('name', 'Unknown')} v{info2.get('version', '1.0.0')}")
+
+    typer.echo("\n   Created:")
+    typer.echo(f"     Model 1: {info1.get('created_at', 'Unknown')}")
+    typer.echo(f"     Model 2: {info2.get('created_at', 'Unknown')}")
+
+    typer.echo("\n   Description:")
+    typer.echo(f"     Model 1: {info1.get('description', 'No description')}")
+    typer.echo(f"     Model 2: {info2.get('description', 'No description')}")
+
+    # Configuration comparison
+    training1 = manifest1.get("training_context", {})
+    training2 = manifest2.get("training_context", {})
+
+    typer.echo("\n⚙️ Configuration Changes")
+    config1 = training1.get("config_hash", "Unknown")
+    config2 = training2.get("config_hash", "Unknown")
+
+    if config1 != config2:
+        typer.echo(f"   Config Hash: {config1} → {config2}")
+    else:
+        typer.echo(f"   Config Hash: {config1} (unchanged)")
+
+    # Random seeds comparison
+    seeds1 = training1.get("random_seeds", {})
+    seeds2 = training2.get("random_seeds", {})
+
+    typer.echo("\n🎲 Random Seeds")
+    all_seed_keys = set(seeds1.keys()) | set(seeds2.keys())
+
+    for seed_key in sorted(all_seed_keys):
+        val1 = seeds1.get(seed_key, "N/A")
+        val2 = seeds2.get(seed_key, "N/A")
+
+        if val1 != val2:
+            typer.echo(f"   {seed_key}: {val1} → {val2}")
+        else:
+            typer.echo(f"   {seed_key}: {val1} (unchanged)")
+
+    # Compatibility comparison
+    compat1 = manifest1.get("compatibility", {})
+    compat2 = manifest2.get("compatibility", {})
+
+    typer.echo("\n📦 Dependency Changes")
+
+    # Python version
+    py1 = compat1.get("python_version", "Unknown")
+    py2 = compat2.get("python_version", "Unknown")
+    if py1 != py2:
+        typer.echo(f"   Python Version: {py1} → {py2}")
+    else:
+        typer.echo(f"   Python Version: {py1} (unchanged)")
+
+    # EMUSES version
+    emuses1 = compat1.get("min_emuses_version", "Unknown")
+    emuses2 = compat2.get("min_emuses_version", "Unknown")
+    if emuses1 != emuses2:
+        typer.echo(f"   Min EMUSES Version: {emuses1} → {emuses2}")
+    else:
+        typer.echo(f"   Min EMUSES Version: {emuses1} (unchanged)")
+
+    # Required packages
+    packages1 = set(compat1.get("required_packages", []))
+    packages2 = set(compat2.get("required_packages", []))
+
+    # Show package changes
+    added_packages = packages2 - packages1
+    removed_packages = packages1 - packages2
+
+    # Check for version updates in existing packages
+    common_package_names = set()
+    for p1 in packages1:
+        name1 = p1.split(">=")[0] if ">=" in p1 else p1.split("==")[0] if "==" in p1 else p1
+        for p2 in packages2:
+            name2 = p2.split(">=")[0] if ">=" in p2 else p2.split("==")[0] if "==" in p2 else p2
+            if name1 == name2:
+                if p1 != p2:
+                    typer.echo(f"   Package Updated: {p1} → {p2}")
+                common_package_names.add(name1)
+
+    if added_packages:
+        for package in sorted(added_packages):
+            typer.echo(f"   Package Added: {package}")
+
+    if removed_packages:
+        for package in sorted(removed_packages):
+            typer.echo(f"   Package Removed: {package}")
+
+    # Summary
+    typer.echo("\n📋 Summary")
+    if (config1 == config2 and seeds1 == seeds2 and py1 == py2 and
+        emuses1 == emuses2 and packages1 == packages2):
+        typer.echo("   ✅ Models appear to have identical configurations")
+    else:
+        typer.echo("   📝 Models have different configurations")
+        typer.echo("   ⚠️ Results may differ due to configuration changes")
 
 
 @app.command(help="Install shell completion")
@@ -1842,9 +2657,8 @@ except ImportError:
 # Aliases for command functions (for testing)
 full_command = full
 umap_command = umap
-clustering_command = clustering
 heatmap_command = heatmap
-prediction_command = prediction
+inference_command = inference
 
 
 # Add commands attribute for test compatibility

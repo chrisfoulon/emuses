@@ -15,7 +15,7 @@ from matplotlib import pyplot as plt
 # Import pipeline classes
 from emuses.pipelines.emuses_pipeline import EMUSESPipeline
 from emuses.pipelines.heatmap_stage import HeatmapStage
-from emuses.pipelines.prediction_stage import PredictionStage
+# from emuses.pipelines.prediction_stage import PredictionStage  # Retired - use HeatmapStage
 from emuses.pipelines.umap_stage import UMAPStage
 
 

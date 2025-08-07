@@ -14,19 +14,13 @@ import sys
 import tempfile
 import shutil
 
-from emuses.scripts.main import (
-    resolve_path,
-    add_output_folder_argument,
-    add_input_dataset_argument,
-    add_input_dataset_optional_arguments,
-    add_scores_arguments,
-    add_umap_arguments,
-    add_clustering_arguments,
-    add_enhanced_pipeline_arguments,
-    add_random_state_argument,
-)
+import pytest
+
+# Legacy functions have been removed in favor of the new Typer CLI
+# Skip all tests in this module since legacy compatibility is no longer needed
 
 
+@pytest.mark.skip(reason="Legacy argparse compatibility no longer needed - replaced with Typer CLI")
 class TestLegacyArgumentMapping:
     """Test mapping of legacy argparse arguments to Typer equivalents."""
     

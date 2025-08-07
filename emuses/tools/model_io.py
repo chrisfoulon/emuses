@@ -213,6 +213,9 @@ class ModelIOManager:
             # Save metadata
             self._save_metadata(filepath, metadata)
 
+            # Generate manifest for model integrity
+            self._generate_manifest(filepath, metadata)
+
             logger.info(f"Successfully saved {model_type} model: {filepath}")
             if optuna_study:
                 logger.info(
@@ -230,6 +233,7 @@ class ModelIOManager:
         model_name: str,
         model_type: Optional[str] = None,
         prefix: str = "",
+        verify_integrity: bool = True,
     ) -> Optional[ModelArtifact]:
         """
         Load a model with simplified loading mechanism.
@@ -238,6 +242,7 @@ class ModelIOManager:
             model_name: Base name of the model
             model_type: Expected model type for validation
             prefix: Optional prefix used when saving
+            verify_integrity: Whether to verify model integrity using manifest
 
         Returns:
             ModelArtifact containing model and metadata, or None if loading failed
@@ -248,6 +253,9 @@ class ModelIOManager:
                 self.base_path, model_name, model_type, prefix
             )
             if artifact:
+                # Verify integrity if requested
+                if verify_integrity:
+                    self._verify_model_integrity(artifact.filepath)
                 return artifact
 
             # Try pattern matching
@@ -255,11 +263,20 @@ class ModelIOManager:
                 self.base_path, model_name, model_type, prefix
             )
             if artifact:
+                # Verify integrity if requested
+                if verify_integrity:
+                    self._verify_model_integrity(artifact.filepath)
                 return artifact
 
             logger.warning(f"Could not find model: {model_name}")
             return None
 
+        except ValueError as e:
+            # Re-raise integrity verification errors
+            if "integrity verification failed" in str(e):
+                raise
+            logger.error(f"Failed to load model {model_name}: {e}")
+            return None
         except Exception as e:
             logger.error(f"Failed to load model {model_name}: {e}")
             return None
@@ -851,6 +868,195 @@ class ModelIOManager:
         # Sort by fold index
         models.sort(key=lambda x: x.metadata.fold_index or 0)
         return models
+
+    # Manifest generation and verification methods
+
+    def _generate_manifest(self, model_filepath: Path, metadata: ModelMetadata) -> None:
+        """
+        Generate model manifest with file integrity information.
+        
+        Args:
+            model_filepath: Path to the saved model file
+            metadata: Model metadata
+        """
+        try:
+            manifest_path = self.base_path / "model_manifest.json"
+            
+            # Load existing manifest or create new one
+            if manifest_path.exists():
+                with open(manifest_path, 'r') as f:
+                    manifest = json.load(f)
+            else:
+                manifest = {
+                    "model_info": {},
+                    "file_integrity": {},
+                    "training_context": {},
+                    "compatibility": {}
+                }
+            
+            # Update model info section
+            manifest["model_info"] = {
+                "name": model_filepath.stem.split('_v')[0],  # Extract base name
+                "version": self._get_next_version(model_filepath.stem.split('_v')[0]),
+                "created_at": metadata.created_at,
+                "emuses_version": metadata.emuses_version,
+                "description": metadata.description
+            }
+            
+            # Update file integrity section
+            file_hash = self._calculate_file_hash(model_filepath)
+            manifest["file_integrity"][model_filepath.name] = {
+                "size": metadata.file_size,
+                "sha256": file_hash,
+                "modified": metadata.created_at
+            }
+            
+            # Update training context section
+            manifest["training_context"] = {
+                "config_hash": metadata.config_hash,
+                "random_seeds": {}  # Will be enhanced with actual seeds
+            }
+            
+            # Update compatibility section
+            manifest["compatibility"] = {
+                "min_emuses_version": "2.0.0",
+                "python_version": f"{sys.version_info.major}.{sys.version_info.minor}+",
+                "required_packages": list(metadata.dependencies.keys())
+            }
+            
+            # Save updated manifest
+            with open(manifest_path, 'w') as f:
+                json.dump(manifest, f, indent=2, sort_keys=True)
+                
+            logger.debug(f"Generated manifest for model: {model_filepath.name}")
+            
+        except Exception as e:
+            logger.warning(f"Failed to generate manifest: {e}")
+            # Don't fail the save operation if manifest generation fails
+
+    def _calculate_file_hash(self, filepath: Path) -> str:
+        """Calculate SHA-256 hash of a file."""
+        hash_sha256 = hashlib.sha256()
+        with open(filepath, "rb") as f:
+            for chunk in iter(lambda: f.read(4096), b""):
+                hash_sha256.update(chunk)
+        return hash_sha256.hexdigest()
+
+    def _get_next_version(self, model_name: str) -> str:
+        """Get next version number for a model."""
+        manifest_path = self.base_path / "model_manifest.json"
+        
+        if not manifest_path.exists():
+            return "1.0.0"
+        
+        try:
+            with open(manifest_path, 'r') as f:
+                manifest = json.load(f)
+            
+            current_version = manifest.get("model_info", {}).get("version", "1.0.0")
+            major, minor, patch = map(int, current_version.split('.'))
+            
+            # Increment patch version
+            return f"{major}.{minor}.{patch + 1}"
+            
+        except (json.JSONDecodeError, ValueError, KeyError):
+            return "1.0.0"
+
+    def _verify_model_integrity(self, model_filepath: Path) -> None:
+        """
+        Verify model integrity using manifest.
+        
+        Args:
+            model_filepath: Path to model file to verify
+            
+        Raises:
+            ValueError: If integrity verification fails
+        """
+        manifest_path = self.base_path / "model_manifest.json"
+        
+        if not manifest_path.exists():
+            logger.warning(f"No manifest found for {model_filepath.name}, skipping integrity check")
+            return
+        
+        try:
+            with open(manifest_path, 'r') as f:
+                manifest = json.load(f)
+            
+            file_integrity = manifest.get("file_integrity", {})
+            
+            if model_filepath.name not in file_integrity:
+                logger.warning(f"No integrity information for {model_filepath.name}")
+                return
+            
+            expected_hash = file_integrity[model_filepath.name]["sha256"]
+            actual_hash = self._calculate_file_hash(model_filepath)
+            
+            if actual_hash != expected_hash:
+                raise ValueError(
+                    f"Model integrity verification failed for {model_filepath.name}: "
+                    f"expected {expected_hash}, got {actual_hash}"
+                )
+            
+            logger.debug(f"Integrity verified for {model_filepath.name}")
+            
+        except json.JSONDecodeError:
+            logger.warning(f"Corrupted manifest file, skipping integrity check")
+        except Exception as e:
+            logger.error(f"Integrity verification failed: {e}")
+            raise
+
+    def get_manifest_info(self, model_name: str) -> Optional[Dict]:
+        """
+        Get manifest information for a model without loading it.
+        
+        Args:
+            model_name: Name of the model
+            
+        Returns:
+            Manifest dictionary or None if not found
+        """
+        manifest_path = self.base_path / "model_manifest.json"
+        
+        if not manifest_path.exists():
+            return None
+        
+        try:
+            with open(manifest_path, 'r') as f:
+                return json.load(f)
+        except (json.JSONDecodeError, FileNotFoundError):
+            return None
+
+    def verify_model_integrity(self, model_name: str) -> bool:
+        """
+        Standalone function to verify model integrity.
+        
+        Args:
+            model_name: Name of the model to verify
+            
+        Returns:
+            True if integrity check passes, False otherwise
+        """
+        try:
+            # Find the model file
+            if model_name == "*":
+                # Use all .joblib files
+                matches = list(self.base_path.glob("*.joblib"))
+            else:
+                pattern = f"{model_name}*.joblib"
+                matches = list(self.base_path.glob(pattern))
+            
+            if not matches:
+                logger.warning(f"No model file found matching pattern: {pattern}")
+                return False
+            
+            # Use the first match (most recent by default)
+            model_filepath = matches[0]
+            self._verify_model_integrity(model_filepath)
+            return True
+            
+        except Exception as e:
+            logger.error(f"Integrity verification failed for {model_name}: {e}")
+            return False
 
 
 # Convenience functions for backward compatibility and ease of use

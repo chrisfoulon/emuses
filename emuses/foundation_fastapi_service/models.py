@@ -6,7 +6,7 @@ job management models, error responses, and file upload models.
 """
 
 from datetime import datetime
-from typing import Optional, Union
+from typing import Any, Dict, List, Optional, Union
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -191,6 +191,98 @@ class FileUploadResponse(BaseModel):
                 "content_type": "text/csv",
                 "size": 1024000,
                 "upload_time": "2024-01-15T10:30:00Z",
+            }
+        }
+    )
+
+
+class InferenceRequest(BaseModel):
+    """
+    API model for inference requests.
+    
+    This model defines the request structure for running inference
+    on trained EMUSES models with validation and format options.
+    """
+    
+    model_path: str = Field(..., description="Path to trained model directory")
+    data_path: str = Field(..., description="Path to input data for inference")
+    output_path: Optional[str] = Field(
+        default=None, 
+        description="Output path for results (default: model_dir/inference_results)"
+    )
+    validation_mode: bool = Field(
+        default=False, 
+        description="Force validation mode (requires ground truth)"
+    )
+    verify_integrity: bool = Field(
+        default=True, 
+        description="Verify model integrity before inference"
+    )
+    output_format: str = Field(
+        default="csv", 
+        description="Output format (csv or npy)"
+    )
+    
+    model_config = ConfigDict(
+        protected_namespaces=(),
+        json_schema_extra={
+            "example": {
+                "model_path": "/path/to/trained/models",
+                "data_path": "/path/to/new/data.csv",
+                "output_path": "/path/to/inference/results",
+                "validation_mode": False,
+                "verify_integrity": True,
+                "output_format": "csv"
+            }
+        }
+    )
+
+
+class InferenceResponse(BaseModel):
+    """
+    API response model for inference results.
+    
+    This model defines the response structure containing inference
+    results, metadata, and performance information.
+    """
+    
+    status: str = Field(..., description="Inference execution status")
+    mode: str = Field(..., description="Inference mode (inference or validation)")
+    samples_processed: int = Field(..., description="Number of samples processed")
+    predictions: List[float] = Field(..., description="Ensemble predictions")
+    confidence_scores: Optional[List[float]] = Field(
+        default=None, 
+        description="Confidence scores for predictions"
+    )
+    processing_time_ms: float = Field(..., description="Total processing time in milliseconds")
+    throughput_samples_per_sec: float = Field(..., description="Processing throughput")
+    model_info: Dict[str, Any] = Field(..., description="Model metadata information")
+    output_files: Dict[str, str] = Field(..., description="Generated output file paths")
+    validation_metrics: Optional[Dict[str, float]] = Field(
+        default=None, 
+        description="Validation metrics (only for validation mode)"
+    )
+    
+    model_config = ConfigDict(
+        protected_namespaces=(),
+        json_schema_extra={
+            "example": {
+                "status": "completed",
+                "mode": "inference",
+                "samples_processed": 100,
+                "predictions": [0.75, 0.23, 0.91],
+                "confidence_scores": [0.85, 0.72, 0.94],
+                "processing_time_ms": 1250.5,
+                "throughput_samples_per_sec": 80.0,
+                "model_info": {
+                    "model_path": "/path/to/models",
+                    "loaded_models": 3
+                },
+                "output_files": {
+                    "predictions_csv": "/results/predictions_20250805.csv",
+                    "metadata_file": "/results/metadata_20250805.json"
+                },
+                "validation_metrics": None
             }
         }
     )

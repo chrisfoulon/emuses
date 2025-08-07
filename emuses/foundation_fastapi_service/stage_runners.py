@@ -18,7 +18,7 @@ import psutil
 
 from emuses.foundation_fastapi_service.job_manager import JobManager
 from emuses.pipelines.heatmap_stage import HeatmapStage
-from emuses.pipelines.prediction_stage import PredictionStage
+# from emuses.pipelines.prediction_stage import PredictionStage  # Retired - use HeatmapStage
 from emuses.pipelines.umap_stage import UMAPStage
 
 
@@ -487,63 +487,43 @@ class HeatmapStageRunner(BaseStageRunner):
                         dest_file.write_bytes(item.read_bytes())
 
 
+# PredictionStageRunner temporarily disabled - PredictionStage has been retired
+# TODO: Replace with InferenceStageRunner in Phase 1 implementation
 class PredictionStageRunner(BaseStageRunner):
-    """Runner for prediction and test evaluation stage"""
+    """Runner for prediction and test evaluation stage - DEPRECATED"""
 
     def __init__(self, job_manager: JobManager):
-        """Initialize prediction stage runner.
-
-        Parameters
-        ----------
-        job_manager : JobManager
-            The job manager instance for tracking job status and progress
-        """
+        """Initialize prediction stage runner."""
         super().__init__(job_manager)
+        self.logger.warning("PredictionStageRunner is deprecated. Use HeatmapStageRunner for training.")
 
     async def run_stage(self, job_id: str, context: Dict[str, Any]) -> Dict[str, Any]:
-        """Execute prediction stage with test evaluation mode"""
-        self.logger.info(f"Starting prediction stage for job {job_id}")
+        """Execute prediction stage - DEPRECATED"""
+        self.logger.warning("PredictionStage has been retired. Use HeatmapStage for sophisticated prediction model training.")
+        
+        # Return empty context to avoid breaking the pipeline
+        return context
 
-        # Validate required context keys
-        required_keys = ["models", "test_features", "config"]
-        self._validate_context(context, required_keys)
+        # Original implementation commented out until InferenceStage is ready
+        # self.logger.info(f"Starting prediction stage for job {job_id}")
+        # required_keys = ["models", "test_features", "config"]
+        # self._validate_context(context, required_keys)
+        # config = context["config"]
+        # progress_tracker = ProgressTracker(self.job_manager, job_id, "prediction_stage")
+        # progress_tracker.update_progress(0.0, "Initializing prediction stage")
+        # try:
+        #     prediction_stage = PredictionStage(config)
 
-        config = context["config"]
-
-        # Create progress tracker
-        progress_tracker = ProgressTracker(self.job_manager, job_id, "prediction_stage")
-
-        # Update initial status
-        progress_tracker.update_progress(0.0, "Initializing prediction stage")
-
-        try:
-            # Create prediction stage instance
-            prediction_stage = PredictionStage(config)
-
-            # Execute with monitoring (15 minute timeout for prediction)
-            result_context = await self._execute_with_monitoring(
-                prediction_stage, context, progress_tracker, timeout_seconds=900
-            )
-
-            # Update completion status
-            progress_tracker.update_progress(
-                1.0, "Prediction stage completed successfully"
-            )
-
-            # Organize artifacts
-            await self._organize_prediction_artifacts(job_id, result_context)
-
-            return result_context
-
-        except Exception as e:
-            self.logger.error(f"Prediction stage failed for job {job_id}: {str(e)}")
-            self.job_manager.update_job_status(
-                job_id,
-                "failed",
-                current_stage="prediction_stage",
-                message=f"Prediction stage error: {str(e)}",
-            )
-            raise
+        #     result_context = await self._execute_with_monitoring(
+        #         prediction_stage, context, progress_tracker, timeout_seconds=900
+        #     )
+        #     progress_tracker.update_progress(1.0, "Prediction stage completed successfully")
+        #     await self._organize_prediction_artifacts(job_id, result_context)
+        #     return result_context
+        # except Exception as e:
+        #     self.logger.error(f"Prediction stage failed for job {job_id}: {str(e)}")
+        #     self.job_manager.update_job_status(job_id, "failed", current_stage="prediction_stage", message=f"Prediction stage error: {str(e)}")
+        #     raise
 
     async def _organize_prediction_artifacts(
         self, job_id: str, context: Dict[str, Any]
