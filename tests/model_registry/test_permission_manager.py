@@ -346,12 +346,12 @@ class TestAccessGranting:
         assert result["status"] == "error"
         assert "not found" in result["message"]
     
-    def test_grant_access_permission_denied(self, test_db, other_user, third_user, public_model):
+    def test_grant_access_permission_denied(self, test_db, other_user, third_user, test_model):
         """Test granting access without admin permissions."""
-        # Create permission manager for other_user (not owner)
+        # Create permission manager for other_user (not owner of test_model)
         manager = ModelPermissionManager(test_db, other_user)
         
-        model_id = str(public_model.id)
+        model_id = str(test_model.id)
         user_id = str(third_user.id)
         
         result = manager.grant_access(
@@ -451,12 +451,12 @@ class TestAccessRevoking:
         assert result["status"] == "error"
         assert "No explicit access grant found" in result["message"]
     
-    def test_revoke_access_permission_denied(self, test_db, other_user, third_user, public_model):
+    def test_revoke_access_permission_denied(self, test_db, other_user, third_user, test_model):
         """Test revoking access without admin permissions."""
-        # Create permission manager for other_user (not owner or admin)
+        # Create permission manager for other_user (not owner or admin of test_model)
         manager = ModelPermissionManager(test_db, other_user)
         
-        model_id = str(public_model.id)
+        model_id = str(test_model.id)
         user_id = str(third_user.id)
         
         result = manager.revoke_access(model_id, user_id)
@@ -487,7 +487,7 @@ class TestPermissionListing:
         model_id = str(test_model.id)
         
         # Grant access to other user
-        permission_manager.grant_access(model_id, str(other_user.id), "write")
+        grant_result = permission_manager.grant_access(model_id, str(other_user.id), "write")
         
         result = permission_manager.list_permissions(model_id)
         

@@ -6,7 +6,8 @@ model access permissions with support for different access levels.
 
 import logging
 from datetime import datetime, timedelta
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
+from uuid import UUID
 
 from sqlalchemy import and_
 from sqlalchemy.exc import IntegrityError
@@ -55,12 +56,37 @@ class ModelPermissionManager:
         self.current_user = current_user
         
         logger.info(f"ModelPermissionManager initialized for user {current_user.email}")
+
+    def _normalize_uuid(self, uuid_input: Union[str, UUID]) -> UUID:
+        """Convert string UUID to UUID object if needed.
+        
+        Parameters
+        ----------
+        uuid_input : Union[str, UUID]
+            UUID as string or UUID object
+            
+        Returns
+        -------
+        UUID
+            UUID object
+            
+        Raises
+        ------
+        ValueError
+            If the input is not a valid UUID
+        """
+        if isinstance(uuid_input, str):
+            try:
+                return UUID(uuid_input)
+            except ValueError:
+                raise ValueError(f"Invalid UUID format: {uuid_input}")
+        return uuid_input
     
     def check_access(
         self,
-        model_id: str,
+        model_id: Union[str, UUID],
         access_level: str = "read",
-        user_id: Optional[str] = None
+        user_id: Optional[Union[str, UUID]] = None
     ) -> bool:
         """Check if user has required access level to model.
         
@@ -79,20 +105,26 @@ class ModelPermissionManager:
             Whether user has required access level
         """
         try:
+            # Normalize UUID input
+            model_uuid = self._normalize_uuid(model_id)
+            
             # Get model
             model = self.db_session.query(ModelRegistry).filter(
-                ModelRegistry.id == model_id
+                ModelRegistry.id == model_uuid
             ).first()
             
             if not model:
                 logger.warning(f"Model {model_id} not found for access check")
                 return False
             
-            # Use current user if not specified
-            check_user_id = user_id or str(self.current_user.id)
+            # Use current user if not specified  
+            if user_id:
+                check_user_uuid = self._normalize_uuid(user_id)
+            else:
+                check_user_uuid = self.current_user.id
             
             # Owner always has full access
-            if str(model.owner_id) == check_user_id:
+            if model.owner_id == check_user_uuid:
                 return True
             
             # Public models allow read access to all authenticated users
@@ -105,7 +137,7 @@ class ModelPermissionManager:
                     Workspace.id == model.workspace_id
                 ).first()
                 
-                if workspace and str(workspace.owner_id) == check_user_id:
+                if workspace and workspace.owner_id == check_user_uuid:
                     # Workspace owner has admin access to all models in workspace
                     return self._access_level_sufficient("admin", access_level)
             
@@ -113,7 +145,7 @@ class ModelPermissionManager:
             access_grant = self.db_session.query(ModelAccess).filter(
                 and_(
                     ModelAccess.model_id == model.id,
-                    ModelAccess.user_id == check_user_id,
+                    ModelAccess.user_id == check_user_uuid,
                     # Check if access hasn't expired
                     ModelAccess.expires_at.is_(None) | 
                     (ModelAccess.expires_at > datetime.utcnow())
@@ -132,8 +164,518 @@ class ModelPermissionManager:
     
     def grant_access(
         self,
-        model_id: str,
-        user_id: str,
+        model_id: Union[str, UUID],
+        user_id: Union[str, UUID],
         access_level: str,
         expires_at: Optional[datetime] = None
-    ) -> Dict[str, Any]:\n        """Grant access to a model for a user.\n        \n        Parameters\n        ----------\n        model_id : str\n            Model identifier\n        user_id : str\n            User ID to grant access to\n        access_level : str\n            Access level to grant (read, write, admin)\n        expires_at : datetime, optional\n            When access expires (None for permanent)\n            \n        Returns\n        -------\n        Dict[str, Any]\n            Grant operation result\n        """\n        try:\n            # Validate access level\n            if access_level not in self.ACCESS_LEVELS:\n                return {\n                    "status": "error",\n                    "message": f"Invalid access level: {access_level}. Must be one of {self.ACCESS_LEVELS}"\n                }\n            \n            # Cannot grant owner level (only one owner per model)\n            if access_level == "owner":\n                return {\n                    "status": "error",\n                    "message": "Cannot grant owner access level. Transfer ownership instead."\n                }\n            \n            # Get model and check permission to grant access\n            model = self.db_session.query(ModelRegistry).filter(\n                ModelRegistry.id == model_id\n            ).first()\n            \n            if not model:\n                return {\n                    "status": "error",\n                    "message": f"Model {model_id} not found"\n                }\n            \n            # Check if current user can grant access (must have admin+ access)\n            if not self.check_access(model_id, "admin"):\n                return {\n                    "status": "error",\n                    "message": "Permission denied: admin access required to grant permissions"\n                }\n            \n            # Verify target user exists\n            target_user = self.db_session.query(User).filter(\n                User.id == user_id\n            ).first()\n            \n            if not target_user:\n                return {\n                    "status": "error",\n                    "message": f"User {user_id} not found"\n                }\n            \n            # Check for existing access grant\n            existing_grant = self.db_session.query(ModelAccess).filter(\n                and_(\n                    ModelAccess.model_id == model.id,\n                    ModelAccess.user_id == user_id\n                )\n            ).first()\n            \n            if existing_grant:\n                # Update existing grant\n                existing_grant.access_level = access_level\n                existing_grant.granted_by_id = self.current_user.id\n                existing_grant.granted_at = datetime.utcnow()\n                existing_grant.expires_at = expires_at\n                \n                action = "updated"\n            else:\n                # Create new grant\n                new_grant = ModelAccess(\n                    model_id=model.id,\n                    user_id=user_id,\n                    access_level=access_level,\n                    granted_by_id=self.current_user.id,\n                    expires_at=expires_at\n                )\n                self.db_session.add(new_grant)\n                action = "granted"\n            \n            self.db_session.commit()\n            \n            logger.info(f"Access {action} for user {target_user.email} on model {model.name}: {access_level}")\n            return {\n                "status": "success",\n                "message": f"{access_level.title()} access {action} to {target_user.email}",\n                "action": action\n            }\n            \n        except IntegrityError as e:\n            self.db_session.rollback()\n            return {\n                "status": "error",\n                "message": f"Database constraint error: {str(e)}\"\n            }\n        except Exception as e:\n            self.db_session.rollback()\n            logger.error(f"Failed to grant access: {str(e)}")\n            return {\n                "status": "error",\n                "message": f"Failed to grant access: {str(e)}\"\n            }\n    \n    def revoke_access(\n        self,\n        model_id: str,\n        user_id: str\n    ) -> Dict[str, Any]:\n        """Revoke access to a model for a user.\n        \n        Parameters\n        ----------\n        model_id : str\n            Model identifier\n        user_id : str\n            User ID to revoke access from\n            \n        Returns\n        -------\n        Dict[str, Any]\n            Revoke operation result\n        """\n        try:\n            # Get model and check permission to revoke access\n            model = self.db_session.query(ModelRegistry).filter(\n                ModelRegistry.id == model_id\n            ).first()\n            \n            if not model:\n                return {\n                    "status": "error",\n                    "message": f"Model {model_id} not found"\n                }\n            \n            # Check if current user can revoke access (must have admin+ access)\n            if not self.check_access(model_id, "admin"):\n                return {\n                    "status": "error",\n                    "message": "Permission denied: admin access required to revoke permissions"\n                }\n            \n            # Cannot revoke access from owner\n            if str(model.owner_id) == user_id:\n                return {\n                    "status": "error",\n                    "message": "Cannot revoke access from model owner"\n                }\n            \n            # Find and remove access grant\n            access_grant = self.db_session.query(ModelAccess).filter(\n                and_(\n                    ModelAccess.model_id == model.id,\n                    ModelAccess.user_id == user_id\n                )\n            ).first()\n            \n            if not access_grant:\n                return {\n                    "status": "error",\n                    "message": "No explicit access grant found for this user"\n                }\n            \n            # Get user info for logging\n            user = self.db_session.query(User).filter(\n                User.id == user_id\n            ).first()\n            \n            # Remove access grant\n            self.db_session.delete(access_grant)\n            self.db_session.commit()\n            \n            user_email = user.email if user else f"user-{user_id}"\n            logger.info(f"Access revoked for user {user_email} on model {model.name}")\n            \n            return {\n                "status": "success",\n                "message": f"Access revoked from {user_email}"\n            }\n            \n        except Exception as e:\n            self.db_session.rollback()\n            logger.error(f"Failed to revoke access: {str(e)}")\n            return {\n                "status": "error",\n                "message": f"Failed to revoke access: {str(e)}\"\n            }\n    \n    def list_permissions(\n        self,\n        model_id: str\n    ) -> Dict[str, Any]:\n        """List all permissions for a model.\n        \n        Parameters\n        ----------\n        model_id : str\n            Model identifier\n            \n        Returns\n        -------\n        Dict[str, Any]\n            List of permissions and access details\n        """\n        try:\n            # Get model and check access\n            model = self.db_session.query(ModelRegistry).filter(\n                ModelRegistry.id == model_id\n            ).first()\n            \n            if not model:\n                return {\n                    "status": "error",\n                    "message": f"Model {model_id} not found"\n                }\n            \n            # Check if current user can view permissions (must have read+ access)\n            if not self.check_access(model_id, "read"):\n                return {\n                    "status": "error",\n                    "message": "Permission denied: no access to model"\n                }\n            \n            permissions = []\n            \n            # Add owner permission\n            owner = self.db_session.query(User).filter(\n                User.id == model.owner_id\n            ).first()\n            \n            if owner:\n                permissions.append({\n                    "user_id": str(owner.id),\n                    "user_email": owner.email,\n                    "access_level": "owner",\n                    "granted_by": "system",\n                    "granted_at": model.created_at.isoformat(),\n                    "expires_at": None,\n                    "is_owner": True\n                })\n            \n            # Add workspace access if applicable\n            if model.workspace_id:\n                workspace = self.db_session.query(Workspace).filter(\n                    Workspace.id == model.workspace_id\n                ).first()\n                \n                if workspace and workspace.owner_id != model.owner_id:\n                    workspace_owner = self.db_session.query(User).filter(\n                        User.id == workspace.owner_id\n                    ).first()\n                    \n                    if workspace_owner:\n                        permissions.append({\n                            "user_id": str(workspace_owner.id),\n                            "user_email": workspace_owner.email,\n                            "access_level": "admin",\n                            "granted_by": "workspace",\n                            "granted_at": model.created_at.isoformat(),\n                            "expires_at": None,\n                            "is_workspace_owner": True\n                        })\n            \n            # Add explicit access grants\n            access_grants = self.db_session.query(ModelAccess, User).join(\n                User, ModelAccess.user_id == User.id\n            ).filter(\n                ModelAccess.model_id == model.id\n            ).all()\n            \n            for grant, user in access_grants:\n                granted_by_user = self.db_session.query(User).filter(\n                    User.id == grant.granted_by_id\n                ).first()\n                \n                permissions.append({\n                    "user_id": str(user.id),\n                    "user_email": user.email,\n                    "access_level": grant.access_level,\n                    "granted_by": granted_by_user.email if granted_by_user else f"user-{grant.granted_by_id}",\n                    "granted_at": grant.granted_at.isoformat(),\n                    "expires_at": grant.expires_at.isoformat() if grant.expires_at else None,\n                    "is_explicit": True\n                })\n            \n            return {\n                "status": "success",\n                "model_id": model_id,\n                "model_name": model.name,\n                "is_public": model.is_public,\n                "workspace_id": str(model.workspace_id) if model.workspace_id else None,\n                "permissions": permissions\n            }\n            \n        except Exception as e:\n            logger.error(f"Failed to list permissions for model {model_id}: {str(e)}")\n            return {\n                "status": "error",\n                "message": f"Failed to list permissions: {str(e)}\"\n            }\n    \n    def transfer_ownership(\n        self,\n        model_id: str,\n        new_owner_id: str\n    ) -> Dict[str, Any]:\n        """Transfer model ownership to another user.\n        \n        Parameters\n        ----------\n        model_id : str\n            Model identifier\n        new_owner_id : str\n            New owner user ID\n            \n        Returns\n        -------\n        Dict[str, Any]\n            Transfer operation result\n        """\n        try:\n            # Get model\n            model = self.db_session.query(ModelRegistry).filter(\n                ModelRegistry.id == model_id\n            ).first()\n            \n            if not model:\n                return {\n                    "status": "error",\n                    "message": f"Model {model_id} not found"\n                }\n            \n            # Only current owner can transfer ownership\n            if str(model.owner_id) != str(self.current_user.id):\n                return {\n                    "status": "error",\n                    "message": "Permission denied: only model owner can transfer ownership"\n                }\n            \n            # Verify new owner exists\n            new_owner = self.db_session.query(User).filter(\n                User.id == new_owner_id\n            ).first()\n            \n            if not new_owner:\n                return {\n                    "status": "error",\n                    "message": f"New owner {new_owner_id} not found"\n                }\n            \n            # Cannot transfer to same user\n            if str(model.owner_id) == new_owner_id:\n                return {\n                    "status": "error",\n                    "message": "Cannot transfer ownership to current owner"\n                }\n            \n            # Update model owner\n            old_owner_email = self.current_user.email\n            model.owner_id = new_owner.id\n            model.updated_at = datetime.utcnow()\n            \n            # Remove any explicit access grants for the new owner\n            # (they now have owner access)\n            existing_grant = self.db_session.query(ModelAccess).filter(\n                and_(\n                    ModelAccess.model_id == model.id,\n                    ModelAccess.user_id == new_owner_id\n                )\n            ).first()\n            \n            if existing_grant:\n                self.db_session.delete(existing_grant)\n            \n            self.db_session.commit()\n            \n            logger.info(f"Model {model.name} ownership transferred from {old_owner_email} to {new_owner.email}")\n            \n            return {\n                "status": "success",\n                "message": f"Ownership transferred to {new_owner.email}",\n                "old_owner": old_owner_email,\n                "new_owner": new_owner.email\n            }\n            \n        except Exception as e:\n            self.db_session.rollback()\n            logger.error(f"Failed to transfer ownership: {str(e)}")\n            return {\n                "status": "error",\n                "message": f"Failed to transfer ownership: {str(e)}\"\n            }\n    \n    def make_public(self, model_id: str, is_public: bool = True) -> Dict[str, Any]:\n        """Make a model public or private.\n        \n        Parameters\n        ----------\n        model_id : str\n            Model identifier\n        is_public : bool, default=True\n            Whether to make model public or private\n            \n        Returns\n        -------\n        Dict[str, Any]\n            Operation result\n        """\n        try:\n            # Get model\n            model = self.db_session.query(ModelRegistry).filter(\n                ModelRegistry.id == model_id\n            ).first()\n            \n            if not model:\n                return {\n                    "status": "error",\n                    "message": f"Model {model_id} not found"\n                }\n            \n            # Check if current user has admin access\n            if not self.check_access(model_id, "admin"):\n                return {\n                    "status": "error",\n                    "message": "Permission denied: admin access required to change public status"\n                }\n            \n            # Update public status\n            old_status = model.is_public\n            model.is_public = is_public\n            model.updated_at = datetime.utcnow()\n            \n            self.db_session.commit()\n            \n            status_word = "public" if is_public else "private"\n            action = "made" if old_status != is_public else "already"\n            \n            logger.info(f"Model {model.name} {action} {status_word}")\n            \n            return {\n                "status": "success",\n                "message": f"Model {action} {status_word}",\n                "is_public": is_public\n            }\n            \n        except Exception as e:\n            self.db_session.rollback()\n            logger.error(f"Failed to change public status: {str(e)}")\n            return {\n                "status": "error",\n                "message": f"Failed to change public status: {str(e)}\"\n            }\n    \n    def _access_level_sufficient(self, granted_level: str, required_level: str) -> bool:\n        """Check if granted access level is sufficient for required level.\n        \n        Parameters\n        ----------\n        granted_level : str\n            Access level that user has\n        required_level : str\n            Access level that is required\n            \n        Returns\n        -------\n        bool\n            Whether granted level is sufficient\n        """\n        try:\n            granted_index = self.ACCESS_LEVELS.index(granted_level)\n            required_index = self.ACCESS_LEVELS.index(required_level)\n            return granted_index >= required_index\n        except ValueError:\n            # Invalid access level\n            return False
+    ) -> Dict[str, Any]:
+        """Grant access to a model for a user.
+        
+        Parameters
+        ----------
+        model_id : Union[str, UUID]
+            Model identifier
+        user_id : Union[str, UUID]
+            User ID to grant access to
+        access_level : str
+            Access level to grant (read, write, admin)
+        expires_at : datetime, optional
+            When access expires (None for permanent)
+            
+        Returns
+        -------
+        Dict[str, Any]
+            Grant operation result
+        """
+        try:
+            # Normalize UUID inputs
+            model_uuid = self._normalize_uuid(model_id)
+            user_uuid = self._normalize_uuid(user_id)
+            
+            # Validate access level
+            if access_level not in self.ACCESS_LEVELS:
+                return {
+                    "status": "error",
+                    "message": f"Invalid access level: {access_level}. Must be one of {self.ACCESS_LEVELS}"
+                }
+            
+            # Cannot grant owner level (only one owner per model)
+            if access_level == "owner":
+                return {
+                    "status": "error",
+                    "message": "Cannot grant owner access level. Transfer ownership instead."
+                }
+            
+            # Get model and check permission to grant access
+            model = self.db_session.query(ModelRegistry).filter(
+                ModelRegistry.id == model_uuid
+            ).first()
+            
+            if not model:
+                return {
+                    "status": "error",
+                    "message": f"Model {model_id} not found"
+                }
+            
+            # Check if current user can grant access (must have admin+ access)
+            if not self.check_access(model_uuid, "admin"):
+                return {
+                    "status": "error",
+                    "message": "Permission denied: admin access required to grant permissions"
+                }
+            
+            # Verify target user exists
+            target_user = self.db_session.query(User).filter(
+                User.id == user_uuid
+            ).first()
+            
+            if not target_user:
+                return {
+                    "status": "error",
+                    "message": f"User {user_id} not found"
+                }
+            
+            # Check for existing access grant
+            existing_grant = self.db_session.query(ModelAccess).filter(
+                and_(
+                    ModelAccess.model_id == model.id,
+                    ModelAccess.user_id == user_uuid
+                )
+            ).first()
+            
+            if existing_grant:
+                # Update existing grant
+                existing_grant.access_level = access_level
+                existing_grant.granted_by_id = self.current_user.id
+                existing_grant.granted_at = datetime.utcnow()
+                existing_grant.expires_at = expires_at
+                
+                action = "updated"
+            else:
+                # Create new grant
+                new_grant = ModelAccess(
+                    model_id=model.id,
+                    user_id=user_uuid,
+                    access_level=access_level,
+                    granted_by_id=self.current_user.id,
+                    expires_at=expires_at
+                )
+                self.db_session.add(new_grant)
+                action = "granted"
+            
+            self.db_session.commit()
+            
+            logger.info(f"Access {action} for user {target_user.email} on model {model.name}: {access_level}")
+            return {
+                "status": "success",
+                "message": f"{access_level.title()} access {action} to {target_user.email}",
+                "action": action
+            }
+            
+        except IntegrityError as e:
+            self.db_session.rollback()
+            return {
+                "status": "error",
+                "message": f"Database constraint error: {str(e)}"
+            }
+        except Exception as e:
+            self.db_session.rollback()
+            logger.error(f"Failed to grant access: {str(e)}")
+            return {
+                "status": "error",
+                "message": f"Failed to grant access: {str(e)}"
+            }
+    
+    def revoke_access(
+        self,
+        model_id: Union[str, UUID],
+        user_id: Union[str, UUID]
+    ) -> Dict[str, Any]:
+        """Revoke access to a model for a user.
+        
+        Parameters
+        ----------
+        model_id : Union[str, UUID]
+            Model identifier
+        user_id : Union[str, UUID]
+            User ID to revoke access from
+            
+        Returns
+        -------
+        Dict[str, Any]
+            Revoke operation result
+        """
+        try:
+            # Normalize UUID inputs
+            model_uuid = self._normalize_uuid(model_id)
+            user_uuid = self._normalize_uuid(user_id)
+            
+            # Get model and check permission to revoke access
+            model = self.db_session.query(ModelRegistry).filter(
+                ModelRegistry.id == model_uuid
+            ).first()
+            
+            if not model:
+                return {
+                    "status": "error",
+                    "message": f"Model {model_id} not found"
+                }
+            
+            # Check if current user can revoke access (must have admin+ access)
+            if not self.check_access(model_uuid, "admin"):
+                return {
+                    "status": "error",
+                    "message": "Permission denied: admin access required to revoke permissions"
+                }
+            
+            # Cannot revoke access from owner
+            if model.owner_id == user_uuid:
+                return {
+                    "status": "error",
+                    "message": "Cannot revoke access from model owner"
+                }
+            
+            # Find and remove access grant
+            access_grant = self.db_session.query(ModelAccess).filter(
+                and_(
+                    ModelAccess.model_id == model.id,
+                    ModelAccess.user_id == user_uuid
+                )
+            ).first()
+            
+            if not access_grant:
+                return {
+                    "status": "error",
+                    "message": "No explicit access grant found for this user"
+                }
+            
+            # Get user info for logging
+            user = self.db_session.query(User).filter(
+                User.id == user_uuid
+            ).first()
+            
+            # Remove access grant
+            self.db_session.delete(access_grant)
+            self.db_session.commit()
+            
+            user_email = user.email if user else f"user-{user_id}"
+            logger.info(f"Access revoked for user {user_email} on model {model.name}")
+            
+            return {
+                "status": "success",
+                "message": f"Access revoked from {user_email}"
+            }
+            
+        except Exception as e:
+            self.db_session.rollback()
+            logger.error(f"Failed to revoke access: {str(e)}")
+            return {
+                "status": "error",
+                "message": f"Failed to revoke access: {str(e)}"
+            }
+    
+    def list_permissions(
+        self,
+        model_id: Union[str, UUID]
+    ) -> Dict[str, Any]:
+        """List all permissions for a model.
+        
+        Parameters
+        ----------
+        model_id : Union[str, UUID]
+            Model identifier
+            
+        Returns
+        -------
+        Dict[str, Any]
+            List of permissions and access details
+        """
+        try:
+            # Normalize UUID input
+            model_uuid = self._normalize_uuid(model_id)
+            
+            # Get model and check access
+            model = self.db_session.query(ModelRegistry).filter(
+                ModelRegistry.id == model_uuid
+            ).first()
+            
+            if not model:
+                return {
+                    "status": "error",
+                    "message": f"Model {model_id} not found"
+                }
+            
+            # Check if current user can view permissions (must have read+ access)
+            if not self.check_access(model_uuid, "read"):
+                return {
+                    "status": "error",
+                    "message": "Permission denied: no access to model"
+                }
+            
+            permissions = []
+            
+            # Add owner permission
+            owner = self.db_session.query(User).filter(
+                User.id == model.owner_id
+            ).first()
+            
+            if owner:
+                permissions.append({
+                    "user_id": str(owner.id),
+                    "user_email": owner.email,
+                    "access_level": "owner",
+                    "granted_by": "system",
+                    "granted_at": model.created_at.isoformat(),
+                    "expires_at": None,
+                    "is_owner": True
+                })
+            
+            # Add workspace access if applicable
+            if model.workspace_id:
+                workspace = self.db_session.query(Workspace).filter(
+                    Workspace.id == model.workspace_id
+                ).first()
+                
+                if workspace and workspace.owner_id != model.owner_id:
+                    workspace_owner = self.db_session.query(User).filter(
+                        User.id == workspace.owner_id
+                    ).first()
+                    
+                    if workspace_owner:
+                        permissions.append({
+                            "user_id": str(workspace_owner.id),
+                            "user_email": workspace_owner.email,
+                            "access_level": "admin",
+                            "granted_by": "workspace",
+                            "granted_at": model.created_at.isoformat(),
+                            "expires_at": None,
+                            "is_workspace_owner": True
+                        })
+            
+            # Add explicit access grants (using separate queries to avoid join issues)
+            access_grants = self.db_session.query(ModelAccess).filter(
+                ModelAccess.model_id == model.id
+            ).all()
+            
+            for grant in access_grants:
+                # Get the user for this grant
+                user = self.db_session.query(User).filter(
+                    User.id == grant.user_id
+                ).first()
+                
+                if not user:
+                    # Skip grants for users that no longer exist
+                    continue
+                
+                # Get the user who granted access
+                granted_by_user = self.db_session.query(User).filter(
+                    User.id == grant.granted_by_id
+                ).first()
+                
+                permissions.append({
+                    "user_id": str(user.id),
+                    "user_email": user.email,
+                    "access_level": grant.access_level,
+                    "granted_by": granted_by_user.email if granted_by_user else f"user-{grant.granted_by_id}",
+                    "granted_at": grant.granted_at.isoformat(),
+                    "expires_at": grant.expires_at.isoformat() if grant.expires_at else None,
+                    "is_explicit": True
+                })
+            
+            return {
+                "status": "success",
+                "model_id": str(model_uuid),
+                "model_name": model.name,
+                "is_public": model.is_public,
+                "workspace_id": str(model.workspace_id) if model.workspace_id else None,
+                "permissions": permissions
+            }
+            
+        except Exception as e:
+            logger.error(f"Failed to list permissions for model {model_id}: {str(e)}")
+            return {
+                "status": "error",
+                "message": f"Failed to list permissions: {str(e)}"
+            }
+    
+    def transfer_ownership(
+        self,
+        model_id: Union[str, UUID],
+        new_owner_id: Union[str, UUID]
+    ) -> Dict[str, Any]:
+        """Transfer model ownership to another user.
+        
+        Parameters
+        ----------
+        model_id : Union[str, UUID]
+            Model identifier
+        new_owner_id : Union[str, UUID]
+            New owner user ID
+            
+        Returns
+        -------
+        Dict[str, Any]
+            Transfer operation result
+        """
+        try:
+            # Normalize UUID inputs
+            model_uuid = self._normalize_uuid(model_id)
+            new_owner_uuid = self._normalize_uuid(new_owner_id)
+            
+            # Get model
+            model = self.db_session.query(ModelRegistry).filter(
+                ModelRegistry.id == model_uuid
+            ).first()
+            
+            if not model:
+                return {
+                    "status": "error",
+                    "message": f"Model {model_id} not found"
+                }
+            
+            # Only current owner can transfer ownership
+            if model.owner_id != self.current_user.id:
+                return {
+                    "status": "error",
+                    "message": "Permission denied: only model owner can transfer ownership"
+                }
+            
+            # Verify new owner exists
+            new_owner = self.db_session.query(User).filter(
+                User.id == new_owner_uuid
+            ).first()
+            
+            if not new_owner:
+                return {
+                    "status": "error",
+                    "message": f"New owner {new_owner_id} not found"
+                }
+            
+            # Cannot transfer to same user
+            if model.owner_id == new_owner_uuid:
+                return {
+                    "status": "error",
+                    "message": "Cannot transfer ownership to current owner"
+                }
+            
+            # Update model owner
+            old_owner_email = self.current_user.email
+            model.owner_id = new_owner_uuid
+            model.updated_at = datetime.utcnow()
+            
+            # Remove any explicit access grants for the new owner
+            # (they now have owner access)
+            existing_grant = self.db_session.query(ModelAccess).filter(
+                and_(
+                    ModelAccess.model_id == model.id,
+                    ModelAccess.user_id == new_owner_uuid
+                )
+            ).first()
+            
+            if existing_grant:
+                self.db_session.delete(existing_grant)
+            
+            self.db_session.commit()
+            
+            logger.info(f"Model {model.name} ownership transferred from {old_owner_email} to {new_owner.email}")
+            
+            return {
+                "status": "success",
+                "message": f"Ownership transferred to {new_owner.email}",
+                "old_owner": old_owner_email,
+                "new_owner": new_owner.email
+            }
+            
+        except Exception as e:
+            self.db_session.rollback()
+            logger.error(f"Failed to transfer ownership: {str(e)}")
+            return {
+                "status": "error",
+                "message": f"Failed to transfer ownership: {str(e)}"
+            }
+    
+    def make_public(self, model_id: Union[str, UUID], is_public: bool = True) -> Dict[str, Any]:
+        """Make a model public or private.
+        
+        Parameters
+        ----------
+        model_id : str
+            Model identifier
+        is_public : bool, default=True
+            Whether to make model public or private
+            
+        Returns
+        -------
+        Dict[str, Any]
+            Operation result
+        """
+        try:
+            # Normalize UUID input
+            model_uuid = self._normalize_uuid(model_id)
+            
+            # Get model
+            model = self.db_session.query(ModelRegistry).filter(
+                ModelRegistry.id == model_uuid
+            ).first()
+            
+            if not model:
+                return {
+                    "status": "error",
+                    "message": f"Model {model_id} not found"
+                }
+            
+            # Check if current user has admin access
+            if not self.check_access(model_uuid, "admin"):
+                return {
+                    "status": "error",
+                    "message": "Permission denied: admin access required to change public status"
+                }
+            
+            # Update public status
+            old_status = model.is_public
+            model.is_public = is_public
+            model.updated_at = datetime.utcnow()
+            
+            self.db_session.commit()
+            
+            status_word = "public" if is_public else "private"
+            action = "made" if old_status != is_public else "already"
+            
+            logger.info(f"Model {model.name} {action} {status_word}")
+            
+            return {
+                "status": "success",
+                "message": f"Model {action} {status_word}",
+                "is_public": is_public
+            }
+            
+        except Exception as e:
+            self.db_session.rollback()
+            logger.error(f"Failed to change public status: {str(e)}")
+            return {
+                "status": "error",
+                "message": f"Failed to change public status: {str(e)}"
+            }
+    
+    def _access_level_sufficient(self, granted_level: str, required_level: str) -> bool:
+        """Check if granted access level is sufficient for required level.
+        
+        Parameters
+        ----------
+        granted_level : str
+            Access level that user has
+        required_level : str
+            Access level that is required
+            
+        Returns
+        -------
+        bool
+            Whether granted level is sufficient
+        """
+        try:
+            granted_index = self.ACCESS_LEVELS.index(granted_level)
+            required_index = self.ACCESS_LEVELS.index(required_level)
+            return granted_index >= required_index
+        except ValueError:
+            # Invalid access level
+            return False
