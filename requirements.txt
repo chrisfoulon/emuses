@@ -24,6 +24,10 @@ attrs==25.3.0
     # via
     #   jsonschema
     #   referencing
+azure-core==1.35.0
+    # via azure-storage-blob
+azure-storage-blob==12.26.0
+    # via -r requirements.in
 bcblib==0.4.0
     # via -r requirements.in
 bcrypt==4.3.0
@@ -34,10 +38,21 @@ bidsschematools==1.0.11
     # via bids-validator
 blinker==1.9.0
     # via streamlit
+boto3==1.40.6
+    # via
+    #   -r requirements.in
+    #   moto
+botocore==1.40.6
+    # via
+    #   boto3
+    #   moto
+    #   s3transfer
 bottle==0.13.4
     # via optuna-dashboard
 cachetools==6.1.0
-    # via streamlit
+    # via
+    #   google-auth
+    #   streamlit
 certifi==2025.8.3
     # via
     #   httpcore
@@ -63,7 +78,10 @@ colorlog==6.9.0
 contourpy==1.3.3
     # via matplotlib
 cryptography==45.0.5
-    # via pyjwt
+    # via
+    #   azure-storage-blob
+    #   moto
+    #   pyjwt
 cycler==0.12.1
     # via matplotlib
 cython==3.1.2
@@ -76,6 +94,8 @@ deprecated==1.2.18
     # via limits
 dnspython==2.7.0
     # via email-validator
+docker==7.1.0
+    # via testcontainers
 docopt==0.6.2
     # via num2words
 email-validator==2.2.0
@@ -93,7 +113,9 @@ fastapi-users[oauth,sqlalchemy]==14.0.1
 fastapi-users-db-sqlalchemy==7.0.0
     # via fastapi-users
 filelock==3.18.0
-    # via torch
+    # via
+    #   pytest-servers
+    #   torch
 fonttools==4.59.0
     # via matplotlib
 formulaic==1.2.0
@@ -102,12 +124,27 @@ frozendict==2.4.6
     # via pybids
 fsspec==2025.7.0
     # via
+    #   pytest-servers
     #   torch
     #   universal-pathlib
 gitdb==4.0.12
     # via gitpython
 gitpython==3.1.45
     # via streamlit
+google-api-core==1.16.0
+    # via google-cloud-core
+google-auth==1.6.3
+    # via
+    #   google-api-core
+    #   google-cloud-storage
+google-cloud-core==1.4.0
+    # via google-cloud-storage
+google-cloud-storage==1.23.0
+    # via -r requirements.in
+google-resumable-media==0.5.1
+    # via google-cloud-storage
+googleapis-common-protos==1.70.0
+    # via google-api-core
 gpy==1.13.2
     # via -r requirements.in
 greenlet==3.2.3
@@ -134,14 +171,23 @@ idna==3.10
     #   requests
 importlib-resources==6.5.2
     # via nibabel
+iniconfig==2.1.0
+    # via pytest
 interface-meta==1.3.0
     # via formulaic
+isodate==0.7.2
+    # via azure-storage-blob
 jinja2==3.1.6
     # via
     #   altair
     #   mne
+    #   moto
     #   pydeck
     #   torch
+jmespath==1.0.1
+    # via
+    #   boto3
+    #   botocore
 joblib==1.5.1
     # via
     #   -r requirements.in
@@ -184,6 +230,7 @@ markupsafe==3.0.2
     # via
     #   jinja2
     #   mako
+    #   werkzeug
 matplotlib==3.10.5
     # via
     #   -r requirements.in
@@ -195,6 +242,8 @@ mne==1.10.0
     # via
     #   -r requirements.in
     #   bcblib
+moto[s3]==5.1.9
+    # via -r requirements.in
 mpmath==1.3.0
     # via sympy
 narwhals==2.0.1
@@ -315,6 +364,7 @@ packaging==25.0
     #   optuna-dashboard
     #   plotly
     #   pooch
+    #   pytest
     #   statsmodels
     #   streamlit
 pandas==2.3.1
@@ -341,18 +391,31 @@ platformdirs==4.3.8
     # via pooch
 plotly==6.2.0
     # via -r requirements.in
+pluggy==1.6.0
+    # via pytest
 pooch==1.8.2
     # via mne
 prometheus-client==0.22.1
     # via -r requirements.in
 protobuf==6.31.1
-    # via streamlit
+    # via
+    #   google-api-core
+    #   googleapis-common-protos
+    #   streamlit
 psutil==7.0.0
     # via -r requirements.in
 pwdlib[argon2,bcrypt]==0.2.1
     # via fastapi-users
+py-partiql-parser==0.6.1
+    # via moto
 pyarrow==21.0.0
     # via streamlit
+pyasn1==0.6.1
+    # via
+    #   pyasn1-modules
+    #   rsa
+pyasn1-modules==0.4.2
+    # via google-auth
 pybids==0.19.0
     # via -r requirements.in
 pycparser==2.22
@@ -364,29 +427,47 @@ pydantic-core==2.33.2
 pydeck==0.9.1
     # via streamlit
 pygments==2.19.2
-    # via rich
+    # via
+    #   pytest
+    #   rich
 pyjwt[crypto]==2.10.1
     # via fastapi-users
 pykrige==1.7.2
+    # via -r requirements.in
+pymemcache==4.0.0
     # via -r requirements.in
 pynndescent==0.5.13
     # via umap-learn
 pyparsing==3.2.3
     # via matplotlib
+pytest==8.4.1
+    # via pytest-servers
+pytest-servers==0.5.12
+    # via -r requirements.in
 python-dateutil==2.9.0.post0
     # via
+    #   botocore
     #   matplotlib
+    #   moto
     #   pandas
+python-dotenv==1.1.1
+    # via testcontainers
 python-multipart==0.0.20
     # via
     #   -r requirements.in
     #   fastapi-users
 pytz==2025.2
-    # via pandas
+    # via
+    #   google-api-core
+    #   pandas
 pyyaml==6.0.2
     # via
     #   bidsschematools
+    #   moto
     #   optuna
+    #   responses
+redis==6.4.0
+    # via -r requirements.in
 referencing==0.36.2
     # via
     #   jsonschema
@@ -394,15 +475,27 @@ referencing==0.36.2
 requests==2.32.4
     # via
     #   -r requirements.in
+    #   azure-core
+    #   docker
+    #   google-api-core
+    #   moto
     #   nilearn
     #   pooch
+    #   pytest-servers
+    #   responses
     #   streamlit
+responses==0.25.8
+    # via moto
 rich==14.1.0
     # via typer
 rpds-py==0.26.0
     # via
     #   jsonschema
     #   referencing
+rsa==4.9.1
+    # via google-auth
+s3transfer==0.13.1
+    # via boto3
 scikit-learn==1.7.1
     # via
     #   -r requirements.in
@@ -440,7 +533,11 @@ simplejson==3.20.1
     # via choreographer
 six==1.17.0
     # via
+    #   azure-core
     #   bcblib
+    #   google-api-core
+    #   google-auth
+    #   google-resumable-media
     #   gpy
     #   paramz
     #   python-dateutil
@@ -470,6 +567,8 @@ sympy==1.14.0
     # via torch
 tenacity==9.1.2
     # via streamlit
+testcontainers==4.12.0
+    # via -r requirements.in
 threadpoolctl==3.6.0
     # via scikit-learn
 toml==0.10.2
@@ -494,6 +593,8 @@ typing-extensions==4.14.1
     #   alembic
     #   altair
     #   anyio
+    #   azure-core
+    #   azure-storage-blob
     #   fastapi
     #   formulaic
     #   limits
@@ -504,6 +605,7 @@ typing-extensions==4.14.1
     #   sqlalchemy
     #   starlette
     #   streamlit
+    #   testcontainers
     #   torch
     #   typer
     #   typing-inspection
@@ -516,19 +618,31 @@ umap-learn==0.5.9.post2
     #   -r requirements.in
     #   bcblib
 universal-pathlib==0.2.6
-    # via pybids
+    # via
+    #   pybids
+    #   pytest-servers
 urllib3==2.5.0
-    # via requests
+    # via
+    #   botocore
+    #   docker
+    #   requests
+    #   responses
+    #   testcontainers
 uvicorn==0.35.0
     # via -r requirements.in
 watchdog==6.0.0
     # via streamlit
+werkzeug==3.1.3
+    # via moto
 wrapt==1.17.2
     # via
     #   deprecated
     #   formulaic
+    #   testcontainers
 xgboost==3.0.3
     # via -r requirements.in
+xmltodict==0.14.2
+    # via moto
 
 # The following packages are considered to be unsafe in a requirements file:
 # setuptools
