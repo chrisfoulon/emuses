@@ -7,7 +7,7 @@ and system health monitoring.
 
 import time
 from contextlib import contextmanager
-from typing import Any, Dict, Optional
+from typing import Optional
 
 from prometheus_client import (CONTENT_TYPE_LATEST, CollectorRegistry, Counter,
                                Gauge, Histogram, generate_latest)
@@ -106,6 +106,43 @@ class MetricsRegistry:
             buckets=(0.01, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, float("inf")),
         )
 
+        # Model Registry Metrics
+        self.model_downloads_total = Counter(
+            "emuses_model_downloads_total",
+            "Total number of model downloads",
+            ["model_id", "model_type", "user_id", "download_method"],
+            registry=self.registry,
+        )
+
+        self.model_registry_size = Gauge(
+            "emuses_model_registry_size",
+            "Total number of models in registry",
+            ["registry_type", "visibility"],
+            registry=self.registry,
+        )
+
+        self.model_analytics_operations_total = Counter(
+            "emuses_model_analytics_operations_total",
+            "Total number of analytics operations",
+            ["operation_type", "status"],
+            registry=self.registry,
+        )
+
+        self.model_recommendation_requests_total = Counter(
+            "emuses_model_recommendation_requests_total",
+            "Total number of recommendation requests",
+            ["recommendation_type"],
+            registry=self.registry,
+        )
+
+        self.model_storage_bytes = Histogram(
+            "emuses_model_storage_bytes",
+            "Model storage size in bytes",
+            ["model_type"],
+            registry=self.registry,
+            buckets=(1e6, 10e6, 100e6, 1e9, 10e9, 100e9, float("inf")),  # 1MB to 100GB
+        )
+
     def get_metrics(self) -> bytes:
         """Generate Prometheus metrics output"""
         return generate_latest(self.registry)
@@ -127,6 +164,13 @@ active_jobs = _metrics_registry.active_jobs
 dataset_size_bytes = _metrics_registry.dataset_size_bytes
 http_requests_total = _metrics_registry.http_requests_total
 http_request_duration_seconds = _metrics_registry.http_request_duration_seconds
+
+# Model Registry metrics
+model_downloads_total = _metrics_registry.model_downloads_total
+model_registry_size = _metrics_registry.model_registry_size
+model_analytics_operations_total = _metrics_registry.model_analytics_operations_total
+model_recommendation_requests_total = _metrics_registry.model_recommendation_requests_total
+model_storage_bytes = _metrics_registry.model_storage_bytes
 
 
 def get_metrics_registry() -> MetricsRegistry:

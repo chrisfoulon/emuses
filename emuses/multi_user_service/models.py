@@ -347,6 +347,15 @@ class ModelRegistry(Base):
     download_count = Column(Integer, nullable=False, default=0)
     last_accessed = Column(DateTime, nullable=True)
 
+    # Cloud storage extensions (optional fields for cloud registry mode)
+    storage_tier = Column(String(20), nullable=True, index=True)  # hot, warm, cold, archive
+    storage_url = Column(Text, nullable=True)  # Cloud storage URL (alternative to model_path)
+    is_cached = Column(Boolean, nullable=True, default=False)  # Whether model is cached locally
+    
+    # Community and analytics extensions
+    popularity_score = Column(Float, nullable=True, default=0.0)  # Popularity score for ranking
+    community_rating = Column(Float, nullable=True)  # Average community rating (1-5)
+
     # Relationships
     owner = relationship("User", back_populates="registered_models")
     workspace = relationship("Workspace", back_populates="models")

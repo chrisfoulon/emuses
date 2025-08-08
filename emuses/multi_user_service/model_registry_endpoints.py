@@ -139,7 +139,7 @@ class AccessGrantRequest(BaseModel):
         When access expires
     """
     user_id: str
-    access_level: str = Field(regex=r"^(read|write|admin)$")
+    access_level: str = Field(pattern=r"^(read|write|admin)$")
     expires_at: Optional[datetime] = None
 
 

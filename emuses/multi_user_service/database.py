@@ -7,17 +7,21 @@ and connection pooling for PostgreSQL with SQLAlchemy async patterns.
 import logging
 import os
 from contextlib import asynccontextmanager
-from typing import AsyncGenerator, Optional
+from typing import AsyncGenerator, Optional, Generator
 
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import (AsyncEngine, AsyncSession,
                                     async_sessionmaker, create_async_engine)
+from sqlalchemy import create_engine as create_sync_engine, Engine
+from sqlalchemy.orm import Session, sessionmaker
 
 logger = logging.getLogger(__name__)
 
-# Global engine instance
+# Global engine instances  
 _engine: Optional[AsyncEngine] = None
 _async_session_maker: Optional[async_sessionmaker[AsyncSession]] = None
+_sync_engine: Optional[Engine] = None
+_sync_session_maker: Optional[sessionmaker[Session]] = None
 
 
 class DatabaseConfig:
@@ -156,6 +160,80 @@ async def get_async_session() -> AsyncGenerator[AsyncSession, None]:
             raise
         finally:
             await session.close()
+
+
+def create_sync_engine() -> Engine:
+    """Create synchronous SQLAlchemy engine.
+    
+    Returns
+    -------
+    Engine
+        Configured synchronous SQLAlchemy engine
+    """
+    global _sync_engine
+    
+    if _sync_engine is not None:
+        return _sync_engine
+    
+    config = DatabaseConfig()
+    
+    # Convert async URL to sync URL 
+    sync_url = config.connection_url.replace("postgresql+asyncpg://", "postgresql://")
+    
+    _sync_engine = create_sync_engine(
+        sync_url,
+        pool_size=config.pool_size,
+        max_overflow=config.max_overflow,
+        pool_pre_ping=True,
+        pool_recycle=config.pool_recycle,
+        echo=config.echo
+    )
+    
+    logger.info("Created sync database engine")
+    return _sync_engine
+
+
+def get_sync_session_maker() -> sessionmaker[Session]:
+    """Get or create synchronous session maker.
+    
+    Returns
+    -------
+    sessionmaker[Session]
+        Configured session maker
+    """
+    global _sync_session_maker
+    
+    if _sync_session_maker is not None:
+        return _sync_session_maker
+        
+    engine = create_sync_engine()
+    _sync_session_maker = sessionmaker(
+        bind=engine,
+        class_=Session,
+        expire_on_commit=False
+    )
+    
+    return _sync_session_maker
+
+
+def get_db() -> Generator[Session, None, None]:
+    """Dependency function for FastAPI to get sync database sessions.
+    
+    Yields
+    ------
+    Session
+        Database session for dependency injection
+    """
+    session_maker = get_sync_session_maker()
+    session = session_maker()
+    try:
+        yield session
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise
+    finally:
+        session.close()
 
 
 def check_database_health() -> bool:
