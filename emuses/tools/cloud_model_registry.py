@@ -125,7 +125,7 @@ class CloudModelRegistry:
         self.db = db_session
         self.current_user = user
         self.storage = storage_backend
-        self.permission_manager = ModelPermissionManager(db_session)
+        self.permission_manager = ModelPermissionManager(db_session, user)
         self.default_tier = default_tier
         self.enable_caching = enable_caching
         
