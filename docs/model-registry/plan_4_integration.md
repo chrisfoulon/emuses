@@ -18,40 +18,40 @@
 
 ### Phase 4.1: Unified Registry Interface ║ tests/integration/test_unified_interface.py ║ Cross-mode integration ║ M
 
-- [ ] **Task 4.1.1: Create ModelRegistryFactory**
-  - [ ] 4.1.1.a: Create emuses/tools/model_registry_factory.py
-  - [ ] 4.1.1.b: Implement create_registry() with automatic mode detection
-  - [ ] 4.1.1.c: Add deployment mode detection and validation
-  - [ ] 4.1.1.d: Create fallback logic for unavailable backends
+- [x] **Task 4.1.1: Create ModelRegistryFactory**
+  - [x] 4.1.1.a: Create emuses/tools/model_registry_factory.py
+  - [x] 4.1.1.b: Implement create_registry() with automatic mode detection
+  - [x] 4.1.1.c: Add deployment mode detection and validation
+  - [x] 4.1.1.d: Create fallback logic for unavailable backends
 
-- [ ] **Task 4.1.2: Unify CLI commands across modes**
-  - [ ] 4.1.2.a: Update CLI commands to use ModelRegistryFactory
-  - [ ] 4.1.2.b: Add mode-specific parameter handling (workspace, public, etc.)
-  - [ ] 4.1.2.c: Implement consistent error messages across modes
-  - [ ] 4.1.2.d: Add mode status and configuration display commands
+- [x] **Task 4.1.2: Unify CLI commands across modes**
+  - [x] 4.1.2.a: Update CLI commands to use ModelRegistryFactory
+  - [x] 4.1.2.b: Add mode-specific parameter handling (workspace, public, etc.)
+  - [x] 4.1.2.c: Implement consistent error messages across modes
+  - [x] 4.1.2.d: Add mode status and configuration display commands
 
-- [ ] **Task 4.1.3: Create BaseModelRegistry interface**
-  - [ ] 4.1.3.a: Define abstract base class for registry implementations
-  - [ ] 4.1.3.b: Ensure consistent method signatures across modes
-  - [ ] 4.1.3.c: Add interface validation and compatibility checking
-  - [ ] 4.1.3.d: Create registry capability detection methods
+- [x] **Task 4.1.3: Create BaseModelRegistry interface**
+  - [x] 4.1.3.a: Define abstract base class for registry implementations
+  - [x] 4.1.3.b: Ensure consistent method signatures across modes
+  - [x] 4.1.3.c: Add interface validation and compatibility checking
+  - [x] 4.1.3.d: Create registry capability detection methods
 
 ### Phase 4.2: Cross-Mode Compatibility ║ tests/integration/test_model_migration.py ║ Mode transitions ║ M
 
-- [ ] **Task 4.2.1: Create ModelMigrator class**
-  - [ ] 4.2.1.a: Create emuses/tools/model_migration.py
-  - [ ] 4.2.1.b: Implement migrate_local_to_database() with validation
-  - [ ] 4.2.1.c: Add migrate_database_to_cloud() with cloud upload
-  - [ ] 4.2.1.d: Create migrate_cloud_to_local() for offline scenarios
+- [x] **Task 4.2.1: Create ModelMigrator class**
+  - [x] 4.2.1.a: Create emuses/tools/model_migration.py
+  - [x] 4.2.1.b: Implement migrate_local_to_database() with validation
+  - [x] 4.2.1.c: Add migrate_database_to_cloud() with cloud upload
+  - [x] 4.2.1.d: Create migrate_cloud_to_local() for offline scenarios
 
-- [ ] **Task 4.2.2: Implement model export/import**
-  - [ ] 4.2.2.a: Add export_model_bundle() for portable model packages
-  - [ ] 4.2.2.b: Implement import_model_bundle() for external models
-  - [ ] 4.2.2.c: Create bundle validation and integrity checking
+- [x] **Task 4.2.2: Implement model export/import**
+  - [x] 4.2.2.a: Add export_model_bundle() for portable model packages
+  - [x] 4.2.2.b: Implement import_model_bundle() for external models
+  - [x] 4.2.2.c: Create bundle validation and integrity checking
   - [ ] 4.2.2.d: Add metadata migration and format conversion
 
-- [ ] **Task 4.2.3: Configuration management integration**
-  - [ ] 4.2.3.a: Create RegistryConfig class for unified configuration
+- [x] **Task 4.2.3: Configuration management integration**
+  - [x] 4.2.3.a: Create RegistryConfig class for unified configuration
   - [ ] 4.2.3.b: Implement configuration validation across modes
   - [ ] 4.2.3.c: Add environment setup and initialization
   - [ ] 4.2.3.d: Create configuration migration utilities

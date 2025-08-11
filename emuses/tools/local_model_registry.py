@@ -9,15 +9,17 @@ import logging
 import shutil
 import uuid
 from pathlib import Path
-from typing import Dict, List, Optional, Any, Tuple
+from typing import Dict, List, Optional, Any, Tuple, Union
 from datetime import datetime
+from uuid import UUID
 
 from emuses.tools.model_io import ModelIOManager
+from emuses.tools.base_model_registry import BaseModelRegistry
 
 logger = logging.getLogger(__name__)
 
 
-class LocalModelRegistry:
+class LocalModelRegistry(BaseModelRegistry):
     """Local file-based model registry.
     
     Manages a collection of models stored in a local directory structure
@@ -115,39 +117,6 @@ class LocalModelRegistry:
         with open(self.index_path, 'w') as f:
             json.dump(index_data, f, indent=2, sort_keys=True)
     
-    def list_models(self, filters: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
-        """List models in the registry with optional filtering.
-        
-        Parameters
-        ----------
-        filters : Dict[str, Any], optional
-            Filters to apply to model listing. Supported filters:
-            - type: Model type (classification, detection, etc.)
-            - tags: List of tags that must be present
-            - name: Name pattern to match
-            
-        Returns
-        -------
-        List[Dict[str, Any]]
-            List of model metadata dictionaries matching filters
-        """
-        try:
-            index = self._load_index()
-            models = list(index["models"].values())
-            
-            if filters is None:
-                return models
-            
-            filtered_models = []
-            for model in models:
-                if self._model_matches_filters(model, filters):
-                    filtered_models.append(model)
-            
-            return filtered_models
-        except (FileNotFoundError, json.JSONDecodeError) as e:
-            logger.error(f"Error loading registry index: {e}")
-            return []
-    
     def _model_matches_filters(self, model: Dict[str, Any], filters: Dict[str, Any]) -> bool:
         """Check if a model matches the given filters.
         
@@ -207,80 +176,6 @@ class LocalModelRegistry:
                 "model_count": 0,
                 "registry_path": str(self.registry_path),
                 "error": str(e)
-            }
-    
-    def install_model(self, model_path: Path, name: Optional[str] = None) -> Dict[str, Any]:
-        """Install a model into the registry.
-        
-        Validates the model, installs it using ModelIOManager, and updates
-        the registry index with metadata.
-        
-        Parameters
-        ----------
-        model_path : Path
-            Path to the model file or directory to install
-        name : str, optional
-            Custom name for the model. If None, uses name from manifest.
-            
-        Returns
-        -------
-        Dict[str, Any]
-            Installation result with status, model_id, and details
-            
-        Examples
-        --------
-        >>> registry = LocalModelRegistry()
-        >>> result = registry.install_model(Path("model.zip"), name="my_model")
-        >>> print(result["status"])  # "success" or "error"
-        """
-        try:
-            # Initialize ModelIOManager
-            model_io = ModelIOManager()
-            
-            # Validate model and get manifest
-            logger.info(f"Validating model at {model_path}")
-            manifest = model_io.validate_model(model_path)
-            
-            # Use provided name or fall back to manifest name
-            model_name = name if name is not None else manifest.get("name", "unnamed_model")
-            
-            # Install model using ModelIOManager
-            logger.info(f"Installing model '{model_name}'")
-            model_id = model_io.install_model(model_path, self.models_path)
-            
-            # Create model metadata entry
-            model_metadata = {
-                "model_id": model_id,
-                "name": model_name,
-                "version": manifest.get("version", "unknown"),
-                "type": manifest.get("type", "unknown"),
-                "description": manifest.get("description", ""),
-                "installed_at": datetime.utcnow().isoformat(),
-                "source_path": str(model_path),
-                "manifest": manifest
-            }
-            
-            # Update registry index
-            index = self._load_index()
-            index["models"][model_id] = model_metadata
-            self._save_index(index)
-            
-            logger.info(f"Successfully installed model '{model_name}' with ID {model_id}")
-            
-            return {
-                "status": "success",
-                "model_id": model_id,
-                "name": model_name,
-                "message": f"Model '{model_name}' installed successfully"
-            }
-            
-        except Exception as e:
-            error_msg = f"Failed to install model: {str(e)}"
-            logger.error(error_msg)
-            return {
-                "status": "error",
-                "message": error_msg,
-                "error_type": type(e).__name__
             }
     
     def backup_index(self) -> bool:
@@ -388,127 +283,6 @@ class LocalModelRegistry:
             "validated": validated_count,
             "status": "repaired"
         }
-    
-    def get_model_info(self, model_id: str) -> Optional[Dict[str, Any]]:
-        """Get detailed information about a specific model.
-        
-        Parameters
-        ----------
-        model_id : str
-            ID of the model to retrieve information for
-            
-        Returns
-        -------
-        Optional[Dict[str, Any]]
-            Model metadata dictionary, or None if model not found
-        """
-        try:
-            index = self._load_index()
-            return index["models"].get(model_id)
-        except (FileNotFoundError, json.JSONDecodeError) as e:
-            logger.error(f"Error loading registry index: {e}")
-            return None
-    
-    def search_models(self, query: str) -> List[Dict[str, Any]]:
-        """Search for models by name or description.
-        
-        Performs case-insensitive search across model names and descriptions.
-        
-        Parameters
-        ----------
-        query : str
-            Search query string
-            
-        Returns
-        -------
-        List[Dict[str, Any]]
-            List of models matching the search query
-        """
-        try:
-            index = self._load_index()
-            query_lower = query.lower()
-            matching_models = []
-            
-            for model in index["models"].values():
-                # Search in name
-                if query_lower in model.get("name", "").lower():
-                    matching_models.append(model)
-                    continue
-                
-                # Search in description
-                if query_lower in model.get("description", "").lower():
-                    matching_models.append(model)
-                    continue
-                
-                # Search in tags
-                tags = model.get("tags", [])
-                if any(query_lower in tag.lower() for tag in tags):
-                    matching_models.append(model)
-            
-            return matching_models
-        except (FileNotFoundError, json.JSONDecodeError) as e:
-            logger.error(f"Error loading registry index: {e}")
-            return []
-    
-    def remove_model(self, model_id: str, cleanup_files: bool = True) -> Dict[str, Any]:
-        """Remove a model from the registry.
-        
-        Removes the model from the registry index and optionally cleans up
-        associated files and directories.
-        
-        Parameters
-        ----------
-        model_id : str
-            ID of the model to remove
-        cleanup_files : bool, default=True
-            Whether to remove model files and directories
-            
-        Returns
-        -------
-        Dict[str, Any]
-            Removal result with status and details
-        """
-        try:
-            index = self._load_index()
-            
-            # Check if model exists
-            if model_id not in index["models"]:
-                return {
-                    "status": "error",
-                    "message": f"Model with ID '{model_id}' not found"
-                }
-            
-            model_info = index["models"][model_id]
-            model_name = model_info.get("name", "unknown")
-            
-            # Remove from index
-            del index["models"][model_id]
-            self._save_index(index)
-            
-            # Clean up files if requested
-            if cleanup_files:
-                model_dir = self.models_path / model_id
-                if model_dir.exists():
-                    shutil.rmtree(model_dir)
-                    logger.info(f"Removed model directory: {model_dir}")
-            
-            logger.info(f"Successfully removed model '{model_name}' (ID: {model_id})")
-            
-            return {
-                "status": "success",
-                "model_id": model_id,
-                "name": model_name,
-                "message": f"Model '{model_name}' removed successfully"
-            }
-            
-        except Exception as e:
-            error_msg = f"Failed to remove model: {str(e)}"
-            logger.error(error_msg)
-            return {
-                "status": "error",
-                "message": error_msg,
-                "error_type": type(e).__name__
-            }
     
     def cleanup_orphaned_models(self) -> Dict[str, Any]:
         """Clean up orphaned model directories.
@@ -620,3 +394,420 @@ class LocalModelRegistry:
                 "storage_usage": 0,
                 "error": str(e)
             }
+    
+    # BaseModelRegistry interface compatibility methods
+    
+    def get_model_file_path(self, model_name: str, version: Optional[str] = None,
+                           user_id: Optional[Union[UUID, str]] = None,
+                           workspace_id: Optional[Union[UUID, str]] = None,
+                           **kwargs) -> Optional[Path]:
+        """Get local file path to a model.
+        
+        Parameters
+        ----------
+        model_name : str
+            Name of the model
+        version : Optional[str]
+            Specific version (latest if None)
+        user_id : Optional[Union[UUID, str]]
+            User ID for permission checking (ignored in local mode)
+        workspace_id : Optional[Union[UUID, str]]
+            Workspace ID for workspace filtering (ignored in local mode)
+        **kwargs
+            Additional mode-specific parameters
+            
+        Returns
+        -------
+        Optional[Path]
+            Path to model file or None if not found
+        """
+        try:
+            # Find model by name (and version if specified)
+            index = self._load_index()
+            models = index.get("models", {})
+            
+            # Search for matching model
+            for model_id, model in models.items():
+                if model.get("name") == model_name:
+                    if version is None or model.get("version") == version:
+                        model_path = self.models_path / model_id / "model.pkl"
+                        if model_path.exists():
+                            return model_path
+                            
+            return None
+            
+        except Exception as e:
+            logger.error(f"Error getting model file path: {e}")
+            return None
+    
+    # Unified interface methods supporting both old and new patterns
+    
+    def list_models(self, filters: Optional[Dict[str, Any]] = None,
+                   user_id: Optional[Union[UUID, str]] = None,
+                   workspace_id: Optional[Union[UUID, str]] = None,
+                   include_public: bool = True, **kwargs) -> List[Dict[str, Any]]:
+        """List models available in the registry.
+        
+        Supports both original signature with filters and BaseModelRegistry interface.
+        
+        Parameters
+        ----------
+        filters : Optional[Dict[str, Any]]
+            Filters to apply (original pattern)
+        user_id : Optional[Union[UUID, str]]
+            User ID for permission filtering (ignored in local mode)
+        workspace_id : Optional[Union[UUID, str]]
+            Workspace ID for workspace filtering (ignored in local mode)
+        include_public : bool, default=True
+            Whether to include public models (all models are public in local mode)
+        **kwargs
+            Additional parameters, including 'filters' for compatibility
+            
+        Returns
+        -------
+        List[Dict[str, Any]]
+            List of model metadata dictionaries
+        """
+        # Support filters from kwargs for backward compatibility
+        if filters is None and 'filters' in kwargs:
+            filters = kwargs['filters']
+            
+        # Use original implementation
+        try:
+            index = self._load_index()
+            models = list(index["models"].values())
+            
+            if filters is None:
+                return models
+            
+            filtered_models = []
+            for model in models:
+                if self._model_matches_filters(model, filters):
+                    filtered_models.append(model)
+            
+            return filtered_models
+            
+        except (FileNotFoundError, json.JSONDecodeError) as e:
+            logger.error(f"Error loading registry index: {e}")
+            return []
+    
+    def install_model(self, model_path: Path, name: Optional[str] = None, 
+                     model_name: Optional[str] = None, version: Optional[str] = None,
+                     description: str = "", tags: Optional[List[str]] = None,
+                     user_id: Optional[Union[UUID, str]] = None,
+                     workspace_id: Optional[Union[UUID, str]] = None,
+                     **kwargs) -> Dict[str, Any]:
+        """Install a model into the registry.
+        
+        Supports both original signature (model_path, name) and BaseModelRegistry 
+        interface (model_path, model_name, version).
+        
+        Parameters
+        ----------
+        model_path : Path
+            Path to the model file or directory
+        name : Optional[str]
+            Custom name for the model (original pattern)
+        model_name : Optional[str] 
+            Name of the model (BaseModelRegistry pattern)
+        version : Optional[str]
+            Version string for the model (BaseModelRegistry pattern)
+        description : str, default=""
+            Description of the model
+        tags : Optional[List[str]]
+            Optional tags for categorization
+        user_id : Optional[Union[UUID, str]]
+            User ID for ownership (ignored in local mode)
+        workspace_id : Optional[Union[UUID, str]]
+            Workspace ID for workspace association (ignored in local mode)
+        **kwargs
+            Additional mode-specific parameters
+            
+        Returns
+        -------
+        Dict[str, Any]
+            Installed model metadata
+        """
+        # Determine which pattern is being used
+        if model_name is not None:
+            # New BaseModelRegistry pattern
+            effective_name = model_name
+        elif name is not None:
+            # Original pattern
+            effective_name = name
+            if version is None:
+                version = "1.0.0"  # Default version for old pattern
+        else:
+            # No name provided, use original behavior (name from manifest)
+            effective_name = None
+            if version is None:
+                version = "1.0.0"  # Default version
+        
+        # Use original implementation with validation
+        try:
+            # Initialize ModelIOManager
+            model_io = ModelIOManager()
+            
+            # Validate model and get manifest
+            logger.info(f"Validating model at {model_path}")
+            manifest = model_io.validate_model(model_path)
+            
+            # Use provided name or fall back to manifest name
+            final_name = effective_name if effective_name is not None else manifest.get("name", "unnamed_model")
+            
+            # Install model using ModelIOManager
+            logger.info(f"Installing model '{final_name}'")
+            model_id = model_io.install_model(model_path, self.models_path, name=effective_name)
+            
+            # Create model metadata entry
+            model_info = {
+                "model_id": model_id,
+                "name": final_name,
+                "version": version,
+                "type": manifest.get("type", "unknown"),
+                "description": description or manifest.get("description", ""),
+                "installed_at": datetime.utcnow().isoformat(),
+                "source_path": str(model_path),
+                "manifest": manifest,
+                "tags": tags or []
+            }
+            
+            # Update registry index
+            index = self._load_index()
+            index["models"][model_id] = model_info
+            self._save_index(index)
+            
+            logger.info(f"Successfully installed model '{final_name}' with ID {model_id}")
+            
+            return {
+                "status": "success",
+                "model_id": model_id,
+                "name": final_name,
+                "model": model_info,
+                "message": f"Model '{final_name}' installed successfully"
+            }
+            
+        except Exception as e:
+            logger.error(f"Error installing model: {e}")
+            return {
+                "status": "error",
+                "message": str(e)
+            }
+    
+    def get_model_info(self, model_id: Optional[str] = None, 
+                      model_name: Optional[str] = None, version: Optional[str] = None,
+                      user_id: Optional[Union[UUID, str]] = None,
+                      workspace_id: Optional[Union[UUID, str]] = None,
+                      **kwargs) -> Optional[Dict[str, Any]]:
+        """Get detailed information about a model.
+        
+        Supports both original signature (model_id) and BaseModelRegistry 
+        interface (model_name, version).
+        
+        Parameters
+        ----------
+        model_id : Optional[str]
+            ID of the model to retrieve (original pattern)
+        model_name : Optional[str]
+            Name of the model (BaseModelRegistry pattern)
+        version : Optional[str]
+            Specific version to retrieve (BaseModelRegistry pattern)
+        user_id : Optional[Union[UUID, str]]
+            User ID for permission checking (ignored in local mode)
+        workspace_id : Optional[Union[UUID, str]]
+            Workspace ID for workspace filtering (ignored in local mode)
+        **kwargs
+            Additional mode-specific parameters
+            
+        Returns
+        -------
+        Optional[Dict[str, Any]]
+            Model metadata or None if not found
+        """
+        try:
+            index = self._load_index()
+            models = index.get("models", {})
+            
+            if model_id is not None:
+                # Original pattern - search by model_id
+                return models.get(model_id)
+            elif model_name is not None:
+                # BaseModelRegistry pattern - search by name and version
+                for model_info in models.values():
+                    if model_info.get("name") == model_name:
+                        if version is None or model_info.get("version") == version:
+                            return model_info
+                            
+            return None
+            
+        except (FileNotFoundError, json.JSONDecodeError) as e:
+            logger.error(f"Error loading registry index: {e}")
+            return None
+    
+    def search_models(self, query: str, limit: int = 20,
+                     user_id: Optional[Union[UUID, str]] = None,
+                     workspace_id: Optional[Union[UUID, str]] = None,
+                     include_public: bool = True, **kwargs) -> List[Dict[str, Any]]:
+        """Search for models matching query criteria.
+        
+        Supports both original signature (query) and BaseModelRegistry interface.
+        
+        Parameters
+        ----------
+        query : str
+            Search query string
+        limit : int, default=20
+            Maximum number of results to return (BaseModelRegistry pattern)
+        user_id : Optional[Union[UUID, str]]
+            User ID for permission filtering (ignored in local mode)
+        workspace_id : Optional[Union[UUID, str]]
+            Workspace ID for workspace filtering (ignored in local mode)
+        include_public : bool, default=True
+            Whether to include public models (all models are public in local mode)
+        **kwargs
+            Additional mode-specific parameters
+            
+        Returns
+        -------
+        List[Dict[str, Any]]
+            List of matching model metadata
+        """
+        # Use original implementation
+        try:
+            index = self._load_index()
+            models = list(index.get("models", {}).values())
+            
+            if not query:
+                # Empty query returns all models (with limit if specified)
+                return models[:limit] if limit > 0 else models
+            
+            query_lower = query.lower()
+            matching_models = []
+            
+            for model in models:
+                # Search in name and description
+                model_name = model.get("name", "").lower()
+                model_description = model.get("description", "").lower()
+                
+                if query_lower in model_name or query_lower in model_description:
+                    matching_models.append(model)
+                    
+            # Apply limit if specified  
+            return matching_models[:limit] if limit > 0 else matching_models
+            
+        except (FileNotFoundError, json.JSONDecodeError) as e:
+            logger.error(f"Error loading registry index: {e}")
+            return []
+    
+    def remove_model(self, model_id: Optional[str] = None, 
+                    model_name: Optional[str] = None, version: Optional[str] = None,
+                    cleanup_files: bool = True,
+                    user_id: Optional[Union[UUID, str]] = None,
+                    workspace_id: Optional[Union[UUID, str]] = None,
+                    **kwargs) -> Union[bool, Dict[str, Any]]:
+        """Remove a model from the registry.
+        
+        Supports both original signature (model_id, cleanup_files) and BaseModelRegistry 
+        interface (model_name, version).
+        
+        Parameters
+        ----------
+        model_id : Optional[str]
+            ID of the model to remove (original pattern)
+        model_name : Optional[str]
+            Name of the model to remove (BaseModelRegistry pattern)
+        version : Optional[str]
+            Specific version to remove (BaseModelRegistry pattern)
+        cleanup_files : bool, default=True
+            Whether to clean up associated files
+        user_id : Optional[Union[UUID, str]]
+            User ID for permission checking (ignored in local mode)
+        workspace_id : Optional[Union[UUID, str]]
+            Workspace ID for workspace filtering (ignored in local mode)
+        **kwargs
+            Additional mode-specific parameters
+            
+        Returns
+        -------
+        Union[bool, Dict[str, Any]]
+            Original pattern: Dict with status info
+            BaseModelRegistry pattern: bool for success
+        """
+        try:
+            index = self._load_index()
+            models = index.get("models", {})
+            
+            if model_id is not None:
+                # Original pattern - remove by model_id
+                if model_id not in models:
+                    return {
+                        "status": "error",
+                        "message": f"Model not found: {model_id}"
+                    }
+                
+                # Remove from index
+                model_info = models.pop(model_id, None)
+                
+                # Clean up files if requested
+                if cleanup_files:
+                    model_path = self.models_path / model_id
+                    if model_path.exists():
+                        try:
+                            shutil.rmtree(model_path)
+                        except Exception as e:
+                            logger.warning(f"Error cleaning up model files: {e}")
+                
+                # Save updated index
+                self._save_index(index)
+                
+                return {
+                    "status": "success",
+                    "model_id": model_id,
+                    "removed_model": model_info
+                }
+                
+            elif model_name is not None:
+                # BaseModelRegistry pattern - remove by name and version
+                model_ids_to_remove = []
+                for mid, model in models.items():
+                    if model.get("name") == model_name:
+                        if version is None or model.get("version") == version:
+                            model_ids_to_remove.append(mid)
+                
+                if not model_ids_to_remove:
+                    return False  # Not found
+                
+                # Remove all matching models
+                success = True
+                for mid in model_ids_to_remove:
+                    try:
+                        models.pop(mid, None)
+                        
+                        # Clean up files
+                        if cleanup_files:
+                            model_path = self.models_path / mid
+                            if model_path.exists():
+                                shutil.rmtree(model_path)
+                                
+                    except Exception as e:
+                        logger.error(f"Error removing model {mid}: {e}")
+                        success = False
+                
+                # Save updated index
+                self._save_index(index)
+                return success
+            
+            else:
+                # Neither model_id nor model_name provided
+                if 'model_id' in kwargs:
+                    # Handle case where model_id is in kwargs (for compatibility)
+                    return self.remove_model(model_id=kwargs['model_id'], cleanup_files=cleanup_files)
+                else:
+                    return False
+                
+        except Exception as e:
+            logger.error(f"Error removing model: {e}")
+            if model_id is not None:
+                return {"status": "error", "message": str(e)}
+            else:
+                return False

@@ -12,79 +12,102 @@ from rich.console import Console
 from rich.table import Table
 
 from emuses.tools.local_model_registry import LocalModelRegistry
+from emuses.tools.model_registry_factory import ModelRegistryFactory, ErrorMessages
+from emuses.tools.base_model_registry import BaseModelRegistry
 from .security import validate_path
 
 logger = logging.getLogger(__name__)
 console = Console()
 
 
-def get_registry() -> Union[LocalModelRegistry, 'DatabaseModelRegistry']:
-    """Get appropriate model registry based on deployment mode.
+def get_registry(registry_path: Optional[Path] = None, 
+                user_id: Optional[str] = None,
+                workspace_id: Optional[str] = None) -> BaseModelRegistry:
+    """Get appropriate model registry based on deployment mode using factory.
     
-    Returns LocalModelRegistry for LOCAL mode, DatabaseModelRegistry
-    for MULTI_USER/PRODUCTION modes with database and authentication.
-    
+    Parameters
+    ----------
+    registry_path : Optional[Path]
+        Custom registry path for local mode
+    user_id : Optional[str]
+        User ID for database/cloud modes
+    workspace_id : Optional[str]
+        Workspace ID for database/cloud modes
+        
     Returns
     -------
-    Union[LocalModelRegistry, DatabaseModelRegistry]
+    BaseModelRegistry
         Appropriate registry instance for current deployment mode
     """
+    factory = ModelRegistryFactory()
+    
     try:
-        from emuses.multi_user_service.deployment_config import (
-            detect_deployment_mode, is_service_mode_enabled
+        # Auto-detect mode and create registry
+        registry = factory.create_registry(
+            registry_path=registry_path,
+            user_id=user_id,
+            fallback=True
         )
         
-        # Check if multi-user service is enabled
-        if not is_service_mode_enabled():
-            return LocalModelRegistry()
-        
-        deployment_mode = detect_deployment_mode()
-        
-        if deployment_mode.value == "LOCAL":
-            return LocalModelRegistry()
-        
-        # For MULTI_USER and PRODUCTION modes, inform user about API usage
-        console.print("[yellow]ℹ️ Database mode detected. For database operations, please use the API endpoints or web interface.[/yellow]")
-        console.print("[blue]ℹ️ CLI commands in multi-user mode are limited to local operations only.[/blue]")
-        
-        # For now, fall back to local mode for CLI operations
-        # TODO: Implement proper CLI authentication in future versions
-        return LocalModelRegistry()
+        # Provide user feedback about mode
+        if isinstance(registry, LocalModelRegistry):
+            if registry_path:
+                console.print(f"[blue]ℹ️ Using local registry at: {registry_path}[/blue]")
+            else:
+                console.print("[blue]ℹ️ Using local registry mode[/blue]")
+        else:
+            registry_type = registry.__class__.__name__
+            console.print(f"[green]ℹ️ Using {registry_type} mode[/green]")
             
-    except ImportError:
-        # Multi-user service not available, use local registry
-        return LocalModelRegistry()
+        return registry
+        
     except Exception as e:
-        console.print(f"[yellow]⚠️ Error detecting deployment mode: {e}[/yellow]")
-        return LocalModelRegistry()
+        error_msg = ErrorMessages.format_error(ErrorMessages.REGISTRY_CREATION_FAILED, error=str(e))
+        console.print(f"[yellow]⚠️ {error_msg}[/yellow]")
+        console.print(f"[blue]ℹ️ {ErrorMessages.FALLBACK_TO_LOCAL}[/blue]")
+        return LocalModelRegistry(registry_path=registry_path)
 
 
-def get_registry_with_params(registry_path: Optional[Path] = None, workspace_id: Optional[str] = None):
-    """Get registry with additional parameters for database mode.
+def get_registry_with_params(registry_path: Optional[Path] = None, 
+                            workspace_id: Optional[str] = None,
+                            user_id: Optional[str] = None,
+                            include_public: bool = True):
+    """Get registry with additional parameters for cross-mode operations.
     
     Parameters
     ----------
     registry_path : Path, optional
         Custom registry path (only used in local mode)
     workspace_id : str, optional
-        Workspace ID for database mode operations
+        Workspace ID for database/cloud mode operations
+    user_id : str, optional
+        User ID for database/cloud mode operations
+    include_public : bool, default=True
+        Whether to include public models in results
         
     Returns
     -------
-    Tuple[Union[LocalModelRegistry, DatabaseModelRegistry], dict]
+    Tuple[BaseModelRegistry, dict]
         Registry instance and additional parameters for operations
     """
-    registry = get_registry()
-    extra_params = {}
-    
-    # For local registry, apply registry_path if provided
-    if isinstance(registry, LocalModelRegistry) and registry_path:
+    # Validate registry path if provided
+    validated_path = None
+    if registry_path:
         validated_path = Path(validate_path(str(registry_path)))
-        registry = LocalModelRegistry(registry_path=validated_path)
     
-    # For database registry, add workspace_id to params
-    if hasattr(registry, 'db_session') and workspace_id:
-        extra_params['workspace_id'] = workspace_id
+    # Get registry using factory
+    registry = get_registry(
+        registry_path=validated_path,
+        user_id=user_id,
+        workspace_id=workspace_id
+    )
+    
+    # Build extra parameters for registry operations
+    extra_params = {
+        'user_id': user_id,
+        'workspace_id': workspace_id,
+        'include_public': include_public
+    }
     
     return registry, extra_params
 
@@ -147,7 +170,10 @@ def install(
 def list(
     type_filter: Annotated[Optional[str], typer.Option("--type", "-t", help="Filter by model type")] = None,
     tags: Annotated[Optional[List[str]], typer.Option("--tag", help="Filter by tags (can be repeated)")] = None,
-    registry_path: Annotated[Optional[Path], typer.Option("--registry", "-r", help="Custom registry path")] = None
+    registry_path: Annotated[Optional[Path], typer.Option("--registry", "-r", help="Custom registry path")] = None,
+    workspace_id: Annotated[Optional[str], typer.Option("--workspace", "-w", help="Workspace ID (database/cloud modes)")] = None,
+    user_id: Annotated[Optional[str], typer.Option("--user", "-u", help="User ID (database/cloud modes)")] = None,
+    include_public: Annotated[bool, typer.Option("--public/--no-public", help="Include public models")] = True
 ) -> None:
     """List models in the registry with optional filtering.
     
@@ -161,21 +187,23 @@ def list(
         Custom registry location. If not provided, uses default location.
     """
     try:
-        if registry_path:
-            registry_path = Path(validate_path(str(registry_path)))
+        # Get registry with parameters
+        registry, extra_params = get_registry_with_params(
+            registry_path=registry_path,
+            workspace_id=workspace_id,
+            user_id=user_id,
+            include_public=include_public
+        )
         
-        # Initialize registry
-        registry = LocalModelRegistry(registry_path=registry_path)
-        
-        # Build filters
+        # Build filters for backward compatibility
         filters = {}
         if type_filter:
             filters["type"] = type_filter
         if tags:
             filters["tags"] = tags
         
-        # Get models
-        models = registry.list_models(filters=filters)
+        # Get models using new interface
+        models = registry.list_models(filters=filters, **extra_params)
         
         if not models:
             if filters:
@@ -576,4 +604,97 @@ def stats(
         
     except Exception as e:
         console.print(f"❌ Error getting registry statistics: [red]{str(e)}[/red]")
+        raise typer.Exit(1)
+
+
+@models_app.command(help="Show model registry mode configuration and status")
+def mode_info() -> None:
+    """Show current model registry mode configuration and capabilities.
+    
+    Displays information about the current registry mode, its capabilities,
+    configuration options, and mode-specific parameters.
+    """
+    try:
+        factory = ModelRegistryFactory()
+        
+        console.print(f"\n[bold cyan]Model Registry Mode Configuration[/bold cyan]")
+        
+        # Detect current mode
+        registry = factory.create_registry(fallback=True)
+        registry_type = registry.__class__.__name__
+        
+        # Determine mode from registry type
+        if isinstance(registry, LocalModelRegistry):
+            from emuses.tools.model_registry_factory import RegistryMode
+            mode = RegistryMode.LOCAL
+        else:
+            # For other registry types, we'd detect the mode here
+            from emuses.tools.model_registry_factory import RegistryMode
+            if "DatabaseModelRegistry" in registry_type:
+                mode = RegistryMode.DATABASE
+            elif "CloudModelRegistry" in registry_type:
+                mode = RegistryMode.CLOUD
+            else:
+                mode = RegistryMode.LOCAL
+        
+        console.print(f"Current Mode: [green]{mode.value.upper()}[/green]")
+        console.print(f"Registry Type: [blue]{registry_type}[/blue]")
+        
+        # Show mode configuration
+        config = factory.get_mode_config(mode)
+        console.print(f"\n[bold]Mode Configuration:[/bold]")
+        console.print(f"  Requires Authentication: [yellow]{config['requires_auth']}[/yellow]")
+        console.print(f"  Requires Database: [yellow]{config['requires_database']}[/yellow]")
+        console.print(f"  Multi-User Support: [yellow]{config['supports_multi_user']}[/yellow]")
+        console.print(f"  Cloud Storage Support: [yellow]{config['supports_cloud_storage']}[/yellow]")
+        
+        # Show capabilities
+        console.print(f"\n[bold]Registry Capabilities:[/bold]")
+        capabilities = ['list_models', 'install_model', 'get_model_info', 
+                      'search_models', 'remove_model', 'get_model_file_path']
+        
+        for capability in capabilities:
+            has_capability = factory.has_capability(registry, capability)
+            status = "[green]✓[/green]" if has_capability else "[red]✗[/red]"
+            console.print(f"  {capability}: {status}")
+        
+        # Show interface validation
+        is_valid = factory.validate_interface(registry)
+        validation_status = "[green]Valid[/green]" if is_valid else "[red]Invalid[/red]"
+        console.print(f"\nInterface Validation: {validation_status}")
+        
+        # Show compatibility
+        is_compatible = factory.is_compatible(registry, mode)
+        compatibility_status = "[green]Compatible[/green]" if is_compatible else "[red]Incompatible[/red]"
+        console.print(f"Mode Compatibility: {compatibility_status}")
+        
+        # Show CLI parameter help
+        console.print(f"\n[bold]Available CLI Parameters:[/bold]")
+        console.print("  [dim]--registry, -r[/dim]    Custom registry path (local mode)")
+        console.print("  [dim]--workspace, -w[/dim]   Workspace ID (database/cloud modes)")
+        console.print("  [dim]--user, -u[/dim]        User ID (database/cloud modes)")
+        console.print("  [dim]--public/--no-public[/dim] Include public models")
+        
+        # Show mode-specific help
+        if mode == RegistryMode.LOCAL:
+            console.print(f"\n[bold blue]Local Mode Usage:[/bold blue]")
+            console.print("  • Models stored in local filesystem")
+            console.print("  • Use --registry to specify custom path")
+            console.print("  • No authentication required")
+        elif mode == RegistryMode.DATABASE:
+            console.print(f"\n[bold green]Database Mode Usage:[/bold green]")
+            console.print("  • Models stored in database with files")
+            console.print("  • Use --workspace for workspace-specific operations")
+            console.print("  • Use --user for user-specific operations")
+            console.print("  • Authentication may be required")
+        elif mode == RegistryMode.CLOUD:
+            console.print(f"\n[bold magenta]Cloud Mode Usage:[/bold magenta]")
+            console.print("  • Models stored in cloud with database metadata")
+            console.print("  • Use --workspace for workspace-specific operations")
+            console.print("  • Use --user for user-specific operations")
+            console.print("  • Authentication required")
+            console.print("  • Supports cloud storage tiers and CDN")
+        
+    except Exception as e:
+        console.print(f"❌ Error getting mode information: [red]{str(e)}[/red]")
         raise typer.Exit(1)
