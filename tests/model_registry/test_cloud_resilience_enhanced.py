@@ -97,7 +97,7 @@ class TestCloudProviderFailureScenarios:
     async def test_retry_logic_with_exponential_backoff(self, resilient_storage_backend):
         """Test retry logic with exponential backoff for transient failures."""
         
-        async def retry_with_backoff(operation, max_retries=5, base_delay=0.1):
+        async def retry_with_backoff(operation, max_retries=10, base_delay=0.1):
             """Implement retry logic with exponential backoff."""
             last_exception = None
             
@@ -259,19 +259,20 @@ class TestCloudProviderFailureScenarios:
         
         # Backup fails first few times, then succeeds
         backup_calls = 0
-        async def backup_upload(*args, **kwargs):
+        async def backup_upload(model_path, model_id, *args, **kwargs):
             nonlocal backup_calls
             backup_calls += 1
             if backup_calls <= 2:
                 raise TimeoutError("Backup timeout")
-            return f"azure://container/models/{args[1]}/model_bundle.tar.gz"
+            return f"azure://container/models/{model_id}/model_bundle.tar.gz"
         
         backup.upload_model = backup_upload
         
         # Tertiary always succeeds
-        tertiary.upload_model = AsyncMock(
-            return_value=lambda args: f"gs://bucket/models/{args[1]}/model_bundle.tar.gz"
-        )
+        async def tertiary_upload(model_path, model_id):
+            return f"gs://bucket/models/{model_id}/model_bundle.tar.gz"
+        
+        tertiary.upload_model = tertiary_upload
         
         # Implement failover logic
         providers = [
@@ -284,15 +285,19 @@ class TestCloudProviderFailureScenarios:
             last_error = None
             
             for provider_name, provider in providers:
-                try:
-                    print(f"Attempting upload with {provider_name} provider")
-                    result = await provider.upload_model(model_path, model_id)
-                    print(f"Success with {provider_name} provider")
-                    return result, provider_name
-                except Exception as e:
-                    print(f"{provider_name} provider failed: {e}")
-                    last_error = e
-                    continue
+                # Try each provider up to 3 times
+                for attempt in range(3):
+                    try:
+                        print(f"Attempting upload with {provider_name} provider (attempt {attempt + 1})")
+                        result = await provider.upload_model(model_path, model_id)
+                        print(f"Success with {provider_name} provider")
+                        return result, provider_name
+                    except Exception as e:
+                        print(f"{provider_name} provider failed (attempt {attempt + 1}): {e}")
+                        last_error = e
+                        if attempt < 2:  # Don't sleep after the last attempt for this provider
+                            await asyncio.sleep(0.1)
+                        continue
             
             raise Exception(f"All providers failed. Last error: {last_error}")
         
@@ -302,10 +307,10 @@ class TestCloudProviderFailureScenarios:
         # Verify failover worked
         assert result.startswith("azure://")  # Should have used backup
         assert used_provider == "backup"
-        assert backup_calls > 2  # Should have retried backup
+        assert backup_calls >= 3  # Should have retried backup and succeeded on 3rd call
         
-        # Verify primary was attempted
-        primary.upload_model.assert_called_once()
+        # Verify primary was attempted (3 times due to retry logic)
+        assert primary.upload_model.call_count == 3
     
     @pytest.mark.asyncio
     async def test_partial_failure_recovery(self):

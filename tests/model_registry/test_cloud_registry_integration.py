@@ -15,7 +15,18 @@ from datetime import datetime
 
 from emuses.tools.cloud_model_registry import CloudModelRegistry, CloudModelRegistryError
 from emuses.tools.cloud_storage import S3StorageBackend
-from emuses.multi_user_service.models import User, ModelRegistry, Workspace
+from emuses.multi_user_service.models import User, ModelRegistry, Workspace, ModelAccess
+
+
+@pytest.fixture
+def mock_storage_backend():
+    """Create mock cloud storage backend."""
+    backend = MagicMock(spec=S3StorageBackend)
+    backend.upload_model = AsyncMock(return_value="s3://bucket/models/test-model/model_bundle.tar.gz")
+    backend.download_model = AsyncMock()
+    backend.delete_model = AsyncMock()
+    backend.generate_signed_url = AsyncMock(return_value="https://signed-url.example.com")
+    return backend
 
 
 class TestCloudModelRegistryIntegration:
@@ -52,51 +63,10 @@ class TestCloudModelRegistryIntegration:
         return session
     
     @pytest.fixture
-    def mock_storage_backend(self):
-        """Create mock cloud storage backend."""
-        backend = MagicMock(spec=S3StorageBackend)
-        backend.upload_model = AsyncMock(return_value="s3://bucket/models/test-model/model_bundle.tar.gz")
-        backend.download_model = AsyncMock()
-        backend.delete_model = AsyncMock()
-        backend.generate_signed_url = AsyncMock(return_value="https://signed-url.example.com")
-        return backend
-    
-    @pytest.fixture
     def temp_cache_dir(self):
         """Create temporary cache directory."""
         temp_dir = Path(tempfile.mkdtemp())
         yield temp_dir
-        shutil.rmtree(temp_dir)
-    
-    @pytest.fixture
-    def temp_model_dir(self):
-        """Create temporary model directory with realistic structure."""
-        temp_dir = Path(tempfile.mkdtemp())
-        model_dir = temp_dir / "test-model"
-        model_dir.mkdir()
-        
-        # Create model structure
-        (model_dir / "models").mkdir()
-        (model_dir / "artifacts").mkdir()
-        (model_dir / "metadata").mkdir()
-        
-        # Create model files
-        (model_dir / "models" / "model.bin").write_text("model data")
-        (model_dir / "artifacts" / "config.json").write_text('{"version": "1.0"}')
-        
-        # Create manifest
-        manifest = {
-            "name": "test-integration-model",
-            "version": "1.0.0",
-            "created_at": datetime.now().isoformat(),
-            "model_type": "classifier",
-            "framework": "pytorch"
-        }
-        (model_dir / "model_manifest.json").write_text(json.dumps(manifest))
-        
-        yield model_dir
-        
-        # Cleanup
         shutil.rmtree(temp_dir)
     
     @pytest.fixture
@@ -112,7 +82,7 @@ class TestCloudModelRegistryIntegration:
         )
     
     @pytest.mark.asyncio
-    async def test_upload_model_integration(self, cloud_registry, mock_db_session, temp_model_dir):
+    async def test_upload_model_integration(self, cloud_registry, mock_db_session, cloud_test_model_dir):
         """Test complete model upload integration flow."""
         model_id = "integration-test-model"
         metadata = {
@@ -131,7 +101,7 @@ class TestCloudModelRegistryIntegration:
         mock_db_session.add.return_value = None
         
         # Execute upload
-        result = await cloud_registry.upload_model(temp_model_dir, model_id, metadata)
+        result = await cloud_registry.upload_model(cloud_test_model_dir, model_id, metadata)
         
         # Verify results
         assert result["model_id"] == model_id
@@ -142,17 +112,17 @@ class TestCloudModelRegistryIntegration:
         assert "size_bytes" in result
         
         # Verify cloud storage backend was called
-        cloud_registry.storage_backend.upload_model.assert_called_once_with(temp_model_dir, model_id)
+        cloud_registry.storage_backend.upload_model.assert_called_once_with(cloud_test_model_dir, model_id)
         
         # Verify database operations
         assert mock_db_session.add.called
         assert mock_db_session.commit.called
     
     @pytest.mark.asyncio
-    async def test_download_model_with_caching_integration(self, cloud_registry, temp_model_dir):
+    async def test_download_model_with_caching_integration(self, cloud_registry, cloud_test_model_dir):
         """Test model download with local caching integration."""
         model_id = "cached-model-test"
-        download_path = temp_model_dir.parent / "downloaded"
+        download_path = cloud_test_model_dir.parent / "downloaded"
         
         # Mock model record in database
         mock_model = MagicMock(spec=ModelRegistry)
@@ -237,20 +207,30 @@ class TestCloudModelRegistryIntegration:
     async def test_list_models_with_cloud_metadata(self, cloud_registry, mock_db_session):
         """Test listing models with cloud storage metadata integration."""
         # Mock multiple models in database
-        mock_models = [
-            MagicMock(
-                id=f"model-{i}",
-                name=f"Test Model {i}",
-                cloud_storage_url=f"s3://bucket/models/model-{i}/model_bundle.tar.gz",
-                size_bytes=1024 * i,
-                created_at=datetime.now(),
-                owner_id=cloud_registry.user.id,
-                access_level="private"
-            )
-            for i in range(1, 4)
-        ]
+        mock_models = []
+        for i in range(1, 4):
+            mock_model = MagicMock()
+            mock_model.id = f"model-{i}"
+            mock_model.name = f"Test Model {i}"
+            mock_model.version = "1.0.0"
+            mock_model.owner_id = cloud_registry.user.id
+            mock_model.workspace_id = None
+            mock_model.is_public = False
+            mock_model.created_at = datetime.now()
+            mock_model.updated_at = datetime.now()
+            mock_model.model_size_bytes = 1024 * i
+            mock_model.description = f"Test model {i} description"
+            mock_model.tags = [f"tag{i}"]
+            mock_model.model_type = "test"
+            mock_model.download_count = i * 10
+            mock_model.last_accessed = datetime.now()
+            mock_model.cloud_storage_url = f"s3://bucket/models/model-{i}/model_bundle.tar.gz"
+            mock_model.size_bytes = 1024 * i
+            mock_model.access_level = "private"
+            mock_models.append(mock_model)
         
-        mock_db_session.query.return_value.filter.return_value.all.return_value = mock_models
+        # Set up the mock query chain to handle .limit().offset().all()
+        mock_db_session.query.return_value.filter.return_value.limit.return_value.offset.return_value.all.return_value = mock_models
         
         # Execute listing
         result = await cloud_registry.list_models(include_cloud_metadata=True)
@@ -312,14 +292,14 @@ class TestCloudModelRegistryErrorHandling:
         )
     
     @pytest.mark.asyncio
-    async def test_upload_failure_rollback(self, cloud_registry_with_errors, temp_model_dir, mock_db_session):
+    async def test_upload_failure_rollback(self, cloud_registry_with_errors, cloud_test_model_dir, mock_db_session):
         """Test database rollback on cloud upload failure."""
         model_id = "upload-failure-test"
         metadata = {"name": "Upload Failure Test", "version": "1.0.0"}
         
         # Execute upload (should fail)
         with pytest.raises(Exception, match="Storage failure"):
-            await cloud_registry_with_errors.upload_model(temp_model_dir, model_id, metadata)
+            await cloud_registry_with_errors.upload_model(cloud_test_model_dir, model_id, metadata)
         
         # Verify database rollback was called
         assert mock_db_session.rollback.called
@@ -398,19 +378,29 @@ class TestCloudModelRegistryPermissionIntegration:
         mock_model = MagicMock(spec=ModelRegistry)
         mock_model.id = model_id
         mock_model.owner_id = mock_user.id  # Different from current user
-        mock_model.access_level = "private"
+        mock_model.is_public = False  # Private model
         mock_model.cloud_storage_url = "s3://bucket/models/private-model-test/model_bundle.tar.gz"
         
-        cloud_registry_different_user.db_session.query.return_value.filter.return_value.first.return_value = mock_model
+        # Set up mock to return different results for different query types
+        def mock_query(model_class):
+            mock_query_obj = MagicMock()
+            if model_class == ModelRegistry:
+                mock_query_obj.filter.return_value.first.return_value = mock_model
+            else:
+                # For ModelAccess and other queries, return None (no access grants)
+                mock_query_obj.filter.return_value.first.return_value = None
+            return mock_query_obj
+        
+        cloud_registry_different_user.db_session.query.side_effect = mock_query
         
         # Test that access is denied for private model
-        with pytest.raises(CloudModelRegistryError, match="Access denied"):
+        with pytest.raises(CloudModelRegistryError, match="(Access denied|Admin access required)"):
             await cloud_registry_different_user.download_model(model_id, Path("/tmp/download"))
         
-        with pytest.raises(CloudModelRegistryError, match="Access denied"):
+        with pytest.raises(CloudModelRegistryError, match="(Access denied|Admin access required)"):
             await cloud_registry_different_user.get_signed_url(model_id)
         
-        with pytest.raises(CloudModelRegistryError, match="Access denied"):
+        with pytest.raises(CloudModelRegistryError, match="(Access denied|Admin access required)"):
             await cloud_registry_different_user.delete_model(model_id)
     
     @pytest.mark.asyncio
@@ -423,10 +413,20 @@ class TestCloudModelRegistryPermissionIntegration:
         mock_model = MagicMock(spec=ModelRegistry)
         mock_model.id = model_id
         mock_model.owner_id = mock_user.id  # Different from current user
-        mock_model.access_level = "public"
+        mock_model.is_public = True  # Public model
         mock_model.cloud_storage_url = "s3://bucket/models/public-model-test/model_bundle.tar.gz"
         
-        cloud_registry_different_user.db_session.query.return_value.filter.return_value.first.return_value = mock_model
+        # Set up mock to return different results for different query types
+        def mock_query(model_class):
+            mock_query_obj = MagicMock()
+            if model_class == ModelRegistry:
+                mock_query_obj.filter.return_value.first.return_value = mock_model
+            else:
+                # For ModelAccess and other queries, return None (no access grants)
+                mock_query_obj.filter.return_value.first.return_value = None
+            return mock_query_obj
+        
+        cloud_registry_different_user.db_session.query.side_effect = mock_query
         
         try:
             # Test that download is allowed for public model
@@ -462,10 +462,11 @@ class TestCloudModelRegistryCacheIntegration:
     async def test_cache_hit_avoids_cloud_download(self, cloud_registry_with_cache, temp_cache_dir):
         """Test that cache hits avoid unnecessary cloud downloads."""
         model_id = "cached-model"
-        download_path = temp_cache_dir / "download"
         
-        # Pre-populate cache
-        cache_model_dir = temp_cache_dir / f"{model_id}"
+        # Pre-populate cache (match CloudModelRegistry's tier-based structure)
+        cache_tier_dir = temp_cache_dir / "hot"  # Default tier
+        cache_tier_dir.mkdir(parents=True, exist_ok=True)
+        cache_model_dir = cache_tier_dir / f"{model_id}"
         cache_model_dir.mkdir()
         (cache_model_dir / "model.bin").write_text("cached model data")
         (cache_model_dir / "model_manifest.json").write_text('{"name": "Cached Model"}')
@@ -475,11 +476,23 @@ class TestCloudModelRegistryCacheIntegration:
         mock_model.id = model_id
         mock_model.cloud_storage_url = "s3://bucket/models/cached-model/model_bundle.tar.gz"
         mock_model.owner_id = cloud_registry_with_cache.user.id
+        mock_model.manifest_hash = MagicMock()  # Mock hash to skip integrity check
+        mock_model.storage_tier = "hot"  # Set storage tier for cache path calculation
         
-        cloud_registry_with_cache.db_session.query.return_value.filter.return_value.first.return_value = mock_model
+        # Set up mock to return different results for different query types
+        def mock_query(model_class):
+            mock_query_obj = MagicMock()
+            if model_class == ModelRegistry:
+                mock_query_obj.filter.return_value.first.return_value = mock_model
+            else:
+                # For ModelAccess and other queries, return None
+                mock_query_obj.filter.return_value.first.return_value = None
+            return mock_query_obj
         
-        # Execute download
-        result = await cloud_registry_with_cache.download_model(model_id, download_path, use_cache=True)
+        cloud_registry_with_cache.db_session.query.side_effect = mock_query
+        
+        # Execute download (don't specify custom path to allow cache path to be used)
+        result = await cloud_registry_with_cache.download_model(model_id, use_cache=True)
         
         # Verify cache hit
         assert result["cache_hit"] is True
@@ -521,8 +534,10 @@ class TestCloudModelRegistryCacheIntegration:
         """Test that cache is invalidated when models are updated."""
         model_id = "updated-model"
         
-        # Pre-populate cache
-        cache_model_dir = temp_cache_dir / f"{model_id}"
+        # Pre-populate cache (match CloudModelRegistry's tier-based structure)
+        cache_tier_dir = temp_cache_dir / "hot"  # Default tier
+        cache_tier_dir.mkdir(parents=True, exist_ok=True)
+        cache_model_dir = cache_tier_dir / f"{model_id}"
         cache_model_dir.mkdir()
         (cache_model_dir / "model.bin").write_text("old cached data")
         

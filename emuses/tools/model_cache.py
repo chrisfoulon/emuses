@@ -1187,3 +1187,28 @@ class ModelCache:
                 "signal_type": signal.get("type", "unknown"),
                 "timestamp": datetime.utcnow().isoformat()
             }
+
+
+# Export conditional imports for testing
+__all__ = [
+    'ModelCache', 'CacheBackend', 'CacheConfig', 'CachingError',
+    'RedisBackend', 'MemcachedBackend', 'InMemoryBackend'
+]
+
+# Make conditional imports available at module level for test mocking
+if REDIS_AVAILABLE:
+    __all__.append('redis')
+else:
+    # Create a mock redis module for testing when redis is not installed
+    class MockRedisModule:
+        class Redis:
+            pass
+    redis = MockRedisModule()
+
+if MEMCACHED_AVAILABLE:
+    __all__.append('MemcachedClient')
+else:
+    # Create a mock MemcachedClient for testing when pymemcache is not installed
+    class MockMemcachedClient:
+        pass
+    MemcachedClient = MockMemcachedClient
