@@ -11,6 +11,10 @@ import shutil
 from pathlib import Path
 from typing import Optional, Dict, Any
 import json
+from unittest.mock import MagicMock
+from uuid import uuid4
+from sqlalchemy.orm import Session
+from emuses.multi_user_service.models import User
 
 
 # Test markers for different testing modes
@@ -257,3 +261,51 @@ def pytest_configure(config):
     """Register custom pytest markers for cloud testing."""
     for marker, description in pytest_markers.items():
         config.addinivalue_line("markers", f"{marker}: {description}")
+
+
+# Missing fixtures for cloud registry integration tests
+@pytest.fixture
+def mock_db_session():
+    """Mock database session for integration tests."""
+    session = MagicMock(spec=Session)
+    
+    # Create a mock query object that handles the full chain
+    mock_query = MagicMock()
+    mock_query.filter.return_value = mock_query
+    mock_query.limit.return_value = mock_query
+    mock_query.offset.return_value = mock_query
+    mock_query.first.return_value = None
+    mock_query.all.return_value = []
+    
+    # Make sure nested attribute access also returns the chainable mock
+    mock_query.filter.return_value.limit.return_value = mock_query
+    mock_query.filter.return_value.offset.return_value = mock_query
+    mock_query.filter.return_value.all.return_value = []
+    
+    session.query.return_value = mock_query
+    session.add = MagicMock()
+    session.commit = MagicMock()
+    session.rollback = MagicMock()
+    session.delete = MagicMock()
+    return session
+
+
+@pytest.fixture
+def mock_user():
+    """Mock user for integration tests."""
+    user = MagicMock(spec=User)
+    user.id = uuid4()
+    user.username = "test-user"
+    user.email = "test@example.com"
+    user.is_active = True
+    user.is_superuser = True  # Make test user admin for simpler testing
+    user.is_verified = True
+    return user
+
+
+@pytest.fixture
+def temp_cache_dir():
+    """Create temporary cache directory for testing."""
+    temp_dir = Path(tempfile.mkdtemp(prefix="emuses_test_cache_"))
+    yield temp_dir
+    shutil.rmtree(temp_dir, ignore_errors=True)
