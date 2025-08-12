@@ -58,23 +58,23 @@
 
 ### Phase 4.3: Comprehensive Integration Testing ║ tests/integration/test_cross_mode_workflows.py ║ End-to-end validation ║ L
 
-- [ ] **Task 4.3.1: Cross-mode workflow testing**
-  - [ ] 4.3.1.a: Test model installation workflows across all modes
-  - [ ] 4.3.1.b: Validate search and discovery functionality consistency
-  - [ ] 4.3.1.c: Test permission systems across database and cloud modes
-  - [ ] 4.3.1.d: Verify CLI command compatibility across modes
+- [x] **Task 4.3.1: Cross-mode workflow testing**
+  - [x] 4.3.1.a: Test model installation workflows across all modes
+  - [x] 4.3.1.b: Validate search and discovery functionality consistency
+  - [x] 4.3.1.c: Test permission systems across database and cloud modes
+  - [x] 4.3.1.d: Verify CLI command compatibility across modes
 
-- [ ] **Task 4.3.2: Model migration testing**
-  - [ ] 4.3.2.a: Test local → database migration workflows
-  - [ ] 4.3.2.b: Validate database → cloud migration processes
-  - [ ] 4.3.2.c: Test bidirectional migration and rollback scenarios
-  - [ ] 4.3.2.d: Verify metadata integrity across migrations
+- [x] **Task 4.3.2: Model migration testing**
+  - [x] 4.3.2.a: Test local → database migration workflows
+  - [x] 4.3.2.b: Validate database → cloud migration processes
+  - [x] 4.3.2.c: Test bidirectional migration and rollback scenarios
+  - [x] 4.3.2.d: Verify metadata integrity across migrations
 
-- [ ] **Task 4.3.3: Performance validation across modes**
-  - [ ] 4.3.3.a: Test search response times across all backends
-  - [ ] 4.3.3.b: Validate model installation times across modes
-  - [ ] 4.3.3.c: Test concurrent operations and user limits
-  - [ ] 4.3.3.d: Verify scalability requirements are met
+- [x] **Task 4.3.3: Performance validation across modes**
+  - [x] 4.3.3.a: Test search response times across all backends
+  - [x] 4.3.3.b: Validate model installation times across modes
+  - [x] 4.3.3.c: Test concurrent operations and user limits
+  - [x] 4.3.3.d: Verify scalability requirements are met
 
 ### Phase 4.4: Security Audit & Compliance ║ tests/security/test_registry_security_audit.py ║ Security validation ║ M
 
