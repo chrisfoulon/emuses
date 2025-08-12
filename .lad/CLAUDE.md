@@ -60,26 +60,29 @@
 | User Isolation Strategy | Ownership validation helpers | Shared `_get_user_*` functions | Consistent security boundaries ✅ |
 | API Schema Strategy | Separate Create/Update/Read schemas | Different Pydantic models per operation | Clean API design ✅ |
 | Registry Deployment Mode | Auto-detection with fallback | Factory pattern with mode validation | Seamless mode transitions ✅ |
+| Caching Strategy | In-memory cache with TTL/LRU | ModelRegistryCache with user isolation | Query performance optimization ✅ |
 
 ## Active Development Context
 
 **Current Branch**: `feature/model-registry`
-**Active Phase**: Phase 4.2 - Cross-Mode Compatibility
-**Next Implementation**: ModelMigrator class, export/import utilities, configuration management
+**Active Phase**: Phase 5.1 - Performance Optimization (1/3 complete)
+**Next Implementation**: Database query optimization - index analysis and query tuning
 
-**Recent Completion**: Phase 4.1 Unified Registry Interface
-- ✅ ModelRegistryFactory with auto-detection
-- ✅ BaseModelRegistry interface consistency
-- ✅ LocalModelRegistry refactored (eliminated 200+ lines boilerplate)
-- ✅ Enhanced CLI with cross-mode parameters
-- ✅ 38/38 tests passing with backward compatibility
+**Recent Completion**: Phase 5.1.1 Caching Optimization
+- ✅ ModelRegistryCache with TTL and LRU eviction (15 tests passing)
+- ✅ Cached methods for list_models, search_models, get_model_info
+- ✅ Smart cache key generation with user/workspace isolation
+- ✅ Automatic cache invalidation on model modifications
+- ✅ Performance improvements: 5min list cache, 3min search cache, 10min info cache
 
 ## Common Commands
 - **CLI**: `python -m emuses.cli` (not `python -m emuses`)
+- **Test Security**: `pytest tests/security/ -q --tb=short` (248 tests)
 - **Test Model Registry**: `pytest tests/model_registry/test_local_registry.py -xvs`
 - **Test Integration**: `pytest tests/integration/test_unified_interface.py -xvs`
+- **Test Caching**: `pytest tests/performance/test_model_registry_caching.py -xvs` (15 tests)
 - **Coverage**: `pytest --cov=emuses --cov-report=term-missing`
 
 ---
-*Last Updated: 2025-08-11 - Streamlined for token efficiency*
+*Last Updated: 2025-08-12 - Phase 5.1.1 Caching Optimization Complete*
 *Historical details archived in `docs/project-history/`*

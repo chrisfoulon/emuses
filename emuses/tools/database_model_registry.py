@@ -22,6 +22,7 @@ from emuses.multi_user_service.models import (
 )
 from emuses.tools.model_permission_manager import ModelPermissionManager
 from emuses.tools.local_model_registry import LocalModelRegistry
+from emuses.tools.model_registry_cache import ModelRegistryCache
 
 logger = logging.getLogger(__name__)
 
@@ -77,7 +78,8 @@ class DatabaseModelRegistry:
         self, 
         db_session: Session, 
         current_user: User, 
-        base_path: Optional[Path] = None
+        base_path: Optional[Path] = None,
+        cache: Optional[ModelRegistryCache] = None
     ):
         """Initialize database model registry.
         
@@ -89,10 +91,13 @@ class DatabaseModelRegistry:
             Current user for permission context
         base_path : Path, optional
             Custom base storage path. If None, uses default location
+        cache : ModelRegistryCache, optional
+            Cache instance for performance optimization. Creates default if None
         """
         self.db_session = db_session
         self.current_user = current_user
         self.permission_manager = ModelPermissionManager(db_session, current_user)
+        self.cache = cache or ModelRegistryCache()
         
         # Initialize storage directory
         if base_path is None:
@@ -795,3 +800,186 @@ class DatabaseModelRegistry:
             return model_path
         
         return None
+    
+    # Cached Methods for Performance Optimization
+    
+    def list_models_cached(
+        self,
+        workspace_id: Optional[str] = None,
+        include_public: bool = True,
+        filters: Optional[Dict[str, Any]] = None
+    ) -> List[Dict[str, Any]]:
+        """
+        Cached version of list_models for improved performance.
+        
+        Parameters
+        ----------
+        workspace_id : str, optional
+            Filter to specific workspace
+        include_public : bool, default=True
+            Whether to include public models
+        filters : Dict[str, Any], optional
+            Additional filters (type, tags, etc.)
+            
+        Returns
+        -------
+        List[Dict[str, Any]]
+            List of accessible models
+        """
+        # Generate cache key
+        cache_key = self.cache.generate_list_models_key(
+            user_id=str(self.current_user.id),
+            workspace_id=workspace_id,
+            include_public=include_public,
+            filters=filters
+        )
+        
+        # Check cache first
+        cached_result = self.cache.get(cache_key)
+        if cached_result is not None:
+            logger.debug(f"Cache hit for list_models: {cache_key}")
+            return cached_result
+        
+        # Cache miss - call original method
+        result = self.list_models(
+            workspace_id=workspace_id,
+            include_public=include_public,
+            filters=filters
+        )
+        
+        # Cache the result
+        ttl = self.cache.get_default_ttl('list_models')
+        self.cache.set(cache_key, result, ttl=ttl)
+        logger.debug(f"Cached list_models result: {cache_key}")
+        
+        return result
+    
+    def search_models_cached(
+        self,
+        query: str,
+        workspace_id: Optional[str] = None,
+        include_public: bool = True
+    ) -> List[Dict[str, Any]]:
+        """
+        Cached version of search_models for improved performance.
+        
+        Parameters
+        ----------
+        query : str
+            Search query string
+        workspace_id : str, optional
+            Limit search to specific workspace
+        include_public : bool, default=True
+            Whether to include public models
+            
+        Returns
+        -------
+        List[Dict[str, Any]]
+            List of matching models ordered by relevance
+        """
+        # Generate cache key
+        cache_key = self.cache.generate_search_models_key(
+            query=query,
+            user_id=str(self.current_user.id),
+            workspace_id=workspace_id,
+            include_public=include_public
+        )
+        
+        # Check cache first
+        cached_result = self.cache.get(cache_key)
+        if cached_result is not None:
+            logger.debug(f"Cache hit for search_models: {cache_key}")
+            return cached_result
+        
+        # Cache miss - call original method
+        result = self.search_models(
+            query=query,
+            workspace_id=workspace_id,
+            include_public=include_public
+        )
+        
+        # Cache the result
+        ttl = self.cache.get_default_ttl('search_models')
+        self.cache.set(cache_key, result, ttl=ttl)
+        logger.debug(f"Cached search_models result: {cache_key}")
+        
+        return result
+    
+    def get_model_info_cached(self, model_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Cached version of get_model_info for improved performance.
+        
+        Parameters
+        ----------
+        model_id : str
+            Model identifier
+            
+        Returns
+        -------
+        Dict[str, Any] or None
+            Detailed model information or None if not found/accessible
+        """
+        # Generate cache key
+        cache_key = self.cache.generate_model_info_key(
+            model_id=model_id,
+            user_id=str(self.current_user.id)
+        )
+        
+        # Check cache first
+        cached_result = self.cache.get(cache_key)
+        if cached_result is not None:
+            logger.debug(f"Cache hit for get_model_info: {cache_key}")
+            return cached_result
+        
+        # Cache miss - call original method
+        result = self.get_model_info(model_id)
+        
+        # Only cache non-null results
+        if result is not None:
+            ttl = self.cache.get_default_ttl('model_info')
+            self.cache.set(cache_key, result, ttl=ttl)
+            logger.debug(f"Cached get_model_info result: {cache_key}")
+        
+        return result
+    
+    def register_model_with_cache_invalidation(
+        self,
+        model_path: Path,
+        name: Optional[str] = None,
+        version: str = "1.0.0",
+        workspace_id: Optional[str] = None,
+        is_public: bool = False,
+        description: Optional[str] = None,
+        tags: Optional[List[str]] = None,
+        model_type: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Register model and invalidate related cache entries.
+        
+        Parameters
+        ----------
+        Same as register_model method
+            
+        Returns
+        -------
+        Dict[str, Any]
+            Registration result with model_id and status
+        """
+        # Call original registration method
+        result = self.register_model(
+            model_path=model_path,
+            name=name,
+            version=version,
+            workspace_id=workspace_id,
+            is_public=is_public,
+            description=description,
+            tags=tags,
+            model_type=model_type
+        )
+        
+        # Invalidate user cache if registration was successful
+        if result.get('status') == 'success':
+            self.cache.invalidate_user_cache(str(self.current_user.id))
+            logger.debug(f"Invalidated user cache after model registration")
+        
+        return result
