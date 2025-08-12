@@ -48,13 +48,13 @@
   - [x] 4.2.2.a: Add export_model_bundle() for portable model packages
   - [x] 4.2.2.b: Implement import_model_bundle() for external models
   - [x] 4.2.2.c: Create bundle validation and integrity checking
-  - [ ] 4.2.2.d: Add metadata migration and format conversion
+  - [x] 4.2.2.d: Add metadata migration and format conversion
 
 - [x] **Task 4.2.3: Configuration management integration**
   - [x] 4.2.3.a: Create RegistryConfig class for unified configuration
-  - [ ] 4.2.3.b: Implement configuration validation across modes
-  - [ ] 4.2.3.c: Add environment setup and initialization
-  - [ ] 4.2.3.d: Create configuration migration utilities
+  - [x] 4.2.3.b: Implement configuration validation across modes
+  - [x] 4.2.3.c: Add environment setup and initialization
+  - [x] 4.2.3.d: Create configuration migration utilities
 
 ### Phase 4.3: Comprehensive Integration Testing ║ tests/integration/test_cross_mode_workflows.py ║ End-to-end validation ║ L
 

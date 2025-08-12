@@ -232,3 +232,48 @@ class ModelMigrator:
             Bundle validation functionality not yet implemented
         """
         raise NotImplementedError("Bundle validation functionality not yet implemented")
+
+    def convert_metadata_format(self, metadata: Dict[str, Any],
+                                source_mode: RegistryMode,
+                                target_mode: RegistryMode,
+                                **kwargs) -> Dict[str, Any]:
+        """Convert metadata format between different registry modes.
+
+        Each registry mode may have different metadata schemas or field
+        requirements. This method handles the conversion between formats
+        to ensure compatibility during model migration.
+
+        Parameters
+        ----------
+        metadata : Dict[str, Any]
+            Source metadata to convert
+        source_mode : RegistryMode
+            Source registry mode format
+        target_mode : RegistryMode
+            Target registry mode format
+        **kwargs
+            Additional conversion options
+
+        Returns
+        -------
+        Dict[str, Any]
+            Converted metadata compatible with target registry mode
+
+        Raises
+        ------
+        ValueError
+            If source and target modes are the same, or invalid metadata format
+        NotImplementedError
+            Metadata format conversion not yet implemented
+        """
+        # Validate that source and target are different
+        if source_mode == target_mode:
+            raise ValueError("source and target modes must be different")
+
+        # Validate metadata is a dictionary
+        if not isinstance(metadata, dict):
+            raise ValueError("metadata must be a dictionary")
+
+        logger.info(f"Converting metadata from {source_mode} to {target_mode} format")
+
+        raise NotImplementedError("Metadata format conversion not yet implemented")

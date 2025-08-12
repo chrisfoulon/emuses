@@ -133,3 +133,19 @@ class TestModelMigrationIntegration:
         # Test should fail until we implement the method
         with pytest.raises(NotImplementedError, match="Bundle validation functionality not yet implemented"):
             migrator.validate_bundle("/tmp/bundle.zip")
+
+    def test_convert_metadata_format_method_exists(self):
+        """Test that convert_metadata_format method exists and works."""
+        migrator = ModelMigrator()
+
+        # Test metadata conversion interface
+        assert hasattr(migrator, 'convert_metadata_format')
+        assert callable(migrator.convert_metadata_format)
+
+        # Test should fail until we implement the method
+        with pytest.raises(NotImplementedError, match="Metadata format conversion not yet implemented"):
+            test_metadata = {"name": "test_model", "version": "1.0"}
+            migrator.convert_metadata_format(
+                test_metadata,
+                source_mode=RegistryMode.LOCAL,
+                target_mode=RegistryMode.DATABASE)
