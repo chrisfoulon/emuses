@@ -61,19 +61,20 @@
 | API Schema Strategy | Separate Create/Update/Read schemas | Different Pydantic models per operation | Clean API design ✅ |
 | Registry Deployment Mode | Auto-detection with fallback | Factory pattern with mode validation | Seamless mode transitions ✅ |
 | Caching Strategy | In-memory cache with TTL/LRU | ModelRegistryCache with user isolation | Query performance optimization ✅ |
+| Storage Management UX | Enhanced visibility and reporting | StorageManager with model breakdown and suggestions | Improved user awareness ✅ |
+| Database Query Optimization | Strategic indexes + performance monitoring | DatabaseIndexOptimizer with 9 composite indexes | Query performance optimization ✅ |
 
 ## Active Development Context
 
 **Current Branch**: `feature/model-registry`
-**Active Phase**: Phase 5.1 - Performance Optimization (1/3 complete)
-**Next Implementation**: Database query optimization - index analysis and query tuning
+**Active Phase**: Phase 4.7 - Production Deployment Preparation (0/3 complete)
+**Next Implementation**: Observability integration - integrate registry metrics with existing Prometheus setup
 
-**Recent Completion**: Phase 5.1.1 Caching Optimization
-- ✅ ModelRegistryCache with TTL and LRU eviction (15 tests passing)
-- ✅ Cached methods for list_models, search_models, get_model_info
-- ✅ Smart cache key generation with user/workspace isolation
-- ✅ Automatic cache invalidation on model modifications
-- ✅ Performance improvements: 5min list cache, 3min search cache, 10min info cache
+**Recent Completion**: Phase 4.6 Documentation Integration (Complete)
+- ✅ Comprehensive user guide covering all deployment modes (docs/model-registry/user_guide.md, 11,945 bytes)
+- ✅ Complete API reference documentation with CLI commands, FastAPI endpoints, Python API examples (19,801 bytes)
+- ✅ Developer integration guide with architecture patterns, code examples, contribution guidelines (49,943 bytes)
+- ✅ Phase 4.5 Storage Management UX Enhancement and Phase 5.1 Performance Optimization (all complete)
 
 ## Common Commands
 - **CLI**: `python -m emuses.cli` (not `python -m emuses`)
@@ -81,8 +82,12 @@
 - **Test Model Registry**: `pytest tests/model_registry/test_local_registry.py -xvs`
 - **Test Integration**: `pytest tests/integration/test_unified_interface.py -xvs`
 - **Test Caching**: `pytest tests/performance/test_model_registry_caching.py -xvs` (15 tests)
+- **Test Storage UX**: `pytest tests/model_registry/test_storage_ux.py -xvs` (32 tests)
+- **Test Query Optimization**: `pytest tests/performance/test_database_query_optimization.py -xvs` (7 baseline tests)
+- **Test Database Indexes**: `pytest tests/performance/test_database_index_optimization.py -xvs` (12 index tests)
+- **Test DB Integration**: `pytest tests/performance/test_database_registry_integration.py -xvs` (10 integration tests)
 - **Coverage**: `pytest --cov=emuses --cov-report=term-missing`
 
 ---
-*Last Updated: 2025-08-12 - Phase 5.1.1 Caching Optimization Complete*
+*Last Updated: 2025-08-13 - Phase 5.1 Performance Optimization Complete, Phase 4.5.1 Storage Warnings Complete*
 *Historical details archived in `docs/project-history/`*
