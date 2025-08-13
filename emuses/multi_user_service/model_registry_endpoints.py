@@ -11,7 +11,7 @@ from typing import Any, Dict, List, Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, Form, status
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
 
@@ -20,6 +20,7 @@ from emuses.multi_user_service.database import get_db
 from emuses.multi_user_service.models import User
 from emuses.tools.database_model_registry import DatabaseModelRegistry
 from emuses.tools.model_permission_manager import ModelPermissionManager
+from emuses.tools.model_registry_health import get_health_checker
 
 logger = logging.getLogger(__name__)
 
@@ -775,6 +776,115 @@ def get_model_registry_router() -> APIRouter:
         except Exception as e:
             logger.error(f"Error setting public status: {str(e)}")
             raise HTTPException(status_code=500, detail=f"Failed to set public status: {str(e)}")
+
+    # Health check endpoints for registry monitoring
+    @router.get("/health", response_model=Dict[str, Any])
+    async def registry_health_check():
+        """Check health status of model registry across all deployment modes.
+        
+        Provides overall health status with mode-specific details for monitoring
+        and service discovery purposes.
+        
+        Returns
+        -------
+        Dict[str, Any]
+            Health status including overall status and registry mode details
+        """
+        try:
+            health_checker = get_health_checker()
+            return health_checker.check_overall_health()
+        except Exception as e:
+            logger.error(f"Error checking registry health: {str(e)}")
+            # Return degraded status instead of failing completely
+            return {
+                "status": "unhealthy",
+                "registry_modes": {},
+                "error": str(e),
+                "timestamp": datetime.now().isoformat() + "Z"
+            }
+
+    @router.get("/health/detailed", response_model=Dict[str, Any])
+    async def registry_detailed_health_check():
+        """Check detailed health status with system information and metrics.
+        
+        Provides comprehensive health information including system details,
+        performance metrics, and extended diagnostic information.
+        
+        Returns
+        -------
+        Dict[str, Any]
+            Detailed health status with system and performance information
+        """
+        try:
+            health_checker = get_health_checker()
+            return health_checker.check_detailed_health()
+        except Exception as e:
+            logger.error(f"Error checking detailed registry health: {str(e)}")
+            return {
+                "overall_status": "unhealthy",
+                "registry_modes": {},
+                "system_info": {},
+                "performance_metrics": {},
+                "error": str(e),
+                "timestamp": datetime.now().isoformat() + "Z"
+            }
+
+    @router.get("/ready", response_model=Dict[str, Any])
+    async def registry_readiness_check():
+        """Check if registry is ready to handle requests.
+        
+        Used for service discovery and rolling deployments to determine
+        when the service is ready to receive traffic.
+        
+        Returns
+        -------
+        Dict[str, Any]
+            Readiness status with dependency information
+        """
+        try:
+            health_checker = get_health_checker()
+            readiness = health_checker.check_readiness()
+            
+            # Return appropriate HTTP status
+            status_code = 200 if readiness["ready"] else 503
+            return JSONResponse(
+                status_code=status_code,
+                content=readiness
+            )
+        except Exception as e:
+            logger.error(f"Error checking registry readiness: {str(e)}")
+            return JSONResponse(
+                status_code=503,
+                content={
+                    "ready": False,
+                    "dependencies": {},
+                    "error": str(e),
+                    "timestamp": datetime.now().isoformat() + "Z"
+                }
+            )
+
+    @router.get("/live", response_model=Dict[str, Any])
+    async def registry_liveness_check():
+        """Check if registry is alive and responsive.
+        
+        Used for load balancing and health monitoring to determine
+        if the service is functioning properly.
+        
+        Returns
+        -------
+        Dict[str, Any]
+            Liveness status
+        """
+        try:
+            health_checker = get_health_checker()
+            return health_checker.check_liveness()
+        except Exception as e:
+            logger.error(f"Error checking registry liveness: {str(e)}")
+            return {
+                "alive": False,
+                "error": str(e),
+                "timestamp": datetime.now().isoformat() + "Z"
+            }
 
     return router
 

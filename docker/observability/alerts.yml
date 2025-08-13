@@ -76,3 +76,153 @@ groups:
         annotations:
           summary: "Disk space is running low"
           description: "Disk space is below 10% on {{ $labels.mountpoint }}"
+
+  # Model Registry specific alerts
+  - name: emuses.model-registry
+    rules:
+      # Registry operation health
+      - alert: ModelRegistryHighErrorRate
+        expr: 100 * (rate(emuses_registry_operations_total{status="error"}[5m]) / rate(emuses_registry_operations_total[5m])) > 5
+        for: 2m
+        labels:
+          severity: warning
+          component: model-registry
+        annotations:
+          summary: "High error rate in model registry operations"
+          description: "Error rate for {{ $labels.operation }} in {{ $labels.registry_mode }} mode is {{ $value }}%"
+
+      - alert: ModelRegistryVeryHighErrorRate
+        expr: 100 * (rate(emuses_registry_operations_total{status="error"}[5m]) / rate(emuses_registry_operations_total[5m])) > 15
+        for: 1m
+        labels:
+          severity: critical
+          component: model-registry
+        annotations:
+          summary: "Very high error rate in model registry operations"
+          description: "Error rate for {{ $labels.operation }} in {{ $labels.registry_mode }} mode is {{ $value }}%"
+
+      - alert: ModelRegistrySlowResponse
+        expr: histogram_quantile(0.95, rate(emuses_registry_operation_duration_seconds_bucket[5m])) > 10
+        for: 3m
+        labels:
+          severity: warning
+          component: model-registry
+        annotations:
+          summary: "Slow model registry operations"
+          description: "P95 response time for {{ $labels.operation }} in {{ $labels.registry_mode }} mode is {{ $value }}s"
+
+      - alert: ModelRegistryVerySlowResponse
+        expr: histogram_quantile(0.95, rate(emuses_registry_operation_duration_seconds_bucket[5m])) > 30
+        for: 1m
+        labels:
+          severity: critical
+          component: model-registry
+        annotations:
+          summary: "Very slow model registry operations"
+          description: "P95 response time for {{ $labels.operation }} in {{ $labels.registry_mode }} mode is {{ $value }}s"
+
+      # Cache performance
+      - alert: ModelRegistryLowCacheHitRate
+        expr: 100 * (rate(emuses_registry_cache_operations_total{result="hit"}[5m]) / (rate(emuses_registry_cache_operations_total{result="hit"}[5m]) + rate(emuses_registry_cache_operations_total{result="miss"}[5m]))) < 70
+        for: 5m
+        labels:
+          severity: warning
+          component: model-registry-cache
+        annotations:
+          summary: "Low cache hit rate in model registry"
+          description: "Cache hit rate is {{ $value }}%, indicating potential performance issues"
+
+      - alert: ModelRegistryVeryLowCacheHitRate
+        expr: 100 * (rate(emuses_registry_cache_operations_total{result="hit"}[5m]) / (rate(emuses_registry_cache_operations_total{result="hit"}[5m]) + rate(emuses_registry_cache_operations_total{result="miss"}[5m]))) < 50
+        for: 2m
+        labels:
+          severity: critical
+          component: model-registry-cache
+        annotations:
+          summary: "Very low cache hit rate in model registry"
+          description: "Cache hit rate is {{ $value }}%, cache may be ineffective"
+
+      # Model storage and scaling
+      - alert: ModelRegistryStorageGrowthHigh
+        expr: increase(emuses_model_storage_bytes_sum[1h]) / (1024*1024*1024) > 10
+        for: 0m
+        labels:
+          severity: warning
+          component: model-registry-storage
+        annotations:
+          summary: "High model storage growth rate"
+          description: "Model storage grew by {{ $value }}GB in the last hour"
+
+      - alert: LargeModelUpload
+        expr: rate(emuses_model_storage_bytes_bucket{le="100000000"}[5m]) == 0 and rate(emuses_model_storage_bytes_bucket{le="+Inf"}[5m]) > 0
+        for: 0m
+        labels:
+          severity: info
+          component: model-registry-storage
+        annotations:
+          summary: "Large model uploaded"
+          description: "A model larger than 100MB was uploaded (type: {{ $labels.model_type }})"
+
+      # User activity monitoring
+      - alert: ModelRegistryNoUserActivity
+        expr: rate(emuses_user_registry_activity_total[30m]) == 0
+        for: 30m
+        labels:
+          severity: warning
+          component: model-registry-activity
+        annotations:
+          summary: "No user activity in model registry"
+          description: "No user activity detected in model registry for 30 minutes"
+
+      - alert: ModelRegistryHighUserActivity
+        expr: rate(emuses_user_registry_activity_total[5m]) > 5
+        for: 5m
+        labels:
+          severity: info
+          component: model-registry-activity
+        annotations:
+          summary: "High user activity in model registry"
+          description: "High activity rate: {{ $value }} operations per second for user {{ $labels.user_id }}"
+
+      # Database-specific alerts (when using DATABASE mode)
+      - alert: ModelRegistryDatabaseConnectionIssues
+        expr: increase(emuses_registry_operations_total{registry_mode="DATABASE",status="error"}[5m]) > 10
+        for: 1m
+        labels:
+          severity: critical
+          component: model-registry-database
+        annotations:
+          summary: "Model registry database connection issues"
+          description: "Multiple database errors detected in {{ $labels.operation }} operations"
+
+      # Cloud-specific alerts (when using CLOUD mode)
+      - alert: ModelRegistryCloudStorageIssues
+        expr: increase(emuses_registry_operations_total{registry_mode="CLOUD",status="error"}[5m]) > 5
+        for: 2m
+        labels:
+          severity: warning
+          component: model-registry-cloud
+        annotations:
+          summary: "Model registry cloud storage issues"
+          description: "Cloud storage errors detected in {{ $labels.operation }} operations"
+
+      # Model download monitoring
+      - alert: ModelDownloadFailureSpike
+        expr: increase(emuses_model_downloads_total[5m]) == 0 and increase(emuses_registry_operations_total{operation="get_model_info",status="error"}[5m]) > 3
+        for: 2m
+        labels:
+          severity: warning
+          component: model-registry-downloads
+        annotations:
+          summary: "Model download failures detected"
+          description: "Multiple model download attempts failing"
+
+      - alert: UnusualModelDownloadPattern
+        expr: rate(emuses_model_downloads_total[5m]) > 2
+        for: 5m
+        labels:
+          severity: info
+          component: model-registry-downloads
+        annotations:
+          summary: "High model download activity"
+          description: "Unusual download activity: {{ $value }} downloads per second via {{ $labels.download_method }}"

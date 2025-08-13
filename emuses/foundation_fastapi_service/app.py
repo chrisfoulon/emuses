@@ -211,6 +211,17 @@ except ImportError as e:
 except Exception as e:
     logger.error(f"Failed to set up multi-user service endpoints: {e}")
 
+# Set up registry health endpoints (always available)
+try:
+    from emuses.tools.model_registry_health_endpoints import \
+        setup_registry_health_endpoints
+    setup_registry_health_endpoints(app)
+    logger.info("Registry health check endpoints configured")
+except ImportError as e:
+    logger.warning(f"Registry health check components not available: {e}")
+except Exception as e:
+    logger.error(f"Failed to set up registry health endpoints: {e}")
+
 # Initialize core components lazily to avoid import issues
 job_manager = None
 pipeline_runner = None

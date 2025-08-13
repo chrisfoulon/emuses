@@ -10,6 +10,7 @@ import time
 from typing import Any, Dict, Optional
 from collections import OrderedDict
 import logging
+from emuses.tools.model_registry_metrics import track_cache_hit, track_cache_miss, track_cache_set, track_cache_invalidate
 
 logger = logging.getLogger(__name__)
 
@@ -71,6 +72,7 @@ class ModelRegistryCache:
             Cached value or None if not found/expired
         """
         if key not in self._cache:
+            track_cache_miss()
             return None
 
         # Check TTL expiration
@@ -78,6 +80,7 @@ class ModelRegistryCache:
         if key in self._ttls and current_time > self._ttls[key]:
             # Entry expired, remove it
             self._remove_entry(key)
+            track_cache_miss()
             return None
 
         # Move to end (LRU)
@@ -85,6 +88,7 @@ class ModelRegistryCache:
         self._cache[key] = value
 
         logger.debug(f"Cache hit for key: {key[:50]}...")
+        track_cache_hit()
         return value
 
     def set(self, key: str, value: Any, ttl: Optional[int] = None) -> None:
@@ -127,6 +131,7 @@ class ModelRegistryCache:
             self._memory_usage += 1000
 
         logger.debug(f"Cached key: {key[:50]}... (TTL: {ttl}s)")
+        track_cache_set()
 
     def _remove_entry(self, key: str) -> None:
         """Remove entry from all cache structures.
@@ -159,6 +164,7 @@ class ModelRegistryCache:
         if key in self._cache:
             self._remove_entry(key)
             logger.debug(f"Invalidated cache key: {key[:50]}...")
+            track_cache_invalidate()
 
     def clear(self) -> None:
         """Clear all cache entries."""

@@ -170,16 +170,16 @@
 
 ### Phase 4.7: Production Deployment Preparation ║ tests/deployment/test_production_readiness.py ║ Deployment readiness ║ M
 
-- [ ] **Task 4.7.1: Observability integration**
-  - [ ] 4.7.1.a: Integrate registry metrics with existing Prometheus setup
-  - [ ] 4.7.1.b: Create Grafana dashboards for registry monitoring
-  - [ ] 4.7.1.c: Add alerting rules for registry health monitoring
-  - [ ] 4.7.1.d: Test metrics collection across all deployment modes
+- [x] **Task 4.7.1: Observability integration** **[COMPLETED]**
+  - [x] 4.7.1.a: Integrate registry metrics with existing Prometheus setup **[COMPLETED]** - Added ModelRegistryMetrics class with comprehensive metrics collection (operations, timing, cache, user activity, storage, downloads)
+  - [x] 4.7.1.b: Create Grafana dashboards for registry monitoring **[COMPLETED]** - Created emuses-model-registry.json dashboard with 9 panels covering performance, errors, cache, storage, and user activity
+  - [x] 4.7.1.c: Add alerting rules for registry health monitoring **[COMPLETED]** - Added 15 alerting rules covering error rates, performance, cache efficiency, storage growth, and mode-specific issues
+  - [x] 4.7.1.d: Test metrics collection across all deployment modes **[COMPLETED]** - Comprehensive test suite with 75+ tests verifying metrics integration across LOCAL/DATABASE/CLOUD modes
 
-- [ ] **Task 4.7.2: Health monitoring system**
-  - [ ] 4.7.2.a: Create registry health check endpoints
-  - [ ] 4.7.2.b: Implement service discovery and load balancing readiness
-  - [ ] 4.7.2.c: Add graceful degradation for partial system failures
+- [~] **Task 4.7.2: Health monitoring system** **[3/4 complete]**
+  - [x] 4.7.2.a: Create registry health check endpoints **[COMPLETED]** - Added ModelRegistryHealthChecker class with comprehensive health monitoring across LOCAL/DATABASE/CLOUD modes, FastAPI endpoints (/health, /health/detailed, /ready, /live), and comprehensive test suite (9 tests passing)
+  - [x] 4.7.2.b: Implement service discovery and load balancing readiness **[COMPLETED]** - Enhanced health endpoints with service discovery metadata, load balancer hints, circuit breaker status, and container orchestration integration. Added dedicated /service-discovery endpoint with comprehensive service registration info, service mesh annotations, and performance metrics (8 tests passing)
+  - [x] 4.7.2.c: Add graceful degradation for partial system failures **[COMPLETED]** - Implemented comprehensive graceful degradation system with automatic fallback mechanisms (DATABASE/CLOUD to LOCAL), progressive degradation levels (minimal/moderate/full), circuit breaker enhancement, user-friendly impact notifications, resource conservation during failures, and recovery detection. Added 6 new degradation endpoints and 8 comprehensive tests covering all failure scenarios
   - [ ] 4.7.2.d: Create disaster recovery procedures
 
 - [ ] **Task 4.7.3: Deployment configuration**

@@ -16,6 +16,7 @@ from uuid import UUID
 from emuses.tools.model_io import ModelIOManager
 from emuses.tools.base_model_registry import BaseModelRegistry
 from emuses.tools.storage_manager import StorageManager
+from emuses.tools.model_registry_metrics import track_list_models, track_install_model, track_search_models, track_get_model_info, track_remove_model, track_model_storage
 
 logger = logging.getLogger(__name__)
 
@@ -472,28 +473,31 @@ class LocalModelRegistry(BaseModelRegistry):
         List[Dict[str, Any]]
             List of model metadata dictionaries
         """
-        # Support filters from kwargs for backward compatibility
-        if filters is None and 'filters' in kwargs:
-            filters = kwargs['filters']
-            
-        # Use original implementation
-        try:
-            index = self._load_index()
-            models = list(index["models"].values())
-            
-            if filters is None:
-                return models
-            
-            filtered_models = []
-            for model in models:
-                if self._model_matches_filters(model, filters):
-                    filtered_models.append(model)
-            
-            return filtered_models
-            
-        except (FileNotFoundError, json.JSONDecodeError) as e:
-            logger.error(f"Error loading registry index: {e}")
-            return []
+        user_str = str(user_id) if user_id else None
+        
+        with track_list_models("LOCAL", user_str):
+            # Support filters from kwargs for backward compatibility
+            if filters is None and 'filters' in kwargs:
+                filters = kwargs['filters']
+                
+            # Use original implementation
+            try:
+                index = self._load_index()
+                models = list(index["models"].values())
+                
+                if filters is None:
+                    return models
+                
+                filtered_models = []
+                for model in models:
+                    if self._model_matches_filters(model, filters):
+                        filtered_models.append(model)
+                
+                return filtered_models
+                
+            except (FileNotFoundError, json.JSONDecodeError) as e:
+                logger.error(f"Error loading registry index: {e}")
+                return []
     
     def install_model(self, model_path: Path, name: Optional[str] = None, 
                      model_name: Optional[str] = None, version: Optional[str] = None,
@@ -547,77 +551,86 @@ class LocalModelRegistry(BaseModelRegistry):
             if version is None:
                 version = "1.0.0"  # Default version
         
-        # Use original implementation with validation
-        try:
-            # Check storage thresholds before installation
-            storage_warning = self.storage_manager.check_storage_thresholds()
-            if storage_warning and storage_warning.level == "critical":
-                logger.warning(f"Storage warning: {storage_warning.message}")
-                # Don't block installation, but include warning in response
+        user_str = str(user_id) if user_id else None
+        
+        with track_install_model("LOCAL", "unknown", user_str):
+            # Use original implementation with validation
+            try:
+                # Check storage thresholds before installation
+                storage_warning = self.storage_manager.check_storage_thresholds()
+                if storage_warning and storage_warning.level == "critical":
+                    logger.warning(f"Storage warning: {storage_warning.message}")
+                    # Don't block installation, but include warning in response
+                    
+                # Initialize ModelIOManager
+                model_io = ModelIOManager()
                 
-            # Initialize ModelIOManager
-            model_io = ModelIOManager()
-            
-            # Validate model and get manifest
-            logger.info(f"Validating model at {model_path}")
-            manifest = model_io.validate_model(model_path)
-            
-            # Use provided name or fall back to manifest name
-            final_name = effective_name if effective_name is not None else manifest.get("name", "unnamed_model")
-            
-            # Install model using ModelIOManager
-            logger.info(f"Installing model '{final_name}'")
-            model_id = model_io.install_model(model_path, self.models_path, name=effective_name)
-            
-            # Create model metadata entry
-            model_info = {
-                "model_id": model_id,
-                "name": final_name,
-                "version": version,
-                "type": manifest.get("type", "unknown"),
-                "description": description or manifest.get("description", ""),
-                "installed_at": datetime.utcnow().isoformat(),
-                "source_path": str(model_path),
-                "manifest": manifest,
-                "tags": tags or []
-            }
-            
-            # Update registry index
-            index = self._load_index()
-            index["models"][model_id] = model_info
-            self._save_index(index)
-            
-            logger.info(f"Successfully installed model '{final_name}' with ID {model_id}")
-            
-            # Check for post-installation storage warnings
-            post_warning = self.storage_manager.check_storage_thresholds()
-            
-            result = {
-                "status": "success",
-                "model_id": model_id,
-                "name": final_name,
-                "model": model_info,
-                "message": f"Model '{final_name}' installed successfully"
-            }
-            
-            # Include storage warning in response if present
-            if post_warning:
-                result["storage_warning"] = {
-                    "level": post_warning.level,
-                    "message": post_warning.message,
-                    "usage_percent": post_warning.usage_percent,
-                    "registry_size_mb": post_warning.registry_size_mb,
-                    "available_space_mb": post_warning.available_space_mb
+                # Validate model and get manifest
+                logger.info(f"Validating model at {model_path}")
+                manifest = model_io.validate_model(model_path)
+                
+                # Use provided name or fall back to manifest name
+                final_name = effective_name if effective_name is not None else manifest.get("name", "unnamed_model")
+                
+                # Install model using ModelIOManager
+                logger.info(f"Installing model '{final_name}'")
+                model_id = model_io.install_model(model_path, self.models_path, name=effective_name)
+                
+                # Track model storage size for metrics
+                model_dir = self.models_path / model_id
+                if model_dir.exists():
+                    model_size = sum(f.stat().st_size for f in model_dir.rglob('*') if f.is_file())
+                    track_model_storage(model_size, manifest.get("type", "unknown"))
+                
+                # Create model metadata entry
+                model_info = {
+                    "model_id": model_id,
+                    "name": final_name,
+                    "version": version,
+                    "type": manifest.get("type", "unknown"),
+                    "description": description or manifest.get("description", ""),
+                    "installed_at": datetime.utcnow().isoformat(),
+                    "source_path": str(model_path),
+                    "manifest": manifest,
+                    "tags": tags or []
                 }
                 
-            return result
-            
-        except Exception as e:
-            logger.error(f"Error installing model: {e}")
-            return {
-                "status": "error",
-                "message": str(e)
-            }
+                # Update registry index
+                index = self._load_index()
+                index["models"][model_id] = model_info
+                self._save_index(index)
+                
+                logger.info(f"Successfully installed model '{final_name}' with ID {model_id}")
+                
+                # Check for post-installation storage warnings
+                post_warning = self.storage_manager.check_storage_thresholds()
+                
+                result = {
+                    "status": "success",
+                    "model_id": model_id,
+                    "name": final_name,
+                    "model": model_info,
+                    "message": f"Model '{final_name}' installed successfully"
+                }
+                
+                # Include storage warning in response if present
+                if post_warning:
+                    result["storage_warning"] = {
+                        "level": post_warning.level,
+                        "message": post_warning.message,
+                        "usage_percent": post_warning.usage_percent,
+                        "registry_size_mb": post_warning.registry_size_mb,
+                        "available_space_mb": post_warning.available_space_mb
+                    }
+                    
+                return result
+                
+            except Exception as e:
+                logger.error(f"Error installing model: {e}")
+                return {
+                    "status": "error",
+                    "message": str(e)
+                }
     
     def get_model_info(self, model_id: Optional[str] = None, 
                       model_name: Optional[str] = None, version: Optional[str] = None,
@@ -649,25 +662,28 @@ class LocalModelRegistry(BaseModelRegistry):
         Optional[Dict[str, Any]]
             Model metadata or None if not found
         """
-        try:
-            index = self._load_index()
-            models = index.get("models", {})
-            
-            if model_id is not None:
-                # Original pattern - search by model_id
-                return models.get(model_id)
-            elif model_name is not None:
-                # BaseModelRegistry pattern - search by name and version
-                for model_info in models.values():
-                    if model_info.get("name") == model_name:
-                        if version is None or model_info.get("version") == version:
-                            return model_info
-                            
-            return None
-            
-        except (FileNotFoundError, json.JSONDecodeError) as e:
-            logger.error(f"Error loading registry index: {e}")
-            return None
+        user_str = str(user_id) if user_id else None
+        
+        with track_get_model_info("LOCAL", user_str):
+            try:
+                index = self._load_index()
+                models = index.get("models", {})
+                
+                if model_id is not None:
+                    # Original pattern - search by model_id
+                    return models.get(model_id)
+                elif model_name is not None:
+                    # BaseModelRegistry pattern - search by name and version
+                    for model_info in models.values():
+                        if model_info.get("name") == model_name:
+                            if version is None or model_info.get("version") == version:
+                                return model_info
+                                
+                return None
+                
+            except (FileNotFoundError, json.JSONDecodeError) as e:
+                logger.error(f"Error loading registry index: {e}")
+                return None
     
     def search_models(self, query: str, limit: int = 20,
                      user_id: Optional[Union[UUID, str]] = None,
@@ -697,32 +713,35 @@ class LocalModelRegistry(BaseModelRegistry):
         List[Dict[str, Any]]
             List of matching model metadata
         """
-        # Use original implementation
-        try:
-            index = self._load_index()
-            models = list(index.get("models", {}).values())
-            
-            if not query:
-                # Empty query returns all models (with limit if specified)
-                return models[:limit] if limit > 0 else models
-            
-            query_lower = query.lower()
-            matching_models = []
-            
-            for model in models:
-                # Search in name and description
-                model_name = model.get("name", "").lower()
-                model_description = model.get("description", "").lower()
+        user_str = str(user_id) if user_id else None
+        
+        with track_search_models("LOCAL", user_str):
+            # Use original implementation
+            try:
+                index = self._load_index()
+                models = list(index.get("models", {}).values())
                 
-                if query_lower in model_name or query_lower in model_description:
-                    matching_models.append(model)
+                if not query:
+                    # Empty query returns all models (with limit if specified)
+                    return models[:limit] if limit > 0 else models
+                
+                query_lower = query.lower()
+                matching_models = []
+                
+                for model in models:
+                    # Search in name and description
+                    model_name = model.get("name", "").lower()
+                    model_description = model.get("description", "").lower()
                     
-            # Apply limit if specified  
-            return matching_models[:limit] if limit > 0 else matching_models
-            
-        except (FileNotFoundError, json.JSONDecodeError) as e:
-            logger.error(f"Error loading registry index: {e}")
-            return []
+                    if query_lower in model_name or query_lower in model_description:
+                        matching_models.append(model)
+                        
+                # Apply limit if specified  
+                return matching_models[:limit] if limit > 0 else matching_models
+                
+            except (FileNotFoundError, json.JSONDecodeError) as e:
+                logger.error(f"Error loading registry index: {e}")
+                return []
     
     def remove_model(self, model_id: Optional[str] = None, 
                     model_name: Optional[str] = None, version: Optional[str] = None,
@@ -758,81 +777,100 @@ class LocalModelRegistry(BaseModelRegistry):
             Original pattern: Dict with status info
             BaseModelRegistry pattern: bool for success
         """
+        user_str = str(user_id) if user_id else None
+        model_type = "unknown"
+        
+        # Try to get model type before removal
         try:
             index = self._load_index()
             models = index.get("models", {})
-            
-            if model_id is not None:
-                # Original pattern - remove by model_id
-                if model_id not in models:
-                    return {
-                        "status": "error",
-                        "message": f"Model not found: {model_id}"
-                    }
+            if model_id and model_id in models:
+                model_type = models[model_id].get("type", "unknown")
+            elif model_name:
+                for model_info in models.values():
+                    if model_info.get("name") == model_name:
+                        if version is None or model_info.get("version") == version:
+                            model_type = model_info.get("type", "unknown")
+                            break
+        except Exception:
+            pass  # Continue with unknown type if we can't determine it
+        
+        with track_remove_model("LOCAL", model_type, user_str):
+            try:
+                index = self._load_index()
+                models = index.get("models", {})
                 
-                # Remove from index
-                model_info = models.pop(model_id, None)
-                
-                # Clean up files if requested
-                if cleanup_files:
-                    model_path = self.models_path / model_id
-                    if model_path.exists():
-                        try:
-                            shutil.rmtree(model_path)
-                        except Exception as e:
-                            logger.warning(f"Error cleaning up model files: {e}")
-                
-                # Save updated index
-                self._save_index(index)
-                
-                return {
-                    "status": "success",
-                    "model_id": model_id,
-                    "removed_model": model_info
-                }
-                
-            elif model_name is not None:
-                # BaseModelRegistry pattern - remove by name and version
-                model_ids_to_remove = []
-                for mid, model in models.items():
-                    if model.get("name") == model_name:
-                        if version is None or model.get("version") == version:
-                            model_ids_to_remove.append(mid)
-                
-                if not model_ids_to_remove:
-                    return False  # Not found
-                
-                # Remove all matching models
-                success = True
-                for mid in model_ids_to_remove:
-                    try:
-                        models.pop(mid, None)
-                        
-                        # Clean up files
-                        if cleanup_files:
-                            model_path = self.models_path / mid
-                            if model_path.exists():
+                if model_id is not None:
+                    # Original pattern - remove by model_id
+                    if model_id not in models:
+                        return {
+                            "status": "error",
+                            "message": f"Model not found: {model_id}"
+                        }
+                    
+                    # Remove from index
+                    model_info = models.pop(model_id, None)
+                    
+                    # Clean up files if requested
+                    if cleanup_files:
+                        model_path = self.models_path / model_id
+                        if model_path.exists():
+                            try:
                                 shutil.rmtree(model_path)
-                                
-                    except Exception as e:
-                        logger.error(f"Error removing model {mid}: {e}")
-                        success = False
+                            except Exception as e:
+                                logger.warning(f"Error cleaning up model files: {e}")
+                    
+                    # Save updated index
+                    self._save_index(index)
+                    
+                    return {
+                        "status": "success",
+                        "model_id": model_id,
+                        "removed_model": model_info
+                    }
+                    
+                elif model_name is not None:
+                    # BaseModelRegistry pattern - remove by name and version
+                    model_ids_to_remove = []
+                    for mid, model in models.items():
+                        if model.get("name") == model_name:
+                            if version is None or model.get("version") == version:
+                                model_ids_to_remove.append(mid)
+                    
+                    if not model_ids_to_remove:
+                        return False  # Not found
+                    
+                    # Remove all matching models
+                    success = True
+                    for mid in model_ids_to_remove:
+                        try:
+                            models.pop(mid, None)
+                            
+                            # Clean up files
+                            if cleanup_files:
+                                model_path = self.models_path / mid
+                                if model_path.exists():
+                                    shutil.rmtree(model_path)
+                                    
+                        except Exception as e:
+                            logger.error(f"Error removing model {mid}: {e}")
+                            success = False
+                    
+                    # Save updated index
+                    self._save_index(index)
+                    return success
                 
-                # Save updated index
-                self._save_index(index)
-                return success
-            
-            else:
-                # Neither model_id nor model_name provided
-                if 'model_id' in kwargs:
-                    # Handle case where model_id is in kwargs (for compatibility)
-                    return self.remove_model(model_id=kwargs['model_id'], cleanup_files=cleanup_files)
+                else:
+                    # Neither model_id nor model_name provided
+                    if 'model_id' in kwargs:
+                        # Handle case where model_id is in kwargs (for compatibility)
+                        return self.remove_model(model_id=kwargs['model_id'], cleanup_files=cleanup_files)
+                    else:
+                        return False
+                    
+            except Exception as e:
+                logger.error(f"Error removing model: {e}")
+                if model_id is not None:
+                    return {"status": "error", "message": str(e)}
                 else:
                     return False
-                
-        except Exception as e:
-            logger.error(f"Error removing model: {e}")
-            if model_id is not None:
-                return {"status": "error", "message": str(e)}
-            else:
-                return False
