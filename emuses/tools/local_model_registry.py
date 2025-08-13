@@ -15,6 +15,7 @@ from uuid import UUID
 
 from emuses.tools.model_io import ModelIOManager
 from emuses.tools.base_model_registry import BaseModelRegistry
+from emuses.tools.storage_manager import StorageManager
 
 logger = logging.getLogger(__name__)
 
@@ -56,6 +57,9 @@ class LocalModelRegistry(BaseModelRegistry):
         self.registry_path = Path(registry_path)
         self.models_path = self.registry_path / "models"
         self.index_path = self.registry_path / "registry.json"
+        
+        # Initialize storage manager
+        self.storage_manager = StorageManager(self.registry_path)
         
         self._initialize_registry()
         
@@ -545,6 +549,12 @@ class LocalModelRegistry(BaseModelRegistry):
         
         # Use original implementation with validation
         try:
+            # Check storage thresholds before installation
+            storage_warning = self.storage_manager.check_storage_thresholds()
+            if storage_warning and storage_warning.level == "critical":
+                logger.warning(f"Storage warning: {storage_warning.message}")
+                # Don't block installation, but include warning in response
+                
             # Initialize ModelIOManager
             model_io = ModelIOManager()
             
@@ -579,13 +589,28 @@ class LocalModelRegistry(BaseModelRegistry):
             
             logger.info(f"Successfully installed model '{final_name}' with ID {model_id}")
             
-            return {
+            # Check for post-installation storage warnings
+            post_warning = self.storage_manager.check_storage_thresholds()
+            
+            result = {
                 "status": "success",
                 "model_id": model_id,
                 "name": final_name,
                 "model": model_info,
                 "message": f"Model '{final_name}' installed successfully"
             }
+            
+            # Include storage warning in response if present
+            if post_warning:
+                result["storage_warning"] = {
+                    "level": post_warning.level,
+                    "message": post_warning.message,
+                    "usage_percent": post_warning.usage_percent,
+                    "registry_size_mb": post_warning.registry_size_mb,
+                    "available_space_mb": post_warning.available_space_mb
+                }
+                
+            return result
             
         except Exception as e:
             logger.error(f"Error installing model: {e}")

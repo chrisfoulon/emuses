@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 from uuid import UUID, uuid4
 
-from sqlalchemy import and_, or_
+from sqlalchemy import or_, String
 from sqlalchemy.orm import Session
 
 from emuses.multi_user_service.models import (
@@ -397,7 +397,9 @@ class DatabaseModelRegistry:
         self,
         workspace_id: Optional[str] = None,
         include_public: bool = True,
-        filters: Optional[Dict[str, Any]] = None
+        filters: Optional[Dict[str, Any]] = None,
+        limit: Optional[int] = None,
+        offset: Optional[int] = None
     ) -> List[Dict[str, Any]]:
         """List models accessible to the current user.
         
@@ -409,6 +411,10 @@ class DatabaseModelRegistry:
             Whether to include public models
         filters : Dict[str, Any], optional
             Additional filters (type, tags, etc.)
+        limit : int, optional
+            Maximum number of results to return
+        offset : int, optional
+            Number of results to skip for pagination
             
         Returns
         -------
@@ -421,14 +427,16 @@ class DatabaseModelRegistry:
         access_conditions = [ModelRegistry.owner_id == self.current_user.id]
         
         if include_public:
-            access_conditions.append(ModelRegistry.is_public == True)
+            access_conditions.append(ModelRegistry.is_public.is_(True))
         
         # Add workspace access for models in user's workspaces
-        user_workspaces = self.db_session.query(Workspace.id).filter(
+        # Use select() construct to avoid SQLAlchemy warning
+        from sqlalchemy import select
+        user_workspaces_select = select(Workspace.id).where(
             Workspace.owner_id == self.current_user.id
-        ).subquery()
+        )
         
-        access_conditions.append(ModelRegistry.workspace_id.in_(user_workspaces))
+        access_conditions.append(ModelRegistry.workspace_id.in_(user_workspaces_select))
         
         query = query.filter(or_(*access_conditions))
         
@@ -444,6 +452,12 @@ class DatabaseModelRegistry:
                 for tag in filters["tags"]:
                     query = query.filter(ModelRegistry.tags.contains([tag]))
         
+        # Apply database-level pagination if specified
+        if offset is not None:
+            query = query.offset(offset)
+        if limit is not None:
+            query = query.limit(limit)
+            
         models = query.order_by(ModelRegistry.created_at.desc()).all()
         
         # Convert to dictionaries
@@ -471,7 +485,9 @@ class DatabaseModelRegistry:
         self,
         query: str,
         workspace_id: Optional[str] = None,
-        include_public: bool = True
+        include_public: bool = True,
+        limit: Optional[int] = None,
+        offset: Optional[int] = None
     ) -> List[Dict[str, Any]]:
         """Search models by name, description, and tags.
         
@@ -483,53 +499,128 @@ class DatabaseModelRegistry:
             Limit search to specific workspace
         include_public : bool, default=True
             Whether to include public models
+        limit : int, optional
+            Maximum number of results to return
+        offset : int, optional
+            Number of results to skip for pagination
             
         Returns
         -------
         List[Dict[str, Any]]
             List of matching models ordered by relevance
         """
-        # Get base accessible models
-        models = self.list_models(workspace_id=workspace_id, include_public=include_public)
-        
         if not query.strip():
-            return models
+            return self.list_models(
+                workspace_id=workspace_id, 
+                include_public=include_public,
+                limit=limit,
+                offset=offset
+            )
         
-        # Simple text search implementation
+        # Database-level text search for better performance
+        from sqlalchemy import select, func, case
+        from sqlalchemy.sql import literal_column
+        
         query_lower = query.lower()
+        
+        # Build base query with access control (same logic as list_models)
+        db_query = self.db_session.query(ModelRegistry)
+        
+        # Base access control
+        access_conditions = [ModelRegistry.owner_id == self.current_user.id]
+        
+        if include_public:
+            access_conditions.append(ModelRegistry.is_public.is_(True))
+        
+        # Add workspace access for models in user's workspaces
+        user_workspaces_select = select(Workspace.id).where(
+            Workspace.owner_id == self.current_user.id
+        )
+        
+        access_conditions.append(ModelRegistry.workspace_id.in_(user_workspaces_select))
+        
+        db_query = db_query.filter(or_(*access_conditions))
+        
+        # Apply workspace filter if specified
+        if workspace_id:
+            db_query = db_query.filter(ModelRegistry.workspace_id == UUID(workspace_id))
+        
+        # Add text search conditions with relevance scoring
+        search_conditions = []
+        
+        # Name search (highest relevance)
+        search_conditions.append(func.lower(ModelRegistry.name).like(f'%{query_lower}%'))
+        
+        # Description search 
+        search_conditions.append(func.lower(ModelRegistry.description).like(f'%{query_lower}%'))
+        
+        # Model type search
+        search_conditions.append(func.lower(ModelRegistry.model_type).like(f'%{query_lower}%'))
+        
+        # Tag search (using JSON contains for better performance)
+        # Note: This works with PostgreSQL and newer SQLite versions
+        try:
+            # For JSON column search - works with PostgreSQL
+            search_conditions.append(
+                func.lower(func.cast(ModelRegistry.tags, String)).like(f'%{query_lower}%')
+            )
+        except Exception:
+            # Fallback for databases that don't support JSON functions
+            pass
+        
+        # Combine search conditions with OR
+        db_query = db_query.filter(or_(*search_conditions))
+        
+        # Add relevance scoring using CASE statements
+        relevance_score = (
+            case(
+                (func.lower(ModelRegistry.name).like(f'%{query_lower}%'), 10),
+                else_=0
+            ) +
+            case(
+                (func.lower(ModelRegistry.description).like(f'%{query_lower}%'), 5),
+                else_=0
+            ) +
+            case(
+                (func.lower(ModelRegistry.model_type).like(f'%{query_lower}%'), 2),
+                else_=0
+            )
+        ).label('relevance_score')
+        
+        # Order by relevance score and creation date
+        db_query = db_query.add_columns(relevance_score).order_by(
+            relevance_score.desc(),
+            ModelRegistry.created_at.desc()
+        )
+        
+        # Apply database-level pagination if specified
+        if offset is not None:
+            db_query = db_query.offset(offset)
+        if limit is not None:
+            db_query = db_query.limit(limit)
+        
+        # Execute query and get results
+        results = db_query.all()
+        
+        # Convert to dictionaries
         scored_models = []
-        
-        for model in models:
-            score = 0
-            
-            # Name match (highest priority)
-            if query_lower in model["name"].lower():
-                score += 10
-            
-            # Description match
-            if model["description"] and query_lower in model["description"].lower():
-                score += 5
-            
-            # Tag match
-            if model["tags"]:
-                for tag in model["tags"]:
-                    if query_lower in tag.lower():
-                        score += 3
-            
-            # Type match
-            if model["type"] and query_lower in model["type"].lower():
-                score += 2
-            
-            if score > 0:
-                model["relevance_score"] = score
-                scored_models.append(model)
-        
-        # Sort by relevance score
-        scored_models.sort(key=lambda x: x["relevance_score"], reverse=True)
-        
-        # Remove relevance score from results
-        for model in scored_models:
-            del model["relevance_score"]
+        for model, score in results:
+            model_dict = {
+                "model_id": str(model.id),
+                "name": model.name,
+                "version": model.version,
+                "type": model.model_type,
+                "description": model.description,
+                "tags": model.tags,
+                "is_public": model.is_public,
+                "owner_id": str(model.owner_id),
+                "workspace_id": str(model.workspace_id) if model.workspace_id else None,
+                "created_at": model.created_at,
+                "updated_at": model.updated_at,
+                "download_count": model.download_count,
+                "size_mb": round(model.model_size_bytes / 1024 / 1024, 2) if model.model_size_bytes else None
+            }
+            scored_models.append(model_dict)
         
         return scored_models
     

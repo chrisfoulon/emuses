@@ -121,22 +121,22 @@
   - [x] 5.1.1.d: Create comprehensive cache testing (15 tests passing)
   - [x] 5.1.1.e: Add user-isolated cache invalidation and performance validation
 
-- [ ] **Task 5.1.2: Database query optimization** **[IN PROGRESS]**
-  - [ ] 5.1.2.a: Analyze current database indexes and query performance patterns
-  - [ ] 5.1.2.b: Profile slow queries in complex permission scenarios
-  - [ ] 5.1.2.c: Optimize JOIN performance and add strategic indexes
-  - [ ] 5.1.2.d: Measure and validate query performance improvements
+- [x] **Task 5.1.2: Database query optimization** **[COMPLETED]**
+  - [x] 5.1.2.a: Analyze current database indexes and query performance patterns
+  - [x] 5.1.2.b: Profile slow queries in complex permission scenarios - Created performance test framework with 1000+ models
+  - [x] 5.1.2.c: Optimize list_models() query with proper select() constructs, and search_models() with database-level text search
+  - [x] 5.1.2.d: Measure and validate query performance improvements - All performance targets validated
 
-- [ ] **Task 5.1.3: API response optimization**
-  - [ ] 5.1.3.a: Implement pagination for large result sets
-  - [ ] 5.1.3.b: Add response compression for model listings
-  - [ ] 5.1.3.c: Optimize JSON serialization for model metadata
-  - [ ] 5.1.3.d: Test API response times with large model catalogs
+- [x] **Task 5.1.3: API response optimization** **[COMPLETED]**
+  - [x] 5.1.3.a: Implement pagination for large result sets - Added offset/limit support to API endpoints and database layer
+  - [x] 5.1.3.b: Add response compression for model listings - Created compression middleware with model-optimized settings
+  - [x] 5.1.3.c: Optimize JSON serialization for model metadata - Built field selection and optimized serialization system
+  - [x] 5.1.3.d: Test API response times with large model catalogs - Comprehensive performance validation suite (15 tests)
 
-- [ ] **Task 4.5.1: Storage threshold warnings and alerts**
-  - [ ] 4.5.1.a: Implement configurable storage thresholds (80% warn, 95% critical)
-  - [ ] 4.5.1.b: Add warning system to registry operations and CLI commands
-  - [ ] 4.5.1.c: Test warning triggers and user interaction flows
+- [x] **Task 4.5.1: Storage threshold warnings and alerts** **[COMPLETED]**
+  - [x] 4.5.1.a: Implement configurable storage thresholds (80% warn, 95% critical)
+  - [x] 4.5.1.b: Add warning system to registry operations and CLI commands
+  - [x] 4.5.1.c: Test warning triggers and user interaction flows
 
 - [ ] **Task 4.5.2: Enhanced storage visibility and reporting**
   - [ ] 4.5.2.a: Add storage breakdown by model and optimization suggestions  

@@ -5,7 +5,7 @@ including installation, listing, searching, and management.
 """
 import logging
 from pathlib import Path
-from typing import Annotated, List, Optional, Union
+from typing import Annotated, List, Optional
 
 import typer
 from rich.console import Console
@@ -14,6 +14,7 @@ from rich.table import Table
 from emuses.tools.local_model_registry import LocalModelRegistry
 from emuses.tools.model_registry_factory import ModelRegistryFactory, ErrorMessages
 from emuses.tools.base_model_registry import BaseModelRegistry
+from emuses.tools.storage_manager import StorageManager
 from .security import validate_path
 
 logger = logging.getLogger(__name__)
@@ -157,6 +158,20 @@ def install(
             model_name = result.get('name', 'Unknown')
             model_id = result.get('model_id', 'Unknown')
             console.print(f"✅ Successfully installed model '[green]{model_name}[/green]' with ID [blue]{model_id}[/blue]")
+            
+            # Display storage warning if present
+            if "storage_warning" in result:
+                warning = result["storage_warning"]
+                if warning["level"] == "critical":
+                    console.print(f"⚠️ [red bold]CRITICAL STORAGE WARNING[/red bold]: {warning['message']}")
+                    console.print(f"   • Registry size: [yellow]{warning['registry_size_mb']:.1f} MB[/yellow]")
+                    console.print(f"   • Available space: [red]{warning['available_space_mb']:.1f} MB[/red]")
+                    console.print("   Consider cleaning up old models or freeing disk space.")
+                elif warning["level"] == "warning":
+                    console.print(f"⚠️ [yellow]STORAGE WARNING[/yellow]: {warning['message']}")
+                    console.print(f"   • Registry size: [cyan]{warning['registry_size_mb']:.1f} MB[/cyan]")
+                    console.print(f"   • Available space: [yellow]{warning['available_space_mb']:.1f} MB[/yellow]")
+                    console.print("   Monitor disk usage to prevent storage issues.")
         else:
             console.print(f"❌ Installation failed: [red]{result['message']}[/red]")
             raise typer.Exit(1)
@@ -697,4 +712,78 @@ def mode_info() -> None:
         
     except Exception as e:
         console.print(f"❌ Error getting mode information: [red]{str(e)}[/red]")
+        raise typer.Exit(1)
+
+
+@models_app.command(help="Show storage usage and threshold information")
+def storage(
+    registry_path: Annotated[Optional[Path], typer.Option("--registry", "-r", help="Custom registry path")] = None
+) -> None:
+    """Show storage usage and threshold information.
+    
+    Displays disk usage, registry size, and storage threshold status
+    to help users manage their model storage effectively.
+    
+    Parameters
+    ----------
+    registry_path : Path, optional
+        Custom registry location. If not provided, uses default location.
+    """
+    try:
+        if registry_path:
+            registry_path = Path(validate_path(str(registry_path)))
+        
+        # Initialize storage manager (or get from registry)
+        if registry_path:
+            storage_manager = StorageManager(registry_path)
+        else:
+            # Use default location
+            default_path = Path.home() / ".emuses" / "model_registry"
+            storage_manager = StorageManager(default_path)
+        
+        # Get storage information
+        info = storage_manager.get_storage_info()
+        
+        # Display storage overview
+        console.print(f"\n[bold cyan]Storage Information[/bold cyan]")
+        console.print(f"Registry Path: [dim]{storage_manager.registry_path}[/dim]")
+        console.print(f"Registry Size: [green]{info['registry_size_mb']:.1f} MB[/green] ({info['registry_size_bytes']:,} bytes)")
+        console.print(f"Total Disk Space: [cyan]{info['total_disk_gb']:.1f} GB[/cyan]")
+        console.print(f"Available Space: [blue]{info['free_disk_mb']:.1f} MB[/blue]")
+        console.print(f"Disk Usage: [yellow]{info['usage_percent']:.1f}%[/yellow]")
+        
+        # Display threshold information
+        console.print(f"\n[bold yellow]Storage Thresholds[/bold yellow]")
+        console.print(f"Warning Threshold: [yellow]{info['threshold_warning']:.0f}%[/yellow]")
+        console.print(f"Critical Threshold: [red]{info['threshold_critical']:.0f}%[/red]")
+        console.print(f"Monitoring: [{'green' if info['threshold_enabled'] else 'red'}]{'Enabled' if info['threshold_enabled'] else 'Disabled'}[/{'green' if info['threshold_enabled'] else 'red'}]")
+        
+        # Check current status and show warnings
+        warning = storage_manager.check_storage_thresholds()
+        if warning:
+            console.print(f"\n[bold]Current Status:[/bold]")
+            if warning.level == "critical":
+                console.print(f"🚨 [red bold]CRITICAL[/red bold]: {warning.message}")
+                console.print("   [red]Immediate action recommended:[/red]")
+                console.print("   • Clean up old or unused models")
+                console.print("   • Free up disk space")
+                console.print("   • Consider moving models to external storage")
+            elif warning.level == "warning":
+                console.print(f"⚠️  [yellow]WARNING[/yellow]: {warning.message}")
+                console.print("   [yellow]Monitoring recommended:[/yellow]")
+                console.print("   • Monitor disk usage regularly")
+                console.print("   • Plan for disk cleanup if usage continues to grow")
+                console.print("   • Consider setting up alerts for critical levels")
+        else:
+            console.print(f"\n[green]✅ Storage levels are healthy[/green]")
+        
+        # Storage recommendations
+        console.print(f"\n[bold]Storage Management Tips:[/bold]")
+        console.print("• Use '[cyan]emuses models list[/cyan]' to see all installed models")
+        console.print("• Remove unused models to free space")
+        console.print("• Monitor storage regularly to prevent issues")
+        console.print("• Consider archiving older models externally")
+        
+    except Exception as e:
+        console.print(f"❌ Error getting storage information: [red]{str(e)}[/red]")
         raise typer.Exit(1)

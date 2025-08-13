@@ -283,6 +283,7 @@ def get_model_registry_router() -> APIRouter:
         model_type: Optional[str] = Query(None, description="Filter by model type"),
         tags: Optional[List[str]] = Query(None, description="Filter by tags"),
         limit: int = Query(50, le=100, description="Maximum number of results"),
+        offset: int = Query(0, ge=0, description="Number of results to skip for pagination"),
         current_user: User = Depends(fastapi_users.current_user(active=True)),
         db: Session = Depends(get_db)
     ):
@@ -303,6 +304,8 @@ def get_model_registry_router() -> APIRouter:
             Filter by tags (all must be present)
         limit : int, default=50
             Maximum number of results (max 100)
+        offset : int, default=0
+            Number of results to skip for pagination
         current_user : User
             Current authenticated user
         db : Session
@@ -323,15 +326,14 @@ def get_model_registry_router() -> APIRouter:
             if tags:
                 filters["tags"] = tags
             
-            # Get models
+            # Get models with database-level pagination
             models = registry.list_models(
                 workspace_id=workspace_id,
                 include_public=include_public,
-                filters=filters
+                filters=filters,
+                limit=limit,
+                offset=offset
             )
-            
-            # Apply limit
-            models = models[:limit]
             
             return [ModelResponse(**model) for model in models]
             
@@ -345,6 +347,7 @@ def get_model_registry_router() -> APIRouter:
         workspace_id: Optional[str] = Query(None, description="Filter by workspace"),
         include_public: bool = Query(True, description="Include public models"),
         limit: int = Query(50, le=100, description="Maximum number of results"),
+        offset: int = Query(0, ge=0, description="Number of results to skip for pagination"),
         current_user: User = Depends(fastapi_users.current_user(active=True)),
         db: Session = Depends(get_db)
     ):
@@ -362,6 +365,8 @@ def get_model_registry_router() -> APIRouter:
             Whether to include public models
         limit : int, default=50
             Maximum number of results (max 100)
+        offset : int, default=0
+            Number of results to skip for pagination
         current_user : User
             Current authenticated user
         db : Session
@@ -375,15 +380,14 @@ def get_model_registry_router() -> APIRouter:
         try:
             registry = DatabaseModelRegistry(db, current_user)
             
-            # Search models
+            # Search models with database-level pagination
             models = registry.search_models(
                 query=query,
                 workspace_id=workspace_id,
-                include_public=include_public
+                include_public=include_public,
+                limit=limit,
+                offset=offset
             )
-            
-            # Apply limit
-            models = models[:limit]
             
             return [ModelResponse(**model) for model in models]
             
