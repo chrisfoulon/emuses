@@ -10,10 +10,16 @@ from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, Query
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel
 
 from emuses.tools.model_registry_health import get_health_checker
 
 logger = logging.getLogger(__name__)
+
+
+class RecoveryTestRequest(BaseModel):
+    """Request model for recovery test execution."""
+    test_type: str
 
 
 def get_registry_health_router() -> APIRouter:
@@ -364,6 +370,223 @@ def get_registry_health_router() -> APIRouter:
                 },
                 "essential_operations_priority": ["health_checks"],
                 "disabled_background_tasks": ["all_tasks"],
+                "error": str(e),
+                "timestamp": datetime.now().isoformat() + "Z"
+            }
+
+    @router.get("/disaster-recovery/backup-status", response_model=Dict[str, Any])
+    async def disaster_recovery_backup_status():
+        """Get backup validation status and integrity information.
+
+        Returns
+        -------
+        Dict[str, Any]
+            Backup validation status and recovery objectives
+        """
+        try:
+            health_checker = get_health_checker()
+            return health_checker.validate_backups()
+        except Exception as e:
+            logger.error(f"Error retrieving backup status: {str(e)}")
+            return {
+                "backup_status": "error",
+                "backup_integrity": "unknown",
+                "backup_locations": {},
+                "error": str(e),
+                "timestamp": datetime.now().isoformat() + "Z"
+            }
+
+    @router.get("/disaster-recovery/restoration-plan", response_model=Dict[str, Any])
+    async def disaster_recovery_restoration_plan():
+        """Get service restoration plan with dependency-aware ordering.
+
+        Returns
+        -------
+        Dict[str, Any]
+            Detailed restoration plan with priority ordering
+        """
+        try:
+            health_checker = get_health_checker()
+            return health_checker.get_restoration_plan()
+        except Exception as e:
+            logger.error(f"Error retrieving restoration plan: {str(e)}")
+            return {
+                "restoration_priority": [],
+                "dependency_requirements": {},
+                "total_estimated_time_minutes": 0,
+                "parallel_restoration_possible": False,
+                "error": str(e),
+                "timestamp": datetime.now().isoformat() + "Z"
+            }
+
+    @router.get("/disaster-recovery/procedure", response_model=Dict[str, Any])
+    async def disaster_recovery_procedure(
+        failure_type: str = Query(..., description="Type of failure (database_corruption, local_storage_failure, complete_system_failure, configuration_loss)")
+    ):
+        """Get specific recovery procedure based on failure type.
+
+        Parameters
+        ----------
+        failure_type : str
+            Type of failure to get recovery procedure for
+
+        Returns
+        -------
+        Dict[str, Any]
+            Detailed recovery procedure for the specific failure type
+        """
+        try:
+            health_checker = get_health_checker()
+            return health_checker.get_recovery_procedure(failure_type)
+        except Exception as e:
+            logger.error(f"Error retrieving recovery procedure: {str(e)}")
+            return {
+                "procedure_name": "error_procedure",
+                "steps": ["Contact technical support"],
+                "estimated_time_minutes": 0,
+                "automation_available": False,
+                "error": str(e),
+                "timestamp": datetime.now().isoformat() + "Z"
+            }
+
+    @router.get("/disaster-recovery/emergency-contacts", response_model=Dict[str, Any])
+    async def disaster_recovery_emergency_contacts():
+        """Get emergency contact information for disaster scenarios.
+
+        Returns
+        -------
+        Dict[str, Any]
+            Emergency contact information and escalation procedures
+        """
+        try:
+            health_checker = get_health_checker()
+            return health_checker.get_emergency_contacts()
+        except Exception as e:
+            logger.error(f"Error retrieving emergency contacts: {str(e)}")
+            return {
+                "emergency_contacts": [],
+                "escalation_matrix": {},
+                "communication_channels": {},
+                "error": str(e),
+                "timestamp": datetime.now().isoformat() + "Z"
+            }
+
+    @router.get("/disaster-recovery/business-impact", response_model=Dict[str, Any])
+    async def disaster_recovery_business_impact():
+        """Assess business impact of current service status.
+
+        Returns
+        -------
+        Dict[str, Any]
+            Business impact assessment and risk evaluation
+        """
+        try:
+            health_checker = get_health_checker()
+            return health_checker.assess_business_impact()
+        except Exception as e:
+            logger.error(f"Error assessing business impact: {str(e)}")
+            return {
+                "impact_assessment": {
+                    "affected_users": 0,
+                    "total_users": 0,
+                    "impact_level": "unknown"
+                },
+                "sla_impact": {
+                    "current_availability": "unknown",
+                    "sla_breach_risk": "unknown",
+                    "regulatory_compliance": "unknown"
+                },
+                "business_continuity": {
+                    "essential_operations": "unknown",
+                    "data_integrity": "unknown",
+                    "backup_systems": "unknown"
+                },
+                "error": str(e),
+                "timestamp": datetime.now().isoformat() + "Z"
+            }
+
+    @router.post("/disaster-recovery/run-test", response_model=Dict[str, Any])
+    async def disaster_recovery_run_test(request: RecoveryTestRequest):
+        """Execute disaster recovery test procedure.
+
+        Parameters
+        ----------
+        request : RecoveryTestRequest
+            Request containing test type to execute
+
+        Returns
+        -------
+        Dict[str, Any]
+            Recovery test execution results
+        """
+        try:
+            health_checker = get_health_checker()
+            return health_checker.execute_recovery_test(request.test_type)
+        except Exception as e:
+            logger.error(f"Error executing recovery test: {str(e)}")
+            return {
+                "test_name": "Error",
+                "test_results": {"error": str(e)},
+                "success": False,
+                "test_session_id": "error",
+                "execution_time": datetime.now().isoformat() + "Z",
+                "test_type": request.test_type,
+                "error": str(e),
+                "timestamp": datetime.now().isoformat() + "Z"
+            }
+
+    @router.get("/disaster-recovery/progress/{session_id}", response_model=Dict[str, Any])
+    async def disaster_recovery_progress(session_id: str):
+        """Get recovery operation progress for monitoring.
+
+        Parameters
+        ----------
+        session_id : str
+            Recovery session identifier
+
+        Returns
+        -------
+        Dict[str, Any]
+            Recovery progress information and status
+        """
+        try:
+            health_checker = get_health_checker()
+            return health_checker.get_recovery_progress(session_id)
+        except Exception as e:
+            logger.error(f"Error retrieving recovery progress: {str(e)}")
+            return {
+                "session_id": session_id,
+                "recovery_status": "error",
+                "completion_percentage": 0,
+                "current_step": "error",
+                "steps_completed": [],
+                "estimated_completion": "unknown",
+                "last_update": datetime.now().isoformat() + "Z",
+                "error": str(e),
+                "timestamp": datetime.now().isoformat() + "Z"
+            }
+
+    @router.get("/disaster-recovery/post-recovery-validation", response_model=Dict[str, Any])
+    async def disaster_recovery_post_recovery_validation():
+        """Validate system health and functionality after recovery.
+
+        Returns
+        -------
+        Dict[str, Any]
+            Post-recovery validation results and system status
+        """
+        try:
+            health_checker = get_health_checker()
+            return health_checker.validate_post_recovery()
+        except Exception as e:
+            logger.error(f"Error performing post-recovery validation: {str(e)}")
+            return {
+                "validation_status": "failed",
+                "validation_checks": {},
+                "system_operational": False,
+                "performance_metrics": {},
+                "recommendations": ["Contact technical support"],
+                "validation_timestamp": datetime.now().isoformat() + "Z",
                 "error": str(e),
                 "timestamp": datetime.now().isoformat() + "Z"
             }
