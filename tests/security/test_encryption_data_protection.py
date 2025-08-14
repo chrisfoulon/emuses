@@ -851,13 +851,14 @@ class TestTLSSSLSecurity:
         # Configure security settings
         context.check_hostname = True
         context.verify_mode = ssl.CERT_REQUIRED
+        
+        # Set minimum TLS version using modern approach (replaces deprecated OP_NO_TLS* flags)
         context.minimum_version = ssl.TLSVersion.TLSv1_2
         
-        # Disable insecure protocols and ciphers (some may already be disabled by default)
+        # Configure additional security options
         try:
+            # Keep SSLv3 flag as it's still valid (not deprecated)
             context.options |= ssl.OP_NO_SSLv3
-            context.options |= ssl.OP_NO_TLSv1
-            context.options |= ssl.OP_NO_TLSv1_1
             context.options |= ssl.OP_CIPHER_SERVER_PREFERENCE
         except AttributeError:
             # Some options may not be available in all SSL versions
@@ -868,13 +869,17 @@ class TestTLSSSLSecurity:
         assert context.verify_mode == ssl.CERT_REQUIRED
         assert context.minimum_version == ssl.TLSVersion.TLSv1_2
         
-        # Test option flags (SSLv2 may be disabled by default and have value 0)
+        # Test security configuration using modern approach
+        # Verify minimum version excludes insecure TLS versions (modern approach)
+        assert context.minimum_version >= ssl.TLSVersion.TLSv1_2
+        
+        # Test remaining option flags (SSLv3 flag is still valid)
         if hasattr(ssl, 'OP_NO_SSLv3'):
             assert context.options & ssl.OP_NO_SSLv3
-        if hasattr(ssl, 'OP_NO_TLSv1'):
-            assert context.options & ssl.OP_NO_TLSv1
-        if hasattr(ssl, 'OP_NO_TLSv1_1'):
-            assert context.options & ssl.OP_NO_TLSv1_1
+        
+        # Verify cipher preferences are set
+        if hasattr(ssl, 'OP_CIPHER_SERVER_PREFERENCE'):
+            assert context.options & ssl.OP_CIPHER_SERVER_PREFERENCE
 
     def _validate_tls_version(self, version):
         """Validate TLS version security."""

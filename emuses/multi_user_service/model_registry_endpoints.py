@@ -15,7 +15,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
 
-from emuses.multi_user_service.auth import fastapi_users
+from emuses.multi_user_service.auth import fastapi_users, get_current_active_user
 from emuses.multi_user_service.database import get_db
 from emuses.multi_user_service.models import User
 from emuses.tools.database_model_registry import DatabaseModelRegistry
@@ -188,7 +188,7 @@ def get_model_registry_router() -> APIRouter:
         is_public: bool = Form(False),
         tags: Optional[str] = Form(None, description="Comma-separated tags"),
         description: Optional[str] = Form(None),
-        current_user: User = Depends(fastapi_users.current_user(active=True)),
+        current_user: User = Depends(get_current_active_user),
         db: Session = Depends(get_db)
     ):
         """Register a new model in the registry.
@@ -285,7 +285,7 @@ def get_model_registry_router() -> APIRouter:
         tags: Optional[List[str]] = Query(None, description="Filter by tags"),
         limit: int = Query(50, le=100, description="Maximum number of results"),
         offset: int = Query(0, ge=0, description="Number of results to skip for pagination"),
-        current_user: User = Depends(fastapi_users.current_user(active=True)),
+        current_user: User = Depends(get_current_active_user),
         db: Session = Depends(get_db)
     ):
         """List models accessible to the current user.
@@ -349,7 +349,7 @@ def get_model_registry_router() -> APIRouter:
         include_public: bool = Query(True, description="Include public models"),
         limit: int = Query(50, le=100, description="Maximum number of results"),
         offset: int = Query(0, ge=0, description="Number of results to skip for pagination"),
-        current_user: User = Depends(fastapi_users.current_user(active=True)),
+        current_user: User = Depends(get_current_active_user),
         db: Session = Depends(get_db)
     ):
         """Search models by name, description, and tags.
@@ -399,7 +399,7 @@ def get_model_registry_router() -> APIRouter:
     @router.get("/{model_id}", response_model=Dict[str, Any])
     async def get_model_info(
         model_id: str,
-        current_user: User = Depends(fastapi_users.current_user(active=True)),
+        current_user: User = Depends(get_current_active_user),
         db: Session = Depends(get_db)
     ):
         """Get detailed information about a specific model.
@@ -446,7 +446,7 @@ def get_model_registry_router() -> APIRouter:
     async def remove_model(
         model_id: str,
         cleanup_files: bool = Query(True, description="Whether to remove model files"),
-        current_user: User = Depends(fastapi_users.current_user(active=True)),
+        current_user: User = Depends(get_current_active_user),
         db: Session = Depends(get_db)
     ):
         """Remove a model from the registry.
@@ -501,7 +501,7 @@ def get_model_registry_router() -> APIRouter:
         model_id: str,
         download_method: str = Query("api", description="Download method"),
         user_agent: Optional[str] = Query(None, description="User agent string"),
-        current_user: User = Depends(fastapi_users.current_user(active=True)),
+        current_user: User = Depends(get_current_active_user),
         db: Session = Depends(get_db)
     ):
         """Track a model download for analytics.
@@ -558,7 +558,7 @@ def get_model_registry_router() -> APIRouter:
     @router.get("/{model_id}/permissions", response_model=Dict[str, Any])
     async def list_model_permissions(
         model_id: str,
-        current_user: User = Depends(fastapi_users.current_user(active=True)),
+        current_user: User = Depends(get_current_active_user),
         db: Session = Depends(get_db)
     ):
         """List all permissions for a model.
@@ -610,7 +610,7 @@ def get_model_registry_router() -> APIRouter:
     async def grant_model_access(
         model_id: str,
         request: AccessGrantRequest,
-        current_user: User = Depends(fastapi_users.current_user(active=True)),
+        current_user: User = Depends(get_current_active_user),
         db: Session = Depends(get_db)
     ):
         """Grant access to a model for a user.
@@ -671,7 +671,7 @@ def get_model_registry_router() -> APIRouter:
     async def revoke_model_access(
         model_id: str,
         user_id: str,
-        current_user: User = Depends(fastapi_users.current_user(active=True)),
+        current_user: User = Depends(get_current_active_user),
         db: Session = Depends(get_db)
     ):
         """Revoke access to a model for a user.
@@ -727,7 +727,7 @@ def get_model_registry_router() -> APIRouter:
     async def set_model_public_status(
         model_id: str,
         is_public: bool = Query(..., description="Whether to make model public"),
-        current_user: User = Depends(fastapi_users.current_user(active=True)),
+        current_user: User = Depends(get_current_active_user),
         db: Session = Depends(get_db)
     ):
         """Change public status of a model.
