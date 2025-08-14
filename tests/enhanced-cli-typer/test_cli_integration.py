@@ -44,8 +44,8 @@ class IntegrationTestHelper:
         """Initialize the integration test helper."""
         self.temp_dir = None
         self.test_data_dir = None
-        self.legacy_cli_path = Path('emuses/scripts/main.py')
-        self.new_cli_path = Path('emuses/cli/main.py')
+        # Legacy scripts archived - only use production CLI interface
+        self.cli_module = 'emuses.cli'
         
     def setup_test_environment(self):
         """
@@ -107,7 +107,7 @@ subject3,3.0,4.0,5.0
         try:
             # Run legacy CLI command
             result = subprocess.run([
-                sys.executable, str(self.legacy_cli_path)
+                sys.executable, '-m', self.cli_module
             ] + command_args, 
             capture_output=True, 
             text=True, 

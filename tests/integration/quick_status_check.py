@@ -72,7 +72,7 @@ async def quick_test():
             output_dir.mkdir()
             
             cmd = [
-                'python', 'emuses/scripts/main.py', 'full',
+                'python', '-m', 'emuses.cli', 'full',
                 str(output_dir),
                 str(features_file),
                 '--columns_are_features',

@@ -35,7 +35,7 @@ class RealWorldIntegrationTest:
     # Real-world CLI command pattern for integration testing
     # Based on actual EMUSES production usage
     CLI_COMMAND_TEMPLATE = """
-    python "{script_path}" full \
+    python -m emuses.cli full \
       "{output_folder}" \
       "{features_train}" \
       --columns_are_features \
@@ -58,7 +58,6 @@ class RealWorldIntegrationTest:
     # Default parameters for integration testing
     # Based on the actual real-world command
     DEFAULT_PARAMS = {
-        'script_path': 'emuses/scripts/main.py',
         'umap_trials': 10,
         'hdbscan_trials': 5,
         'hdbscan_jobs': 16,
@@ -69,7 +68,6 @@ class RealWorldIntegrationTest:
 
     # CI-friendly parameters (reduced for speed)
     CI_PARAMS = {
-        'script_path': 'emuses/scripts/main.py',
         'umap_trials': 3,
         'hdbscan_trials': 2,
         'hdbscan_jobs': 4,

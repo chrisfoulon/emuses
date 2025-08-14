@@ -299,6 +299,63 @@ class DatabaseModelRegistry:
         user_path.mkdir(exist_ok=True)
         return user_path
 
+    def _calculate_manifest_hash(self, model_path: Path) -> str:
+        """Calculate hash of the model manifest file.
+        
+        Parameters
+        ----------
+        model_path : Path
+            Path to model directory
+        
+        Returns
+        -------
+        str
+            SHA-256 hash of manifest or "no-manifest" if not found
+        """
+        manifest_path = model_path / "model_manifest.json"
+        
+        if not manifest_path.exists():
+            return "no-manifest"
+        
+        try:
+            with open(manifest_path, 'rb') as f:
+                manifest_data = f.read()
+            
+            hasher = hashlib.sha256()
+            hasher.update(manifest_data)
+            return hasher.hexdigest()
+            
+        except Exception as e:
+            logger.warning(f"Failed to calculate manifest hash: {e}")
+            return "error-calculating-hash"
+
+    def _calculate_directory_size(self, directory_path: Path) -> int:
+        """Calculate total size of directory in bytes.
+        
+        Parameters
+        ----------
+        directory_path : Path
+            Path to directory
+        
+        Returns
+        -------
+        int
+            Total size in bytes, 0 if directory doesn't exist
+        """
+        if not directory_path.exists() or not directory_path.is_dir():
+            return 0
+        
+        total_size = 0
+        try:
+            for file_path in directory_path.rglob("*"):
+                if file_path.is_file():
+                    total_size += file_path.stat().st_size
+        except Exception as e:
+            logger.warning(f"Failed to calculate directory size for {directory_path}: {e}")
+            return 0
+        
+        return total_size
+
     def register_model(
         self,
         model_path: Path,
@@ -574,8 +631,12 @@ class DatabaseModelRegistry:
                 query = query.filter(ModelRegistry.model_type == filters["type"])
 
             if "tags" in filters:
+                # For JSON array tag filtering, convert the tags array to string and search
+                from sqlalchemy import func
                 for tag in filters["tags"]:
-                    query = query.filter(ModelRegistry.tags.contains([tag]))
+                    # Convert JSON array to string and search for the tag
+                    # This works with SQLite and other databases
+                    query = query.filter(func.cast(ModelRegistry.tags, String).like(f'%"{tag}"%'))
 
         # Apply database-level pagination if specified
         if offset is not None:
@@ -852,6 +913,64 @@ class DatabaseModelRegistry:
             if access_grant.expires_at is None or access_grant.expires_at > datetime.utcnow():
                 return True
 
+        return False
+
+    def _check_model_access(self, model: ModelRegistry, access_level: str) -> bool:
+        """Check if current user has specific access level to a model.
+        
+        Parameters
+        ----------
+        model : ModelRegistry
+            Model record to check
+        access_level : str
+            Required access level: "read", "write", "admin", or "owner"
+        
+        Returns
+        -------
+        bool
+            True if user has the required access level
+        """
+        # Owner has all access levels
+        if model.owner_id == self.current_user.id:
+            return True
+        
+        # For non-owners, check specific access levels
+        if access_level == "owner":
+            # Only the actual owner has owner access
+            return False
+        
+        # Check if user can access the model at all
+        if not self._can_access_model(model):
+            return False
+        
+        # For accessible models, determine access level based on relationship
+        if model.is_public:
+            # Public models: read access only for non-owners
+            return access_level == "read"
+        
+        # Workspace models: check if user is workspace owner
+        if model.workspace_id:
+            workspace = self.db_session.query(Workspace).filter(
+                Workspace.id == model.workspace_id,
+                Workspace.owner_id == self.current_user.id
+            ).first()
+            if workspace:
+                # Workspace owners have admin access to workspace models
+                return access_level in ["read", "write", "admin"]
+        
+        # Check explicit access grants
+        access_grant = self.db_session.query(ModelAccess).filter(
+            ModelAccess.model_id == model.id,
+            ModelAccess.user_id == self.current_user.id
+        ).first()
+        
+        if access_grant:
+            # Check if access has expired
+            if access_grant.expires_at is None or access_grant.expires_at > datetime.utcnow():
+                # TODO: Check access grant level when ModelAccess model supports it
+                # For now, grants provide read access
+                return access_level == "read"
+        
         return False
 
     def remove_model(self, model_id: str, cleanup_files: bool = True) -> Dict[str, Any]:
@@ -1156,6 +1275,72 @@ class DatabaseModelRegistry:
             logger.debug(f"Cached get_model_info result: {cache_key}")
 
         return result
+
+    def get_registry_stats(self) -> Dict[str, Any]:
+        """Get comprehensive registry statistics.
+        
+        Returns statistics including model counts, types, storage usage,
+        and download metrics for the current user's accessible models.
+        
+        Returns
+        -------
+        Dict[str, Any]
+            Registry statistics dictionary
+        """
+        try:
+            # Get all accessible models for the user
+            models = self.list_models()
+            
+            if not models:
+                return {
+                    "user_models": 0,
+                    "accessible_models": 0,
+                    "storage_usage_bytes": 0,
+                    "storage_usage_mb": 0.0,
+                    "total_downloads": 0,
+                    "model_types": {}
+                }
+            
+            # Calculate statistics
+            user_models = sum(1 for m in models if m["owner_id"] == str(self.current_user.id))
+            accessible_models = len(models)
+            
+            # Calculate storage usage
+            storage_bytes = sum(m.get("size_mb", 0) * 1024 * 1024 for m in models 
+                              if m["owner_id"] == str(self.current_user.id) and m.get("size_mb"))
+            storage_mb = storage_bytes / (1024 * 1024)
+            
+            # Calculate total downloads
+            total_downloads = sum(m.get("download_count", 0) for m in models 
+                                if m["owner_id"] == str(self.current_user.id))
+            
+            # Count by model types
+            model_types = {}
+            for model in models:
+                if model["owner_id"] == str(self.current_user.id):
+                    model_type = model.get("type", "unknown")
+                    model_types[model_type] = model_types.get(model_type, 0) + 1
+            
+            return {
+                "user_models": user_models,
+                "accessible_models": accessible_models,
+                "storage_usage_bytes": int(storage_bytes),
+                "storage_usage_mb": round(storage_mb, 1),
+                "total_downloads": total_downloads,
+                "model_types": model_types
+            }
+            
+        except Exception as e:
+            logger.error(f"Failed to get registry stats: {e}")
+            return {
+                "error": str(e),
+                "user_models": 0,
+                "accessible_models": 0,
+                "storage_usage_bytes": 0,
+                "storage_usage_mb": 0.0,
+                "total_downloads": 0,
+                "model_types": {}
+            }
 
     def register_model_with_cache_invalidation(
         self,

@@ -769,7 +769,7 @@ class TestOWASPA07AuthenticationFailures:
 
         # Verify token is sufficiently random and long
         assert len(session_token) >= 32
-        assert session_token.isalnum() or '-' in session_token
+        assert session_token.replace('_', '').replace('-', '').isalnum()
 
         # Test session expiration
         assert self._check_session_expiry(session_token, max_age_minutes=30)

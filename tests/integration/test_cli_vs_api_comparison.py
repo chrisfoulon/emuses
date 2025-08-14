@@ -103,7 +103,7 @@ class CLIvsAPIComparison:
         
         # Build CLI command
         cmd = f"""
-        python emuses/scripts/main.py full \
+        python -m emuses.cli full \
           "{self.cli_output_dir}" \
           "{data_files['features_file']}" \
           --columns_are_features \

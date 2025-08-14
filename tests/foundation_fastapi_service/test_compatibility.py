@@ -2,14 +2,16 @@
 
 #!/usr/bin/env python3
 """
-Backward Compatibility Testing
+Production Interface Compatibility Testing
 
-Tests backward compatibility aspects of the FastAPI service including:
-- CLI interface unchanged (python main.py full continues working)
+Tests production interface compatibility including:
+- CLI interface (python -m emuses.cli continues working)
 - Python imports unchanged (from emuses.pipelines import EMUSESPipeline)
 - Context pattern preservation (exact dictionary passing between stages)
 - Computational result equivalence (API vs CLI produces identical outputs)
 - API/CLI unification via EMUSESPipeline integration
+
+Note: Legacy scripts have been archived. Tests focus on production interfaces only.
 """
 
 import copy
@@ -58,17 +60,17 @@ def test_data_files():
 class TestCLIInterface:
     """Test CLI interface backward compatibility."""
 
-    def test_cli_main_script_exists(self):
-        """Test that the main CLI script exists and is accessible."""
-        main_script = project_root / "emuses" / "scripts" / "main.py"
-        assert main_script.exists(), "emuses/scripts/main.py script should exist"
-        assert main_script.is_file(), "main.py should be a file"
+    def test_cli_module_accessible(self):
+        """Test that the CLI module is accessible via python -m emuses.cli."""
+        cli_module = project_root / "emuses" / "cli" / "main.py"
+        assert cli_module.exists(), "emuses/cli/main.py should exist for module execution"
+        assert cli_module.is_file(), "CLI main.py should be a file"
 
     def test_cli_module_execution(self):
-        """Test that CLI can be executed via python -m emuses.scripts.main."""
+        """Test that CLI can be executed via python -m emuses.cli."""
         try:
             result = subprocess.run(
-                [sys.executable, "-m", "emuses.scripts.main", "--help"],
+                [sys.executable, "-m", "emuses.cli", "--help"],
                 cwd=project_root,
                 capture_output=True,
                 text=True,
@@ -92,7 +94,7 @@ class TestCLIInterface:
         try:
             # Try direct script execution first
             result = subprocess.run(
-                [sys.executable, str(project_root / "emuses" / "scripts" / "main.py"), "--help"],
+                [sys.executable, "-m", "emuses.cli", "--help"],
                 cwd=project_root,
                 capture_output=True,
                 text=True,
@@ -117,7 +119,7 @@ class TestCLIInterface:
             # Test with minimal required arguments using module execution
             result = subprocess.run(
                 [
-                    sys.executable, "-m", "emuses.scripts.main", "full",
+                    sys.executable, "-m", "emuses.cli", "full",
                     test_data_files['input_file'],  # input_dataset positional arg
                     test_data_files['output_dir'],  # output_folder positional arg
                     "--scores", test_data_files['scores_file'],
@@ -447,13 +449,13 @@ class TestRealWorldDatasetCompatibility:
 
     def test_cli_argument_structure(self):
         """Test CLI argument structure without executing the CLI."""
-        main_script = project_root / "emuses" / "scripts" / "main.py"
+        cli_module = project_root / "emuses" / "cli" / "main.py"
 
-        if not main_script.exists():
-            pytest.skip("Main CLI script not found")
+        if not cli_module.exists():
+            pytest.skip("CLI module not found")
 
-        # Read the CLI script to check argument structure
-        with open(main_script, 'r') as f:
+        # Read the CLI module to check argument structure
+        with open(cli_module, 'r') as f:
             content = f.read()
 
         # Check for expected CLI patterns
