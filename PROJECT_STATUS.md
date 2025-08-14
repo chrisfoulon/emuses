@@ -7,10 +7,13 @@
 - **Scientific Community**: Public model registry with peer review and benchmarking
 
 ## 🎯 CURRENT FOCUS
-- **model-registry Phase 4.8**: Final Validation & Release Preparation (1/4 tasks complete) 🔄
-- **model-registry Task 4.8.1**: End-to-End System Testing (1/4 subtasks complete - framework implemented) ✅
-- **model-registry Task 4.8.2**: Comprehensive Test Error Analysis (NEXT PRIORITY) 🎯
-- **CI/CD Task 4.2**: Multi-environment deployment automation (staging/production triggers)
+- **Priority 1**: Test Suite Stabilization (CRITICAL PREREQUISITE) 🚨
+  - Target: 0% test collection errors (currently 82/425 = 19.3% failure rate)
+  - Blocks: Tasks 4.8.3 (QA validation) and 4.8.4 (release documentation)
+- **Priority 2**: Model Registry Final Validation (DEPENDS ON PRIORITY 1) 🎯
+  - Tasks 4.8.1.b-d, 4.8.3, 4.8.4 require reliable test infrastructure
+- **Priority 3**: Analysis API Enhancement (Independent development) 🔄  
+- **CI/CD Task 4.2**: Multi-environment deployment automation
 
 ## ✅ CORE FEATURES COMPLETE
 
@@ -51,11 +54,23 @@
 
 ## 🔄 NEXT SESSION PRIORITIES
 
-### Task 4.8.2: Comprehensive Test Error Analysis (CRITICAL NEXT TASK) 🎯
-1. 🎯 **Complete test failure documentation** - Systematic discovery and documentation of ALL test failures across entire test suite with root cause analysis
-2. 🔍 **Identify test interdependencies** - Map cascading failure patterns and tests breaking due to similar issues (name changes, API changes, imports)
-3. 📋 **Strategic fix planning** - Prioritize and plan coordinated test fixes based on complexity, system impact, and dependencies
-4. 🔧 **Coordinated fix execution** - Implement fixes systematically with validation to maintain system stability
+### ⚠️ CORRECTED STRATEGIC PRIORITIES (Critical Dependency Analysis)
+
+**BLOCKING ISSUE IDENTIFIED**: Tasks 4.8.3 (QA validation) and 4.8.4 (release) cannot complete with 19.3% test failure rate.
+
+**Corrected Development Approach**:
+1. **Test Suite Stabilization** (Priority 1 - CRITICAL PREREQUISITE) 🚨
+   - Located in `docs/test-analysis/` - **Target: 0% test collection errors**
+   - **Blocks**: Quality assurance validation and release documentation
+   - **Focus**: P1/P2 fixes affecting model registry functionality first
+
+2. **Model Registry Final Validation** (Priority 2 - DEPENDS ON PRIORITY 1) 🎯
+   - Tasks 4.8.1.b-d, 4.8.3, 4.8.4 require reliable test infrastructure
+   - Load testing, backup validation, upgrade testing, QA validation, release documentation
+
+3. **Analysis API Enhancement** (Priority 3 - INDEPENDENT) 🔄
+   - Located in `docs/analysis-api/` - Can proceed in parallel
+   - Effect size map API/CLI integration with existing mature functions
 
 ### Phase 4.4: Security Audit & Compliance (100% Complete ✅)
 1. ✅ **Comprehensive security audit** - 29 tests: permission boundaries, data isolation, malicious protection

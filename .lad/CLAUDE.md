@@ -67,8 +67,13 @@
 ## Active Development Context
 
 **Current Branch**: `feature/model-registry`
-**Active Phase**: Phase 4.7 - Production Deployment Preparation (3/3 complete)
-**Next Implementation**: Task 4.7.3 - Deployment Configuration (4 subtasks: production configs, environment templates, validation scripts, rollback procedures)
+**Active Phase**: Feature-based development approach with LAD-compliant organization
+**CORRECTED Development Priorities** (Critical dependency analysis):
+1. **Test Suite Stabilization** (Priority 1 - CRITICAL PREREQUISITE) - `docs/test-analysis/`
+   - Target: 0% test collection errors (currently 82/425 = 19.3%)
+   - Blocks Tasks 4.8.3 (QA validation) and 4.8.4 (release documentation)
+2. **Model Registry Final Validation** (Priority 2 - DEPENDS ON #1) - Tasks 4.8.1.b-d, 4.8.3, 4.8.4
+3. **Analysis API Enhancement** (Priority 3 - INDEPENDENT) - `docs/analysis-api/`
 
 **Recent Completion**: Task 4.7.2.d Disaster Recovery Procedures (Complete)
 - ✅ Backup Validation: Comprehensive backup integrity checking with RPO/RTO targets (15min/30min)
@@ -96,6 +101,25 @@
 - **Test All Health Monitoring**: `pytest tests/tools/test_model_registry_health.py tests/tools/test_graceful_degradation.py tests/tools/test_disaster_recovery.py -v` (25 health tests total)
 - **Coverage**: `pytest --cov=emuses --cov-report=term-missing`
 
+## Feature Development Structure
+
+### New LAD-Compliant Feature Folders
+- **`docs/test-analysis/`**: Comprehensive test error analysis and resolution (Task 4.8.2 reorganized)
+  - Complete LAD structure: 00_feature_kickoff.md, context.md, plan.md
+  - Systematic approach to resolving 82 test failures with prioritization framework
+- **`docs/analysis-api/`**: Effect size map API/CLI integration (New feature)
+  - Expose existing `run_kernel_heatmap_analysis()` and `run_heatmap_analysis()` functions
+  - FastAPI endpoints, CLI commands, configuration integration
+
+### ⚠️ CORRECTED Strategic Development Approach
+**CRITICAL DEPENDENCY IDENTIFIED**: Model registry completion blocked by test failures.
+
+**Revised Approach**:
+1. **Test Suite Stabilization** (Priority 1, CRITICAL PREREQUISITE, Blocks QA validation)
+   - Target: 0% test collection errors, Focus on P1/P2 model registry affecting fixes
+2. **Complete Model Registry** (Priority 2, DEPENDS ON #1, Major milestone) 
+3. **Add Analysis API Features** (Priority 3, Independent, Clear business value)
+
 ---
-*Last Updated: 2025-08-13 - Phase 4.7.2 Health Monitoring System Complete (Task 4.7.2.d Disaster Recovery)*
+*Last Updated: 2025-08-14 - Feature reorganization complete with LAD-compliant structure*
 *Historical details archived in `docs/project-history/`*

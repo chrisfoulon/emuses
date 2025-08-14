@@ -196,19 +196,20 @@
   - [ ] 4.8.1.c: Validate backup and recovery procedures **[PENDING]**
   - [ ] 4.8.1.d: Test upgrade and migration procedures **[PENDING]**
 
-- [ ] **Task 4.8.2: Comprehensive test error analysis and resolution** **[NEW - Added for systematic test maintenance]**
-  - [ ] 4.8.2.a: Document all existing test failures with root cause analysis **[PLANNED]** - Systematic exploration and documentation of all test failures across the entire test suite with potential solutions
-  - [ ] 4.8.2.b: Identify test interdependencies and cascading failure patterns **[PLANNED]** - Analyze which tests might be breaking due to similar issues (name changes, API changes) and map fix impact across test categories  
-  - [ ] 4.8.2.c: Prioritize and plan test fixes based on complexity and system impact **[PLANNED]** - Evaluate complexity and priority of failed tests, create systematic fix plan to avoid breaking other tests
-  - [ ] 4.8.2.d: Execute coordinated test fixes with validation **[PLANNED]** - Implement fixes in order of impact and dependency to maintain system stability
+- [ ] **Task 4.8.2: Comprehensive test error analysis and resolution** **[MOVED TO SEPARATE FEATURE]**
+  - **Status**: Moved to `docs/test-analysis/` as independent LAD-compliant feature
+  - **Rationale**: Test maintenance is a separate concern from model registry feature completion
+  - **Reference**: See `docs/test-analysis/plan.md` for complete implementation plan
 
-- [ ] **Task 4.8.3: Quality assurance validation**
-  - [ ] 4.8.3.a: Verify >90% test coverage across all components
+- [ ] **Task 4.8.3: Quality assurance validation** **[BLOCKED - REQUIRES 0% TEST FAILURES]**
+  - **Dependencies**: Test suite stabilization (docs/test-analysis/) must achieve 0% collection errors
+  - [ ] 4.8.3.a: Verify >90% test coverage across all components **[BLOCKED BY TEST FAILURES]**
   - [ ] 4.8.3.b: Ensure Flake8 compliance and NumPy docstrings
   - [ ] 4.8.3.c: Validate performance requirements are met
-  - [ ] 4.8.3.d: Confirm no regressions in existing functionality
+  - [ ] 4.8.3.d: Confirm no regressions in existing functionality **[BLOCKED BY TEST FAILURES]**
 
-- [ ] **Task 4.8.4: Release documentation**
+- [ ] **Task 4.8.4: Release documentation** **[BLOCKED - REQUIRES QA VALIDATION]**
+  - **Dependencies**: Task 4.8.3 completion requires reliable test infrastructure
   - [ ] 4.8.4.a: Create release notes with feature summary
   - [ ] 4.8.4.b: Update main project documentation
   - [ ] 4.8.4.c: Create migration guide from existing systems
