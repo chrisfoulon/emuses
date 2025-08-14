@@ -87,8 +87,28 @@
 - ✅ New Endpoints: Added 8 disaster recovery endpoints (/backup-status, /restoration-plan, /procedure, /emergency-contacts, /business-impact, /run-test, /progress, /post-recovery-validation)
 - ✅ Comprehensive Testing: 8 new disaster recovery tests covering all business continuity scenarios
 
+## CI/CD & Testing Workflow (Resource-Efficient Strategy)
+
+### **Before Making Changes**
+- **Pre-push Testing**: `python scripts/dev_test_runner.py` (saves GitHub education credits)
+- **Full Test Baseline**: `pytest -q --tb=short` (only when needed for comprehensive validation)
+
+### **Development CI Strategy**
+- **Feature Branches**: Automatic lightweight CI (13 tests, ~1 minute, ~2-3 credits)
+- **Main Branch**: Full CI with PostgreSQL/Redis services (~30 minutes, ~30-60 credits)
+- **Manual Dispatch**: Production CI available for pre-merge validation when needed
+
+### **Credit-Conscious Development Pattern**
+1. **Develop on feature branches** (triggers fast CI)
+2. **Test locally first** with `python scripts/dev_test_runner.py`
+3. **Push to feature branch** (fast feedback, minimal credits)
+4. **Merge to main only when ready** (triggers comprehensive validation)
+
+⚠️ **IMPORTANT**: Always run `python scripts/dev_test_runner.py` before pushing to catch issues locally and save GitHub education credits.
+
 ## Common Commands
 - **CLI**: `python -m emuses.cli` (not `python -m emuses`)
+- **Pre-Push Local Testing**: `python scripts/dev_test_runner.py` (syntax + core tests)
 - **Test Security**: `pytest tests/security/ -q --tb=short` (248 tests)
 - **Test Model Registry**: `pytest tests/model_registry/test_local_registry.py -xvs`
 - **Test Integration**: `pytest tests/integration/test_unified_interface.py -xvs`

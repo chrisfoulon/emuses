@@ -1,0 +1,103 @@
+name: Production CI - Comprehensive Tests
+
+on:
+  push:
+    branches: [main, master]  # Only run comprehensive tests on main branch
+  workflow_dispatch:  # Allow manual triggering for production validation
+    inputs:
+      test_category:
+        description: 'Test category to run'
+        required: false
+        default: 'core'
+        type: choice
+        options:
+        - core
+        - security
+        - integration
+        - full
+
+jobs:
+  production-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30  # More time for comprehensive testing
+    
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_PASSWORD: test_password
+          POSTGRES_DB: emuses_test
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+      redis:
+        image: redis:7-alpine
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 6379:6379
+
+    env:
+      DATABASE_URL: postgresql://postgres:test_password@localhost:5432/emuses_test
+      EMUSES_JWT_SECRET: test-secret-key-for-ci
+      EMUSES_DEPLOYMENT_MODE: testing
+      REDIS_URL: redis://localhost:6379
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: 3.11
+    
+    - name: Cache pip dependencies
+      uses: actions/cache@v3
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-prod-${{ hashFiles('requirements*.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-prod-
+
+    - name: Install full dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e .[test]  # Install with test dependencies
+
+    - name: Run Core Tests (Model Registry + Tools)
+      if: ${{ github.event.inputs.test_category == 'core' || github.event.inputs.test_category == '' }}
+      run: |
+        pytest tests/model_registry/ tests/tools/ tests/unit/ -v --maxfail=10 --tb=short
+
+    - name: Run Security Tests
+      if: ${{ github.event.inputs.test_category == 'security' || github.event.inputs.test_category == 'full' }}
+      run: |
+        pytest tests/security/ -v --maxfail=5 --tb=short
+
+    - name: Run Integration Tests
+      if: ${{ github.event.inputs.test_category == 'integration' || github.event.inputs.test_category == 'full' }}
+      run: |
+        pytest tests/integration/ tests/deployment/ -v --maxfail=5 --tb=short
+
+    - name: Run Full Test Suite
+      if: ${{ github.event.inputs.test_category == 'full' }}
+      run: |
+        pytest tests/ --cov=emuses --cov-report=xml --maxfail=20 -x
+
+    - name: Upload coverage to Codecov
+      if: ${{ github.event.inputs.test_category == 'full' }}
+      uses: codecov/codecov-action@v3
+      with:
+        file: ./coverage.xml
+        flags: production-tests
+        name: codecov-production
+        fail_ci_if_error: false
