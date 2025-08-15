@@ -55,13 +55,13 @@ class TestModelRegistryMetrics:
                 raise ValueError("test error")
         
         # Verify error metrics were recorded
-        registry_ops = {
-            labels: metric._value.get() 
-            for labels, metric in self.metrics.registry_operations_total._metrics.items()
-        }
+        registry_ops = self.metrics.registry_operations_total._value._value
         assert any(
-            ('install_model', 'DATABASE', 'error') == labels and value > 0
+            labels.get('operation') == 'install_model' and 
+            labels.get('registry_mode') == 'DATABASE' and
+            labels.get('status') == 'error'
             for labels, value in registry_ops.items()
+            if value > 0
         )
 
     def test_track_model_download(self):
@@ -76,13 +76,14 @@ class TestModelRegistryMetrics:
         # Verify download was tracked (implementation-specific verification)
         # Since we're using prometheus_client metrics, we check the internal state
         from emuses.observability.metrics import model_downloads_total
-        downloads = {
-            labels: metric._value.get() 
-            for labels, metric in model_downloads_total._metrics.items()
-        }
+        downloads = model_downloads_total._value._value
         assert any(
-            ('model123', 'classifier', 'user789', 'registry') == labels and value > 0
+            labels.get('model_id') == 'model123' and
+            labels.get('model_type') == 'classifier' and
+            labels.get('user_id') == 'user789' and
+            labels.get('download_method') == 'registry'
             for labels, value in downloads.items()
+            if value > 0
         )
 
     def test_update_registry_size(self):
@@ -91,13 +92,12 @@ class TestModelRegistryMetrics:
         
         # Verify size was updated
         from emuses.observability.metrics import model_registry_size
-        size_metrics = {
-            labels: metric._value.get() 
-            for labels, metric in model_registry_size._metrics.items()
-        }
+        size_metrics = model_registry_size._value._value
         assert any(
-            ('LOCAL', 'private') == labels and value == 42
+            labels.get('registry_type') == 'LOCAL' and
+            labels.get('visibility') == 'private'
             for labels, value in size_metrics.items()
+            if value == 42
         )
 
     def test_track_model_storage(self):
@@ -106,11 +106,7 @@ class TestModelRegistryMetrics:
         
         # Verify storage was tracked in histogram
         from emuses.observability.metrics import model_storage_bytes
-        # Check if any labeled metric has recorded data
-        assert any(
-            metric._sum.get() > 0 
-            for metric in model_storage_bytes._metrics.values()
-        )
+        assert model_storage_bytes._sum._value > 0
 
     def test_track_cache_operation(self):
         """Test cache operation tracking."""
@@ -120,21 +116,20 @@ class TestModelRegistryMetrics:
         self.metrics.track_cache_operation("invalidate", "success")
         
         # Verify cache operations were tracked
-        cache_ops = {
-            labels: metric._value.get() 
-            for labels, metric in self.metrics.cache_operations_total._metrics.items()
-        }
+        cache_ops = self.metrics.cache_operations_total._value._value
         
         # Check for hit operation
         assert any(
-            ('get', 'hit') == labels and value > 0
+            labels.get('operation') == 'get' and labels.get('result') == 'hit'
             for labels, value in cache_ops.items()
+            if value > 0
         )
         
         # Check for miss operation
         assert any(
-            ('get', 'miss') == labels and value > 0
+            labels.get('operation') == 'get' and labels.get('result') == 'miss'
             for labels, value in cache_ops.items()
+            if value > 0
         )
 
     def test_context_manager_timing(self):
@@ -149,10 +144,8 @@ class TestModelRegistryMetrics:
         
         # Verify timing was recorded (check if histogram has samples)
         duration_histogram = self.metrics.registry_operation_duration
-        assert any(
-            metric._sum.get() > 0 
-            for metric in duration_histogram._metrics.values()
-        )
+        assert duration_histogram._count._value > 0
+        assert duration_histogram._sum._value > 0
 
     def test_user_activity_tracking(self):
         """Test user activity tracking."""
@@ -160,13 +153,13 @@ class TestModelRegistryMetrics:
             pass
         
         # Verify user activity was tracked
-        user_activity = {
-            labels: metric._value.get() 
-            for labels, metric in self.metrics.user_registry_activity._metrics.items()
-        }
+        user_activity = self.metrics.user_registry_activity._value._value
         assert any(
-            ('user111', 'remove_model', 'DATABASE') == labels and value > 0
+            labels.get('user_id') == 'user111' and
+            labels.get('operation') == 'remove_model' and
+            labels.get('registry_mode') == 'DATABASE'
             for labels, value in user_activity.items()
+            if value > 0
         )
 
     def test_model_operation_tracking(self):
@@ -175,13 +168,14 @@ class TestModelRegistryMetrics:
             pass
         
         # Verify model operation was tracked
-        model_ops = {
-            labels: metric._value.get() 
-            for labels, metric in self.metrics.model_operations_total._metrics.items()
-        }
+        model_ops = self.metrics.model_operations_total._value._value
         assert any(
-            ('install_model', 'regression', 'success', 'LOCAL') == labels and value > 0
+            labels.get('operation') == 'install_model' and
+            labels.get('model_type') == 'regression' and
+            labels.get('status') == 'success' and
+            labels.get('registry_mode') == 'LOCAL'
             for labels, value in model_ops.items()
+            if value > 0
         )
 
 
@@ -194,13 +188,12 @@ class TestConvenienceFunctions:
             pass
         
         metrics = get_registry_metrics()
-        registry_ops = {
-            labels: metric._value.get() 
-            for labels, metric in metrics.registry_operations_total._metrics.items()
-        }
+        registry_ops = metrics.registry_operations_total._value._value
         assert any(
-            ('list_models', 'DATABASE', 'success') == labels and value > 0
+            labels.get('operation') == 'list_models' and
+            labels.get('registry_mode') == 'DATABASE'
             for labels, value in registry_ops.items()
+            if value > 0
         )
 
     def test_track_install_model(self):
@@ -209,13 +202,13 @@ class TestConvenienceFunctions:
             pass
         
         metrics = get_registry_metrics()
-        model_ops = {
-            labels: metric._value.get() 
-            for labels, metric in metrics.model_operations_total._metrics.items()
-        }
+        model_ops = metrics.model_operations_total._value._value
         assert any(
-            ('install_model', 'neural_network', 'success', 'CLOUD') == labels and value > 0
+            labels.get('operation') == 'install_model' and
+            labels.get('model_type') == 'neural_network' and
+            labels.get('registry_mode') == 'CLOUD'
             for labels, value in model_ops.items()
+            if value > 0
         )
 
     def test_track_search_models(self):
@@ -224,13 +217,12 @@ class TestConvenienceFunctions:
             pass
         
         metrics = get_registry_metrics()
-        registry_ops = {
-            labels: metric._value.get() 
-            for labels, metric in metrics.registry_operations_total._metrics.items()
-        }
+        registry_ops = metrics.registry_operations_total._value._value
         assert any(
-            ('search_models', 'LOCAL', 'success') == labels and value > 0
+            labels.get('operation') == 'search_models' and
+            labels.get('registry_mode') == 'LOCAL'
             for labels, value in registry_ops.items()
+            if value > 0
         )
 
     def test_track_get_model_info(self):
@@ -239,13 +231,12 @@ class TestConvenienceFunctions:
             pass
         
         metrics = get_registry_metrics()
-        registry_ops = {
-            labels: metric._value.get() 
-            for labels, metric in metrics.registry_operations_total._metrics.items()
-        }
+        registry_ops = metrics.registry_operations_total._value._value
         assert any(
-            ('get_model_info', 'DATABASE', 'success') == labels and value > 0
+            labels.get('operation') == 'get_model_info' and
+            labels.get('registry_mode') == 'DATABASE'
             for labels, value in registry_ops.items()
+            if value > 0
         )
 
     def test_track_remove_model(self):
@@ -254,13 +245,13 @@ class TestConvenienceFunctions:
             pass
         
         metrics = get_registry_metrics()
-        model_ops = {
-            labels: metric._value.get() 
-            for labels, metric in metrics.model_operations_total._metrics.items()
-        }
+        model_ops = metrics.model_operations_total._value._value
         assert any(
-            ('remove_model', 'ensemble', 'success', 'CLOUD') == labels and value > 0
+            labels.get('operation') == 'remove_model' and
+            labels.get('model_type') == 'ensemble' and
+            labels.get('registry_mode') == 'CLOUD'
             for labels, value in model_ops.items()
+            if value > 0
         )
 
     def test_track_model_download_function(self):
@@ -268,13 +259,14 @@ class TestConvenienceFunctions:
         track_model_download("model999", "transformer", "user888", "direct")
         
         from emuses.observability.metrics import model_downloads_total
-        downloads = {
-            labels: metric._value.get() 
-            for labels, metric in model_downloads_total._metrics.items()
-        }
+        downloads = model_downloads_total._value._value
         assert any(
-            ('model999', 'transformer', 'user888', 'direct') == labels and value > 0
+            labels.get('model_id') == 'model999' and
+            labels.get('model_type') == 'transformer' and
+            labels.get('user_id') == 'user888' and
+            labels.get('download_method') == 'direct'
             for labels, value in downloads.items()
+            if value > 0
         )
 
     def test_update_registry_size_function(self):
@@ -282,13 +274,12 @@ class TestConvenienceFunctions:
         update_registry_size("LOCAL", "public", 150)
         
         from emuses.observability.metrics import model_registry_size
-        size_metrics = {
-            labels: metric._value.get() 
-            for labels, metric in model_registry_size._metrics.items()
-        }
+        size_metrics = model_registry_size._value._value
         assert any(
-            ('LOCAL', 'public') == labels and value == 150
+            labels.get('registry_type') == 'LOCAL' and
+            labels.get('visibility') == 'public'
             for labels, value in size_metrics.items()
+            if value == 150
         )
 
     def test_track_model_storage_function(self):
@@ -296,10 +287,7 @@ class TestConvenienceFunctions:
         track_model_storage(2048*1024, "cnn")  # 2MB
         
         from emuses.observability.metrics import model_storage_bytes
-        assert any(
-            metric._sum.get() > 0 
-            for metric in model_storage_bytes._metrics.values()
-        )
+        assert model_storage_bytes._sum._value > 0
 
     def test_cache_tracking_functions(self):
         """Test cache tracking convenience functions."""
@@ -309,17 +297,15 @@ class TestConvenienceFunctions:
         track_cache_invalidate()
         
         metrics = get_registry_metrics()
-        cache_ops = {
-            labels: metric._value.get() 
-            for labels, metric in metrics.cache_operations_total._metrics.items()
-        }
+        cache_ops = metrics.cache_operations_total._value._value
         
         # Check all operations were recorded
         operations = [('get', 'hit'), ('get', 'miss'), ('set', 'success'), ('invalidate', 'success')]
         for operation, result in operations:
             assert any(
-                (operation, result) == labels and value > 0
+                labels.get('operation') == operation and labels.get('result') == result
                 for labels, value in cache_ops.items()
+                if value > 0
             ), f"Cache operation {operation}:{result} not found"
 
 
@@ -344,13 +330,12 @@ class TestMetricsIntegration:
         
         # Verify metrics were recorded
         metrics = get_registry_metrics()
-        registry_ops = {
-            labels: metric._value.get() 
-            for labels, metric in metrics.registry_operations_total._metrics.items()
-        }
+        registry_ops = metrics.registry_operations_total._value._value
         assert any(
-            ('list_models', 'LOCAL', 'success') == labels and value > 0
+            labels.get('operation') == 'list_models' and
+            labels.get('registry_mode') == 'LOCAL'
             for labels, value in registry_ops.items()
+            if value > 0
         )
 
     def test_cache_metrics_integration(self):
@@ -372,17 +357,15 @@ class TestMetricsIntegration:
         
         # Verify cache metrics were recorded
         metrics = get_registry_metrics()
-        cache_ops = {
-            labels: metric._value.get() 
-            for labels, metric in metrics.cache_operations_total._metrics.items()
-        }
+        cache_ops = metrics.cache_operations_total._value._value
         
         # Should have recorded hit, miss, set, and invalidate
         operations = [('get', 'hit'), ('get', 'miss'), ('set', 'success'), ('invalidate', 'success')]
         for operation, result in operations:
             assert any(
-                (operation, result) == labels and value > 0
+                labels.get('operation') == operation and labels.get('result') == result
                 for labels, value in cache_ops.items()
+                if value > 0
             ), f"Cache operation {operation}:{result} not recorded"
 
     def test_error_tracking_integration(self, temp_registry_path):
@@ -397,12 +380,10 @@ class TestMetricsIntegration:
         
         # Verify operation was tracked (even though it returned None)
         metrics = get_registry_metrics()
-        registry_ops = {
-            labels: metric._value.get() 
-            for labels, metric in metrics.registry_operations_total._metrics.items()
-        }
-        # Check if any operation was recorded (success or error)
+        registry_ops = metrics.registry_operations_total._value._value
         assert any(
-            labels[0] == 'get_model_info' and labels[1] == 'LOCAL' and value > 0
+            labels.get('operation') == 'get_model_info' and
+            labels.get('registry_mode') == 'LOCAL'
             for labels, value in registry_ops.items()
+            if value > 0
         )

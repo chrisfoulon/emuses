@@ -55,8 +55,7 @@ class TestCompleteSystemValidation:
             from emuses.tools.local_model_registry import LocalModelRegistry
             
             # Test registry factory creation
-            factory = ModelRegistryFactory()
-            registry = factory.create_registry()
+            registry = ModelRegistryFactory.create_registry()
             assert registry is not None, "Model registry factory should create a registry"
             
             # Test basic registry operations
@@ -65,7 +64,7 @@ class TestCompleteSystemValidation:
                 assert isinstance(models, list), "Registry should return list of models"
                 
                 # Test registry directory structure
-                assert registry.models_path.exists(), "Models directory should exist"
+                assert registry.models_dir.exists(), "Models directory should exist"
                 
         except ImportError as e:
             pytest.skip(f"Model registry modules not available: {e}")
@@ -76,16 +75,15 @@ class TestCompleteSystemValidation:
         """Validate cross-mode integration functionality works."""
         try:
             from emuses.tools.model_registry_factory import ModelRegistryFactory
-            from emuses.multi_user_service.deployment_config import get_deployment_config
+            from emuses.multi_user_service.deployment_config import DeploymentConfig
             
             # Test deployment mode detection
-            config = get_deployment_config()
-            deployment_mode = config.mode.value.upper()
+            config = DeploymentConfig()
+            deployment_mode = config.get_deployment_mode()
             assert deployment_mode in ['LOCAL', 'DATABASE', 'CLOUD'], f"Invalid deployment mode: {deployment_mode}"
             
             # Test cross-mode registry creation
-            factory = ModelRegistryFactory()
-            registry = factory.create_registry()
+            registry = ModelRegistryFactory.create_registry(mode=deployment_mode)
             assert registry is not None, f"Failed to create registry for mode: {deployment_mode}"
             
             # Test unified interface functionality

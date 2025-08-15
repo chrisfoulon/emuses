@@ -107,8 +107,18 @@
 ⚠️ **IMPORTANT**: Always run `python scripts/dev_test_runner.py` before pushing to catch issues locally and save GitHub education credits.
 
 ## Common Commands
+
+### **🎯 Project-Wide Validation (USE THESE)**
+- **Category Testing**: `python scripts/test_runners/comprehensive_test_runner.py --category security`
+- **Full Validation**: `python scripts/test_runners/comprehensive_test_runner.py --all`
+- **Comprehensive Coverage**: `python scripts/coverage/comprehensive_coverage_analysis.py --workers 8`
+- **List Categories**: `python scripts/test_runners/comprehensive_test_runner.py --list`
+
+### **🔧 Development Commands**
 - **CLI**: `python -m emuses.cli` (not `python -m emuses`)
 - **Pre-Push Local Testing**: `python scripts/dev_test_runner.py` (syntax + core tests)
+
+### **🧪 Specific Test Commands (For Development)**
 - **Test Security**: `pytest tests/security/ -q --tb=short` (248 tests)
 - **Test Model Registry**: `pytest tests/model_registry/test_local_registry.py -xvs`
 - **Test Integration**: `pytest tests/integration/test_unified_interface.py -xvs`
@@ -119,7 +129,11 @@
 - **Test DB Integration**: `pytest tests/performance/test_database_registry_integration.py -xvs` (10 integration tests)
 - **Test Disaster Recovery**: `pytest tests/tools/test_disaster_recovery.py -xvs` (8 disaster recovery tests)
 - **Test All Health Monitoring**: `pytest tests/tools/test_model_registry_health.py tests/tools/test_graceful_degradation.py tests/tools/test_disaster_recovery.py -v` (25 health tests total)
-- **Coverage**: `pytest --cov=emuses --cov-report=term-missing`
+
+### **⚠️ IMPORTANT: Anti-Pattern Prevention**
+- **❌ NEVER**: Run `subprocess.run(["pytest", ...])` from within test files
+- **✅ ALWAYS**: Use `/scripts/test_runners/` for project-wide validation
+- **📖 READ FIRST**: `/scripts/README.md` for comprehensive testing approach
 
 ## Feature Development Structure
 

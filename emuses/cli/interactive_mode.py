@@ -366,9 +366,11 @@ class InteractiveWorkflowManager:
             return None
 
         steps = self.current_workflow["definition"].steps
-        if self._current_step_index < len(steps) - 1:
+        if self._current_step_index < len(steps):
             self._current_step_index += 1
-            return self.get_current_step()
+            # Return current step info if not yet complete, None if complete
+            if self._current_step_index < len(steps):
+                return self.get_current_step()
 
         return None
 

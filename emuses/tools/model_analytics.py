@@ -163,13 +163,23 @@ class ModelAnalytics:
         if self.streamer:
             try:
                 import asyncio
-                asyncio.create_task(self.streamer.queue_download_event(
-                    model_id=model_id,
-                    user_id=user_id,
-                    download_size_bytes=download_size_bytes,
-                    download_method=download_method,
-                    user_agent=user_agent
-                ))
+                # Check if we're in an async context with a running event loop
+                try:
+                    loop = asyncio.get_running_loop()
+                    # Store task to prevent resource leaks and warnings
+                    task = asyncio.create_task(self.streamer.queue_download_event(
+                        model_id=model_id,
+                        user_id=user_id,
+                        download_size_bytes=download_size_bytes,
+                        download_method=download_method,
+                        user_agent=user_agent
+                    ))
+                    # Add task to background tasks to prevent garbage collection
+                    # This is fire-and-forget behavior for streaming analytics
+                    task.add_done_callback(lambda t: None)
+                except RuntimeError:
+                    # No event loop running - skip streaming in sync context
+                    pass
             except Exception:
                 # Graceful degradation if streaming fails
                 pass

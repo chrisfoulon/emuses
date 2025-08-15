@@ -39,7 +39,7 @@ class TestRerunFunctionality:
 
     def test_load_command_from_folder_with_comments(self):
         """Test loading command with comments and metadata."""
-        command_content = "emuses full /tmp/output data.csv --optuna_trials 50"
+        command_content = "emuses full /tmp/output data.csv --optuna_trials 5"
         command_file = self.output_folder / "command.txt"
         with open(command_file, 'w', encoding='utf-8') as f:
             f.write("# EMUSES Command Log\n")

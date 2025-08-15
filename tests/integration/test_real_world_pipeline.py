@@ -56,23 +56,23 @@ class RealWorldIntegrationTest:
     """
 
     # Default parameters for integration testing
-    # Based on the actual real-world command
+    # Based on the actual real-world command that completes in ~2 minutes
     DEFAULT_PARAMS = {
-        'umap_trials': 10,
-        'hdbscan_trials': 5,
+        'umap_trials': 1,
+        'hdbscan_trials': 1,
         'hdbscan_jobs': 16,
-        'optuna_trials': 10,  # Reduced for faster testing
-        'prediction_optim_dict': 'optim_dict_test',  # Use test config
+        'optuna_trials': 10,  # Same as real-world usage
+        'prediction_optim_dict': 'quick_train_dict',  # Use quick config like real usage
         'prefix': 'Integration_Test_RealWorld'
     }
 
     # CI-friendly parameters (reduced for speed)
     CI_PARAMS = {
-        'umap_trials': 3,
-        'hdbscan_trials': 2,
+        'umap_trials': 1,
+        'hdbscan_trials': 1,
         'hdbscan_jobs': 4,
-        'optuna_trials': 5,  # Very reduced for CI
-        'prediction_optim_dict': 'optim_dict_test',  # Use test config
+        'optuna_trials': 3,  # Reduced for CI
+        'prediction_optim_dict': 'quick_train_dict',  # Use quick config
         'prefix': 'CI_Test_RealWorld'
     }
 

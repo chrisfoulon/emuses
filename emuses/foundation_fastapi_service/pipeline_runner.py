@@ -455,12 +455,14 @@ class PipelineRunner:
                 obs_ctx.set_attribute("pipeline_success", True)
                 if "pipeline_metadata" in result_context:
                     metadata = result_context["pipeline_metadata"]
-                    obs_ctx.set_attribute(
-                        "total_runtime", metadata.get("total_runtime", 0)
-                    )
-                    obs_ctx.set_attribute(
-                        "stages_completed", len(metadata.get("stages_completed", []))
-                    )
+                    # Handle case where metadata might be None
+                    if metadata is not None:
+                        obs_ctx.set_attribute(
+                            "total_runtime", metadata.get("total_runtime", 0)
+                        )
+                        obs_ctx.set_attribute(
+                            "stages_completed", len(metadata.get("stages_completed", []))
+                        )
 
                 return result_context
 
