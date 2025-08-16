@@ -136,6 +136,78 @@ git push origin feature/model-registry
 - Individual researchers, research labs, scientific community
 - System administrators and developers
 
+## 📚 **MkDocs Documentation Site Setup - COMPLETE**
+
+### **✅ What Was Created**
+A professional MkDocs Material documentation site with:
+- **`mkdocs.yml`** - Main configuration file
+- **`.github/workflows/docs.yml`** - Auto-deployment to GitHub Pages
+- **`docs/index.md`** - Professional landing page
+- **`docs/stylesheets/extra.css`** - Custom scientific styling
+- **`docs/javascripts/mathjax.js`** - Math formula rendering
+- **`docs/requirements.txt`** - MkDocs dependencies
+
+### **🚀 How to Update/Maintain the Documentation Site**
+
+#### **Adding New Documentation Files**
+1. **Create new `.md` files** in the `docs/` directory
+2. **Update `mkdocs.yml`** navigation section:
+   ```yaml
+   nav:
+     - Home: 'index.md'
+     - Quick Start: 'QUICK_START.md'
+     - New Section: 'new_file.md'  # Add here
+   ```
+3. **Push changes** - site auto-deploys via GitHub Actions
+
+#### **Tomorrow's Final Documentation Tasks**
+When completing RESEARCH_WORKFLOWS.md, also update:
+
+1. **Update `mkdocs.yml` navigation**:
+   ```yaml
+   nav:
+     - Research Workflows: 'RESEARCH_WORKFLOWS.md'  # Add this line
+   ```
+
+2. **Update `docs/index.md`** to link to the new file:
+   ```markdown
+   - [Research Workflows](RESEARCH_WORKFLOWS.md) - Scientific workflow patterns
+   ```
+
+3. **Update cross-references** in existing documentation
+
+#### **Site Deployment Options**
+- **Current**: Can test with `feature/model-registry` branch in GitHub Pages settings
+- **Production**: Switch to `main` branch after merge
+- **URL**: Will be `https://chrisfoulon.github.io/emuses`
+
+#### **Local Testing** (Optional)
+```bash
+# Install MkDocs locally
+pip install -r docs/requirements.txt
+
+# Serve locally for testing
+mkdocs serve
+# View at http://127.0.0.1:8000
+
+# Build static site
+mkdocs build
+```
+
+#### **Customization Files**
+- **Styling**: Edit `docs/stylesheets/extra.css` for visual changes
+- **JavaScript**: Edit `docs/javascripts/mathjax.js` for math rendering
+- **Theme config**: Edit `mkdocs.yml` theme section for layout changes
+- **Navigation**: Edit `mkdocs.yml` nav section for menu structure
+
+### **📝 File Update Checklist for Tomorrow**
+1. ✅ Create `docs/RESEARCH_WORKFLOWS.md` 
+2. ✅ Update `mkdocs.yml` nav section to include RESEARCH_WORKFLOWS.md
+3. ✅ Update `docs/index.md` to link to RESEARCH_WORKFLOWS.md  
+4. ✅ Update cross-references in USER_GUIDE.md and CLI_REFERENCE.md
+5. ✅ Test site locally or via GitHub Pages branch
+6. ✅ Commit and push all changes
+
 ## 🎯 **Success Criteria**
 
 The documentation is complete when:
