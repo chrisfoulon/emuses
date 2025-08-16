@@ -158,14 +158,11 @@ class LoadTestRunner:
         return session
 
 
-@pytest.mark.skip(reason="Infrastructure limitation: ModelPermissionManager API compatibility issue - load testing only, core functionality unaffected")
 class TestConcurrentUserLoadTesting:
     """Comprehensive load testing with concurrent users and operations.
     
-    SKIPPED: This test suite has infrastructure limitations:
-    - ModelPermissionManager constructor API mismatch
-    - Only affects stress testing scenarios, not production functionality
-    - Will be resolved with future API refactoring for high-concurrency support
+    Tests concurrent user scenarios with realistic operation patterns to validate
+    system performance and stability under multi-user load conditions.
     """
     
     @pytest.fixture
@@ -314,7 +311,7 @@ class TestConcurrentUserLoadTesting:
         try:
             # Initialize user-specific components
             registry = DatabaseModelRegistry(user_db_session, user)
-            permission_manager = ModelPermissionManager(user_db_session)
+            permission_manager = ModelPermissionManager(user_db_session, user)
             analytics = ModelAnalytics(user_db_session)
             
             # Simulate realistic user behavior patterns
@@ -637,7 +634,7 @@ class TestConcurrentUserLoadTesting:
         try:
             registry = DatabaseModelRegistry(user_db_session, user)
             analytics = ModelAnalytics(user_db_session)
-            permission_manager = ModelPermissionManager(user_db_session)
+            permission_manager = ModelPermissionManager(user_db_session, user)
             
             # Convert weights to operation selection
             operations = list(operation_weights.keys())

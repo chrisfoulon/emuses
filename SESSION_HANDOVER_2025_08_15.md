@@ -93,6 +93,46 @@ pytest tests/model_registry/test_load_concurrent_users.py -v
 - `tests/model_registry/test_load_concurrent_users.py` - Line ~166 area
 - Possibly `tests/model_registry/test_load_simulation.py`
 
+### **4. Output Directory Path Issues** 🚨 **NEW: CRITICAL INFRASTRUCTURE FIX**
+**Issue**: Tests and pipeline create `results/` directories in package location, accumulating files  
+**Problem**: Violates CLI best practices and creates deployment/maintenance issues  
+**Impact**: Production installations will accumulate user output files in package directory
+
+**NEXT ACTION REQUIRED**:
+```bash
+# 1. Make output_folder a required parameter (no default)
+# - Update PipelineConfig to require explicit output_folder
+# - Remove default "results" from models.py examples
+# - Update CLI to require --output-path/-o parameter
+
+# 2. Fix test infrastructure to use temporary directories
+# - Convert all tests to use pytest tmp_path fixture
+# - Replace hardcoded "/tmp/test_output" with proper tmp_path usage
+# - Ensure no tests create permanent directories in package location
+
+# 3. Move application logs to XDG-compliant locations
+# - Pipeline logs → user-specified output directory only
+# - Application logs → ~/.local/state/emuses/ (XDG_STATE_HOME)
+# - Config files → ~/.config/emuses/ (XDG_CONFIG_HOME)
+
+# 4. Verify no broken dependencies
+# - Ensure API endpoints work with required output paths
+# - Check CLI commands properly handle missing output parameter
+# - Test that no code assumes default "results" directory exists
+```
+
+**Files Requiring Changes**:
+- `emuses/pipelines/pipeline_config.py` - Remove default output_folder, require explicit path
+- `emuses/foundation_fastapi_service/models.py` - Update examples to not show "results" default
+- `tests/conftest.py` - Standardize tmp_path usage across all tests
+- Multiple test files - Convert hardcoded paths to tmp_path fixture usage
+
+**CRITICAL**: This change affects core infrastructure. Must verify:
+- ✅ All tests still pass after removing default output directory
+- ✅ CLI gracefully handles missing output parameter with clear error message
+- ✅ API endpoints properly validate output paths
+- ✅ No code breaks due to missing "results" directory assumption
+
 ## 🔧 **IMMEDIATE FIXES READY TO IMPLEMENT**
 
 ### **High Priority (1 day effort)**
@@ -135,12 +175,20 @@ pytest tests/model_registry/test_load_concurrent_users.py -v
 
 ## 🚨 **CRITICAL NOTES FOR FRESH SESSION**
 
+### **IMPLEMENTATION ORDER** ⚠️ **IMPORTANT**
+**Do Item #4 (Output Directory Paths) FIRST before running any tests:**
+1. **First**: Fix output directory infrastructure (Item #4)
+2. **Then**: Run other test fixes (Items 1-3)
+3. **Reason**: Path fixes will break existing tests that expect `results/` directories
+
 ### **Do NOT**
 - Change any "justified skips" - 22/27 skips are proper conditional testing
 - Remove load testing entirely - fix the API compatibility instead
 - Assume CLI needs reimplementation - it works, tests are wrong
+- Run tests before fixing output directory paths - will create unwanted directories
 
 ### **DO**
+- Fix output directory paths BEFORE any test execution
 - Verify CLI test coverage before deleting test files
 - Investigate multi-user CLI integration thoroughly before implementation
 - Fix ModelPermissionManager API usage in load tests

@@ -23,7 +23,7 @@ LOG_QUEUE = mp.Queue(-1)
 @dataclass
 class PipelineConfig:
     # Direct parameter fields (replaces args.*)
-    output_folder: Union[str, Path]  # Will be converted to Path in __post_init__
+    output_folder: Union[str, Path] = field()  # REQUIRED - no default, will be converted to Path in __post_init__
     sigma: float = None
     fwhm: float = None
     # Other parameters with defaults as needed
@@ -119,8 +119,14 @@ class PipelineConfig:
 
     def __post_init__(self):
         # ------------------------------------------------------------------
-        # Create / resolve output folder
+        # Validate and create output folder (REQUIRED)
         # ------------------------------------------------------------------
+        if not self.output_folder:
+            raise ValueError(
+                "output_folder is required. Please provide an explicit output directory path. "
+                "Example: PipelineConfig(output_folder='/path/to/your/output')"
+            )
+        
         self.output_path = Path(self.output_folder).resolve()
         self.output_path.mkdir(parents=True, exist_ok=True)
         # Update output_folder to be the Path object for stage compatibility

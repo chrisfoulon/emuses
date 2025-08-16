@@ -2654,6 +2654,15 @@ except ImportError:
     # Admin commands not available (likely missing dependencies)
     pass
 
+# Add workspace subcommand
+try:
+    from .workspace_commands import workspace_app
+    
+    app.add_typer(workspace_app, name="workspace")
+except ImportError:
+    # Workspace commands not available (likely missing dependencies)
+    pass
+
 # Add models subcommand
 try:
     from .models_commands import models_app
