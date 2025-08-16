@@ -2,7 +2,7 @@
   "generation_info": {
     "emuses_version": "1.0.0",
     "export_version": "1.0.0",
-    "exported_at": "2025-08-16T12:41:08.690827"
+    "exported_at": "2025-08-16T18:47:21.924981"
   },
   "model_provenance": {
     "compatibility": {
@@ -17,13 +17,13 @@
     },
     "file_integrity": {
       "test_model_v1_0_0_joblib1_5_1.joblib": {
-        "modified": "2025-08-16T12:41:08.681396",
+        "modified": "2025-08-16T18:47:21.913004",
         "sha256": "7754fc2c0307889a6f14cb281cd1c7da8f49d953bf6c94f8689aca2dd2e66acb",
         "size": 124
       }
     },
     "model_info": {
-      "created_at": "2025-08-16T12:41:08.681396",
+      "created_at": "2025-08-16T18:47:21.913004",
       "description": "Test model for CLI testing",
       "emuses_version": "1.0.0",
       "name": "test_model",

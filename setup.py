@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="emuses",
-    version="0.7.0",
+    version="0.9.0-dev",
     packages=find_packages(),
     entry_points={
         "console_scripts": [

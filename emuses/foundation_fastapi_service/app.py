@@ -109,12 +109,74 @@ class RequestSizeLimiterMiddleware:
 
 # Initialize FastAPI app
 app = FastAPI(
-    title="EMUSES Foundation FastAPI Service",
-    description="REST API for EMUSES pipeline execution and job management",
-    version="1.0.0",
+    title="🧠 EMUSES Neuroimaging API",
+    description="""
+**EMUSES Neuroimaging Predictive Modeling Platform API**
+
+Comprehensive REST API for neuroimaging research workflows, supporting:
+
+- **🔬 Pipeline Execution**: UMAP dimensionality reduction, heatmap analysis, and predictive modeling
+- **📊 Model Registry**: Share, discover, and reproduce predictive models across research teams  
+- **🤝 Multi-User Collaboration**: Workspace-based model sharing and team management
+- **📈 Background Processing**: Asynchronous job execution with real-time progress tracking
+- **🔍 Health Monitoring**: System health checks and performance metrics
+
+Perfect for individual researchers, research labs, and scientific communities working with neuroimaging data.
+
+**Quick Start**: Upload your neuroimaging data → Run full pipeline → Download results
+
+**Documentation**: [Model Registry Guide](docs/model-registry/user_guide.md) | [GitHub](https://github.com/chrisfoulon/emuses)
+    """,
+    version="0.9.0",
     docs_url="/api/docs",
-    redoc_url="/api/redoc",
+    redoc_url="/api/redoc", 
     openapi_url="/api/openapi.json",
+    contact={
+        "name": "EMUSES Development Team",
+        "url": "https://github.com/chrisfoulon/emuses",
+    },
+    license_info={
+        "name": "Open Source",
+        "url": "https://github.com/chrisfoulon/emuses/blob/main/LICENSE",
+    },
+    openapi_tags=[
+        {
+            "name": "🔬 Pipeline Execution",
+            "description": "Submit and manage neuroimaging analysis pipelines (UMAP, Heatmap, Prediction)",
+        },
+        {
+            "name": "📋 Job Management", 
+            "description": "Track job status, view logs, and manage running analyses",
+        },
+        {
+            "name": "📁 Artifact Management",
+            "description": "List and download analysis results and output files",
+        },
+        {
+            "name": "📤 File Upload",
+            "description": "Upload neuroimaging features, cognitive scores, and label files",
+        },
+        {
+            "name": "🤖 Inference",
+            "description": "Run predictions on trained models with new data",
+        },
+        {
+            "name": "📊 Model Registry",
+            "description": "Share, discover, and manage predictive models across research teams",
+        },
+        {
+            "name": "👥 User Management",
+            "description": "Authentication and user account management",
+        },
+        {
+            "name": "🏛️ Workspace Management", 
+            "description": "Collaborative workspace and team management features",
+        },
+        {
+            "name": "🔍 Health & Monitoring",
+            "description": "System health checks, metrics, and performance monitoring",
+        },
+    ],
 )
 
 # Add CORS middleware

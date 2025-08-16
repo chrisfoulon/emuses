@@ -72,7 +72,7 @@ class TestResearchCLI:
             result = runner.invoke(app, ["verify", tmpdir])
         
         assert result.exit_code == 1
-        assert "❌" in result.stdout
+        assert "❌" in result.stderr
 
     def test_info_command_text_format(self, model_with_manifest):
         """Test info command with text format."""
@@ -143,7 +143,7 @@ class TestResearchCLI:
         result = runner.invoke(app, ["cite", str(temp_dir), "--format", "invalid"])
         
         assert result.exit_code == 1
-        assert "❌ Unsupported citation format" in result.stdout
+        assert "❌ Unsupported citation format" in result.stderr
 
     def test_trace_command_default_output(self, model_with_manifest):
         """Test trace command with default output file."""
@@ -210,7 +210,7 @@ class TestResearchCLI:
             # Test info command
             result = runner.invoke(app, ["info", tmpdir])
             assert result.exit_code == 1
-            assert "❌ No manifest found" in result.stdout
+            assert "❌ No manifest found" in result.stderr
 
     def test_help_text_for_research_commands(self):
         """Test that help text is available for research commands."""
