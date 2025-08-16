@@ -1,22 +1,17 @@
 # EMUSES - Neuroimaging Analysis Platform
 
-<div align="center">
-
 **A comprehensive platform for neuroimaging data analysis with machine learning, dimensionality reduction, and predictive modeling**
 
-[![GitHub](https://img.shields.io/github/license/chrisfoulon/emuses)](https://github.com/chrisfoulon/emuses/blob/main/LICENSE)
-[![Python](https://img.shields.io/badge/python-3.8%2B-blue)](https://python.org)
-[![Documentation](https://img.shields.io/badge/docs-mkdocs-blue)](https://chrisfoulon.github.io/emuses)
-[![Tests](https://img.shields.io/badge/tests-2138%20passing-green)](https://github.com/chrisfoulon/emuses)
+**Key Information:**
+- **License:** MIT License
+- **Python:** 3.8+ required
+- **Documentation:** Available at chrisfoulon.github.io/emuses
+- **Tests:** 2,138 passing tests
 
-</div>
-
----
-
-**Get Started:**
-[Quick Start](QUICK_START.md) | [User Guide](USER_GUIDE.md) | [API Reference](API_REFERENCE.md)
-
----
+**Quick Navigation:**
+- [Quick Start Guide](QUICK_START.md)
+- [User Guide](USER_GUIDE.md) 
+- [API Reference](API_REFERENCE.md)
 
 ## Overview
 
