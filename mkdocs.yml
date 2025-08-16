@@ -8,7 +8,6 @@ repo_name: 'chrisfoulon/emuses'
 # Configuration
 theme:
   name: material
-  custom_dir: docs/overrides
   palette:
     # Palette toggle for light mode
     - scheme: default
@@ -95,18 +94,18 @@ nav:
   - Migration Guide: 'MIGRATION_GUIDE.md'
   - Research Workflows: 'RESEARCH_WORKFLOWS.md'
   - Examples:
-    - 'examples/index.md'
+    - Overview: 'examples/index.md'
     - HCP Dataset Analysis: 'examples/hcp_analysis.md'
     - Custom Pipeline: 'examples/custom_pipeline.md'
     - API Integration: 'examples/api_integration.md'
   - Development:
-    - Contributing: 'CONTRIBUTING.md'
-    - Architecture: 'docs/emuses/architecture.md'
-    - Testing: 'docs/test-analysis/test_analysis_summary.md'
+    - Architecture: 'emuses/architecture.md'
+    - Testing: 'test-analysis/test_analysis_summary.md'
+    - Testing Commands: 'testing-commands.md'
   - Model Registry:
-    - Overview: 'docs/model-registry/README.md'
-    - Integration Plan: 'docs/model-registry/plan_4_integration.md'
-    - Validation: 'docs/model-registry/task_483_validation.md'
+    - Overview: 'model-registry/README.md'
+    - Integration Plan: 'model-registry/plan_4_integration.md'
+    - Validation: 'model-registry/task_483_validation.md'
 
 # Plugins
 plugins:
