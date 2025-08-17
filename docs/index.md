@@ -22,12 +22,12 @@ EMUSES is a powerful, research-grade platform designed for comprehensive scienti
 ### 🔬 Advanced Scientific Analysis
 Designed for scientific researchers with support for multiple data formats, preprocessing pipelines, and specialized analysis methods. Extensively developed and tested with neuroimaging data, with broad applicability across scientific domains.
 
-**[Learn more →](USER_GUIDE.md)**
+**[Learn more →](USER_GUIDE.md#individual-researchers)**
 
 ### 📊 Machine Learning Pipeline
 Integrated ML workflows including dimensionality reduction (UMAP), clustering (HDBSCAN), and predictive modeling with automated optimization.
 
-**[Explore ML features →](USER_GUIDE.md)**
+**[Explore ML features →](USER_GUIDE.md#core-analysis-workflows)**
 
 ### 🔗 Flexible Interfaces
 Choose between command-line interface for automation, Python API for integration, or REST API for web-based applications.
@@ -37,7 +37,7 @@ Choose between command-line interface for automation, Python API for integration
 ### 📦 Model Registry
 Centralized model management with versioning, metadata tracking, and collaborative sharing capabilities.
 
-**[Model Registry Guide →](model-registry/README.md)**
+**[Model Registry Guide →](model-registry/user_guide.md)**
 
 -   :material-database:{ .lg .middle } __Model Registry__
 

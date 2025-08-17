@@ -22,7 +22,8 @@ This reference covers all API endpoints with detailed request/response examples,
 - **Production**: `https://your-emuses-instance.org`
 - **API Prefix**: All endpoints use `/api/v1/` prefix
 
-### **API Categories**
+## API Categories
+
 | Category | Endpoints | Description |
 |----------|-----------|-------------|
 | **Pipeline Execution** | 2 endpoints | Submit and manage analysis jobs |
@@ -64,6 +65,7 @@ Authorization: Bearer <token> (if multi-user mode)
 ```
 
 **Form Parameters**
+
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `features_file` | file | Yes | CSV file with scientific features |
@@ -169,6 +171,7 @@ Submit individual pipeline stages (umap, heatmap, inference) for granular contro
 #### Request (UMAP Stage Example)
 
 **Form Parameters**
+
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `features_file` | file | Yes | Input features CSV |
@@ -396,6 +399,7 @@ curl -X DELETE "http://localhost:8000/api/v1/jobs/job_abc123def456" \
 List jobs with filtering and pagination options.
 
 #### Query Parameters
+
 | Parameter | Type | Description |
 |-----------|------|-------------|
 | `status` | string | Filter by status: `queued`, `running`, `completed`, `failed` |
