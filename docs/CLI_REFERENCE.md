@@ -345,7 +345,7 @@ emuses full distributed_analysis/ \
 ## 🔗 **Related Documentation**
 
 - **[User Guide](docs/USER_GUIDE.md)** - Complete usage documentation
-- **[API Reference](docs/API_REFERENCE.md)** - REST API documentation  
+- **[API Documentation](docs/API_REFERENCE.md)** - REST API documentation  
 - **[Research Workflows](docs/RESEARCH_WORKFLOWS.md)** - Scientific use patterns
 - **[Admin Guide](docs/ADMIN_GUIDE.md)** - System administration
 

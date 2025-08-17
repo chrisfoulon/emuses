@@ -144,7 +144,7 @@ python -m emuses.cli models status --verbose
 ### Immediate Next Steps
 - **Explore your results**: Open `output_folder/` and examine predictions
 - **Try model registry**: `python -m emuses.cli models --help`
-- **Check API docs**: Start server and visit http://localhost:8000/docs
+- **Check API docs**: See [API Documentation](API_REFERENCE.md)
 
 ### Learning Paths
 
@@ -159,7 +159,7 @@ python -m emuses.cli models status --verbose
 3. [Multi-User Service Guide](docs/multi-user-service/research-workflows.md)
 
 #### 💻 **For Integration/Development**
-1. [API Documentation](http://localhost:8000/docs) *(start FastAPI server first)*
+1. [API Documentation](API_REFERENCE.md) - Static docs, or start server for interactive docs at `/api/docs`
 2. [Developer Guide](docs/model-registry/developer_guide.md)
 3. [Python API Examples](docs/model-registry/api_reference.md)
 
@@ -218,7 +218,7 @@ pip install git+https://github.com/chrisfoulon/emuses.git
 - **📖 Documentation**: [Model Registry Guide](docs/model-registry/user_guide.md)
 - **🐛 Issues**: [GitHub Issues](https://github.com/chrisfoulon/emuses/issues)
 - **💬 Questions**: [GitHub Discussions](https://github.com/chrisfoulon/emuses/discussions)
-- **🔧 API Reference**: [FastAPI Docs](http://localhost:8000/docs) *(after starting server)*
+- **🔧 API Reference**: [API Documentation](API_REFERENCE.md)
 
 ---
 

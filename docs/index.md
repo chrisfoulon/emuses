@@ -11,7 +11,7 @@
 **Quick Navigation:**
 - [Quick Start Guide](QUICK_START.md)
 - [User Guide](USER_GUIDE.md) 
-- [API Reference](API_REFERENCE.md)
+- [API Documentation](API_REFERENCE.md)
 
 ## Overview
 
@@ -105,7 +105,7 @@ EMUSES implements state-of-the-art methods from computational science and machin
 
 ### Documentation
 - **[User Guide](USER_GUIDE.md)** - Comprehensive tutorials and workflows
-- **[API Reference](API_REFERENCE.md)** - Complete API documentation  
+- **[API Documentation](API_REFERENCE.md)** - Complete API documentation  
 - **[CLI Reference](CLI_REFERENCE.md)** - Command-line interface guide
 - **[Migration Guide](MIGRATION_GUIDE.md)** - Upgrading between versions
 
@@ -121,7 +121,7 @@ Ready to start analyzing your neuroimaging data? Choose your path:
 
 - **⚡ Experienced User?** → Jump to the **[User Guide](USER_GUIDE.md)** for advanced workflows and best practices
 
-- **👩‍💻 Developer?** → Check out the **[API Reference](API_REFERENCE.md)** for integration and extension
+- **👩‍💻 Developer?** → Check out the **[API Documentation](API_REFERENCE.md)** for integration and extension
 
 - **🔄 Migrating?** → See our **[Migration Guide](MIGRATION_GUIDE.md)** for upgrading from previous versions
 

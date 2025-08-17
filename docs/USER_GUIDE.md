@@ -1817,7 +1817,7 @@ python cluster_submit.py --data data.csv --scores scores.csv
 
 #### **Documentation Resources**
 - **[CLI Reference](docs/CLI_REFERENCE.md)**: Complete command documentation
-- **[API Reference](docs/API_REFERENCE.md)**: REST API documentation
+- **[API Documentation](docs/API_REFERENCE.md)**: REST API documentation
 - **[Quick Start Guide](docs/QUICK_START.md)**: 5-minute tutorial
 
 #### **Community Support**
@@ -1843,7 +1843,7 @@ curl http://localhost:8000/api/health
 ## 🔗 **Related Documentation**
 
 - **[CLI Reference](docs/CLI_REFERENCE.md)** - Complete command-line interface reference
-- **[API Reference](docs/API_REFERENCE.md)** - REST API documentation for integration
+- **[API Documentation](docs/API_REFERENCE.md)** - REST API documentation for integration
 - **[Quick Start Guide](docs/QUICK_START.md)** - 5-minute tutorial for immediate results
 - **[Research Workflows](docs/RESEARCH_WORKFLOWS.md)** - Scientific use case patterns
 - **[Admin Guide](docs/ADMIN_GUIDE.md)** - System administration and deployment
