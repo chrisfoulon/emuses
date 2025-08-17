@@ -117,12 +117,26 @@ plugins:
   - minify:
       minify_html: true
 
+# Link validation settings
+validation:
+  nav:
+    not_found: warn
+    absolute_links: info
+  links:
+    not_found: warn
+    anchors: info
+    unrecognized_links: info
+
+# Enable strict mode for production builds
+strict: false  # Set to true for production builds
+
 # Extra CSS and JS
 extra_css:
   - stylesheets/extra.css
 
 extra_javascript:
   - javascripts/mathjax.js
+  - javascripts/progressive-disclosure.js
   - https://polyfill.io/v3/polyfill.min.js?features=es6
   - https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js
 

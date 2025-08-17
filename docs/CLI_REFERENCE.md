@@ -2,114 +2,124 @@
 
 **Comprehensive command-line interface reference for EMUSES scientific analysis platform**
 
-This reference provides multi-level documentation for all CLI commands, from beginner tutorials to advanced optimization strategies.
+This reference provides progressive disclosure documentation - essential commands are always visible, while advanced features are organized in collapsible sections for different expertise levels.
+
+## 🗺️ **CLI Command Navigation Map**
+
+```mermaid
+graph TD
+    A[👤 New User] --> B{Experience Level?}
+    B -->|Beginner| C[🚀 Essential Commands]
+    B -->|Researcher| D[🔧 Advanced Configuration] 
+    B -->|Developer| E[💻 Developer Integration]
+    B -->|Admin| F[🏛️ System Administration]
+    
+    C --> C1[emuses full - Complete Analysis]
+    C --> C2[emuses umap - Quick Visualization]
+    C --> C3[emuses models list - View Models]
+    C --> C4[emuses --help - Get Help]
+    
+    C1 --> G[✅ First Analysis Complete]
+    
+    D --> D1[📊 Optimization Configs]
+    D --> D2[📚 Model Registry]
+    D --> D3[🔬 Research Tools]
+    
+    E --> E1[⚡ Performance Tuning]
+    E --> E2[🔌 Service Integration]
+    E --> E3[🤖 Inference Pipeline]
+    
+    F --> F1[👥 User Management]
+    F --> F2[🔧 System Config]
+    F --> F3[📈 Monitoring]
+    
+    G --> H{Need More?}
+    H -->|Optimize| D
+    H -->|Integrate| E
+    H -->|Deploy| F
+    
+    style C fill:#e1f5fe
+    style D fill:#e8f5e8  
+    style E fill:#fff3e0
+    style F fill:#fce4ec
+    style G fill:#f3e5f5
+```
 
 ---
 
-## 📚 **Documentation Levels**
+## **🚀 Essential Commands** 
+*Start here - core commands every user needs*
 
-### 🟢 **Beginner Level** - Getting Started
-- Basic commands with default settings
-- Essential workflows for scientific analysis (neuroimaging examples)
-- Preset optimization configurations
-- Simple examples with sample data
-
-### 🟡 **Intermediate Level** - Understanding the System  
-- Parameter categories and functionality
-- Optimization dictionary (`optim_dict`) mechanism
-- Workflow customization and configuration
-- Multi-stage pipeline usage
-
-### 🔴 **Advanced Level** - Expert Configuration
-- Custom optimization parameter design
-- Performance tuning and resource management
-- Multi-user and service deployment
-- Integration with external systems
-
----
-
-## 📋 **Command Overview**
-
-### **Quick Command Index**
-| Category | Commands | User Level | Description |
-|----------|----------|------------|-------------|
-| **Pipeline** | `full`, `umap`, `heatmap`, `inference` | 🟢 Beginner | Core analysis workflows |
-| **Research** | `verify`, `info`, `cite`, `trace`, `reproduce`, `diff`, `compare`, `rerun` | 🟡 Intermediate | Scientific reproducibility tools |
-| **Registry** | `models *` (11 commands) | 🟡 Intermediate | Model management and sharing |
-| **Workspace** | `workspace *` (3 commands) | 🟡 Intermediate | Team collaboration |
-| **Admin** | `admin *` (5 commands) | 🔴 Advanced | System administration |
-| **Utility** | `install-completion` | 🟢 Beginner | Shell integration |
-
----
-
-## 🟢 **Beginner Level: Essential Commands**
-
-*Start here if you're new to EMUSES or scientific data analysis*
+### Quick Command Reference
+```bash
+emuses --help                    # Get comprehensive help
+emuses full my_analysis/ data.csv --scores scores.csv  # Complete analysis
+emuses umap embeddings/ data.csv # Just dimensionality reduction
+emuses models list              # View available models
+```
 
 ### `emuses full` - Complete Pipeline Analysis
 
 Run the complete EMUSES analysis pipeline with sensible defaults.
 
-#### Basic Usage
+**Basic Usage**
 ```bash
 emuses full my_analysis/ brain_features.csv --scores cognitive_scores.csv
 ```
 
-#### Essential Parameters
+**Essential Parameters**
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `OUTPUT_FOLDER` | path | ✅ Required | Directory for analysis results |
 | `INPUT_DATASET` | path | ✅ Required | CSV file with scientific features |
 | `--scores` | path | ✅ Essential | CSV file with cognitive/behavioral scores |
 
-#### Beginner Examples
-
-**Example 1: Basic HCP Analysis**
+**Your First Analysis** (5 minutes)
 ```bash
 # Using sample data (replace with your data files)
 emuses full my_first_analysis/ \
   docs/examples/sample_data/hcp_input_data.csv \
   --scores docs/examples/sample_data/hcp_labels.csv
 ```
-*Expected runtime: 3-5 minutes with sample data*
+*Expected runtime: 3-5 minutes with sample data*  
 *Output: Complete analysis results in `my_first_analysis/` folder*
-
-**Example 2: Quick Analysis with Different Data**
-```bash
-# Basic analysis with custom data
-emuses full brain_cognition_study/ \
-  my_brain_features.csv \
-  --scores my_cognitive_scores.csv
-```
 
 ### `emuses umap` - Dimensionality Reduction Only
 
-Create UMAP embeddings without full pipeline.
+Create UMAP embeddings for data visualization and exploration.
 
-#### Basic Usage
+**Basic Usage**
 ```bash
 emuses umap embeddings_output/ brain_features.csv
 ```
 
-#### When to Use
+**When to Use**
 - **Exploratory analysis**: Quick visualization of high-dimensional data
 - **Quality control**: Check data clustering before full analysis
 - **Preprocessing**: Create embeddings for downstream analysis
 
-### `emuses heatmap` - Visualization Generation
+### `emuses models list` - View Available Models
 
-Generate correlation heatmaps from existing embeddings.
+List all models in your registry.
 
-#### Basic Usage
 ```bash
-emuses heatmap heatmap_output/ embeddings.npy --scores cognitive_scores.csv
+emuses models list                    # List all models
+emuses models list --workspace lab1   # Filter by workspace
+```
+
+### `emuses --help` - Get Help
+
+Get comprehensive help for any command.
+
+```bash
+emuses COMMAND --help           # Get help for any command
+emuses models SUBCOMMAND --help # Get help for subcommands
 ```
 
 ---
 
-## 🟡 **Intermediate Level: Understanding the System**
-
-*For users who want to customize analysis and understand optimization*
+<details>
+<summary>🔧 **Advanced Configuration Commands**</summary>
 
 ### Understanding Optimization Configurations (`optim_dict`)
 
@@ -175,16 +185,9 @@ The `--optim_dict` parameter references predefined optimization configurations t
 | `--optuna_trials` | integer | 60 | Optuna optimization trials per model |
 | `--interactive` | flag | False | Interactive mode with prompts |
 
-#### Service Integration
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `--service` | flag | False | Use remote service execution |
-| `--service-url` | string | None | Remote service URL |
-| `--token` | string | None | Authentication token |
+### Advanced Examples
 
-#### Intermediate Examples
-
-**Example 1: HCP-Optimized Analysis**
+**HCP-Optimized Analysis**
 ```bash
 emuses full hcp_analysis/ \
   brain_connectivity.csv \
@@ -193,7 +196,7 @@ emuses full hcp_analysis/ \
   --random_state 42
 ```
 
-**Example 2: Noisy Data Analysis**
+**Noisy Data Analysis**
 ```bash
 emuses full noisy_data_analysis/ \
   messy_brain_features.csv \
@@ -202,7 +205,7 @@ emuses full noisy_data_analysis/ \
   --umap_trials 100
 ```
 
-**Example 3: Enhanced Pipeline with Model Optimization**
+**Enhanced Pipeline with Model Optimization**
 ```bash
 emuses full comprehensive_analysis/ \
   brain_features.csv \
@@ -212,13 +215,28 @@ emuses full comprehensive_analysis/ \
   --n_jobs 8
 ```
 
-### Model Registry Commands
+### `emuses heatmap` - Visualization Generation
 
-#### `emuses models list` - View Available Models
+Generate correlation heatmaps from existing embeddings.
+
+**Usage**
 ```bash
-emuses models list                    # List all models
-emuses models list --workspace lab1   # Filter by workspace
+emuses heatmap heatmap_output/ embeddings.npy --scores cognitive_scores.csv
 ```
+
+**Parameters**
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `OUTPUT_FOLDER` | path | ✅ Required | Directory for heatmap results |
+| `EMBEDDINGS_FILE` | path | ✅ Required | NumPy array file with embeddings |
+| `--scores` | path | ✅ Essential | CSV file with scores for correlation |
+
+</details>
+
+<details>
+<summary>📚 **Model Registry and Collaboration**</summary>
+
+### Model Registry Commands
 
 #### `emuses models install` - Register New Models
 ```bash
@@ -228,6 +246,31 @@ emuses models install trained_model/ --name "Brain Age Predictor"
 #### `emuses models info` - Get Model Details
 ```bash
 emuses models info model_id_or_name
+```
+
+#### `emuses models download` - Download Models
+```bash
+emuses models download model_id_or_name output_directory/
+```
+
+#### `emuses models search` - Find Models
+```bash
+emuses models search --tags neuroimaging --type regression
+```
+
+#### `emuses models remove` - Delete Models
+```bash
+emuses models remove model_id_or_name
+```
+
+#### `emuses models export` - Export Models
+```bash
+emuses models export model_id_or_name --format zip
+```
+
+#### `emuses models validate` - Check Model Integrity
+```bash
+emuses models validate model_id_or_name
 ```
 
 ### Workspace Management Commands
@@ -243,11 +286,129 @@ emuses workspace create "Lab Analysis" \
 emuses workspace list
 ```
 
----
+#### `emuses workspace switch` - Change Active Workspace
+```bash
+emuses workspace switch workspace_name_or_id
+```
 
-## 🔴 **Advanced Level: Expert Configuration**
+### Research Reproducibility Commands
 
-*For system administrators and advanced users who need full control*
+#### `emuses verify` - Verify Analysis Results
+```bash
+emuses verify analysis_directory/
+```
+
+#### `emuses info` - Get Analysis Information
+```bash
+emuses info analysis_directory/
+```
+
+#### `emuses cite` - Generate Citations
+```bash
+emuses cite analysis_directory/ --format bibtex
+```
+
+#### `emuses trace` - Track Analysis Lineage
+```bash
+emuses trace analysis_directory/
+```
+
+#### `emuses reproduce` - Reproduce Analysis
+```bash
+emuses reproduce analysis_directory/ new_output/
+```
+
+#### `emuses diff` - Compare Analyses
+```bash
+emuses diff analysis1/ analysis2/
+```
+
+#### `emuses compare` - Compare Multiple Results
+```bash
+emuses compare analysis1/ analysis2/ analysis3/
+```
+
+#### `emuses rerun` - Rerun Analysis
+```bash
+emuses rerun analysis_directory/ --update-data
+```
+
+</details>
+
+<details>
+<summary>💻 **Developer and Integration Commands**</summary>
+
+### Service Integration
+
+#### Service-Based Execution
+```bash
+emuses full distributed_analysis/ \
+  brain_features.csv \
+  --scores cognitive_scores.csv \
+  --service \
+  --service-url https://emuses-cluster.institution.edu \
+  --token $EMUSES_TOKEN \
+  --service-timeout 7200
+```
+
+#### Service Integration Parameters
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `--service` | flag | False | Use remote service execution |
+| `--service-url` | string | None | Remote service URL |
+| `--token` | string | None | Authentication token |
+| `--service-timeout` | integer | 3600 | Request timeout in seconds |
+
+### Performance Optimization
+
+#### High-Performance Analysis Setup
+```bash
+emuses full large_study_analysis/ \
+  massive_dataset.csv \
+  --scores comprehensive_battery.csv \
+  --optim_dict optim_dict_hard \
+  --umap_trials 200 \
+  --optuna_trials 150 \
+  --n_jobs 16
+```
+
+#### Resource Management Parameters
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `--n_jobs` | integer | -1 | Parallel processing jobs (-1 = all cores) |
+| `--umap_jobs` | integer | None | UMAP-specific parallel jobs |
+| `--hdbscan_jobs` | integer | None | HDBSCAN-specific parallel jobs |
+| `--parallel_model_training` | flag | False | Enable parallel model training |
+
+### `emuses inference` - Run Predictions
+
+Run predictions on new data using trained models.
+
+**Usage**
+```bash
+emuses inference predictions/ trained_model.pkl new_data.csv
+```
+
+**Parameters**
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `OUTPUT_FOLDER` | path | ✅ Required | Directory for prediction results |
+| `MODEL_FILE` | path | ✅ Required | Trained model file (.pkl) |
+| `DATA_FILE` | path | ✅ Required | New data for predictions (CSV) |
+
+### Shell Integration
+
+#### `emuses install-completion` - Enable Tab Completion
+```bash
+emuses install-completion
+```
+
+Enables tab completion for your shell (bash, zsh, fish).
+
+</details>
+
+<details>
+<summary>🏛️ **System Administration**</summary>
 
 ### Custom Optimization Configuration
 
@@ -313,59 +474,68 @@ emuses admin system-status
 emuses admin set-quota username --storage 100GB --compute 50hours
 ```
 
-### Performance and Resource Management
-
-#### High-Performance Analysis Setup
+#### `emuses admin backup` - System Backup
 ```bash
-emuses full large_study_analysis/ \
-  massive_dataset.csv \
-  --scores comprehensive_battery.csv \
-  --optim_dict optim_dict_hard \
-  --umap_trials 200 \
-  --optuna_trials 150 \
-  --parallel_model_training \
-  --n_jobs 16 \
-  --umap_jobs 8 \
-  --hdbscan_jobs 4
+emuses admin backup --target external_storage/ --compress
 ```
 
-#### Service-Based Execution
+#### `emuses admin restore` - System Restore
 ```bash
-emuses full distributed_analysis/ \
-  brain_features.csv \
-  --scores cognitive_scores.csv \
-  --service \
-  --service-url https://emuses-cluster.institution.edu \
-  --token $EMUSES_TOKEN \
-  --service-timeout 7200
+emuses admin restore backup_file.tar.gz --verify
 ```
+
+### Advanced System Configuration
+
+#### Multi-User Environment Setup
+```bash
+# Initialize multi-user mode
+emuses admin init-multiuser \
+  --database-url postgresql://localhost/emuses \
+  --redis-url redis://localhost:6379 \
+  --storage-path /shared/emuses-data
+
+# Configure authentication
+emuses admin configure-auth \
+  --provider ldap \
+  --server ldap.institution.edu \
+  --base-dn "dc=institution,dc=edu"
+```
+
+#### Cluster Deployment Configuration
+```bash
+# Configure distributed processing
+emuses admin configure-cluster \
+  --scheduler-host cluster-scheduler.local \
+  --worker-nodes 8 \
+  --resource-limits cpu=32,memory=128GB
+```
+
+</details>
 
 ---
 
 ## 🔗 **Related Documentation**
 
-- **[User Guide](docs/USER_GUIDE.md)** - Complete usage documentation
-- **[API Documentation](docs/API_REFERENCE.md)** - REST API documentation  
-- **[Research Workflows](docs/RESEARCH_WORKFLOWS.md)** - Scientific use patterns
-- **[Admin Guide](docs/ADMIN_GUIDE.md)** - System administration
+- **[User Guide](USER_GUIDE.md)** - Complete usage documentation with workflows
+- **[API Documentation](API_REFERENCE.md)** - REST API for programmatic access  
+- **[Research Workflows](RESEARCH_WORKFLOWS.md)** - Scientific use case patterns
+- **[Quick Start](QUICK_START.md)** - 5-minute getting started guide
 
 ---
 
 ## 💡 **Getting Help**
 
-### Command-Specific Help
-```bash
-emuses COMMAND --help           # Get help for any command
-emuses models SUBCOMMAND --help # Get help for subcommands
-```
-
-### Troubleshooting
-- **Parameter errors**: Check required vs optional parameters above
+### Quick Troubleshooting
+- **Parameter errors**: Check required vs optional parameters in sections above
 - **Data format issues**: Ensure CSV files have proper headers and formatting
 - **Performance problems**: Reduce `--umap_trials` and `--optuna_trials` for faster execution
 - **Memory issues**: Use `--n_jobs 1` to reduce parallel processing
 
 ### Support Resources
 - **GitHub Issues**: [Report bugs and request features](https://github.com/chrisfoulon/emuses/issues)
-- **Documentation**: [Complete user guides](docs/)
-- **Sample Data**: [Example datasets and workflows](docs/examples/)
+- **Documentation**: [Complete user guides](../docs/)
+- **Sample Data**: [Example datasets and workflows](examples/)
+
+---
+
+*This CLI reference uses progressive disclosure - essential commands are immediately visible, while advanced features are organized in collapsible sections. Click any section header to expand detailed information.*
