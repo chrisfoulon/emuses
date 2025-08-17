@@ -89,7 +89,10 @@ nav:
   - Home: 'index.md'
   - Quick Start: 'QUICK_START.md'
   - User Guide: 'USER_GUIDE.md'
-  - API Reference: 'API_REFERENCE.md'
+  - API Documentation:
+    - Overview: 'API_REFERENCE.md'
+    - Model Registry API: 'model-registry/api_reference.md'
+    - Service API: 'emuses/api_service.md'
   - CLI Reference: 'CLI_REFERENCE.md'
   - Migration Guide: 'MIGRATION_GUIDE.md'
   - Research Workflows: 'RESEARCH_WORKFLOWS.md'

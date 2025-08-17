@@ -4,6 +4,12 @@
 
 This reference covers all API endpoints with detailed request/response examples, authentication, error handling, and integration patterns for scientific research workflows.
 
+> **💡 Interactive API Documentation**  
+> For live, interactive API exploration, start the EMUSES service and visit:
+> - **Swagger UI**: `http://localhost:8000/api/docs`
+> - **ReDoc**: `http://localhost:8000/api/redoc`
+> - **OpenAPI Schema**: `http://localhost:8000/api/openapi.json`
+
 ## 📋 **API Overview**
 
 ### **Base URLs**
