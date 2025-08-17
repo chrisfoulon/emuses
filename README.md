@@ -71,6 +71,10 @@ python -m emuses.cli models info community_model_v2
 *Comprehensive model sharing documentation*  
 → For researchers who want to understand model registry capabilities
 
+### 🔬 [Research Workflows Guide](docs/RESEARCH_WORKFLOWS.md)
+*Scientific use case patterns and methodological examples*  
+→ For researchers implementing specific neuroimaging analysis workflows
+
 ### 🔧 [API Documentation](http://localhost:8000/docs)
 *Interactive API reference*  
 → For computational scientists integrating EMUSES into workflows

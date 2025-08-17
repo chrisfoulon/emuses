@@ -94,7 +94,7 @@ class TestCompareCommand(unittest.TestCase):
         
         result = self.runner.invoke(app, ["compare", str(self.model1_path)])
         self.assertEqual(result.exit_code, 2)  # Missing second model
-        self.assertIn("Missing argument", result.stdout)
+        self.assertIn("Missing argument", result.stderr)
 
     def test_compare_command_shows_version_differences(self):
         """Test that compare command shows version differences."""
@@ -159,7 +159,7 @@ class TestCompareCommand(unittest.TestCase):
         ])
         
         self.assertNotEqual(result.exit_code, 0)
-        self.assertIn("not found", result.stdout.lower())
+        self.assertIn("not found", result.stderr.lower())
 
     def test_compare_command_handles_missing_model2(self):
         """Test that compare command handles missing second model gracefully."""
@@ -172,7 +172,7 @@ class TestCompareCommand(unittest.TestCase):
         ])
         
         self.assertNotEqual(result.exit_code, 0)
-        self.assertIn("not found", result.stdout.lower())
+        self.assertIn("not found", result.stderr.lower())
 
     def test_compare_command_handles_missing_manifest(self):
         """Test that compare command handles missing manifest gracefully."""
@@ -186,7 +186,7 @@ class TestCompareCommand(unittest.TestCase):
         ])
         
         self.assertNotEqual(result.exit_code, 0)
-        self.assertIn("manifest", result.stdout.lower())
+        self.assertIn("manifest", result.stderr.lower())
 
 
 if __name__ == '__main__':

@@ -74,7 +74,7 @@ class TestDiffCommand(unittest.TestCase):
         """Test that diff command requires model path argument."""
         result = self.runner.invoke(app, ["diff"])
         self.assertEqual(result.exit_code, 2)  # Missing required argument
-        self.assertIn("Missing argument", result.stdout)
+        self.assertIn("Missing argument", result.stderr)
 
     def test_diff_command_detects_no_changes(self):
         """Test that diff command detects no changes when files are unchanged."""
