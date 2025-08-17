@@ -2,7 +2,48 @@
 
 **Comprehensive REST API documentation for programmatic access to EMUSES scientific analysis platform**
 
-This reference covers all API endpoints with detailed request/response examples, authentication, error handling, and integration patterns for scientific research workflows.
+This reference provides progressive disclosure documentation - essential API endpoints are always visible, while advanced integration patterns are organized in collapsible sections for different developer experience levels.
+
+## 🗺️ **API Integration Navigation Map**
+
+```mermaid
+graph TD
+    A[👨‍💻 New Developer] --> B{Integration Goal?}
+    B -->|First API Call| C[🚀 Getting Started]
+    B -->|Research Tool| D[🔬 Pipeline Execution]
+    B -->|Production App| E[⚙️ Advanced Integration]
+    B -->|System Admin| F[🏛️ Monitoring & Management]
+    
+    C --> C1[Interactive Documentation]
+    C --> C2[Submit First Analysis]
+    C --> C3[Check Job Status]
+    C --> C4[Download Results]
+    
+    C1 --> G[✅ First API Integration Complete]
+    
+    D --> D1[📊 Full Pipeline API]
+    D --> D2[📈 Job Management]
+    D --> D3[📁 File Operations]
+    
+    E --> E1[🔄 Batch Processing]
+    E --> E2[🔗 Service Integration]
+    E --> E3[⚡ Performance Optimization]
+    
+    F --> F1[💊 Health Monitoring]
+    F --> F2[📚 Model Registry Management]
+    F --> F3[🛡️ Error Handling]
+    
+    G --> H{Need More?}
+    H -->|Research Workflows| D
+    H -->|Production Deploy| E
+    H -->|System Monitoring| F
+    
+    style C fill:#e1f5fe
+    style D fill:#e8f5e8  
+    style E fill:#fff3e0
+    style F fill:#fce4ec
+    style G fill:#f3e5f5
+```
 
 > **💡 Interactive API Documentation**  
 > For live, interactive API exploration, start the EMUSES service locally:
@@ -15,42 +56,66 @@ This reference covers all API endpoints with detailed request/response examples,
 > # • ReDoc: http://localhost:8000/api/redoc
 > ```
 
-## 📋 **API Overview**
+---
 
-### **Base URLs**
-- **Local Development**: `http://localhost:8000`
-- **Production**: `https://your-emuses-instance.org`
-- **API Prefix**: All endpoints use `/api/v1/` prefix
+## **🚀 Getting Started** 
+*Start here - essential endpoints for your first API integration*
 
-## API Categories
+### **Base Configuration**
+```bash
+# Base URLs
+LOCAL_DEV="http://localhost:8000"
+PRODUCTION="https://your-emuses-instance.org"  
+API_PREFIX="/api/v1/"
 
-| Category | Endpoints | Description |
-|----------|-----------|-------------|
-| **Pipeline Execution** | 2 endpoints | Submit and manage analysis jobs |
-| **Job Management** | 5 endpoints | Monitor job status and logs |
-| **File Upload** | 3 endpoints | Upload scientific data |
-| **Inference** | 2 endpoints | Run predictions on trained models |
-| **Task Management** | 4 endpoints | Async task monitoring and control |
-| **Artifact Management** | 2 endpoints | Download analysis results |
-| **Health & Monitoring** | 20 endpoints | System health and diagnostics |
-| **Model Registry** | 14 endpoints | Model management (multi-user mode) |
-
-### **Authentication**
-```http
-# Multi-user mode requires authentication
-Authorization: Bearer <your-jwt-token>
-
-# Local mode (default) - no authentication required
+# Authentication (multi-user mode only)
+HEADERS="Authorization: Bearer <your-jwt-token>"
 ```
 
-### **Rate Limiting**
-- **Default**: 100 requests per hour per IP
-- **Authenticated**: 1000 requests per hour per user
-- **Headers**: `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset`
+### **Your First API Call** (2 minutes)
+
+**Step 1: Submit Analysis**
+```bash
+curl -X POST "http://localhost:8000/api/v1/jobs/pipeline/full" \
+  -F "features_file=@brain_features.csv" \
+  -F "scores_file=@cognitive_scores.csv" \
+  -F "job_name=my_first_api_analysis"
+```
+
+**Step 2: Check Status**
+```bash
+curl "http://localhost:8000/api/v1/jobs/{job_id}/status"
+```
+
+**Step 3: Download Results**
+```bash
+curl "http://localhost:8000/api/v1/jobs/{job_id}/artifacts"
+```
+
+### **Essential Endpoints Quick Reference**
+
+| Endpoint | Method | Purpose | Authentication |
+|----------|--------|---------|----------------|
+| `/api/v1/jobs/pipeline/full` | POST | Submit complete analysis | Optional |
+| `/api/v1/jobs/{id}/status` | GET | Check job progress | Optional |
+| `/api/v1/jobs/{id}/artifacts` | GET | List result files | Optional |
+| `/api/v1/jobs/{id}/artifacts/{file}` | GET | Download specific file | Optional |
+| `/api/health` | GET | Service health check | None |
+
+### **Response Format**
+All API responses follow consistent JSON structure:
+```json
+{
+  "status": "success|error|accepted",
+  "data": { /* endpoint-specific data */ },
+  "message": "Human-readable description"
+}
+```
 
 ---
 
-## 🔬 **Pipeline Execution API**
+<details>
+<summary>🔬 **Pipeline Execution API**</summary>
 
 ### `POST /api/v1/jobs/pipeline/full` - Submit Full Pipeline
 
@@ -214,9 +279,10 @@ curl -X POST "http://localhost:8000/api/v1/jobs/pipeline/stage/inference" \
 - **Method Development**: Test specific algorithms
 - **Custom Workflows**: Build custom analysis pipelines
 
----
+</details>
 
-## 📊 **Job Management API**
+<details>
+<summary>📊 **Job Management API**</summary>
 
 ### `GET /api/v1/jobs/{job_id}/status` - Get Job Status
 
@@ -444,7 +510,10 @@ curl -X GET "http://localhost:8000/api/v1/jobs?status=completed&limit=10&sort=cr
 }
 ```
 
----
+</details>
+
+<details>
+<summary>📁 **File Operations API**</summary>
 
 ## 📁 **Artifact Management API**
 
@@ -607,7 +676,10 @@ curl -X POST "http://localhost:8000/api/v1/upload/labels" \
   -F "description=Subject group assignments"
 ```
 
----
+</details>
+
+<details>
+<summary>⚙️ **Advanced Integration**</summary>
 
 ## 🤖 **Inference API**
 
@@ -686,7 +758,10 @@ Submit inference job for large datasets or batch processing.
 }
 ```
 
----
+</details>
+
+<details>
+<summary>🏛️ **Monitoring & Management**</summary>
 
 ## 📊 **Health & Monitoring API**
 
@@ -785,8 +860,6 @@ Comprehensive health information including performance metrics.
 | `GET /api/v1/registry/degradation-status` | Graceful degradation status |
 | `GET /metrics` | Prometheus metrics |
 
----
-
 ## 📚 **Error Handling**
 
 ### Standard Error Response Format
@@ -831,6 +904,8 @@ All API errors follow a consistent format:
 | E300-E399 | Processing | Job execution errors |
 | E400-E499 | Storage | File and storage errors |
 | E500-E599 | System | Infrastructure errors |
+
+</details>
 
 ---
 
