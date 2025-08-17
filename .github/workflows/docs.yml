@@ -2,46 +2,100 @@ name: Deploy MkDocs to GitHub Pages
 
 on:
   push:
-    branches: [ "main" ]
-  pull_request:
-    branches: [ "main" ]
+    branches: [ "main", "feature/documentation-restructuring" ]  # Support both branches
+    paths: [ "docs/**", "mkdocs.yml", ".github/workflows/docs.yml" ]
+  workflow_dispatch:  # Allow manual triggering
 
 permissions:
-  contents: write
+  contents: read
   pages: write
   id-token: write
 
+concurrency:
+  group: "pages"
+  cancel-in-progress: true
+
 jobs:
-  docs:
+  build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Configure Git Credentials
-        run: |
-          git config user.name github-actions[bot]
-          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.x'
-
-      - name: Cache dependencies
+          python-version: '3.11'
+          
+      - name: Cache pip dependencies
         uses: actions/cache@v4
         with:
-          key: mkdocs-material-${{ github.sha }}
-          path: ~/.cache
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
           restore-keys: |
-            mkdocs-material-
-
-      - name: Install MkDocs Material and dependencies
+            ${{ runner.os }}-pip-
+            
+      - name: Install MkDocs and dependencies
         run: |
           pip install mkdocs-material
           pip install mkdocs-minify-plugin
           pip install mkdocs-awesome-pages-plugin
+          
+      - name: Validate MkDocs configuration
+        run: mkdocs --version && mkdocs config
+        
+      - name: Build documentation
+        run: mkdocs build --strict --verbose
+        
+      - name: Verify progressive disclosure features
+        run: |
+          echo "🔍 Verifying progressive disclosure implementation..."
+          
+          # Check that progressive disclosure JavaScript exists
+          if [ -f "site/javascripts/progressive-disclosure.js" ]; then
+            echo "✅ Progressive disclosure JavaScript found"
+          else
+            echo "❌ Progressive disclosure JavaScript missing"
+            exit 1
+          fi
+          
+          # Check that CLI_REFERENCE has details elements
+          if grep -q "<details" site/CLI_REFERENCE/index.html; then
+            echo "✅ CLI_REFERENCE progressive disclosure implemented"
+          else
+            echo "❌ CLI_REFERENCE progressive disclosure missing"
+            exit 1
+          fi
+          
+          # Check that API_REFERENCE has details elements  
+          if grep -q "<details" site/API_REFERENCE/index.html; then
+            echo "✅ API_REFERENCE progressive disclosure implemented"
+          else
+            echo "❌ API_REFERENCE progressive disclosure missing"
+            exit 1
+          fi
+          
+          echo "🎉 All progressive disclosure features validated!"
+          
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: "site"
 
+  deploy:
+    needs: build
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
       - name: Deploy to GitHub Pages
-        run: mkdocs gh-deploy --force
+        id: deploy
+        uses: actions/deploy-pages@v4
+        
+      - name: Output deployment URLs
+        run: |
+          echo "🚀 Documentation deployed successfully!"
+          echo "📖 Site URL: ${{ steps.deploy.outputs.page_url }}"
+          echo "🛠️ CLI Reference: ${{ steps.deploy.outputs.page_url }}CLI_REFERENCE/"
+          echo "🔌 API Reference: ${{ steps.deploy.outputs.page_url }}API_REFERENCE/"

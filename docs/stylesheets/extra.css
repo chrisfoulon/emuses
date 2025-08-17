@@ -68,3 +68,51 @@
     color: var(--md-default-fg-color--light);
     font-size: 0.75rem;
 }
+
+/* API Reference table improvements */
+.md-typeset table:not([class]) th:first-child,
+.md-typeset table:not([class]) td:first-child {
+    min-width: 140px;
+    white-space: nowrap;
+}
+
+/* Form Parameters tables specifically */
+.md-typeset table:not([class]) th:nth-child(1) {
+    width: 25%;
+    min-width: 140px;
+}
+
+.md-typeset table:not([class]) th:nth-child(2) {
+    width: 15%;
+}
+
+.md-typeset table:not([class]) th:nth-child(3) {
+    width: 15%;
+}
+
+.md-typeset table:not([class]) th:nth-child(4) {
+    width: 45%;
+}
+
+/* Progressive disclosure enhancements */
+.md-typeset details {
+    margin: 1.5rem 0;
+}
+
+.md-typeset details summary {
+    font-weight: 600;
+    margin-bottom: 1rem;
+    cursor: pointer;
+    padding: 0.5rem 0;
+    border-radius: 0.25rem;
+    transition: background-color 0.2s ease;
+}
+
+.md-typeset details summary:hover {
+    background-color: var(--md-default-bg-color--light);
+}
+
+.md-typeset details[open] summary {
+    margin-bottom: 1rem;
+    border-bottom: 1px solid var(--md-default-fg-color--lightest);
+}

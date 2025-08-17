@@ -118,7 +118,7 @@ emuses models SUBCOMMAND --help # Get help for subcommands
 
 ---
 
-<details>
+<details markdown="1">
 <summary>🔧 **Advanced Configuration Commands**</summary>
 
 ### Understanding Optimization Configurations (`optim_dict`)
@@ -233,7 +233,7 @@ emuses heatmap heatmap_output/ embeddings.npy --scores cognitive_scores.csv
 
 </details>
 
-<details>
+<details markdown="1">
 <summary>📚 **Model Registry and Collaboration**</summary>
 
 ### Model Registry Commands
@@ -335,7 +335,7 @@ emuses rerun analysis_directory/ --update-data
 
 </details>
 
-<details>
+<details markdown="1">
 <summary>💻 **Developer and Integration Commands**</summary>
 
 ### Service Integration
@@ -407,7 +407,7 @@ Enables tab completion for your shell (bash, zsh, fish).
 
 </details>
 
-<details>
+<details markdown="1">
 <summary>🏛️ **System Administration**</summary>
 
 ### Custom Optimization Configuration

@@ -114,7 +114,7 @@ All API responses follow consistent JSON structure:
 
 ---
 
-<details>
+<details markdown="1">
 <summary>🔬 **Pipeline Execution API**</summary>
 
 ### `POST /api/v1/jobs/pipeline/full` - Submit Full Pipeline
@@ -281,7 +281,7 @@ curl -X POST "http://localhost:8000/api/v1/jobs/pipeline/stage/inference" \
 
 </details>
 
-<details>
+<details markdown="1">
 <summary>📊 **Job Management API**</summary>
 
 ### `GET /api/v1/jobs/{job_id}/status` - Get Job Status
@@ -512,7 +512,7 @@ curl -X GET "http://localhost:8000/api/v1/jobs?status=completed&limit=10&sort=cr
 
 </details>
 
-<details>
+<details markdown="1">
 <summary>📁 **File Operations API**</summary>
 
 ## 📁 **Artifact Management API**
@@ -678,7 +678,7 @@ curl -X POST "http://localhost:8000/api/v1/upload/labels" \
 
 </details>
 
-<details>
+<details markdown="1">
 <summary>⚙️ **Advanced Integration**</summary>
 
 ## 🤖 **Inference API**
@@ -760,7 +760,7 @@ Submit inference job for large datasets or batch processing.
 
 </details>
 
-<details>
+<details markdown="1">
 <summary>🏛️ **Monitoring & Management**</summary>
 
 ## 📊 **Health & Monitoring API**
