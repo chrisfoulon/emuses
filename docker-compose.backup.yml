@@ -1,0 +1,143 @@
+version: '3.8'
+
+services:
+  # PostgreSQL backup service
+  postgres-backup:
+    image: postgres:15-alpine
+    container_name: emuses-postgres-backup
+    restart: "no"  # Run on-demand or via cron
+    environment:
+      - POSTGRES_DB=emuses_db
+      - POSTGRES_USER=emuses_user
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - BACKUP_ENCRYPTION_KEY=${BACKUP_ENCRYPTION_KEY}
+    volumes:
+      - backup_storage:/backups
+      - ./docker/scripts/backup-postgres.sh:/backup-postgres.sh:ro
+    networks:
+      - emuses-production
+    command: /backup-postgres.sh
+    depends_on:
+      - postgres
+
+  # Model registry backup service
+  model-backup:
+    image: alpine:3.19
+    container_name: emuses-model-backup
+    restart: "no"  # Run on-demand or via cron
+    environment:
+      - BACKUP_ENCRYPTION_KEY=${BACKUP_ENCRYPTION_KEY}
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - AWS_S3_BUCKET=${AWS_S3_BACKUP_BUCKET}
+      - AWS_REGION=${AWS_REGION}
+    volumes:
+      - model_storage:/app/storage:ro
+      - backup_storage:/backups
+      - ./docker/scripts/backup-models.sh:/backup-models.sh:ro
+    networks:
+      - emuses-production
+    command: /backup-models.sh
+
+  # Backup restoration service
+  backup-restore:
+    image: postgres:15-alpine
+    container_name: emuses-backup-restore
+    restart: "no"  # Run on-demand for recovery
+    environment:
+      - POSTGRES_DB=emuses_db
+      - POSTGRES_USER=emuses_user
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - BACKUP_ENCRYPTION_KEY=${BACKUP_ENCRYPTION_KEY}
+      - RESTORE_DATE=${RESTORE_DATE:-latest}
+    volumes:
+      - backup_storage:/backups:ro
+      - postgres_data:/var/lib/postgresql/data
+      - model_storage:/app/storage
+      - ./docker/scripts/restore-backup.sh:/restore-backup.sh:ro
+    networks:
+      - emuses-production
+    command: /restore-backup.sh
+
+  # Backup verification service
+  backup-verify:
+    image: postgres:15-alpine
+    container_name: emuses-backup-verify
+    restart: "no"  # Run periodically to verify backups
+    environment:
+      - POSTGRES_DB=emuses_db_verify
+      - POSTGRES_USER=emuses_user
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - BACKUP_ENCRYPTION_KEY=${BACKUP_ENCRYPTION_KEY}
+    volumes:
+      - backup_storage:/backups:ro
+      - backup_verify_data:/var/lib/postgresql/data
+      - ./docker/scripts/verify-backup.sh:/verify-backup.sh:ro
+    networks:
+      - emuses-production
+    command: /verify-backup.sh
+
+  # S3 sync service for off-site backup
+  s3-backup-sync:
+    image: amazon/aws-cli:2.15.17
+    container_name: emuses-s3-backup
+    restart: "no"  # Run on schedule
+    environment:
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - AWS_S3_BACKUP_BUCKET=${AWS_S3_BACKUP_BUCKET}
+      - AWS_REGION=${AWS_REGION}
+    volumes:
+      - backup_storage:/backups:ro
+      - ./docker/scripts/sync-to-s3.sh:/sync-to-s3.sh:ro
+    networks:
+      - emuses-production
+    entrypoint: ["/bin/sh", "/sync-to-s3.sh"]
+
+  # Backup monitoring service
+  backup-monitor:
+    image: alpine:3.19
+    container_name: emuses-backup-monitor
+    restart: unless-stopped
+    environment:
+      - BACKUP_RETENTION_DAYS=${BACKUP_RETENTION_DAYS:-30}
+      - ALERT_EMAIL=${ALERT_EMAIL}
+      - SMTP_HOST=${SMTP_HOST}
+      - SMTP_PORT=${SMTP_PORT}
+      - SMTP_USERNAME=${SMTP_USERNAME}
+      - SMTP_PASSWORD=${SMTP_PASSWORD}
+    volumes:
+      - backup_storage:/backups:ro
+      - ./docker/scripts/backup-monitor.sh:/backup-monitor.sh:ro
+      - ./docker/scripts/backup-cleanup.sh:/backup-cleanup.sh:ro
+    networks:
+      - emuses-production
+    command: >
+      sh -c "
+        # Install required tools
+        apk add --no-cache curl ca-certificates ssmtp &&
+        # Run monitoring in loop
+        while true; do
+          /backup-monitor.sh
+          /backup-cleanup.sh
+          sleep 3600  # Check every hour
+        done
+      "
+
+volumes:
+  backup_storage:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /opt/emuses/backups
+  backup_verify_data:
+    driver: local
+  postgres_data:
+    external: true
+  model_storage:
+    external: true
+
+networks:
+  emuses-production:
+    external: true

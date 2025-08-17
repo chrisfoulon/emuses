@@ -45,4 +45,50 @@ def create_app() -> FastAPI:
     # Import the pre-configured FastAPI app from the foundation service
     from emuses.foundation_fastapi_service.app import app
 
+    # Mount MkDocs documentation if available in development
+    _mount_documentation_if_available(app)
+
     return app
+
+
+def _mount_documentation_if_available(app: FastAPI) -> None:
+    """
+    Mount MkDocs documentation if available in development mode.
+    
+    This function serves built MkDocs documentation at /docs/ when:
+    - Not in production environment (EMUSES_ENV != "production")
+    - site/ directory exists with documentation
+    - FastAPI StaticFiles is available
+    
+    Gracefully handles missing dependencies or directories.
+    
+    Parameters
+    ----------
+    app : FastAPI
+        The FastAPI application instance to mount documentation to
+    """
+    import os
+    from pathlib import Path
+    
+    # Only serve docs in development mode (not production)
+    if os.getenv("EMUSES_ENV") == "production":
+        return
+    
+    try:
+        from fastapi.staticfiles import StaticFiles
+        
+        # Path to built MkDocs site (relative to project root)
+        project_root = Path(__file__).parent.parent.parent
+        site_dir = project_root / "site"
+        
+        if site_dir.exists() and site_dir.is_dir():
+            app.mount("/docs", StaticFiles(directory=str(site_dir), html=True), name="documentation")
+            # Only print in development (not during tests)
+            if os.getenv("PYTEST_CURRENT_TEST") is None:
+                print(f"📚 Documentation served at /docs/")
+    except ImportError:
+        # StaticFiles not available, gracefully skip
+        pass
+    except Exception:
+        # Any other error, gracefully skip to avoid breaking app startup
+        pass

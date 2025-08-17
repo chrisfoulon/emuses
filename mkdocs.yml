@@ -1,0 +1,140 @@
+site_name: EMUSES - Scientific Analysis Platform
+site_description: 'EMUSES: A comprehensive platform for scientific data analysis with machine learning, dimensionality reduction, and predictive modeling'
+site_author: 'EMUSES Development Team'
+site_url: 'https://chrisfoulon.github.io/emuses'
+repo_url: 'https://github.com/chrisfoulon/emuses'
+repo_name: 'chrisfoulon/emuses'
+
+# Configuration
+theme:
+  name: material
+  palette:
+    # Palette toggle for light mode
+    - scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    # Palette toggle for dark mode
+    - scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  font:
+    text: Roboto
+    code: Roboto Mono
+  features:
+    - content.code.copy
+    - content.code.select
+    - content.tabs.link
+    - header.autohide
+    - navigation.expand
+    - navigation.footer
+    - navigation.indexes
+    - navigation.sections
+    - navigation.tabs
+    - navigation.top
+    - navigation.tracking
+    - search.highlight
+    - search.share
+    - search.suggest
+    - toc.follow
+
+# Extensions
+markdown_extensions:
+  - abbr
+  - admonition
+  - attr_list
+  - def_list
+  - footnotes
+  - md_in_html
+  - tables
+  - pymdownx.arithmatex:
+      generic: true
+  - pymdownx.betterem:
+      smart_enable: all
+  - pymdownx.caret
+  - pymdownx.details
+  - pymdownx.emoji:
+      emoji_generator: !!python/name:pymdownx.emoji.to_svg
+      emoji_index: !!python/name:pymdownx.emoji.twemoji
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.keys
+  - pymdownx.magiclink:
+      repo_url_shorthand: true
+      user: chrisfoulon
+      repo: emuses
+  - pymdownx.mark
+  - pymdownx.smartsymbols
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.tasklist:
+      custom_checkbox: true
+  - pymdownx.tilde
+
+# Page structure
+nav:
+  - Home: 'index.md'
+  - Quick Start: 'QUICK_START.md'
+  - User Guide: 'USER_GUIDE.md'
+  - API Documentation:
+    - Overview: 'API_REFERENCE.md'
+    - Model Registry API: 'model-registry/api_reference.md'
+    - Service API: 'emuses/api_service.md'
+  - CLI Reference: 'CLI_REFERENCE.md'
+  - Migration Guide: 'MIGRATION_GUIDE.md'
+  - Research Workflows: 'RESEARCH_WORKFLOWS.md'
+  - Examples:
+    - Overview: 'examples/index.md'
+    - HCP Dataset Analysis: 'examples/hcp_analysis.md'
+    - Custom Pipeline: 'examples/custom_pipeline.md'
+    - API Integration: 'examples/api_integration.md'
+  - Development:
+    - Architecture: 'emuses/architecture.md'
+    - Testing: 'test-analysis/test_analysis_summary.md'
+    - Testing Commands: 'testing-commands.md'
+  - Model Registry:
+    - Overview: 'model-registry/README.md'
+    - Integration Plan: 'model-registry/plan_4_integration.md'
+    - Validation: 'model-registry/task_483_validation.md'
+
+# Plugins
+plugins:
+  - search:
+      separator: '[\s\-,:!=\[\]()"/]+|(?!\b)(?=[A-Z][a-z])|\.(?!\d)|&[lg]t;'
+  - minify:
+      minify_html: true
+
+# Extra CSS and JS
+extra_css:
+  - stylesheets/extra.css
+
+extra_javascript:
+  - javascripts/mathjax.js
+  - https://polyfill.io/v3/polyfill.min.js?features=es6
+  - https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js
+
+# Social links
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/chrisfoulon/emuses
+      name: EMUSES on GitHub
+    - icon: fontawesome/solid/paper-plane
+      link: mailto:contact@emuses.org
+      name: Contact us
+
+# Copyright
+copyright: Copyright &copy; 2025 EMUSES Development Team

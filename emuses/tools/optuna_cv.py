@@ -12,18 +12,15 @@ from typing import Any, Dict, List, Optional, Tuple
 import joblib
 import numpy as np
 import optuna
-
-# Import new model I/O system
-from .model_io import ModelIOManager
-
-logger = logging.getLogger(__name__)
-
 from sklearn.model_selection import KFold, StratifiedKFold, cross_val_score
 from sklearn.pipeline import Pipeline
 
 from emuses.config.optim_configs_predict import optim_dict_predict
 from emuses.tools.models_utils import build_estimator, build_feature_union
 from emuses.tools.optim_utils import suggest_parameters_conditional
+from .model_io import ModelIOManager
+
+logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------
 

@@ -66,7 +66,7 @@ class TestReproduceCommand(unittest.TestCase):
         """Test that reproduce command requires model path argument."""
         result = self.runner.invoke(app, ["reproduce"])
         self.assertEqual(result.exit_code, 2)  # Missing required argument
-        self.assertIn("Missing argument", result.stdout)
+        self.assertIn("Missing argument", result.stderr)
 
     def test_reproduce_command_generates_markdown_guide(self):
         """Test that reproduce command generates markdown reproduction guide."""

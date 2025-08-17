@@ -50,9 +50,10 @@ def mock_pipeline_config():
             for key, value in kwargs.items():
                 setattr(self, key, value)
             
-            # Set required attributes
+            # Set required attributes - use temporary directory for tests
             if not hasattr(self, 'output_folder'):
-                self.output_folder = Path('/tmp/test_output')
+                import tempfile
+                self.output_folder = Path(tempfile.mkdtemp(prefix="emuses_test_"))
             
             self.output_path = Path(self.output_folder)
             self.output_path.mkdir(parents=True, exist_ok=True)

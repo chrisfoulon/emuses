@@ -47,7 +47,7 @@ class PipelineConfigRequest(BaseModel):
                 "input_file": "data/input.csv",
                 "scores_file": "data/scores.csv",
                 "label_dataset_file": "data/labels.csv",
-                "output_folder": "results/experiment_001",
+                "output_folder": "~/emuses_outputs/experiment_001",
                 "umap_stage_enabled": True,
                 "heatmap_stage_enabled": True,
                 "prediction_stage_enabled": True,
@@ -74,7 +74,7 @@ class JobSubmissionRequest(BaseModel):
                 "pipeline_config": {
                     "input_file": "data/input.csv",
                     "scores_file": "data/scores.csv",
-                    "output_folder_path": "results/job_001",
+                    "output_folder_path": "~/emuses_outputs/job_001",
                 },
                 "job_name": "Experiment 001",
                 "description": "Initial analysis of dataset A",

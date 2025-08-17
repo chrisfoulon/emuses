@@ -53,3 +53,17 @@ optuna-dashboard
 # Observability packages (lightweight approach)
 prometheus-client>=0.19.0
 structlog>=23.2.0
+
+# Cloud storage packages (for model-registry Sub-Plan 3)
+boto3
+azure-storage-blob
+google-cloud-storage
+
+# Cloud testing packages (for model-registry Sub-Plan 3.2B)
+moto[s3]>=5.1.0
+testcontainers>=4.0.0
+pytest-servers>=0.5.0
+
+# Caching packages (for model-registry Phase 3.4) ✅ IMPLEMENTED
+redis>=5.0.0
+pymemcache>=4.0.0

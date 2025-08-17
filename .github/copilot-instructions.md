@@ -49,6 +49,11 @@ Testing & linting
 * Preserve public API interfaces or update all callers
 * Make minimal changes focused on the failing test
 
+**Before pushing (save GitHub education credits):**
+* Run local pre-push tests: `python scripts/dev_test_runner.py` (syntax + core functionality)
+* Work on feature branches for lightweight CI (13 tests, ~1 minute)
+* Reserve main branch pushes for production-ready code (full CI with services)
+
 **Before commit:**
 * Run full test suite: `pytest -q --tb=short`
 * Verify no regressions introduced

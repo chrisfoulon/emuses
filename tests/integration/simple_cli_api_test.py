@@ -79,7 +79,7 @@ def test_cli_execution(features_file, targets_file, output_dir):
     print("🔧 Testing CLI execution...")
     
     cmd = [
-        'python', 'emuses/scripts/main.py', 'full',
+        'python', '-m', 'emuses.cli', 'full',
         str(features_file), str(targets_file),
         '--columns_are_features',
         '--input_header', '0',

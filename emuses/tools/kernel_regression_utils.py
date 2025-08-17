@@ -1,27 +1,21 @@
 # kernel_regression.py
-from copy import deepcopy
-from pathlib import Path
-
-import matplotlib
-import numpy as np
-import pandas as pd
-
-matplotlib.use("Agg")
 import json
 import os
 import time
+from copy import deepcopy
+from pathlib import Path
 
 import GPy
-# Other imports
 import hdbscan
+import matplotlib
 import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
 from joblib import Parallel, delayed, dump
 from matplotlib import pyplot as plt
-# SciPy imports
 from scipy.spatial import ConvexHull, cKDTree
 from scipy.spatial.distance import cdist
 from scipy.stats import normaltest
-# Scikit-learn imports
 from sklearn.base import BaseEstimator, ClassifierMixin, RegressorMixin
 from sklearn.decomposition import PCA
 from sklearn.metrics import (accuracy_score, balanced_accuracy_score,
@@ -32,9 +26,10 @@ from sklearn.metrics import (accuracy_score, balanced_accuracy_score,
 from sklearn.model_selection import KFold
 
 from emuses.tools.correlation_maps_utils import calculate_correlation_grid
-# EMUSES imports
 from emuses.tools.output_utils import save_statistical_maps
 from emuses.tools.stats_utils import input_matrix_stat_map
+
+matplotlib.use("Agg")
 
 
 class KernelRegressor(BaseEstimator, RegressorMixin):

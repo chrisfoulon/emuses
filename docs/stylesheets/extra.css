@@ -1,0 +1,70 @@
+/* EMUSES Documentation Style Overrides */
+
+/* Custom styling for EMUSES scientific documentation */
+.md-header {
+    background: linear-gradient(135deg, #3f51b5 0%, #2196f3 100%);
+}
+
+.md-nav__title {
+    font-weight: 700;
+}
+
+/* Scientific notation and code blocks */
+.md-typeset code {
+    background-color: var(--md-code-bg-color);
+    border-radius: 0.2rem;
+    padding: 0.1rem 0.3rem;
+    font-family: 'Roboto Mono', monospace;
+}
+
+/* Admonitions for scientific content */
+.md-typeset .admonition.note {
+    border-left-color: #448aff;
+}
+
+.md-typeset .admonition.warning {
+    border-left-color: #ff9800;
+}
+
+.md-typeset .admonition.example {
+    border-left-color: #4caf50;
+}
+
+/* Tables for neuroimaging data */
+.md-typeset table:not([class]) {
+    font-size: 0.9rem;
+    line-height: 1.4;
+}
+
+.md-typeset table:not([class]) th {
+    background-color: var(--md-default-bg-color--lightest);
+    font-weight: 600;
+}
+
+/* Responsive images for brain scans */
+.md-typeset img {
+    max-width: 100%;
+    height: auto;
+    border-radius: 0.2rem;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
+
+/* Code highlighting for Python/CLI */
+.highlight .hll { background-color: #ffffcc }
+.highlight .c { color: #60a0b0; font-style: italic } /* Comment */
+.highlight .k { color: #007020; font-weight: bold } /* Keyword */
+.highlight .s { color: #4070a0 } /* Literal.String */
+
+/* Navigation improvements */
+.md-nav--secondary .md-nav__title {
+    font-size: 0.8rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+/* Search results enhancement */
+.md-search-result__meta {
+    color: var(--md-default-fg-color--light);
+    font-size: 0.75rem;
+}
