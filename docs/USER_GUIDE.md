@@ -1,8 +1,8 @@
 # 📖 EMUSES Complete User Guide
 
-**Comprehensive guide for neuroimaging research with EMUSES - from first analysis to advanced research workflows**
+**Comprehensive guide for scientific research with EMUSES - from first analysis to advanced research workflows**
 
-This guide provides structured learning paths for researchers at all levels, complete workflow examples, and best practices for reproducible neuroimaging research using EMUSES.
+This guide provides structured learning paths for researchers at all levels, complete workflow examples, and best practices for reproducible scientific research using EMUSES, with extensive neuroimaging examples.
 
 ## 🎯 **Quick Navigation**
 
@@ -692,12 +692,12 @@ emuses inference production_model/ large_cohort.csv \
 
 ```bash
 # Step 1: Quick UMAP visualization
-emuses umap qc_umap/ raw_data.csv --n_neighbors 15
+emuses umap qc_umap/ raw_data.csv
 
 # Step 2: Check for outliers (visually inspect qc_umap/umap_visualization.png)
 
 # Step 3: If outliers found, re-run with cleaned data
-emuses umap clean_umap/ cleaned_data.csv --n_neighbors 15
+emuses umap clean_umap/ cleaned_data.csv
 
 # Step 4: Proceed with full analysis if quality looks good
 emuses full final_analysis/ cleaned_data.csv --scores scores.csv

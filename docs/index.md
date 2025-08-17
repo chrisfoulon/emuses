@@ -1,6 +1,6 @@
-# EMUSES - Neuroimaging Analysis Platform
+# EMUSES - Scientific Analysis Platform
 
-**A comprehensive platform for neuroimaging data analysis with machine learning, dimensionality reduction, and predictive modeling**
+**A comprehensive platform for scientific data analysis with machine learning, dimensionality reduction, and predictive modeling**
 
 **Key Information:**
 - **License:** MIT License
@@ -15,12 +15,12 @@
 
 ## Overview
 
-EMUSES is a powerful, research-grade platform designed for comprehensive neuroimaging data analysis. It combines cutting-edge machine learning techniques with intuitive interfaces to enable researchers to extract meaningful insights from complex brain imaging datasets.
+EMUSES is a powerful, research-grade platform designed for comprehensive scientific data analysis. It combines cutting-edge machine learning techniques with intuitive interfaces to enable researchers to extract meaningful insights from complex datasets across multiple scientific domains.
 
 ## 🎯 Key Features
 
-### 🧠 Advanced Neuroimaging Analysis
-Built specifically for neuroimaging researchers with support for multiple data formats, preprocessing pipelines, and specialized analysis methods.
+### 🔬 Advanced Scientific Analysis
+Designed for scientific researchers with support for multiple data formats, preprocessing pipelines, and specialized analysis methods. Extensively developed and tested with neuroimaging data, with broad applicability across scientific domains.
 
 **[Learn more →](USER_GUIDE.md)**
 
@@ -79,13 +79,13 @@ curl "http://localhost:8000/api/jobs/{job_id}/status"
 
 ## Research Applications
 
-EMUSES has been successfully applied to various neuroimaging research domains:
+EMUSES has been successfully applied across diverse scientific domains, with extensive development in neuroimaging:
 
-- **Functional Connectivity Analysis**: Mapping brain networks and connectivity patterns
-- **Lesion-Symptom Mapping**: Understanding brain-behavior relationships
-- **Predictive Modeling**: Building models to predict behavioral or clinical outcomes
-- **Multi-Modal Integration**: Combining structural and functional neuroimaging data
-- **Longitudinal Analysis**: Tracking changes over time
+- **Connectivity Analysis**: Mapping complex networks and interaction patterns (brain networks, gene interactions, social networks)
+- **Pattern Recognition**: Understanding relationships in high-dimensional data (neuroimaging, astronomical observations, genetic data)
+- **Predictive Modeling**: Building models to predict outcomes across domains (cognitive performance, galaxy classification, economic indicators)
+- **Multi-Modal Integration**: Combining different data types and sources
+- **Longitudinal Analysis**: Tracking changes and trajectories over time
 
 > **HCP Dataset Analysis Example**
 > 
@@ -93,7 +93,7 @@ EMUSES has been successfully applied to various neuroimaging research domains:
 
 ## Scientific Foundation
 
-EMUSES implements state-of-the-art methods from computational neuroscience and machine learning:
+EMUSES implements state-of-the-art methods from computational science and machine learning:
 
 - **Dimensionality Reduction**: UMAP for preserving both local and global structure
 - **Clustering**: HDBSCAN for density-based clustering with noise handling  

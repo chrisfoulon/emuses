@@ -1,6 +1,6 @@
 # 🚀 EMUSES Quick Start Guide
 
-**From installation to your first neuroimaging prediction in 5 minutes.**
+**From installation to your first scientific prediction in 5 minutes.**
 
 ## Prerequisites (30 seconds)
 
@@ -32,7 +32,7 @@ python -m emuses.cli full my_first_analysis/ docs/examples/sample_data/hcp_input
 ### Option 2: With Your Data
 
 ```bash
-# Run with your neuroimaging data
+# Run with your scientific data
 python -m emuses.cli full output_folder/ your_brain_data.csv --scores your_cognitive_scores.csv
 ```
 

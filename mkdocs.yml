@@ -1,5 +1,5 @@
-site_name: EMUSES - Neuroimaging Analysis Platform
-site_description: 'EMUSES: A comprehensive platform for neuroimaging data analysis with machine learning, dimensionality reduction, and predictive modeling'
+site_name: EMUSES - Scientific Analysis Platform
+site_description: 'EMUSES: A comprehensive platform for scientific data analysis with machine learning, dimensionality reduction, and predictive modeling'
 site_author: 'EMUSES Development Team'
 site_url: 'https://chrisfoulon.github.io/emuses'
 repo_url: 'https://github.com/chrisfoulon/emuses'

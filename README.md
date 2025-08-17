@@ -1,8 +1,8 @@
-# 🧠 EMUSES - Neuroimaging Predictive Modeling Platform
+# 🔬 EMUSES - Scientific Predictive Modeling Platform
 
-**Enabling collaborative neuroimaging research through interpretable predictive modeling and seamless model sharing.**
+**Enabling collaborative scientific research through interpretable predictive modeling and seamless model sharing.**
 
-EMUSES transforms neuroimaging data into predictive insights, supporting research workflows from individual analysis to community-wide collaboration. Built for researchers who need both quick results and deep analytical control.
+EMUSES transforms scientific data into predictive insights, supporting research workflows from individual analysis to community-wide collaboration. Built for researchers who need both quick results and deep analytical control across diverse domains including neuroimaging, astronomy, genetics, sociology, economics, and beyond.
 
 ## 🚀 Quick Start (5 minutes)
 
@@ -23,7 +23,7 @@ python -m emuses.cli --help
 python -m emuses.cli full output_folder docs/examples/sample_data/hcp_input_data.csv --scores docs/examples/sample_data/hcp_labels.csv
 ```
 
-**✅ Success**: Your first neuroimaging prediction model is ready in `output_folder/`!
+**✅ Success**: Your first scientific prediction model is ready in `output_folder/`!
 
 ## 🔬 Research Use Cases
 
@@ -52,7 +52,7 @@ python -m emuses.cli models info community_model_v2
 
 ## ⭐ Key Features
 
-- **🧠 Neuroimaging-Optimized**: Built specifically for brain imaging prediction tasks
+- **🔬 Research-Optimized**: Designed for complex scientific prediction tasks (neuroimaging, astronomy, genetics, sociology, economics, and more)
 - **🔄 Multi-Mode Flexibility**: Local, collaborative, or cloud-based workflows  
 - **📊 Model Registry**: Share, discover, and reproduce predictive models
 - **🎯 Research-Focused**: Designed for scientific rigor and interpretability
@@ -73,7 +73,7 @@ python -m emuses.cli models info community_model_v2
 
 ### 🔬 [Research Workflows Guide](docs/RESEARCH_WORKFLOWS.md)
 *Scientific use case patterns and methodological examples*  
-→ For researchers implementing specific neuroimaging analysis workflows
+→ For researchers implementing scientific analysis workflows across diverse domains (neuroimaging, astronomy, genetics, sociology, economics)
 
 ### 🔧 [API Documentation](http://localhost:8000/docs)
 *Interactive API reference*  
@@ -136,7 +136,7 @@ Perfect for testing workflows and learning EMUSES capabilities.
 
 ## 🤝 Research Community
 
-EMUSES enables reproducible neuroimaging research through:
+EMUSES enables reproducible scientific research through:
 - **Model Sharing**: Publish and discover predictive models
 - **Reproducible Workflows**: Standardized analysis pipelines  
 - **Community Benchmarks**: Compare methods across research groups
@@ -148,7 +148,7 @@ If you use EMUSES in your research, please cite:
 
 ```bibtex
 @software{emuses2024,
-  title={EMUSES: Neuroimaging Predictive Modeling Platform},
+  title={EMUSES: Scientific Predictive Modeling Platform},
   author={Foulon, Chris and Contributors},
   year={2024},
   url={https://github.com/chrisfoulon/emuses},

@@ -1,8 +1,8 @@
 # 🔌 EMUSES API Complete Reference
 
-**Comprehensive REST API documentation for programmatic access to EMUSES neuroimaging analysis platform**
+**Comprehensive REST API documentation for programmatic access to EMUSES scientific analysis platform**
 
-This reference covers all API endpoints with detailed request/response examples, authentication, error handling, and integration patterns for neuroimaging research workflows.
+This reference covers all API endpoints with detailed request/response examples, authentication, error handling, and integration patterns for scientific research workflows.
 
 ## 📋 **API Overview**
 
@@ -14,13 +14,14 @@ This reference covers all API endpoints with detailed request/response examples,
 ### **API Categories**
 | Category | Endpoints | Description |
 |----------|-----------|-------------|
-| **Pipeline Execution** | 6 endpoints | Submit and manage analysis jobs |
+| **Pipeline Execution** | 2 endpoints | Submit and manage analysis jobs |
 | **Job Management** | 5 endpoints | Monitor job status and logs |
-| **File Upload** | 3 endpoints | Upload neuroimaging data |
-| **Inference** | 4 endpoints | Run predictions on trained models |
-| **Artifact Management** | 3 endpoints | Download analysis results |
-| **Health & Monitoring** | 15+ endpoints | System health and diagnostics |
-| **Model Registry** | 8 endpoints | Model management (multi-user mode) |
+| **File Upload** | 3 endpoints | Upload scientific data |
+| **Inference** | 2 endpoints | Run predictions on trained models |
+| **Task Management** | 4 endpoints | Async task monitoring and control |
+| **Artifact Management** | 2 endpoints | Download analysis results |
+| **Health & Monitoring** | 20 endpoints | System health and diagnostics |
+| **Model Registry** | 14 endpoints | Model management (multi-user mode) |
 
 ### **Authentication**
 ```http
@@ -54,7 +55,7 @@ Authorization: Bearer <token> (if multi-user mode)
 **Form Parameters**
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `features_file` | file | Yes | CSV file with neuroimaging features |
+| `features_file` | file | Yes | CSV file with scientific features |
 | `scores_file` | file | Yes | CSV file with cognitive/behavioral scores |
 | `labels_file` | file | No | CSV file with additional labels |
 | `job_name` | string | No | Custom job name for identification |
@@ -541,7 +542,7 @@ print(f"Embeddings shape: {embeddings.shape}")
 
 ### `POST /api/v1/upload/features` - Upload Features File
 
-Upload neuroimaging features file for analysis.
+Upload scientific features file for analysis.
 
 #### Request
 ```bash

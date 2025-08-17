@@ -1,8 +1,8 @@
 # 🔬 EMUSES Research Workflows Guide
 
-**Specialized scientific use case patterns for neuroimaging research with EMUSES**
+**Specialized scientific use case patterns for research with EMUSES**
 
-This guide provides detailed workflows for specific types of neuroimaging research, from connectivity analysis to clinical prediction, with real-world examples and best practices for reproducible science.
+This guide provides detailed workflows for specific types of scientific research, from connectivity analysis to clinical prediction, with real-world neuroimaging examples and best practices for reproducible science.
 
 ## 📋 **Quick Navigation by Research Type**
 
@@ -36,6 +36,12 @@ This guide provides detailed workflows for specific types of neuroimaging resear
 #### **Data Preparation**
 ```bash
 # Assuming FreeSurfer processed data
+
+> **📝 Note**: This document has been updated to reflect the actual EMUSES CLI interface. 
+> EMUSES uses preset optimization configurations (`--optim_dict`) rather than direct parameter exposure.
+> For detailed parameter information, see the [CLI Reference](CLI_REFERENCE.md).
+
+
 # Extract cortical thickness measures per region
 python extract_cortical_thickness.py \
   --freesurfer_dir subjects/ \
@@ -54,11 +60,7 @@ python prepare_cognitive_data.py \
 # Full pipeline analysis
 emuses full cortical_thickness_analysis/ \
   cortical_thickness_features.csv \
-  --scores cognitive_scores.csv \
-  --n_neighbors 25 \
-  --min_dist 0.05 \
-  --verbose
-
+  --scores cognitive_scores.csv \ \
 # Generate comprehensive documentation
 emuses reproduce cortical_thickness_analysis/models/trained_model.pkl \
   --include_environment \
@@ -126,11 +128,9 @@ python extract_volumes.py \
 
 # Disease classification analysis
 emuses full volume_disease_analysis/ \
+  --optim_dict optim_dict_range \
   volumetric_features.csv \
-  --scores disease_labels.csv \
-  --n_neighbors 30 \
-  --min_dist 0.1
-
+  --scores disease_labels.csv \ \
 # Validate on independent cohort
 emuses inference volume_disease_analysis/models/trained_model.pkl \
   validation_cohort_volumes.csv \
@@ -162,11 +162,7 @@ python extract_task_activation.py \
 # Analyze activation-behavior relationships
 emuses full motor_task_analysis/ \
   motor_activation_features.csv \
-  --scores motor_performance_scores.csv \
-  --n_neighbors 20 \
-  --min_dist 0.08 \
-  --config task_fmri_config.json
-
+  --scores motor_performance_scores.csv \ \ \
 # Generate detailed model information
 emuses info motor_task_analysis/models/trained_model.pkl \
   --detailed \
@@ -282,11 +278,7 @@ connectivity_df.to_csv('resting_state_connectivity.csv', index=False)
 # Analyze connectivity-cognition relationships
 emuses full resting_state_analysis/ \
   resting_state_connectivity.csv \
-  --scores cognitive_flexibility_scores.csv \
-  --n_neighbors 15 \
-  --min_dist 0.1 \
-  --verbose
-
+  --scores cognitive_flexibility_scores.csv \ \
 # Detailed analysis of results
 emuses info resting_state_analysis/models/trained_model.pkl \
   --performance \
@@ -311,10 +303,7 @@ python extract_dmn_connectivity.py \
 # Focused DMN analysis
 emuses full dmn_specific_analysis/ \
   dmn_connectivity.csv \
-  --scores cognitive_flexibility_scores.csv \
-  --n_neighbors 25 \
-  --min_dist 0.05
-
+  --scores cognitive_flexibility_scores.csv \ \
 # Compare full brain vs DMN-specific models
 emuses compare resting_state_analysis/models/trained_model.pkl \
             dmn_specific_analysis/models/trained_model.pkl \
@@ -343,10 +332,7 @@ python extract_structural_connectivity.py \
 # Analyze white matter-reading relationships
 emuses full white_matter_reading/ \
   structural_connectivity.csv \
-  --scores reading_performance.csv \
-  --n_neighbors 20 \
-  --min_dist 0.1 \
-  --config white_matter_config.json
+  --scores reading_performance.csv \ \ \
 ```
 
 #### **Tract-Specific Analysis**
@@ -361,10 +347,7 @@ python extract_major_tracts.py \
 # Reading-specific tract analysis
 emuses full reading_tracts_analysis/ \
   tract_metrics.csv \
-  --scores reading_scores.csv \
-  --n_neighbors 30 \
-  --min_dist 0.08
-
+  --scores reading_scores.csv \ \
 # Generate tract visualization
 python visualize_tract_results.py \
   --results reading_tracts_analysis/ \
@@ -426,11 +409,7 @@ multimodal_features.to_csv('multimodal_features.csv')
 # Multi-modal analysis
 emuses full multimodal_cognition_analysis/ \
   multimodal_features.csv \
-  --scores comprehensive_cognitive_battery.csv \
-  --n_neighbors 25 \
-  --min_dist 0.05 \
-  --config multimodal_config.json
-
+  --scores comprehensive_cognitive_battery.csv \ \ \
 # Compare with individual modalities
 emuses compare structural_only_analysis/models/trained_model.pkl \
             multimodal_cognition_analysis/models/trained_model.pkl \
@@ -493,10 +472,7 @@ python extract_nback_activation.py \
 # Working memory capacity analysis
 emuses full working_memory_analysis/ \
   nback_activation_features.csv \
-  --scores working_memory_capacity.csv \
-  --n_neighbors 15 \
-  --min_dist 0.1 \
-  --verbose
+  --scores working_memory_capacity.csv \ \
 ```
 
 #### **Load-Dependent Analysis**
@@ -511,8 +487,6 @@ python extract_load_effects.py \
 emuses full load_effects_analysis/ \
   load_dependent_activation.csv \
   --scores working_memory_capacity.csv \
-  --config load_analysis_config.json
-
 # Compare load conditions
 emuses compare working_memory_analysis/models/trained_model.pkl \
             load_effects_analysis/models/trained_model.pkl \
@@ -534,10 +508,7 @@ python extract_language_activation.py \
 # Reading ability analysis
 emuses full language_reading_analysis/ \
   language_activation_features.csv \
-  --scores reading_comprehension_scores.csv \
-  --n_neighbors 20 \
-  --min_dist 0.08
-
+  --scores reading_comprehension_scores.csv \ \
 # Hemispheric lateralization analysis
 python analyze_lateralization.py \
   --results language_reading_analysis/ \
@@ -599,11 +570,7 @@ dynamic_df.to_csv('dynamic_connectivity_features.csv', index=False)
 # Analyze dynamic connectivity patterns
 emuses full dynamic_connectivity_analysis/ \
   dynamic_connectivity_features.csv \
-  --scores cognitive_flexibility_scores.csv \
-  --n_neighbors 30 \
-  --min_dist 0.05 \
-  --config dynamic_config.json
-
+  --scores cognitive_flexibility_scores.csv \ \ \
 # Compare with static connectivity
 emuses compare static_connectivity_analysis/models/trained_model.pkl \
             dynamic_connectivity_analysis/models/trained_model.pkl \
@@ -659,11 +626,7 @@ graph_df.to_csv('graph_theory_metrics.csv', index=False)
 # Graph theory analysis
 emuses full graph_theory_analysis/ \
   graph_theory_metrics.csv \
-  --scores cognitive_composite_scores.csv \
-  --n_neighbors 25 \
-  --min_dist 0.1 \
-  --verbose
-
+  --scores cognitive_composite_scores.csv \ \
 # Network topology visualization
 python visualize_graph_results.py \
   --results graph_theory_analysis/ \
@@ -716,11 +679,7 @@ labels.to_csv('alzheimer_labels.csv', index=False)
 # Alzheimer's classification
 emuses full alzheimer_classification/ \
   alzheimer_features.csv \
-  --scores alzheimer_labels.csv \
-  --n_neighbors 20 \
-  --min_dist 0.1 \
-  --config clinical_classification_config.json
-
+  --scores alzheimer_labels.csv \ \ \
 # Model validation on independent cohort
 emuses inference alzheimer_classification/models/trained_model.pkl \
   validation_cohort_features.csv \
@@ -770,11 +729,7 @@ python generate_clinical_validation.py \
 # Treatment response prediction
 emuses full depression_treatment_prediction/ \
   baseline_brain_features.csv \
-  --scores treatment_response_scores.csv \
-  --n_neighbors 15 \
-  --min_dist 0.2 \
-  --config treatment_prediction_config.json
-
+  --scores treatment_response_scores.csv \ \ \
 # Longitudinal analysis
 python analyze_treatment_trajectory.py \
   --baseline_results depression_treatment_prediction/ \
@@ -801,11 +756,7 @@ python generate_treatment_recommendations.py \
 # Cross-sectional developmental analysis
 emuses full adolescent_development/ \
   adolescent_brain_features.csv \
-  --scores adolescent_cognitive_scores.csv \
-  --n_neighbors 30 \
-  --min_dist 0.1 \
-  --config developmental_config.json
-
+  --scores adolescent_cognitive_scores.csv \ \ \
 # Age-stratified analysis
 python stratify_by_age.py \
   --data adolescent_brain_features.csv \
@@ -818,7 +769,6 @@ for age_group in "12-14" "15-17" "18-20"; do
   emuses full "development_${age_group}/" \
     "age_stratified_data/${age_group}_features.csv" \
     --scores "age_stratified_data/${age_group}_scores.csv" \
-    --n_neighbors 25
 done
 
 # Compare developmental patterns
@@ -840,8 +790,6 @@ python prepare_longitudinal_data.py \
 emuses full longitudinal_development/ \
   longitudinal_features.csv \
   --scores longitudinal_change_scores.csv \
-  --config longitudinal_config.json
-
 # Predict developmental trajectories
 emuses inference longitudinal_development/models/trained_model.pkl \
   new_baseline_data.csv \
@@ -856,11 +804,7 @@ emuses inference longitudinal_development/models/trained_model.pkl \
 # Healthy aging analysis
 emuses full healthy_aging_analysis/ \
   aging_brain_features.csv \
-  --scores aging_cognitive_scores.csv \
-  --n_neighbors 40 \
-  --min_dist 0.05 \
-  --config aging_config.json
-
+  --scores aging_cognitive_scores.csv \ \ \
 # Age group comparisons
 python compare_age_groups.py \
   --young_data young_adults_features.csv \
@@ -895,11 +839,7 @@ python extract_comprehensive_features.py \
 # Biomarker discovery analysis
 emuses full parkinsons_biomarkers/ \
   pd_comprehensive_features.csv \
-  --scores pd_diagnosis_labels.csv \
-  --n_neighbors 25 \
-  --min_dist 0.08 \
-  --config biomarker_discovery_config.json
-
+  --scores pd_diagnosis_labels.csv \ \ \
 # Feature importance analysis
 python analyze_feature_importance.py \
   --results parkinsons_biomarkers/ \
@@ -944,8 +884,6 @@ python prepare_progression_data.py \
 emuses full mci_progression_prediction/ \
   mci_progression_data.csv \
   --scores mci_progression_labels.csv \
-  --config progression_prediction_config.json
-
 # Time-to-event analysis
 python survival_analysis.py \
   --baseline_features mci_baseline_features.csv \
@@ -967,11 +905,7 @@ python survival_analysis.py \
 # Exploratory analysis with minimal assumptions
 emuses full exploratory_discovery/ \
   comprehensive_brain_features.csv \
-  --scores comprehensive_behavioral_battery.csv \
-  --n_neighbors 50 \
-  --min_dist 0.001 \
-  --config exploratory_config.json
-
+  --scores comprehensive_behavioral_battery.csv \ \ \
 # Pattern discovery
 python discover_patterns.py \
   --embeddings exploratory_discovery/umap_embeddings.npy \
@@ -1040,10 +974,7 @@ plt.savefig('clustering_analysis.png', dpi=300)
 
 ```bash
 # Quality control analysis
-emuses umap qc_analysis/ raw_brain_features.csv \
-  --n_neighbors 15 \
-  --min_dist 0.1
-
+emuses umap qc_analysis/ raw_brain_features.csv \ \
 # Outlier detection
 python detect_outliers.py \
   --embeddings qc_analysis/umap_embeddings.npy \
@@ -1054,8 +985,6 @@ python detect_outliers.py \
 # Clean dataset analysis
 emuses full cleaned_analysis/ cleaned_brain_features.csv \
   --scores behavioral_scores.csv \
-  --config quality_control_config.json
-
 # Compare raw vs cleaned results
 emuses compare raw_analysis/models/trained_model.pkl \
             cleaned_analysis/models/trained_model.pkl \
@@ -1086,8 +1015,6 @@ emuses inference original_study_model \
 emuses full replication_analysis/ \
   replication_dataset_features.csv \
   --scores replication_behavioral_scores.csv \
-  --config replication_config.json
-
 # Compare original and replication results
 emuses compare original_study_model \
             replication_analysis/models/trained_model.pkl \
@@ -1136,8 +1063,6 @@ print(f"Correlation: {correlation:.3f} (p={p_value:.3f})")
 emuses full site1_model/ \
   site1_features.csv \
   --scores site1_scores.csv \
-  --config multi_site_config.json
-
 # Test on other sites
 for site in "site2" "site3" "site4"; do
   emuses inference site1_model/models/trained_model.pkl \
@@ -1200,8 +1125,6 @@ longitudinal_changes.to_csv('longitudinal_change_features.csv')
 emuses full cognitive_training_changes/ \
   longitudinal_change_features.csv \
   --scores cognitive_improvement_scores.csv \
-  --config longitudinal_config.json
-
 # Predict maintenance of gains
 emuses inference cognitive_training_changes/models/trained_model.pkl \
   new_trainees_changes.csv \
@@ -1230,8 +1153,6 @@ python extract_trajectory_features.py \
 emuses full executive_trajectories/ \
   trajectory_features.csv \
   --scores executive_function_outcomes.csv \
-  --config trajectory_config.json
-
 # Predict future development
 python predict_developmental_trajectory.py \
   --model executive_trajectories/models/trained_model.pkl \
@@ -1431,9 +1352,6 @@ python extract_task_activation.py \
 emuses full "$OUTPUT_DIR/" \
   "${OUTPUT_DIR}/activation_features.csv" \
   --scores "behavioral_data/${TASK_NAME}_scores.csv" \
-  --config "configs/task_fmri_config.json" \
-  --verbose
-
 # Step 3: Generate documentation
 emuses reproduce "${OUTPUT_DIR}/models/trained_model.pkl" \
   --include_environment \
@@ -1472,8 +1390,6 @@ python prepare_clinical_data.py \
 emuses full "$OUTPUT_DIR/" \
   "${OUTPUT_DIR}/clinical_features.csv" \
   --scores "${OUTPUT_DIR}/clinical_labels.csv" \
-  --config "configs/clinical_prediction_config.json"
-
 # Cross-validation
 python clinical_cross_validation.py \
   --model "${OUTPUT_DIR}/models/trained_model.pkl" \
@@ -1578,4 +1494,4 @@ echo "Post-analysis checklist complete!"
 
 ---
 
-*This research workflows guide provides specialized patterns for neuroimaging research with EMUSES. Each workflow includes real-world examples, best practices, and reproducibility guidelines. For additional scientific use cases or custom workflow development, consult the User Guide or contribute to the community discussions.*
+*This research workflows guide provides specialized patterns for scientific research with EMUSES, with extensive neuroimaging examples. Each workflow includes real-world examples, best practices, and reproducibility guidelines. For additional scientific use cases or custom workflow development, consult the User Guide or contribute to the community discussions.*
