@@ -75,7 +75,7 @@ python -m emuses.cli models info community_model_v2
 *Scientific use case patterns and methodological examples*  
 → For researchers implementing scientific analysis workflows across diverse domains (neuroimaging, astronomy, genetics, sociology, economics)
 
-### 🔧 [API Documentation](http://localhost:8000/docs)
+### 🔧 [API Documentation](docs/API_REFERENCE.md)
 *Interactive API reference*  
 → For computational scientists integrating EMUSES into workflows
 
