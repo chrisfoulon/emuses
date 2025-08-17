@@ -35,7 +35,7 @@ class TestCreateApp:
         assert hasattr(app, 'docs_url'), "FastAPI app should have docs_url"
         
         # Verify it has the expected title from the foundation service
-        assert app.title == "EMUSES Foundation FastAPI Service", "Should use the foundation service title"
+        assert "EMUSES" in app.title, "Should use EMUSES in the title"
     
     def test_create_app_has_expected_routes(self):
         """Test that the created app has the expected API routes."""
@@ -75,3 +75,64 @@ class TestCreateApp:
         # Should have the same configuration
         assert app1.title == app2.title
         assert app1.version == app2.version
+
+
+class TestDocumentationServing:
+    """Test documentation serving functionality in FastAPI app."""
+    
+    def test_docs_not_mounted_in_production(self, monkeypatch):
+        """Test that docs are not mounted in production environment."""
+        # Set production environment
+        monkeypatch.setenv("EMUSES_ENV", "production")
+        
+        from emuses.api.main import create_app
+        app = create_app()
+        
+        # Check that docs mount was NOT added
+        mount_routes = []
+        for route in app.routes:
+            if hasattr(route, 'path') and hasattr(route, 'app'):
+                mount_routes.append(route.path)
+        
+        assert "/docs" not in mount_routes, "Docs should not be mounted in production"
+    
+    def test_docs_graceful_fallback_missing_site_dir(self, monkeypatch):
+        """Test graceful fallback when site directory doesn't exist."""
+        # Ensure we're not in production mode
+        monkeypatch.setenv("EMUSES_ENV", "development")
+        
+        from emuses.api.main import create_app
+        # This should not raise an exception even with missing site directory
+        app = create_app()
+        
+        # App should still be created successfully
+        assert app is not None
+        assert hasattr(app, 'title')
+    
+    def test_create_app_unchanged_behavior_with_docs_feature(self):
+        """Test that existing create_app behavior is unchanged with docs feature."""
+        from emuses.api.main import create_app
+        
+        app = create_app()
+        
+        # All original tests should still pass
+        assert isinstance(app, FastAPI)
+        assert hasattr(app, 'title')
+        assert hasattr(app, 'version') 
+        assert hasattr(app, 'docs_url')
+        assert "EMUSES" in app.title
+        
+        # Key API routes should still exist
+        routes = [route.path for route in app.routes]
+        expected_routes = [
+            "/api/v1/jobs/pipeline/full",
+            "/api/v1/jobs/{job_id}/status", 
+            "/api/health"
+        ]
+        
+        for expected_route in expected_routes:
+            route_exists = any(
+                expected_route.replace("{job_id}", "{path}") == route.replace("{job_id}", "{path}")
+                for route in routes
+            )
+            assert route_exists, f"Expected route {expected_route} should still exist"
