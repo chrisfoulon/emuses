@@ -31,7 +31,9 @@ jobs:
     - name: Install minimal dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install pytest pytest-xdist
+        pip install pytest pytest-xdist pytest-asyncio
+        # Install core dependencies needed for parallelism tests
+        pip install joblib numpy scikit-learn
         pip install -e . --no-deps  # Skip heavy dependencies for fast tests
 
     - name: Run fast development tests
