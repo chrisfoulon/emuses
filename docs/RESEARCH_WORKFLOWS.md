@@ -1511,12 +1511,12 @@ echo "Post-analysis checklist complete!"
 
 ## 🔗 **Related Documentation**
 
-- **[CLI Reference](docs/CLI_REFERENCE.md)** - Complete command-line interface documentation
-- **[API Documentation](docs/API_REFERENCE.md)** - REST API documentation for integration
-- **[User Guide](docs/USER_GUIDE.md)** - Comprehensive usage guide with learning paths
-- **[Quick Start Guide](docs/QUICK_START.md)** - 5-minute tutorial for immediate results
-- **[Admin Guide](docs/ADMIN_GUIDE.md)** - System administration and deployment
-- **[Migration Guide](docs/MIGRATION_GUIDE.md)** - Version upgrade guidance
+- **[CLI Reference](CLI_REFERENCE.md)** - Complete command-line interface documentation
+- **[API Documentation](API_REFERENCE.md)** - REST API documentation for integration
+- **[User Guide](USER_GUIDE.md)** - Comprehensive usage guide with learning paths
+- **[Quick Start Guide](QUICK_START.md)** - 5-minute tutorial for immediate results
+- **[Admin Guide](ADMIN_GUIDE.md)** - System administration and deployment
+- **[Migration Guide](MIGRATION_GUIDE.md)** - Version upgrade guidance
 
 ---
 

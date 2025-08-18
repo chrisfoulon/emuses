@@ -106,7 +106,7 @@ nav:
     - Testing: 'test-analysis/test_analysis_summary.md'
     - Testing Commands: 'testing-commands.md'
   - Model Registry:
-    - Overview: 'model-registry/README.md'
+    - Overview: 'model-registry/user_guide.md'
     - Integration Plan: 'model-registry/plan_4_integration.md'
     - Validation: 'model-registry/task_483_validation.md'
 

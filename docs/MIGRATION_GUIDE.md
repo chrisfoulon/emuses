@@ -187,7 +187,7 @@ python -m emuses.cli models import ~/emuses_backup_*/analysis_results/
 3. **Train Your Team**: Share migration experience with collaborators
 
 ### Support Channels
-- **📖 Documentation**: [Model Registry Guide](docs/model-registry/user_guide.md)
+- **📖 Documentation**: [Model Registry Guide](model-registry/user_guide.md)
 - **🐛 Issues**: [GitHub Issues](https://github.com/chrisfoulon/emuses/issues)
 - **💬 Discussions**: [GitHub Discussions](https://github.com/chrisfoulon/emuses/discussions)
 - **📧 Contact**: For enterprise migration support

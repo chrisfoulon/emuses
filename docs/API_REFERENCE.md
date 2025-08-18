@@ -1071,10 +1071,10 @@ cat("Analysis completed!\n")
 
 ## 🔗 **Related Documentation**
 
-- [CLI Reference](docs/CLI_REFERENCE.md) - Complete command-line interface
-- [User Guide](docs/USER_GUIDE.md) - Comprehensive usage documentation
-- [Research Workflows](docs/RESEARCH_WORKFLOWS.md) - Scientific use patterns
-- [Admin Guide](docs/ADMIN_GUIDE.md) - System administration
+- [CLI Reference](CLI_REFERENCE.md) - Complete command-line interface
+- [User Guide](USER_GUIDE.md) - Comprehensive usage documentation
+- [Research Workflows](RESEARCH_WORKFLOWS.md) - Scientific use patterns
+- [Admin Guide](ADMIN_GUIDE.md) - System administration
 
 ---
 

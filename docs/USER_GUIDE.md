@@ -1842,9 +1842,9 @@ python cluster_submit.py --data data.csv --scores scores.csv
 ### **Getting Help**
 
 #### **Documentation Resources**
-- **[CLI Reference](docs/CLI_REFERENCE.md)**: Complete command documentation
-- **[API Documentation](docs/API_REFERENCE.md)**: REST API documentation
-- **[Quick Start Guide](docs/QUICK_START.md)**: 5-minute tutorial
+- **[CLI Reference](CLI_REFERENCE.md)**: Complete command documentation
+- **[API Documentation](API_REFERENCE.md)**: REST API documentation
+- **[Quick Start Guide](QUICK_START.md)**: 5-minute tutorial
 
 #### **Community Support**
 - **GitHub Issues**: [Report bugs and request features](https://github.com/chrisfoulon/emuses/issues)
@@ -1868,12 +1868,12 @@ curl http://localhost:8000/api/health
 
 ## 🔗 **Related Documentation**
 
-- **[CLI Reference](docs/CLI_REFERENCE.md)** - Complete command-line interface reference
-- **[API Documentation](docs/API_REFERENCE.md)** - REST API documentation for integration
-- **[Quick Start Guide](docs/QUICK_START.md)** - 5-minute tutorial for immediate results
-- **[Research Workflows](docs/RESEARCH_WORKFLOWS.md)** - Scientific use case patterns
-- **[Admin Guide](docs/ADMIN_GUIDE.md)** - System administration and deployment
-- **[Migration Guide](docs/MIGRATION_GUIDE.md)** - Version upgrade guidance
+- **[CLI Reference](CLI_REFERENCE.md)** - Complete command-line interface reference
+- **[API Documentation](API_REFERENCE.md)** - REST API documentation for integration
+- **[Quick Start Guide](QUICK_START.md)** - 5-minute tutorial for immediate results
+- **[Research Workflows](RESEARCH_WORKFLOWS.md)** - Scientific use case patterns
+- **[Admin Guide](ADMIN_GUIDE.md)** - System administration and deployment
+- **[Migration Guide](MIGRATION_GUIDE.md)** - Version upgrade guidance
 
 ---
 

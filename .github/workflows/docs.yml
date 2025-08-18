@@ -47,7 +47,7 @@ jobs:
           python -c "import mkdocs; print('MkDocs configuration validation complete')"
         
       - name: Build documentation
-        run: mkdocs build --verbose
+        run: mkdocs build --strict --verbose
         
       - name: Verify progressive disclosure features
         run: |
