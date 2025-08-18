@@ -27,6 +27,11 @@ This guide provides detailed workflows for specific types of scientific research
 
 ---
 
+<details markdown="1">
+<summary>🧠 **Data Modality Workflows** - MRI, fMRI, DTI, and multi-modal analysis patterns</summary>
+
+*Comprehensive workflows organized by neuroimaging data type and acquisition method*
+
 ## 🧠 **Structural MRI Workflows**
 
 ### **Cortical Thickness Analysis**
@@ -453,6 +458,13 @@ emuses compare structural_only_analysis/models/trained_model.pkl \
 ```
 
 ---
+
+</details>
+
+<details markdown="1">
+<summary>🎯 **Research Question Workflows** - Task-based, connectivity, clinical, and population studies</summary>
+
+*Workflows organized by specific scientific research questions and hypotheses*
 
 ## 🎯 **Task-Based Studies**
 
@@ -894,6 +906,13 @@ python survival_analysis.py \
 
 ---
 
+</details>
+
+<details markdown="1">
+<summary>📊 **Advanced Analysis Approaches** - Exploratory analysis, hypothesis testing, and longitudinal studies</summary>
+
+*Advanced analytical methodologies for comprehensive scientific investigation*
+
 ## 📊 **Exploratory Analysis**
 
 ### **Hypothesis Generation**
@@ -1321,6 +1340,13 @@ plt.savefig('meta_analysis_forest_plot.png', dpi=300)
 
 ---
 
+</details>
+
+<details markdown="1">
+<summary>📋 **Templates & Resources** - Ready-to-use templates and additional documentation</summary>
+
+*Standardized templates, checklists, and links to supplementary resources*
+
 ## 📋 **Research Workflow Templates**
 
 ### **Standard Operating Procedures**
@@ -1495,3 +1521,5 @@ echo "Post-analysis checklist complete!"
 ---
 
 *This research workflows guide provides specialized patterns for scientific research with EMUSES, with extensive neuroimaging examples. Each workflow includes real-world examples, best practices, and reproducibility guidelines. For additional scientific use cases or custom workflow development, consult the User Guide or contribute to the community discussions.*
+
+</details>

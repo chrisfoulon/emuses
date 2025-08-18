@@ -116,3 +116,21 @@
     margin-bottom: 1rem;
     border-bottom: 1px solid var(--md-default-fg-color--lightest);
 }
+
+/* Mermaid diagram enhancements - now handled by panzoom plugin */
+.mermaid {
+    text-align: center;
+    margin: 2rem 0;
+    padding: 1rem;
+    min-height: 400px;
+    position: relative;
+}
+
+/* Responsive adjustments for mobile */
+@media (max-width: 768px) {
+    .mermaid {
+        min-height: 300px;
+        margin: 1rem 0;
+        padding: 0.5rem;
+    }
+}

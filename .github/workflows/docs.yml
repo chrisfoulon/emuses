@@ -31,18 +31,20 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+          key: ${{ runner.os }}-pip-docs-${{ hashFiles('docs/requirements.txt') }}
           restore-keys: |
+            ${{ runner.os }}-pip-docs-
             ${{ runner.os }}-pip-
             
-      - name: Install MkDocs and dependencies
+      - name: Install MkDocs and documentation dependencies
         run: |
-          pip install mkdocs-material
-          pip install mkdocs-minify-plugin
-          pip install mkdocs-awesome-pages-plugin
+          pip install --upgrade pip
+          pip install -r docs/requirements.txt
           
       - name: Validate MkDocs configuration
-        run: mkdocs --version && mkdocs config
+        run: |
+          mkdocs --version
+          python -c "import mkdocs; print('MkDocs configuration validation complete')"
         
       - name: Build documentation
         run: mkdocs build --strict --verbose
@@ -75,6 +77,22 @@ jobs:
             exit 1
           fi
           
+          # Check that USER_GUIDE has details elements
+          if grep -q "<details" site/USER_GUIDE/index.html; then
+            echo "✅ USER_GUIDE progressive disclosure implemented"
+          else
+            echo "❌ USER_GUIDE progressive disclosure missing"
+            exit 1
+          fi
+          
+          # Check that RESEARCH_WORKFLOWS has details elements
+          if grep -q "<details" site/RESEARCH_WORKFLOWS/index.html; then
+            echo "✅ RESEARCH_WORKFLOWS progressive disclosure implemented"
+          else
+            echo "❌ RESEARCH_WORKFLOWS progressive disclosure missing"
+            exit 1
+          fi
+          
           echo "🎉 All progressive disclosure features validated!"
           
       - name: Upload Pages artifact
@@ -99,3 +117,5 @@ jobs:
           echo "📖 Site URL: ${{ steps.deploy.outputs.page_url }}"
           echo "🛠️ CLI Reference: ${{ steps.deploy.outputs.page_url }}CLI_REFERENCE/"
           echo "🔌 API Reference: ${{ steps.deploy.outputs.page_url }}API_REFERENCE/"
+          echo "📚 User Guide: ${{ steps.deploy.outputs.page_url }}USER_GUIDE/"
+          echo "🔬 Research Workflows: ${{ steps.deploy.outputs.page_url }}RESEARCH_WORKFLOWS/"

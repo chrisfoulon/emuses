@@ -97,6 +97,11 @@ my_first_analysis/
 
 ---
 
+<details markdown="1">
+<summary>🔬 **Research Contexts** - Choose your research environment and workflow</summary>
+
+*Audience-specific guidance for different research contexts and team structures*
+
 ## 🔬 **Individual Researchers**
 
 *Perfect for: Personal analysis, method development, exploratory research*
@@ -578,6 +583,13 @@ emuses models publish meta_analysis_results.csv \
 
 ---
 
+</details>
+
+<details markdown="1">
+<summary>📊 **Core Workflows** - Analysis pipelines and scientific reproducibility</summary>
+
+*Complete analysis workflows, reproducibility best practices, and collaborative research methods*
+
 ## 📊 **Core Analysis Workflows**
 
 ### **Full Pipeline Analysis**
@@ -950,6 +962,13 @@ emuses inference lab_reference_model_v1 my_new_data.csv
 ```
 
 ---
+
+</details>
+
+<details markdown="1">
+<summary>⚙️ **Advanced Features** - Integration, customization, and performance optimization</summary>
+
+*API integration, custom tool development, performance tuning, and advanced configuration options*
 
 ## 🔌 **Integration**
 
@@ -1645,6 +1664,13 @@ custom_registry.register_custom_model('my_model/', {'type': 'special'})
 
 ---
 
+</details>
+
+<details markdown="1">
+<summary>🆘 **Support Resources** - Troubleshooting, FAQ, and additional documentation</summary>
+
+*Common issues, solutions, frequently asked questions, and links to additional resources*
+
 ## 🆘 **Troubleshooting & FAQ**
 
 ### **Common Issues**
@@ -1852,3 +1878,5 @@ curl http://localhost:8000/api/health
 ---
 
 *This comprehensive user guide covers all aspects of EMUSES usage from individual research to large-scale collaborative projects. For specific technical details, consult the CLI or API references. For additional help, visit our GitHub repository or community discussions.*
+
+</details>

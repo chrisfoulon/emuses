@@ -114,6 +114,10 @@ nav:
 plugins:
   - search:
       separator: '[\s\-,:!=\[\]()"/]+|(?!\b)(?=[A-Z][a-z])|\.(?!\d)|&[lg]t;'
+  - panzoom:
+      key: none                         # wheel/pinch pan & zoom without holding Alt
+      full_screen: true                 # add fullscreen button
+      initial_zoom_level: 1.25          # make diagrams 25% larger by default
   - minify:
       minify_html: true
 

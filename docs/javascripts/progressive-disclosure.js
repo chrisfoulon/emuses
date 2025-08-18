@@ -160,3 +160,6 @@ function addVisualIndicators() {
 
 // Apply visual indicators immediately
 addVisualIndicators();
+
+// Mermaid functionality now handled by mkdocs-panzoom-plugin
+// No custom JavaScript needed for zoom/pan - the plugin handles everything
