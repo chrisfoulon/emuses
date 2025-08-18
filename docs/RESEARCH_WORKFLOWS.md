@@ -1515,7 +1515,7 @@ echo "Post-analysis checklist complete!"
 - **[API Documentation](API_REFERENCE.md)** - REST API documentation for integration
 - **[User Guide](USER_GUIDE.md)** - Comprehensive usage guide with learning paths
 - **[Quick Start Guide](QUICK_START.md)** - 5-minute tutorial for immediate results
-- **[Admin Guide](ADMIN_GUIDE.md)** - System administration and deployment
+- **[Admin Guide](multi-user-service/admin-guide.md)** - System administration and deployment
 - **[Migration Guide](MIGRATION_GUIDE.md)** - Version upgrade guidance
 
 ---

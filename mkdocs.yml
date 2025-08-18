@@ -103,8 +103,8 @@ nav:
     - API Integration: 'examples/api_integration.md'
   - Development:
     - Architecture: 'emuses/architecture.md'
-    - Testing: 'test-analysis/test_analysis_summary.md'
     - Testing Commands: 'testing-commands.md'
+    - Testing Configuration: 'testing-config-isolation.md'
   - Model Registry:
     - Overview: 'model-registry/user_guide.md'
     - Integration Plan: 'model-registry/plan_4_integration.md'

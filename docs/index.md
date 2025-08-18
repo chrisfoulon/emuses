@@ -113,7 +113,7 @@ EMUSES implements state-of-the-art methods from computational science and machin
 
 ### Development
 - **[Architecture](emuses/architecture.md)** - Technical design overview
-- **[Testing](test-analysis/test_analysis_summary.md)** - Test coverage and quality
+- **[Testing](testing-commands.md)** - Test coverage and quality
 
 ## Getting Started
 

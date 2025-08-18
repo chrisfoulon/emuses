@@ -1074,7 +1074,7 @@ cat("Analysis completed!\n")
 - [CLI Reference](CLI_REFERENCE.md) - Complete command-line interface
 - [User Guide](USER_GUIDE.md) - Comprehensive usage documentation
 - [Research Workflows](RESEARCH_WORKFLOWS.md) - Scientific use patterns
-- [Admin Guide](ADMIN_GUIDE.md) - System administration
+- [Admin Guide](multi-user-service/admin-guide.md) - System administration
 
 ---
 

@@ -406,9 +406,9 @@ python -m emuses admin rollback-failover --to s3
 
 ### 1. Documentation Resources
 
-- [Cloud Storage Configuration Guide](cloud-storage-config.md)
-- [Model Registry API Documentation](api-reference.md)
-- [Production Deployment Guide](production-deployment.md)
+- [API Documentation](API_REFERENCE.md)
+- [Model Registry User Guide](model-registry/user_guide.md)
+- [Multi-User Service Admin Guide](multi-user-service/admin-guide.md)
 
 ### 2. Support Channels
 
