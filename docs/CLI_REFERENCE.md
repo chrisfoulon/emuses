@@ -533,8 +533,8 @@ emuses admin configure-cluster \
 
 ### Support Resources
 - **GitHub Issues**: [Report bugs and request features](https://github.com/chrisfoulon/emuses/issues)
-- **Documentation**: [Complete user guides](../docs/)
-- **Sample Data**: [Example datasets and workflows](examples/)
+- **Documentation**: [Complete user guides](index.md)
+- **Sample Data**: [Example datasets and workflows](examples/index.md)
 
 ---
 

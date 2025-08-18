@@ -10,7 +10,7 @@ This guide provides structured learning paths for researchers at all levels, com
 - [🔬 **Individual Researchers**](#individual-researchers) - Personal analysis and method development
 - [🏛️ **Research Labs**](#research-labs) - Team collaboration and model sharing  
 - [🌍 **Scientific Community**](#scientific-community) - Public sharing and benchmarking
-- [⚙️ **System Administrators**](#system-administrators) - Deployment and management
+- [⚙️ **System Administrators**](multi-user-service/admin-guide.md) - Deployment and management
 
 ### **By Task**
 - [🚀 **Getting Started**](#getting-started) - Installation and first analysis
@@ -1849,7 +1849,7 @@ python cluster_submit.py --data data.csv --scores scores.csv
 #### **Community Support**
 - **GitHub Issues**: [Report bugs and request features](https://github.com/chrisfoulon/emuses/issues)
 - **GitHub Discussions**: [Ask questions and share experiences](https://github.com/chrisfoulon/emuses/discussions)
-- **Documentation**: [Complete user guides](docs/)
+- **Documentation**: [Complete user guides](index.md)
 
 #### **Diagnostic Commands**
 ```bash

@@ -9,7 +9,7 @@ This guide provides detailed workflows for specific types of scientific research
 ### **By Data Modality**
 - [🧠 **Structural MRI**](#structural-mri-workflows) - Morphometry, cortical thickness, volumetric analysis
 - [🌊 **Functional MRI**](#functional-mri-workflows) - Task activation, resting-state connectivity
-- [⚡ **DTI/DWI**](#dti-dwi-workflows) - White matter tractography and connectivity
+- [⚡ **DTI/DWI**](#dtidwi-workflows) - White matter tractography and connectivity
 - [🔗 **Multi-Modal**](#multi-modal-workflows) - Combined structural-functional analysis
 
 ### **By Research Question**
@@ -318,7 +318,7 @@ emuses compare resting_state_analysis/models/trained_model.pkl \
 
 ---
 
-## ⚡ **DTI/DWI Workflows**
+## DTI/DWI Workflows
 
 ### **White Matter Connectivity Analysis**
 

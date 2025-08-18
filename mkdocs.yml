@@ -107,8 +107,10 @@ nav:
     - Testing Configuration: 'testing-config-isolation.md'
   - Model Registry:
     - Overview: 'model-registry/user_guide.md'
-    - Integration Plan: 'model-registry/plan_4_integration.md'
-    - Validation: 'model-registry/task_483_validation.md'
+    - API Reference: 'model-registry/api_reference.md'
+    - Developer Guide: 'model-registry/developer_guide.md'
+  - Administration:
+    - Multi-User Admin Guide: 'multi-user-service/admin-guide.md'
 
 # Plugins
 plugins:
@@ -133,6 +135,12 @@ validation:
 
 # Enable strict mode for production builds
 strict: false  # Set to true for production builds
+
+# Documentation source directory
+docs_dir: docs
+
+# Exclude internal development documentation from public site
+not_in_nav: warn
 
 # Extra CSS and JS
 extra_css:

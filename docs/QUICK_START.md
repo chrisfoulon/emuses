@@ -156,7 +156,7 @@ python -m emuses.cli models status --verbose
 #### 🔬 **For Research Workflows**
 1. [Model Registry - Collaborative Features](model-registry/user_guide.md#database-mode)
 2. [Model Sharing Guide](model-registry/user_guide.md)
-3. [Multi-User Service Guide](multi-user-service/research-workflows.md)
+3. [Multi-User Admin Guide](multi-user-service/admin-guide.md)
 
 #### 💻 **For Integration/Development**
 1. [API Documentation](API_REFERENCE.md) - Static docs, or start server for interactive docs at `/api/docs`
