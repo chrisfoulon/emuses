@@ -133,3 +133,9 @@ Ready to start analyzing your neuroimaging data? Choose your path:
     <strong>Built for the neuroimaging research community</strong><br>
     <em>Empowering discoveries through advanced computational methods</em>
 </div>
+
+---
+
+<div align="center">
+    <small>Documentation developed using <a href="https://github.com/chrisfoulon/LAD">LAD (LLM-Assisted Development)</a> methodology with human oversight.</small>
+</div>

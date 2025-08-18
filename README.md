@@ -173,4 +173,6 @@ If you use EMUSES in your research, please cite:
 
 ---
 
+*Documentation developed using [LAD (LLM-Assisted Development)](https://github.com/chrisfoulon/LAD) methodology with human oversight.*
+
 **🧠 Built for neuroscientists, by neuroscientists** | **⚡ Quick results, deep control** | **🤝 Individual to community scale**
