@@ -341,5 +341,5 @@ For rollback assistance:
 ## Related Documentation
 
 - [ROLLBACK_CHECKLIST.md](./ROLLBACK_CHECKLIST.md)
-- [Health Check Documentation](../monitoring/health-checks.md)
-- [Database Migration Guide](../database/migration-procedures.md)
+- [Model Registry Health Monitoring](../multi-user-service/admin-guide.md)
+- [Model Migration Guide](../project-history/phase-implementations/phase_4_2_model_migration.md)

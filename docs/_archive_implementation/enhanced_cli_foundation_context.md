@@ -41,5 +41,5 @@ This context covers the foundation layer for the Enhanced CLI with Typer, focusi
 - Task 3: Build service client with connection pooling
 
 ## Context Links
-- [Legacy CLI Documentation](./enhanced-cli-typer_scripts_main.md)
-- [FastAPI Service Documentation](./enhanced-cli-typer_foundation_fastapi_service.md)
+- Legacy CLI: `emuses/scripts/main.py` (reference implementation)
+- FastAPI Service: `emuses/foundation_fastapi_service/app.py` (API endpoints)
