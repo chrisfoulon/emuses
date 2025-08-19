@@ -6,7 +6,7 @@
 - **Research Labs**: Collaborative model sharing with workspace isolation
 - **Scientific Community**: Public model registry with peer review and benchmarking
 
-## 🎯 CURRENT FOCUS (Updated 2025-08-18)
+## 🎯 CURRENT FOCUS (Updated 2025-08-19)
 
 ### **MAJOR MILESTONE**: Progressive Disclosure Documentation System ✅ **COMPLETED**
 - **Phase 1 COMPLETED** ✅: CLI_REFERENCE.md restructuring with 4-level progressive disclosure
@@ -28,19 +28,28 @@
     - Comprehensive testing and validation completed
   - All SESSION_HANDOVER tasks completed successfully ✅
 
+- **Priority 2**: Documentation System Consolidation and Cleanup ✅ **COMPLETED**
+  - **LAD Compliance Restoration**: Separated static guidelines from dynamic project tracking
+  - **Path Reference Fixes**: Corrected all docs/ → dev-docs/ references for internal documentation
+  - **Issue Tracking Organization**: Moved technical issues to dev-docs/issues/
+  - **Repository Organization**: Clear separation of user-facing docs/ vs internal dev-docs/
+  - **CLAUDE.md Consolidation**: Root file for project tracking, .lad file for static guidelines
+
 ### **NEXT PRIORITIES**:
 - **Priority 1**: Analysis API Enhancement (Independent development) 📋 **READY**
-  - Located in `docs/analysis-api/` with existing mature functions ready for exposure
+  - Located in `dev-docs/analysis-api/` with existing mature functions ready for exposure
   - FastAPI endpoints and CLI commands for effect size map analysis
 - **Priority 2**: CI/CD Task 4.2 Multi-environment deployment automation 📋 **PLANNED**
-- **Maintenance**: Project cleanup completed (9 obsolete files removed) ✅
+- **Maintenance**: Project cleanup and consolidation completed ✅
 
-### **COMPLETED DOCUMENTATION ACHIEVEMENTS** (2025-08-18):
+### **COMPLETED DOCUMENTATION ACHIEVEMENTS** (2025-08-19):
 - **38,000+ Words Restructured**: All major user-facing documentation transformed
 - **Progressive Disclosure Excellence**: 60-85% cognitive load reduction for beginners
 - **Zero Information Loss**: 100% content preservation with improved accessibility
 - **Technical Quality**: Professional MkDocs Material implementation with error-free formatting
 - **Multi-Audience Support**: Clear progression paths for beginners → advanced → expert users
+- **Repository Organization Excellence**: Clean separation of user-facing (docs/) vs internal (dev-docs/) documentation
+- **LAD Framework Compliance**: Static guidelines properly separated from dynamic project tracking
 
 ## ✅ CORE FEATURES COMPLETE
 

@@ -1,5 +1,8 @@
 # Project Context for Claude Code LAD Framework
 
+## Architecture Overview
+*Auto-updated by LAD workflows - current system understanding*
+
 ## Project Mission
 **EMUSES** is a predictive modeling tool for neuroimaging research enabling:
 - **Individual Researchers**: Local model development and analysis
@@ -22,12 +25,24 @@
 
 ## Communication Guidelines
 **Objective, European-Style Communication**:
-- Avoid excessive enthusiasm - use measured language
-- Scientific tone: "This approach has merit" vs "That's a great idea!"
-- State problems directly - honest criticism over hedging
-- Acknowledge uncertainty: "I cannot verify this will work"
-- Present trade-offs rather than unqualified endorsements
-- Focus on accuracy over making user feel good
+- **Avoid excessive enthusiasm**: Replace "brilliant!", "excellent!", "perfect!" with measured language
+- **Scientific tone**: "This approach has merit" instead of "That's a great idea!"
+- **Honest criticism**: State problems directly - "This approach has significant limitations" vs hedging
+- **Acknowledge uncertainty**: "I cannot verify this will work" vs "This should work fine"
+- **Balanced perspectives**: Present trade-offs rather than unqualified endorsements
+- **Focus on accuracy**: Prioritize correctness over making user feel good about ideas
+
+## Maintenance Integration Protocol
+**Technical Debt Management**:
+- **Boy Scout Rule**: Leave code cleaner than found when possible
+- **Maintenance Registry**: Track and prioritize technical debt systematically
+- **Impact-based cleanup**: Focus on functional issues before cosmetic ones
+- **Progress tracking**: Update both TodoWrite and plan.md files consistently
+
+## Testing Strategy Guidelines
+- **API Endpoints**: Integration testing (real app + mocked external deps)
+- **Business Logic**: Unit testing (complete isolation + mocks)
+- **Data Processing**: Unit testing (minimal deps + test fixtures)
 
 ## Test Coverage Enhancement Strategy (Evidence-Based)
 
@@ -56,156 +71,83 @@
 - **Flexible Parameters**: Methods support both old and new calling patterns
 - **Auto-Detection**: Deployment mode detection with fallback logic
 
-### Testing Strategy Guidelines
-- **API Endpoints**: Integration testing (real app + mocked external deps)
-- **Business Logic**: Unit testing (complete isolation + mocks)
-- **Data Processing**: Unit testing (minimal deps + test fixtures)
+## Project Structure Patterns
+*Learned from exploration - common patterns and conventions*
+
+### Documentation Organization
+- **docs/**: User-facing documentation (API_REFERENCE.md, USER_GUIDE.md, model-registry user guides)
+- **dev-docs/**: Internal development documentation (project plans, contexts, issue tracking)
+
+## Current Feature Progress
+*TodoWrite integration status and cross-session state*
+
+## Quality Metrics Baseline
+- Test count: *tracked across sessions*
+- Coverage: *baseline and current*
+- Complexity: *monitored for regression*
+
+## Common Gotchas & Solutions
+*Accumulated from previous implementations*
 
 ### Token Optimization for Large Codebases
 **Standard test commands:**
-- **Large test suites**: Use `2>&1 | tail -n 100` for pytest to capture only final results
-- **Coverage reports**: Use `tail -n 150` for comprehensive coverage summary
-- **Targeted tests**: Single test runs (`pytest -xvs`) don't need redirection
+- **Large test suites**: Use `2>&1 | tail -n 100` for pytest commands to capture only final results/failures
+- **Coverage reports**: Use `tail -n 150` for comprehensive coverage output to include summary
+- **Keep targeted tests unchanged**: Single test runs (`pytest -xvs`) don't need redirection
 
 **Long-running commands (>2 minutes):**
-- **Pattern**: `<command> 2>&1 | tee full_output.txt | grep -iE "(warning|error|failed|exception)" | tail -n 30; echo "--- FINAL OUTPUT ---"; tail -n 100 full_output.txt`
-- **Rationale**: Captures critical information while optimizing token usage
+- **Pattern**: `<command> 2>&1 | tee full_output.txt | grep -iE "(warning|error|failed|exception|fatal|critical)" | tail -n 30; echo "--- FINAL OUTPUT ---"; tail -n 100 full_output.txt`
+- **Use cases**: Package installs, builds, data processing, comprehensive test suites, long compilation
+- **Benefits**: Captures warnings/errors from anywhere in output, saves full output for detailed review, prevents token explosion
+- **Case-insensitive**: Catches `ERROR`, `Error`, `error`, `WARNING`, `Warning`, `warning`, etc.
 
-## Key Integration Decisions (Current Architecture)
+**Rationale**: Large codebases can generate massive output consuming significant Claude Pro allowance. Enhanced pattern ensures critical information isn't missed while optimizing token usage.
 
-| Component | Decision | Strategy | Impact |
-|-----------|----------|----------|---------|
-| Model Registry Factory | Single endpoints file | Unified interface across modes | Cross-mode compatibility ✅ |
-| User Isolation Strategy | Ownership validation helpers | Shared `_get_user_*` functions | Consistent security boundaries ✅ |
-| API Schema Strategy | Separate Create/Update/Read schemas | Different Pydantic models per operation | Clean API design ✅ |
-| Registry Deployment Mode | Auto-detection with fallback | Factory pattern with mode validation | Seamless mode transitions ✅ |
-| Caching Strategy | In-memory cache with TTL/LRU | ModelRegistryCache with user isolation | Query performance optimization ✅ |
-| Storage Management UX | Enhanced visibility and reporting | StorageManager with model breakdown and suggestions | Improved user awareness ✅ |
-| Database Query Optimization | Strategic indexes + performance monitoring | DatabaseIndexOptimizer with 9 composite indexes | Query performance optimization ✅ |
+## Integration Patterns
+*How components typically connect in this codebase*
 
-## Active Development Context
+## Cross-Session Integration Tracking
+*Maintained across LAD sessions to prevent duplicate implementations*
 
-**Current Branch**: `feature/documentation-restructuring`
-**Active Phase**: Progressive disclosure documentation system - **COMPLETED** ✅
-**CURRENT Development Status** (Updated 2025-08-18):
+### Active Implementations
+*Current state of system components and their integration readiness*
 
-### **MAJOR MILESTONE**: Progressive Disclosure Documentation ✅ **COMPLETED**
-1. **Phase 1 COMPLETED** ✅ - CLI_REFERENCE.md progressive disclosure restructuring
-   - **4-level hierarchy**: Essential → Advanced → Developer → Admin
-   - **60% content reduction** for beginners while preserving all information
-   - **Interactive navigation**: Mermaid diagrams and collapsible sections
-   - **Technical infrastructure**: JavaScript enhancements, MkDocs validation
+| Component | Status | Integration Points | Last Updated |
+|-----------|--------|--------------------|--------------|
+| Model Registry Factory | Production Ready | Cross-mode compatibility | 2025-08-19 |
+| Progressive Disclosure Docs | Complete | MkDocs Material integration | 2025-08-19 |
+| FastAPI Documentation Serving | Production Ready | Development environment integration | 2025-08-19 |
 
-2. **Phase 2.1 COMPLETED** ✅ - API_REFERENCE.md progressive disclosure restructuring  
-   - **5-level hierarchy**: Getting Started → Pipeline → Job Management → File Operations → Advanced → Monitoring
-   - **Developer journey mapping**: Clear progression paths for different integration goals
-   - **GitHub Actions deployment**: Modern workflow with automated validation
+### Integration Decisions Log
+*Historical decisions to guide future development*
 
-3. **Phase 2.2 COMPLETED** ✅ - USER_GUIDE.md progressive disclosure restructuring
-   - **4-level hierarchy**: Research Contexts → Core Workflows → Advanced Features → Support Resources
-   - **85% content reduction** for beginners while preserving 100% information access
-   - **15,000+ word document** transformed with comprehensive progressive disclosure
+| Feature | Decision | Strategy | Rationale | Session Date | Outcome |
+|---------|----------|----------|-----------|--------------|---------|
+| Model Registry Factory | Single endpoints file | Unified interface across modes | Cross-mode compatibility | 2025-08-17 | Cross-mode compatibility ✅ |
+| User Isolation Strategy | Ownership validation helpers | Shared `_get_user_*` functions | Consistent security boundaries | 2025-08-17 | Consistent security boundaries ✅ |
+| API Schema Strategy | Separate Create/Update/Read schemas | Different Pydantic models per operation | Clean API design | 2025-08-17 | Clean API design ✅ |
+| Registry Deployment Mode | Auto-detection with fallback | Factory pattern with mode validation | Seamless mode transitions | 2025-08-17 | Seamless mode transitions ✅ |
+| Caching Strategy | In-memory cache with TTL/LRU | ModelRegistryCache with user isolation | Query performance optimization | 2025-08-17 | Query performance optimization ✅ |
+| Storage Management UX | Enhanced visibility and reporting | StorageManager with model breakdown and suggestions | Improved user awareness | 2025-08-17 | Improved user awareness ✅ |
+| Database Query Optimization | Strategic indexes + performance monitoring | DatabaseIndexOptimizer with 9 composite indexes | Query performance optimization | 2025-08-17 | Query performance optimization ✅ |
 
-4. **Phase 2.3 COMPLETED** ✅ - RESEARCH_WORKFLOWS.md progressive disclosure restructuring
-   - **4-level hierarchy**: Navigation → Data Modality → Research Questions → Advanced Approaches → Templates
-   - **Scientific workflow optimization** with expertise-based grouping
-   - **1,496 lines** of scientific workflows restructured
+### Pending Integration Tasks
+*Cross-session work that needs completion*
 
-5. **Documentation Quality Framework COMPLETED** ✅ - Systematic markdown formatting resolution
-   - **All 47 MkDocs warnings resolved**: From poor maintenance to industry excellence
-   - **Comprehensive formatting guidelines**: MkDocs Material standards established
-   - **Strict mode restored**: Build system validation with zero warnings
+- Analysis API Enhancement: Expose `run_kernel_heatmap_analysis()` and `run_heatmap_analysis()` functions
 
-### **COMPLETED PRIORITIES**:
-4. **Test Suite Excellence** (ACHIEVED ✅) - `docs/test-analysis/FINAL_TEST_REPORT_2025_08_15.md`
-5. **Model Registry Production Ready** (COMPLETED ✅) - Tasks 4.8.3, 4.8.4  
-6. **FastAPI Documentation Serving** (COMPLETED ✅) - Unified development server
+### Architecture Evolution Notes
+*Key architectural changes that affect future integration decisions*
 
-### **NEXT PRIORITY**: Analysis API Enhancement Development
-- **Feature Location**: `docs/analysis-api/` with existing mature functions
-- **Scope**: Expose `run_kernel_heatmap_analysis()` and `run_heatmap_analysis()` functions
-- **Implementation**: FastAPI endpoints, CLI commands, configuration integration
-- **Status**: Ready for development - independent feature with clear business value
+- Progressive disclosure documentation system established with MkDocs Material
+- Clear separation of user-facing docs/ vs internal dev-docs/ established
+- LAD framework compliance restored with static guidelines vs dynamic project tracking
 
-**Recent Completion**: Task 4.7.2.d Disaster Recovery Procedures (Complete)
-- ✅ Backup Validation: Comprehensive backup integrity checking with RPO/RTO targets (15min/30min)
-- ✅ Service Restoration: Priority-based dependency ordering (Database → Local → Health → API → Cloud)
-- ✅ Recovery Procedures: Failure-specific procedures for database corruption, storage failure, system failure, config loss
-- ✅ Emergency Contacts: 24/7 escalation matrix with role-based contact management and communication channels
-- ✅ Business Impact Assessment: 1500+ user impact evaluation with SLA risk analysis and regulatory compliance
-- ✅ Recovery Testing: Automated test procedures (backup validation, failover test, full recovery simulation)
-- ✅ Progress Monitoring: Session-based recovery tracking with completion percentages and step validation
-- ✅ Post-Recovery Validation: Comprehensive system health verification and performance metrics validation
-- ✅ New Endpoints: Added 8 disaster recovery endpoints (/backup-status, /restoration-plan, /procedure, /emergency-contacts, /business-impact, /run-test, /progress, /post-recovery-validation)
-- ✅ Comprehensive Testing: 8 new disaster recovery tests covering all business continuity scenarios
+### Integration Anti-Patterns Avoided
+*Documentation of duplicate implementations prevented*
 
-## CI/CD & Testing Workflow (Resource-Efficient Strategy)
-
-### **Before Making Changes**
-- **Pre-push Testing**: `python scripts/dev_test_runner.py` (saves GitHub education credits)
-- **Full Test Baseline**: `pytest -q --tb=short` (only when needed for comprehensive validation)
-
-### **Development CI Strategy**
-- **Feature Branches**: Automatic lightweight CI (13 tests, ~1 minute, ~2-3 credits)
-- **Main Branch**: Full CI with PostgreSQL/Redis services (~30 minutes, ~30-60 credits)
-- **Manual Dispatch**: Production CI available for pre-merge validation when needed
-
-### **Credit-Conscious Development Pattern**
-1. **Develop on feature branches** (triggers fast CI)
-2. **Test locally first** with `python scripts/dev_test_runner.py`
-3. **Push to feature branch** (fast feedback, minimal credits)
-4. **Merge to main only when ready** (triggers comprehensive validation)
-
-⚠️ **IMPORTANT**: Always run `python scripts/dev_test_runner.py` before pushing to catch issues locally and save GitHub education credits.
-
-## Common Commands
-
-### **🎯 Project-Wide Validation (USE THESE)**
-- **Category Testing**: `python scripts/test_runners/comprehensive_test_runner.py --category security`
-- **Full Validation**: `python scripts/test_runners/comprehensive_test_runner.py --all`
-- **Comprehensive Coverage**: `python scripts/coverage/comprehensive_coverage_analysis.py --workers 8`
-- **List Categories**: `python scripts/test_runners/comprehensive_test_runner.py --list`
-
-### **🔧 Development Commands**
-- **CLI**: `python -m emuses.cli` (not `python -m emuses`)
-- **Pre-Push Local Testing**: `python scripts/dev_test_runner.py` (syntax + core tests)
-
-### **🧪 Specific Test Commands (For Development)**
-- **Test Security**: `pytest tests/security/ -q --tb=short` (248 tests)
-- **Test Model Registry**: `pytest tests/model_registry/test_local_registry.py -xvs`
-- **Test Integration**: `pytest tests/integration/test_unified_interface.py -xvs`
-- **Test Caching**: `pytest tests/performance/test_model_registry_caching.py -xvs` (15 tests)
-- **Test Storage UX**: `pytest tests/model_registry/test_storage_ux.py -xvs` (32 tests)
-- **Test Query Optimization**: `pytest tests/performance/test_database_query_optimization.py -xvs` (7 baseline tests)
-- **Test Database Indexes**: `pytest tests/performance/test_database_index_optimization.py -xvs` (12 index tests)
-- **Test DB Integration**: `pytest tests/performance/test_database_registry_integration.py -xvs` (10 integration tests)
-- **Test Disaster Recovery**: `pytest tests/tools/test_disaster_recovery.py -xvs` (8 disaster recovery tests)
-- **Test All Health Monitoring**: `pytest tests/tools/test_model_registry_health.py tests/tools/test_graceful_degradation.py tests/tools/test_disaster_recovery.py -v` (25 health tests total)
-
-### **⚠️ IMPORTANT: Anti-Pattern Prevention**
-- **❌ NEVER**: Run `subprocess.run(["pytest", ...])` from within test files
-- **✅ ALWAYS**: Use `/scripts/test_runners/` for project-wide validation
-- **📖 READ FIRST**: `/scripts/README.md` for comprehensive testing approach
-
-## Feature Development Structure
-
-### New LAD-Compliant Feature Folders
-- **`docs/test-analysis/`**: Comprehensive test error analysis and resolution (Task 4.8.2 reorganized)
-  - Complete LAD structure: 00_feature_kickoff.md, context.md, plan.md
-  - Systematic approach to resolving 82 test failures with prioritization framework
-- **`docs/analysis-api/`**: Effect size map API/CLI integration (New feature)
-  - Expose existing `run_kernel_heatmap_analysis()` and `run_heatmap_analysis()` functions
-  - FastAPI endpoints, CLI commands, configuration integration
-
-### ⚠️ CORRECTED Strategic Development Approach
-**CRITICAL DEPENDENCY IDENTIFIED**: Model registry completion blocked by test failures.
-
-**Revised Approach**:
-1. **Test Suite Stabilization** (Priority 1, CRITICAL PREREQUISITE, Blocks QA validation)
-   - Target: 0% test collection errors, Focus on P1/P2 model registry affecting fixes
-2. **Complete Model Registry** (Priority 2, DEPENDS ON #1, Major milestone) 
-3. **Add Analysis API Features** (Priority 3, Independent, Clear business value)
+- Mixed static guidelines with dynamic project tracking in LAD CLAUDE.md (resolved 2025-08-19)
+- Incorrect docs/ references for internal development documentation (resolved 2025-08-19)
 
 ---
-*Last Updated: 2025-08-14 - Feature reorganization complete with LAD-compliant structure*
-*Historical details archived in `docs/project-history/`*
+*Last updated by Claude Code LAD Framework - 2025-08-19*
