@@ -1,325 +1,247 @@
-# Analysis API Enhancement - Implementation Plan
+# Analysis API Enhancement - Comprehensive Implementation Plan
 
 ## Implementation Overview
 
-**Goal**: Expose existing effect size map analysis functions through API endpoints and CLI commands  
-**Duration**: 2-3 days (implementation + testing + documentation)  
-**Focus**: API endpoint development, CLI integration, configuration enhancement, testing and validation  
-**Dependencies**: ✅ Existing analysis functions, FastAPI infrastructure, CLI framework
+**Goal**: Complete Analysis Ecosystem with inference visualization and advanced artifact access  
+**Duration**: 3-4 weeks (critical bug fixes + comprehensive enhancement)  
+**Focus**: Fix core infrastructure, implement statistical analysis generation, enable inference visualization  
+**Dependencies**: ✅ FastAPI infrastructure, ModelIOManager, inference system
 
 ## Progress Tracking Protocol
 **CRITICAL**: After completing any task:
 1. Mark checkbox [x] in this plan.md file immediately
 2. Update TodoWrite status to "completed"  
-3. Run validation tests to verify completion
-4. Test API endpoints and CLI commands with realistic data
+3. Run tests to verify completion
+4. Only mark complete after successful testing
 
 ## Task Breakdown
 
-### Phase A.1: API Endpoint Development ║ FastAPI endpoint implementation ║ API foundation ║ M
+### Phase 1: Critical Infrastructure Fixes ║ Core system repairs ║ Foundation fixes ║ H
 
-**Objective**: Create FastAPI endpoints that expose both `run_kernel_heatmap_analysis()` and `run_heatmap_analysis()` functions with comprehensive parameter validation and response handling.
+**Risk**: HIGH - Current model installation is completely broken  
+**Priority**: CRITICAL - Must be fixed before any other development
 
-### Task A.1.1: Request/Response Model Development ║ Pydantic model creation ║ API schema ║ S
+- [ ] **Task 1.1: Fix ModelIOManager.install_model() method** ⚠️ **CRITICAL BUG**
+  - [ ] 1.1.a: Implement missing `install_model(model_path, destination_path, name)` method
+  - [ ] 1.1.b: Return unique model_id string as expected by LocalModelRegistry  
+  - [ ] 1.1.c: Handle file copying, directory creation, metadata preservation
+  - [ ] 1.1.d: Add comprehensive error handling and validation
+  - **Complexity**: Medium (2-3 days) | **Risk**: High (breaking change prevention) | **Files**: `model_io.py`
 
-- [ ] **Subtask A.1.1.a: Base request model creation**
-  - [ ] Create `AnalysisRequestBase` with common parameters (embeddings, scores_vectors, input_matrix, grid_size, etc.)
-  - [ ] Add parameter validation with appropriate constraints (grid_size range, valid effect_size_test values)
-  - [ ] Implement input data validation (array dimensions, data type consistency)
-  - [ ] Add comprehensive docstring documentation for all parameters
+- [ ] **Task 1.2: Fix ModelIOManager.validate_model() method** ⚠️ **CRITICAL BUG** 
+  - [ ] 1.2.a: Implement missing `validate_model(model_path)` method
+  - [ ] 1.2.b: Return manifest dict with name, version, type, description
+  - [ ] 1.2.c: Validate model file structure and required metadata
+  - [ ] 1.2.d: Add clear validation error messages
+  - **Complexity**: Medium (1-2 days) | **Risk**: Medium (validation logic) | **Files**: `model_io.py`
 
-- [ ] **Subtask A.1.1.b: Function-specific request models**
-  - [ ] Create `KernelAnalysisRequest` extending base model with kernel-specific parameters
-  - [ ] Create `CorrelationAnalysisRequest` extending base model with correlation-specific parameters  
-  - [ ] Add specialized validation for each function's unique requirements
-  - [ ] Implement parameter default values matching existing function defaults
+- [ ] **Task 1.3: Enable HDBSCAN model registration** 🔧 **ENHANCEMENT**
+  - [ ] 1.3.a: Add HDBSCAN models to registerable model types
+  - [ ] 1.3.b: Update CLI commands to support HDBSCAN model installation
+  - [ ] 1.3.c: Test HDBSCAN model discovery and installation workflow
+  - [ ] 1.3.d: Document HDBSCAN model registration in user guides
+  - **Complexity**: Low (1 day) | **Risk**: Low (extension of existing pattern) | **Files**: `models_commands.py`
 
-- [ ] **Subtask A.1.1.c: Response model development**
-  - [ ] Create `AnalysisResponse` model with analysis results, output paths, and metadata
-  - [ ] Add `AnalysisError` model for comprehensive error reporting
-  - [ ] Implement response validation and formatting
-  - [ ] Add execution metadata (timing, warnings, parameter validation results)
+### Phase 2: Statistical Analysis Generation ║ Core analysis features ║ Analysis capabilities ║ M
 
-- [ ] **Subtask A.1.1.d: Data serialization handling**
-  - [ ] Implement efficient serialization for large numpy arrays
-  - [ ] Add support for file upload/download patterns for large datasets
-  - [ ] Create parameter validation for data consistency (matching array dimensions)
-  - [ ] Add memory usage estimation and limits
+**Focus**: Generate statistical maps, effect size maps, interactive visualizations during HeatmapStage
 
-### Task A.1.2: Endpoint Implementation ║ FastAPI endpoint creation ║ Core API ║ M
+- [ ] **Task 2.1: Grid Ensemble Prediction System**
+  - [ ] 2.1.a: Implement `_generate_grid_predictions()` for 100x100 embedding space grids
+  - [ ] 2.1.b: Use InferenceStage-style ensemble predictions for consistency
+  - [ ] 2.1.c: Generate confidence scores and uncertainty quantification
+  - [ ] 2.1.d: Save grid prediction artifacts for later visualization use
+  - **Complexity**: Medium (2-3 days) | **Risk**: Medium (integration complexity) | **Files**: `heatmap_stage.py`
 
-- [ ] **Subtask A.1.2.a: Kernel analysis endpoint**
-  - [ ] Create `/analysis/kernel-heatmap/` POST endpoint
-  - [ ] Implement parameter mapping from request model to function parameters
-  - [ ] Add comprehensive error handling with informative error messages
-  - [ ] Integrate with existing `run_kernel_heatmap_analysis()` function
+- [ ] **Task 2.2: Statistical Map Generation System**
+  - [ ] 2.2.a: Implement cluster-based effect size comparisons in original feature space
+  - [ ] 2.2.b: Generate statistical maps using existing `input_matrix_stat_map()`
+  - [ ] 2.2.c: Apply prediction thresholds: `(prediction + confidence) / 2`
+  - [ ] 2.2.d: Save statistical maps in multiple formats (PNG, NPZ, CSV)
+  - **Complexity**: Medium (2-3 days) | **Risk**: Low (uses existing functions) | **Files**: `heatmap_stage.py`
 
-- [ ] **Subtask A.1.2.b: Correlation analysis endpoint**
-  - [ ] Create `/analysis/correlation-heatmap/` POST endpoint  
-  - [ ] Implement parameter mapping from request model to function parameters
-  - [ ] Add correlation-specific validation (clustering requirements)
-  - [ ] Integrate with existing `run_heatmap_analysis()` function
+- [ ] **Task 2.3: Interactive Visualization System** 
+  - [ ] 2.3.a: Restore and enhance commented visualization code from HeatmapStage
+  - [ ] 2.3.b: Generate HTML interactive plots using `plot_clustering_interactive_with_hover()`
+  - [ ] 2.3.c: Create embeddingss colored by scores and cluster assignments
+  - [ ] 2.3.d: Save interactive plots with hover data and metadata
+  - **Complexity**: Low (1-2 days) | **Risk**: Low (restoration of existing code) | **Files**: `heatmap_stage.py`
 
-- [ ] **Subtask A.1.2.c: Analysis status and management endpoints**
-  - [ ] Create `/analysis/{analysis_id}/status/` GET endpoint for long-running analyses
-  - [ ] Add `/analysis/{analysis_id}/results/` GET endpoint for result retrieval
-  - [ ] Implement analysis result caching and cleanup
-  - [ ] Add analysis history and metadata endpoints
+### Phase 3: Extended Analysis Artifact Access ║ Advanced user capabilities ║ Artifact management ║ M
 
-- [ ] **Subtask A.1.2.d: Error handling and validation**
-  - [ ] Implement comprehensive input validation with clear error messages
-  - [ ] Add parameter constraint validation (valid ranges, required combinations)
-  - [ ] Create detailed error responses with suggested solutions
-  - [ ] Add logging and monitoring for analysis operations
+**Focus**: Provide comprehensive access to analysis artifacts for inference visualization and advanced analysis
 
-### Task A.1.3: Integration Testing ║ API endpoint validation ║ Quality assurance ║ S
+- [ ] **Task 3.1: Analysis Artifact Package System**
+  - [ ] 3.1.a: Extend ModelIOManager to save analysis artifacts alongside models
+  - [ ] 3.1.b: Create structured artifact packages (models + analysis data + permissions)
+  - [ ] 3.1.c: Implement artifact bundle installation and access
+  - [ ] 3.1.d: Add permission controls for sensitive training data access
+  - **Complexity**: High (3-4 days) | **Risk**: Medium (new system integration) | **Files**: `model_io.py`, `local_model_registry.py`
 
-- [ ] **Subtask A.1.3.a: Unit testing for request/response models**
-  - [ ] Test parameter validation with valid and invalid inputs
-  - [ ] Validate data serialization and deserialization
-  - [ ] Test error handling and response formatting
-  - [ ] Verify parameter default value application
+- [ ] **Task 3.2: Training Data Preservation System**
+  - [ ] 3.2.a: Save raw embeddings (UMAP coordinates) as `.npy` files
+  - [ ] 3.2.b: Save scaled embeddings and preprocessing parameters
+  - [ ] 3.2.c: Save cluster labels and clustering model parameters
+  - [ ] 3.2.d: Save training labels with privacy/permission controls
+  - **Complexity**: Medium (2-3 days) | **Risk**: Low (data preservation extension) | **Files**: `heatmap_stage.py`, `UMAP_utils.py`
 
-- [ ] **Subtask A.1.3.b: Integration testing for endpoints**
-  - [ ] Test both analysis endpoints with realistic neuroimaging data
-  - [ ] Validate analysis result accuracy against direct function calls
-  - [ ] Test error handling with malformed requests
-  - [ ] Verify output artifact integration with `save_statistical_maps()`
+### Phase 4: Inference Visualization Integration ║ Advanced inference capabilities ║ Visualization enhancement ║ H
 
-- [ ] **Subtask A.1.3.c: Performance and scalability testing**  
-  - [ ] Test endpoint performance with varying data sizes
-  - [ ] Validate memory usage and resource management
-  - [ ] Test concurrent analysis request handling
-  - [ ] Verify timeout and resource limit handling
+**Focus**: Enable visualization of new data points on existing heatmaps and clusters
 
-**Expected Deliverables**:
-- `emuses/api/models/analysis.py` - Pydantic models for analysis requests/responses
-- `emuses/api/endpoints/analysis.py` - FastAPI endpoint implementations
-- `tests/api/test_analysis_endpoints.py` - Comprehensive endpoint testing
-- API documentation with request/response examples
+- [ ] **Task 4.1: Enhanced InferenceStage with Visualization**
+  - [ ] 4.1.a: Extend InferenceStage to load analysis artifacts alongside models  
+  - [ ] 4.1.b: Generate overlay visualizations showing new data on existing heatmaps
+  - [ ] 4.1.c: Assign new data points to existing clusters using trained HDBSCAN models
+  - [ ] 4.1.d: Display relevant effect size maps for clusters containing new data
+  - **Complexity**: High (4-5 days) | **Risk**: High (complex integration) | **Files**: `inference_stage.py`
 
-### Phase A.2: CLI Command Integration ║ Command-line interface development ║ CLI enhancement ║ M
+- [ ] **Task 4.2: Inference Visualization CLI Enhancement**
+  - [ ] 4.2.a: Add `--visualize` flag to `emuses inference` command
+  - [ ] 4.2.b: Generate inference overlay plots as HTML files
+  - [ ] 4.2.c: Export relevant effect size maps and cluster assignments
+  - [ ] 4.2.d: Create comprehensive inference visualization reports
+  - **Complexity**: Medium (2-3 days) | **Risk**: Medium (CLI integration) | **Files**: `main.py`, CLI commands
 
-**Objective**: Add CLI commands that provide command-line access to analysis functions with parameter file support and help integration.
+### Phase 5: Advanced User API ║ Programmatic access ║ Research flexibility ║ M
 
-### Task A.2.1: CLI Command Structure Development ║ Click command implementation ║ CLI foundation ║ M
+**Focus**: Provide programmatic access to raw analysis data for advanced users
 
-- [ ] **Subtask A.2.1.a: Base command group creation**
-  - [ ] Create `emuses analysis` command group for all analysis operations
-  - [ ] Add comprehensive help text and usage examples
-  - [ ] Implement consistent parameter naming with API endpoints
-  - [ ] Add global analysis options (output directory, verbosity, etc.)
+- [ ] **Task 5.1: Analysis Artifact API**
+  - [ ] 5.1.a: Create FastAPI endpoints for artifact discovery and download
+  - [ ] 5.1.b: Implement permission-controlled access to training data
+  - [ ] 5.1.c: Provide programmatic access to embeddings, labels, clusters
+  - [ ] 5.1.d: Enable custom analysis workflow support
+  - **Complexity**: Medium (3-4 days) | **Risk**: Medium (API design complexity) | **Files**: FastAPI endpoints
 
-- [ ] **Subtask A.2.1.b: Kernel analysis CLI command**
-  - [ ] Create `emuses analysis kernel-heatmap` command
-  - [ ] Implement parameter mapping from CLI arguments to function parameters
-  - [ ] Add file input support for embeddings, scores, and input matrix
-  - [ ] Support both individual parameters and configuration file input
+- [ ] **Task 5.2: Research Workflow Integration**
+  - [ ] 5.2.a: Create Python API for loading analysis artifacts
+  - [ ] 5.2.b: Provide utility functions for custom visualization creation
+  - [ ] 5.2.c: Enable advanced users to extend analysis capabilities
+  - [ ] 5.2.d: Document research workflow patterns and examples
+  - **Complexity**: Medium (2-3 days) | **Risk**: Low (utility extension) | **Files**: New utility modules
 
-- [ ] **Subtask A.2.1.c: Correlation analysis CLI command**
-  - [ ] Create `emuses analysis correlation-heatmap` command
-  - [ ] Implement correlation-specific parameter handling
-  - [ ] Add clustering configuration support
-  - [ ] Integrate with existing CLI help system
+### Phase 6: Testing and Documentation ║ Quality assurance ║ User enablement ║ L
 
-- [ ] **Subtask A.2.1.d: Parameter file support**
-  - [ ] Add YAML/JSON configuration file support for complex parameter sets
-  - [ ] Implement parameter validation and default value handling
-  - [ ] Create configuration file templates and examples
-  - [ ] Add configuration validation and error reporting
+**Focus**: Comprehensive testing and documentation for all new capabilities
 
-### Task A.2.2: CLI Integration and User Experience ║ CLI usability enhancement ║ User interface ║ S
+- [ ] **Task 6.1: Comprehensive Testing Suite**
+  - [ ] 6.1.a: Unit tests for all new methods (install_model, validate_model, etc.)
+  - [ ] 6.1.b: Integration tests for analysis artifact generation and access
+  - [ ] 6.1.c: End-to-end tests for inference visualization workflows
+  - [ ] 6.1.d: Performance tests for large-scale analysis scenarios
+  - **Complexity**: High (4-5 days) | **Risk**: Medium (comprehensive coverage) | **Testing**: >90% coverage target
 
-- [ ] **Subtask A.2.2.a: Help system integration**
-  - [ ] Add detailed help text for all analysis commands
-  - [ ] Create parameter descriptions with examples and valid ranges
-  - [ ] Add usage examples and common workflow patterns
-  - [ ] Integrate with existing EMUSES CLI help system
+- [ ] **Task 6.2: User Documentation and Examples**
+  - [ ] 6.2.a: Update user guides with analysis artifact workflows
+  - [ ] 6.2.b: Create inference visualization examples and tutorials
+  - [ ] 6.2.c: Document advanced user API and research workflows
+  - [ ] 6.2.d: Create troubleshooting guides for common issues
+  - **Complexity**: Medium (3-4 days) | **Risk**: Low (documentation) | **Deliverables**: Complete user guides
 
-- [ ] **Subtask A.2.2.b: Output management and reporting**
-  - [ ] Implement progress reporting for long-running analyses
-  - [ ] Add result summary and success confirmation
-  - [ ] Create verbose mode with detailed execution information
-  - [ ] Add output path validation and creation
+### Phase 7: CI Pipeline Fixes ║ Infrastructure repair ║ Build system ║ M
 
-- [ ] **Subtask A.2.2.c: Error handling and user guidance**
-  - [ ] Implement comprehensive error handling with clear messages
-  - [ ] Add parameter validation with suggested corrections
-  - [ ] Create troubleshooting guidance for common issues
-  - [ ] Add dry-run mode for parameter validation without execution
+**Focus**: Fix CI pipeline issues preventing successful builds on main branch
 
-### Task A.2.3: CLI Testing and Validation ║ Command-line testing ║ Quality assurance ║ S
+- [ ] **Task 7.1: Dependency Resolution Fixes** ⚠️ **CI BLOCKING**
+  - [ ] 7.1.a: Fix `ModuleNotFoundError: No module named 'fastapi_users'` in model_registry tests
+  - [ ] 7.1.b: Add missing dependencies to requirements files or CI configuration
+  - [ ] 7.1.c: Resolve import errors in `tests/model_registry/conftest.py:17`
+  - [ ] 7.1.d: Test model registry test suite runs successfully
+  - **Complexity**: Low (1 day) | **Risk**: Low (dependency management) | **Files**: CI config, requirements files
 
-- [ ] **Subtask A.2.3.a: CLI command testing**
-  - [ ] Test all CLI commands with various parameter combinations
-  - [ ] Validate file input handling and parameter parsing
-  - [ ] Test configuration file loading and validation
-  - [ ] Verify help system integration and documentation
+- [ ] **Task 7.2: CI Pipeline Validation and Testing**
+  - [ ] 7.2.a: Run full CI pipeline locally to identify all failing tests
+  - [ ] 7.2.b: Fix additional CI pipeline issues discovered during testing
+  - [ ] 7.2.c: Validate main branch CI passes with all tests
+  - [ ] 7.2.d: Ensure feature branch CI continues to work with lightweight testing
+  - **Complexity**: Medium (2-3 days) | **Risk**: Medium (CI stability) | **Files**: CI workflows, test configurations
 
-- [ ] **Subtask A.2.3.b: Integration testing with analysis functions**
-  - [ ] Test CLI commands produce identical results to direct function calls
-  - [ ] Validate output artifact creation and organization
-  - [ ] Test error handling and user message quality
-  - [ ] Verify integration with existing EMUSES CLI framework
+**CI Error Context**:
+```bash
+# Current main branch CI failure:
+Run pytest tests/model_registry/ tests/tools/ tests/unit/ -v --maxfail=10 --tb=short
+ImportError while loading conftest '/home/runner/work/emuses/emuses/tests/model_registry/conftest.py'.
+tests/model_registry/conftest.py:17: in <module>
+    from emuses.multi_user_service.models import User
+emuses/multi_user_service/models.py:10: in <module>
+    from fastapi_users.db import SQLAlchemyBaseUserTableUUID
+E   ModuleNotFoundError: No module named 'fastapi_users'
+Error: Process completed with exit code 4
+```
 
-**Expected Deliverables**:
-- `emuses/cli/analysis.py` - CLI command implementations
-- `docs/analysis-api/cli_reference.md` - CLI command documentation
-- `tests/cli/test_analysis_commands.py` - CLI command testing
-- Configuration file templates and examples
-
-### Phase A.3: Configuration Integration ║ Pipeline configuration enhancement ║ Configuration management ║ S
-
-**Objective**: Integrate analysis capabilities with existing EMUSES pipeline configuration system and enable configurable effect size map generation.
-
-### Task A.3.1: Configuration Schema Enhancement ║ Configuration model updates ║ Config management ║ S
-
-- [ ] **Subtask A.3.1.a: Analysis configuration schema**
-  - [ ] Add analysis configuration section to main EMUSES config schema
-  - [ ] Define default parameters for both analysis functions
-  - [ ] Add enable/disable flags for analysis features
-  - [ ] Create environment-specific configuration templates
-
-- [ ] **Subtask A.3.1.b: Pipeline integration configuration**
-  - [ ] Add configuration flags for automatic effect size map generation
-  - [ ] Integrate analysis configuration with existing pipeline stages
-  - [ ] Add output directory and artifact management configuration
-  - [ ] Create configuration validation and migration support
-
-### Task A.3.2: Pipeline Enhancement ║ Existing workflow integration ║ Feature integration ║ S
-
-- [ ] **Subtask A.3.2.a: Heatmap stage enhancement**
-  - [ ] Add optional effect size analysis to existing heatmap stage
-  - [ ] Implement configuration-driven analysis execution
-  - [ ] Add analysis result integration with stage outputs
-  - [ ] Maintain backward compatibility with existing workflows
-
-- [ ] **Subtask A.3.2.b: Configuration documentation**
-  - [ ] Document all new configuration options with examples
-  - [ ] Add configuration best practices and recommendations
-  - [ ] Create migration guide for existing configurations
-  - [ ] Add configuration validation and troubleshooting guide
-
-**Expected Deliverables**:
-- Updated configuration schema with analysis options
-- Enhanced pipeline integration with optional analysis
-- Configuration documentation and migration guide
-
-### Phase A.4: Testing and Documentation ║ Comprehensive validation and documentation ║ Quality assurance ║ L
-
-**Objective**: Comprehensive testing of all components and complete documentation for API and CLI usage.
-
-### Task A.4.1: Comprehensive Testing ║ Full system validation ║ Quality validation ║ M
-
-- [ ] **Subtask A.4.1.a: End-to-end testing**
-  - [ ] Test complete workflows from API request to artifact output
-  - [ ] Validate CLI commands produce correct analysis results
-  - [ ] Test configuration integration with existing pipelines
-  - [ ] Verify all output formats and artifact integration
-
-- [ ] **Subtask A.4.1.b: Error handling and edge case testing**
-  - [ ] Test all error conditions with appropriate error messages
-  - [ ] Validate parameter boundary conditions and limits
-  - [ ] Test memory and resource management with large datasets
-  - [ ] Verify graceful handling of malformed inputs
-
-- [ ] **Subtask A.4.1.c: Performance and reliability testing**
-  - [ ] Benchmark API endpoint performance with realistic datasets
-  - [ ] Test CLI command performance and resource usage
-  - [ ] Validate analysis result consistency and reproducibility
-  - [ ] Test concurrent usage and resource contention
-
-### Task A.4.2: Documentation Development ║ User and developer documentation ║ Knowledge transfer ║ M
-
-- [ ] **Subtask A.4.2.a: API documentation**
-  - [ ] Create comprehensive API reference with request/response examples
-  - [ ] Add usage examples for both analysis endpoints
-  - [ ] Document error handling and troubleshooting
-  - [ ] Create integration examples for external applications
-
-- [ ] **Subtask A.4.2.b: CLI documentation** 
-  - [ ] Write complete CLI reference for all analysis commands
-  - [ ] Add usage examples and common workflow patterns
-  - [ ] Create parameter reference with descriptions and examples
-  - [ ] Document configuration file usage and templates
-
-- [ ] **Subtask A.4.2.c: User guide integration**
-  - [ ] Add analysis API section to main EMUSES user guide
-  - [ ] Create workflow examples showing analysis integration
-  - [ ] Document best practices for analysis parameter selection
-  - [ ] Add troubleshooting guide for common analysis issues
-
-**Expected Deliverables**:
-- Complete test suite with >90% coverage for new functionality
-- Comprehensive API reference documentation
-- Complete CLI reference and user guide
-- Integration examples and best practices documentation
+**CI Strategy**:
+- **Feature Branches**: Lightweight CI (13 tests, ~1 minute, minimal credits)
+- **Main Branch**: Full CI with PostgreSQL/Redis services (comprehensive validation)
+- **Fix Priority**: Resolve main branch CI first, then validate feature branch CI compatibility
 
 ## Testing Strategy
 
-### Component Testing Approach
-- **API Endpoints**: Integration testing with FastAPI TestClient using realistic neuroimaging data
-- **CLI Commands**: End-to-end testing with subprocess calls and output validation
-- **Analysis Functions**: Validate wrapped functions produce identical results to direct calls
-- **Configuration**: Test configuration loading, validation, and pipeline integration
+### Component Testing Approach (LAD Guidelines)
+- **ModelIOManager fixes**: Unit tests with mock file systems and validation scenarios
+- **Analysis generation**: Integration tests with realistic neuroimaging datasets
+- **Inference visualization**: End-to-end tests with known training/inference data pairs
+- **Artifact access**: Permission and security testing with multi-user scenarios
 
-### Quality Assurance Gates
-- **Functional Correctness**: All analysis results match direct function call results
-- **Error Handling**: Comprehensive error testing with clear, actionable error messages
-- **Performance**: API and CLI performance meets acceptable standards for analysis operations
-- **Documentation**: Complete documentation with working examples for all functionality
-- **Integration**: Seamless integration with existing EMUSES workflows and output systems
+### Quality Assurance Requirements
+- **Functional Correctness**: All analysis results match existing function outputs
+- **No Regressions**: Existing workflows continue to work without modification
+- **Performance**: Analysis and visualization generation within acceptable limits
+- **Security**: Permission controls properly isolate sensitive training data
 
-## Risk Assessment
+## Risk Assessment and Mitigation
 
-### Technical Risks - LOW
-- **Function Compatibility**: Analysis functions are mature and stable with well-defined interfaces
-- **Parameter Complexity**: Large parameter sets managed through structured request models
-- **Performance**: Memory usage and execution time managed through appropriate limits
+### Technical Risks
+- **HIGH - Model Installation System**: Critical infrastructure is broken
+  - *Mitigation*: Fix install_model() and validate_model() first, comprehensive testing
+- **MEDIUM - Inference Integration**: Complex integration with existing InferenceStage
+  - *Mitigation*: Progressive enhancement approach, maintain backward compatibility
+- **LOW - Analysis Generation**: Uses existing, proven functions
+  - *Mitigation*: Wrapper approach, minimal changes to core analysis logic
 
-### Implementation Risks - LOW  
-- **API Design**: Clear parameter mapping from existing function signatures
-- **CLI Integration**: Following established EMUSES CLI patterns
-- **Configuration**: Building on existing configuration management system
-
-### Mitigation Strategies
-- **Incremental Development**: Build and test each component independently
-- **Validation First**: Comprehensive parameter validation prevents analysis failures
-- **Documentation Driven**: Clear documentation and examples reduce adoption barriers
-- **Backward Compatibility**: All changes maintain existing functionality
+### Implementation Risks  
+- **MEDIUM - Code Breaking**: Changes to core ModelIOManager could break existing workflows
+  - *Mitigation*: Extensive testing, gradual rollout, feature flags for new capabilities
+- **LOW - Performance**: Analysis artifact generation could impact pipeline performance
+  - *Mitigation*: Make analysis generation configurable, optimize artifact access patterns
 
 ## Success Criteria
 
 ### Functional Requirements
-- [ ] API endpoints successfully expose both analysis functions with full parameter support
-- [ ] CLI commands provide command-line access to analysis functions with help integration
-- [ ] Configuration integration enables optional analysis in existing pipelines
-- [ ] All functionality maintains existing analysis function behavior and output quality
+- [ ] Model installation system is fully functional (install_model, validate_model working)
+- [ ] Statistical analysis artifacts generated during HeatmapStage execution
+- [ ] Inference visualization shows new data placement on existing analysis
+- [ ] Advanced users can access raw analysis data for custom workflows
+- [ ] All existing EMUSES functionality preserved without regressions
 
 ### Quality Requirements  
-- [ ] >90% test coverage for all new API and CLI functionality
-- [ ] Comprehensive error handling with clear, actionable error messages
-- [ ] API performance meets standards for typical neuroimaging analysis datasets
-- [ ] Complete documentation with working examples for all features
+- [ ] >90% test coverage for all new functionality (LAD compliance)
+- [ ] Performance impact <20% for analysis generation (configurable)
+- [ ] Complete documentation with working examples
+- [ ] Security controls properly implemented for sensitive data access
 
 ### User Experience Requirements
-- [ ] Intuitive API interface with clear parameter names and validation
-- [ ] CLI commands follow existing EMUSES patterns and conventions
-- [ ] Configuration options are well-documented with clear defaults
-- [ ] Error messages provide specific guidance for resolution
+- [ ] Seamless integration with existing EMUSES workflows
+- [ ] Clear progression from basic to advanced analysis capabilities
+- [ ] Comprehensive inference visualization without complex setup
+- [ ] Research-grade access to raw data for advanced users
 
-## Integration with EMUSES Development
+## Time and Complexity Estimates
 
-### Leverages Existing Work
-- **Analysis Functions**: Mature `run_kernel_heatmap_analysis()` and `run_heatmap_analysis()` functions
-- **API Infrastructure**: Established FastAPI framework and request/response patterns
-- **CLI Framework**: Existing Click-based command system and help integration
-- **Artifact Pipeline**: Proven `save_statistical_maps()` output management system
+### Development Time Breakdown
+- **Phase 1 (Critical Fixes)**: 1 week (HIGH PRIORITY)
+- **Phase 2 (Analysis Generation)**: 1.5 weeks 
+- **Phase 3 (Artifact Access)**: 1 week
+- **Phase 4 (Inference Visualization)**: 1.5 weeks
+- **Phase 5 (Advanced API)**: 1 week
+- **Phase 6 (Testing/Documentation)**: 1 week
+- **Phase 7 (CI Pipeline Fixes)**: 0.5 weeks (CI repair)
 
-### Feeds Into Future Work
-- **Enhanced Research Workflows**: Better analysis access supports advanced neuroimaging research
-- **API Expansion**: Pattern for exposing additional analysis functions through consistent API
-- **External Integration**: API enables integration with external research tools and workflows
-- **User Experience**: Enhanced analysis capabilities improve overall EMUSES research value
+**Total Estimated Duration**: 3.5-4.5 weeks for complete implementation
 
-This implementation plan provides a systematic approach to exposing existing analysis capabilities through modern API and CLI interfaces while maintaining all current functionality and integration patterns.
+### Complexity Assessment
+- **High Complexity**: Inference visualization integration, analysis artifact packaging
+- **Medium Complexity**: Statistical analysis generation, artifact access system
+- **Low Complexity**: HDBSCAN registration, interactive visualization restoration
+
+This comprehensive plan transforms EMUSES from a model training system into a complete analysis ecosystem with inference visualization and advanced research capabilities while fixing critical infrastructure bugs and maintaining full backward compatibility.

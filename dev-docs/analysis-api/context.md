@@ -1,333 +1,229 @@
-# Analysis API Enhancement - Technical Context
+# Analysis API Enhancement - Technical Context and Architecture
 
-## Current Analysis Function Capabilities
+## Current State Analysis
 
-### Existing Analysis Functions
+### Critical Infrastructure Issues Discovered ⚠️
 
-#### 1. `run_kernel_heatmap_analysis()` (kernel_regression_utils.py)
-**Location**: `emuses/tools/kernel_regression_utils.py:646`
-**Purpose**: Kernel regression-based heatmap analysis with effect size calculation
+#### 1. ModelIOManager Missing Methods (BLOCKING)
+**Location**: `emuses/tools/model_io.py`  
+**Issue**: Core methods expected by LocalModelRegistry are missing
 
-**Key Parameters**:
+**Missing Method 1**: `install_model(model_path, destination_path, name=None) -> str`
+- **Called from**: `LocalModelRegistry.install_model()` at line 577
+- **Expected**: Copy model from source to destination, return unique model_id
+- **Current State**: Method doesn't exist, causing `AttributeError`
+
+**Missing Method 2**: `validate_model(model_path) -> Dict[str, Any]`  
+- **Called from**: `LocalModelRegistry.install_model()` at line 570
+- **Expected**: Return manifest dict `{"name": str, "version": str, "type": str, "description": str}`
+- **Current State**: Method doesn't exist, causing `AttributeError`
+
+**Impact**: Model installation via `emuses models install` is completely broken
+
+#### 2. Model Registration Gaps
+**HDBSCAN Models**: Currently saved via `ModelIOManager.save_model()` but not discoverable via `emuses models list`
+**UMAP Models**: Same issue - saved as files but require manual registration  
+**Pattern**: Models are saved during pipeline execution but don't automatically appear in registry
+
+### Existing Analysis Capabilities (Ready for Enhancement)
+
+#### Core Analysis Functions
+**Location**: `emuses/tools/kernel_regression_utils.py:646` and `emuses/tools/correlation_maps_utils.py:205`
+
+**`run_kernel_heatmap_analysis()`**: Kernel regression-based effect size mapping
+- **Input**: Embeddings, target variables, original data matrix
+- **Output**: Statistical maps, effect size plots, uncertainty visualizations
+- **Integration**: Uses `save_statistical_maps()` for artifact generation
+- **Status**: Mature, extensively tested, ready for integration
+
+**`run_heatmap_analysis()`**: Correlation-based statistical mapping  
+- **Input**: Embeddings, target variables, clustering data
+- **Output**: Correlation heatmaps, cluster-based statistical maps
+- **Integration**: Uses same artifact pipeline as kernel analysis
+- **Status**: Production ready, well-integrated with existing pipeline
+
+#### Current Artifact Generation Pipeline
+**Pattern**: Both analysis functions use standardized output through `save_statistical_maps()`
 ```python
-def run_kernel_heatmap_analysis(
-    embeddings,                    # UMAP/embedding coordinates  
-    scores_vectors_dict,           # Target variable vectors
-    input_matrix,                  # Original data matrix (neuroimaging)
-    output_folder,                # Output directory
-    grid_size=100,                # Resolution of analysis grid
-    sigma_range=None,             # Kernel width optimization range
-    threshold=0.5,                # Statistical threshold
-    uncertainty_penalty=0.5,      # Uncertainty weighting factor
-    input_type="image",           # Data type (image, tabular)
-    classification=False,         # Classification vs regression
-    cluster_labels=None,          # Cluster assignments
-    effect_size_test="mann-whitney",  # Effect size test method
-    highlight_points=True,        # Point highlighting in visualization
-    show_plots=False,            # Display plots during execution
-    generate_plots=False,        # Generate plot files
-    output_format_info=None,     # Output format configuration
-    full_embeddings=None,        # Full embedding space
-    clusterer=None,              # Clustering algorithm instance
-    cluster_predict_method="kdtree",  # Cluster prediction method
-    optimize_sigma=True,         # Automatic sigma optimization
-    random_state=42              # Reproducibility seed
-)
-```
-
-**Core Capabilities**:
-- **Kernel Regression**: Nadaraya-Watson estimator for continuous outcome prediction
-- **Effect Size Analysis**: Statistical significance testing with configurable methods
-- **Spatial Mapping**: Grid-based analysis across embedding space
-- **Uncertainty Quantification**: Model uncertainty assessment and visualization
-- **Clustering Integration**: Analysis within cluster boundaries
-- **Statistical Testing**: Multiple effect size test options (mann-whitney, t-test, etc.)
-
-#### 2. `run_heatmap_analysis()` (correlation_maps_utils.py)
-**Location**: `emuses/tools/correlation_maps_utils.py:205`
-**Purpose**: Correlation-based heatmap analysis with statistical mapping
-
-**Key Parameters**:
-```python
-def run_heatmap_analysis(
-    embeddings,                   # UMAP/embedding coordinates
-    scores_vectors_dict,          # Target variable vectors  
-    input_matrix,                 # Original data matrix
-    output_folder,               # Output directory
-    output_format_info,          # Output format configuration
-    clusterer,                   # Clustering algorithm instance
-    cluster_labels,              # Cluster assignments
-    input_type="image",          # Data type specification
-    grid_size=100,               # Analysis grid resolution
-    sigma=None,                  # Smoothing parameter
-    show_plots=False,           # Plot display control
-    generate_plots=False,       # Plot generation control
-    highlight_points=True,      # Point highlighting
-    effect_size_test="mann-whitney",  # Statistical test method
-    random_state=42             # Reproducibility control
-)
-```
-
-**Core Capabilities**:
-- **Correlation Analysis**: Statistical correlation mapping across embedding space
-- **Grid-Based Analysis**: Systematic analysis across defined resolution grid
-- **Cluster-Aware Processing**: Analysis within and across cluster boundaries
-- **Statistical Testing**: Effect size calculation with multiple test options
-- **Visualization**: Comprehensive heatmap and statistical plot generation
-
-### Technical Architecture Analysis
-
-#### Function Integration Points
-
-**Artifact Pipeline Integration**:
-```python
-# Both functions integrate with existing output system
-from emuses.tools.output_utils import save_statistical_maps
-
-# Standard artifact saving pattern used in both functions
 save_statistical_maps(
+    stat_maps=analysis_results,
     output_folder=output_folder,
-    statistical_maps=analysis_results,
-    format_info=output_format_info,
-    metadata=analysis_metadata
+    input_type="image|nifti|spreadsheet",
+    output_format_info=format_info,
+    filename_prefix="stat_map",
+    save_output=True,
+    generate_plots=True
 )
 ```
 
-**Statistical Testing Framework**:
+**Generated Artifacts**:
+- **NIfTI files**: `stat_map_cluster_{cluster}.nii.gz` (medical imaging format)
+- **PNG plots**: `stat_map_cluster_{cluster}.png` (statistical visualizations)
+- **CSV data**: `stat_map_cluster_{cluster}.csv` (tabular statistical data)
+
+### Current Model and Artifact Storage Patterns
+
+#### Model Storage (Functional)
+**UMAP Models**: Saved via `ModelIOManager.save_model()` in `UMAP_utils.py:855`
 ```python
-# Both functions use common statistical testing
-effect_size_test options:
-- "mann-whitney": Mann-Whitney U test (non-parametric)
-- "t-test": Student's t-test (parametric)
-- "wilcoxon": Wilcoxon signed-rank test
-- "kruskal": Kruskal-Wallis test (multi-group)
+umap_filepath = manager.save_model(
+    model=best_umap_model,
+    model_name="best_umap_model",
+    model_type="umap",
+    config={"best_params": best_params},
+    description="Best UMAP model from optimization",
+    tags=["optimization", "final_model"]
+)
 ```
 
-**Data Flow Architecture**:
-1. **Input Processing**: UMAP embeddings + target variables + original data
-2. **Grid Generation**: Spatial grid across embedding space for analysis
-3. **Statistical Analysis**: Effect size calculation at each grid point
-4. **Visualization**: Heatmap generation with statistical overlays
-5. **Artifact Storage**: Results saved through `save_statistical_maps()`
-
-#### Dependency Analysis
-
-**Core Dependencies**:
+**HDBSCAN Models**: Saved via `ModelIOManager.save_model()` in `UMAP_utils.py:713`  
 ```python
-# Scientific computing
-import numpy as np
-import pandas as pd
-from scipy.stats import normaltest, mannwhitneyu, ttest_ind
-
-# Machine learning
-from sklearn.base import BaseEstimator, RegressorMixin
-from sklearn.metrics import r2_score, mean_squared_error
-import GPy  # Gaussian Process library
-
-# Clustering
-import hdbscan
-from sklearn.decomposition import PCA
-
-# Visualization
-import matplotlib.pyplot as plt
-import matplotlib
-
-# EMUSES internal
-from emuses.tools.output_utils import save_statistical_maps
-from emuses.tools.stats_utils import input_matrix_stat_map
+hdbscan_manager.save_model(
+    model=best_clusterer,
+    model_name="hdbscan_model",
+    model_type="hdbscan",
+    config={...clustering_parameters...},
+    description="HDBSCAN clustering model",
+    tags=["clustering", "hdbscan", "optimization"]
+)
 ```
 
-**Integration Requirements**:
-- All dependencies already satisfied in EMUSES environment
-- Functions are mature with extensive real-world usage
-- No architectural changes required for API exposure
+#### Data Artifact Storage (Ready for Extension)
+**Embeddings**: `np.save(output_folder / "best_embeddings.npy", best_embeddings)`
+**Cluster Labels**: `np.save(cluster_labels_path, best_labels)`
+**Performance Metrics**: CSV files with CV scores and fold results
 
-### Current Usage Context
+### Model Registry Architecture (Production Ready)
 
-#### Pipeline Integration
-Both functions are currently used in:
-- **Heatmap Stage**: `emuses/pipelines/heatmap_stage.py` calls these functions
-- **Manual Analysis**: Researchers call functions directly from Python scripts
-- **Research Workflows**: Integration with external analysis pipelines
+#### Database Schema Analysis  
+**Location**: `emuses/multi_user_service/models.py`
+**Schema**: Flexible `ModelRegistry` table with JSON tags and classification fields
 
-#### Output Integration
-**Artifact Pipeline** (`save_statistical_maps()`):
-- Saves statistical maps in multiple formats (PNG, SVG, NPZ)
-- Generates metadata files with analysis parameters
-- Creates visualization summaries and statistical reports
-- Integrates with EMUSES output directory structure
+**Key Fields for Analysis Integration**:
+- `model_type`: Can accommodate `"analysis_artifact_*"` types
+- `tags`: JSON array perfect for analysis categorization 
+- `model_path`: File system path to artifacts
+- `manifest_hash`: SHA-256 integrity verification
+- `workspace_id`: Scoped access for multi-user scenarios
 
-#### Parameter Complexity Analysis
+#### FastAPI Artifact Serving (Ready to Use)
+**Endpoint**: `/api/v1/jobs/{job_id}/artifacts/{filename}`
+**Capability**: Serves ANY file type with proper content-type detection
+**Security**: Path traversal protection, filename sanitization
+**Integration**: Works seamlessly with job-based artifact storage
 
-**Common Parameters Across Functions**:
-- `embeddings`: 2D UMAP coordinates (N x 2 array)
-- `scores_vectors_dict`: Target variables dict {name: values}
-- `input_matrix`: Original data (N x features)
-- `output_folder`: Output directory path
-- `grid_size`: Analysis resolution (typically 50-200)
-- `effect_size_test`: Statistical test method
-- `show_plots/generate_plots`: Visualization control
+### Inference System Integration Points
 
-**Function-Specific Parameters**:
-- **Kernel Analysis**: `sigma_range`, `uncertainty_penalty`, `optimize_sigma`
-- **Correlation Analysis**: `sigma` (fixed smoothing), `clusterer` (required)
+#### Current InferenceStage Architecture
+**Location**: `emuses/pipelines/inference_stage.py`
+**Flow**: Load models → Transform features → Predict → Save results
 
-### API Design Considerations
+**Key Integration Points**:
+1. **`_transform_features()`**: New data → UMAP embeddings (embedding coordinates)
+2. **`_predict_with_progress()`**: Embeddings → prediction values + confidence  
+3. **Result formatting**: Currently saves predictions to CSV files
 
-#### Request/Response Model Design
+**Enhancement Opportunity**: After step 1, we can visualize transformed embeddings on existing training analysis artifacts
 
-**Common Request Parameters**:
-```python
-class AnalysisRequestBase(BaseModel):
-    embeddings: List[List[float]]           # 2D coordinates
-    scores_vectors: Dict[str, List[float]]   # Target variables
-    input_matrix: List[List[float]]         # Original data
-    grid_size: int = 100                    # Analysis resolution
-    effect_size_test: str = "mann-whitney"  # Statistical test
-    input_type: str = "image"               # Data type
-    show_plots: bool = False                # Visualization control
-    generate_plots: bool = True             # Plot generation
-    random_state: int = 42                  # Reproducibility
+#### Model Loading Pattern
+**Current**: Loads UMAP and prediction models using `ModelIOManager.load_model()`
+**Enhancement**: Extend to load analysis artifacts (embeddings, clusters, heatmaps) alongside models
+
+### Analysis Ecosystem Architecture Design
+
+#### Complete Analysis Artifact Package Structure
+```
+model_package/
+├── models/                          # Reusable inference models (EXISTING)
+│   ├── best_umap_model.joblib       # Transform new data to embeddings
+│   ├── hdbscan_model.joblib         # Assign new data to existing clusters
+│   └── prediction_models/           # Generate predictions for new data
+├── analysis/                        # Analysis artifacts (NEW)
+│   ├── training_data/               # Training context for visualization
+│   │   ├── embeddings.npy           # Original training UMAP coordinates  
+│   │   ├── scaled_embeddings.npy    # Preprocessed coordinates
+│   │   ├── cluster_labels.npy       # Training cluster assignments
+│   │   └── training_labels.npy      # Target variables (permission-controlled)
+│   ├── statistical_maps/            # Generated during training
+│   │   ├── effect_size_maps/        # Per-cluster effect size visualizations
+│   │   ├── grid_predictions/        # 100x100 spatial prediction grids
+│   │   └── statistical_plots/       # PNG/HTML statistical visualizations  
+│   ├── interactive_plots/           # HTML Plotly visualizations
+│   │   ├── embeddings_clustering.html   # Interactive clustering plots
+│   │   └── embeddings_scores.html       # Score-colored embedding plots
+│   └── metadata/
+│       └── analysis_manifest.json   # Analysis parameters and metadata
 ```
 
-**Kernel-Specific Parameters**:
-```python
-class KernelAnalysisRequest(AnalysisRequestBase):
-    sigma_range: Optional[Tuple[float, float]] = None  # Auto-optimization range
-    threshold: float = 0.5                             # Statistical threshold
-    uncertainty_penalty: float = 0.5                   # Uncertainty weight
-    classification: bool = False                        # Analysis type
-    optimize_sigma: bool = True                         # Auto-optimization
-```
+#### Permission System Integration
+**Public Access**: Statistical maps, interactive plots, grid predictions
+**Researcher Access**: Training embeddings, cluster data, analysis parameters  
+**Admin Access**: Raw training labels and sensitive data
 
-**Correlation-Specific Parameters**:
-```python
-class CorrelationAnalysisRequest(AnalysisRequestBase):
-    sigma: Optional[float] = None           # Fixed smoothing parameter
-    clusterer_config: Optional[Dict] = None # Clustering configuration
-```
+### Integration Strategy with Existing Systems
 
-#### Response Model Design
+#### No Breaking Changes Required
+**Model Registry**: Existing schema accommodates analysis artifacts via `model_type` and `tags`
+**FastAPI**: Current artifact serving works for any file type
+**Job System**: Analysis artifacts fit existing job output directory structure
+**CLI**: Model installation pattern extends to analysis artifact installation
 
-**Analysis Response Structure**:
-```python
-class AnalysisResponse(BaseModel):
-    analysis_id: str                        # Unique analysis identifier
-    output_folder: str                      # Results location
-    statistical_maps: List[str]             # Generated map file paths
-    metadata: Dict[str, Any]                # Analysis metadata
-    execution_time: float                   # Processing duration
-    parameters_used: Dict[str, Any]         # Final parameter values
-    warnings: List[str] = []               # Any warnings generated
-```
+#### Backward Compatibility Preservation
+**Existing Workflows**: All current EMUSES functionality continues unchanged
+**Progressive Enhancement**: Analysis features are additive, not replacements
+**Configuration Driven**: New capabilities enabled via configuration flags
 
-### CLI Integration Context
+### Implementation Integration Points
 
-#### Existing CLI Framework
-EMUSES uses Click framework for CLI commands:
-```python
-# Pattern from existing commands
-@click.command()
-@click.option('--param', help='Parameter description')
-def existing_command(param):
-    """Command description."""
-    pass
-```
+#### Phase 1: ModelIOManager Fixes (Critical)
+**Files Modified**: `emuses/tools/model_io.py`
+**Methods Added**: `install_model()`, `validate_model()`
+**Integration**: Enables basic model registry functionality
+**Risk**: High (core infrastructure changes require extensive testing)
 
-#### New Command Structure
-```bash
-# Proposed CLI commands
-emuses analysis kernel-heatmap --embeddings-file path.csv --scores-file scores.csv --output-dir results/
-emuses analysis correlation-heatmap --embeddings-file path.csv --scores-file scores.csv --output-dir results/
-```
+#### Phase 2: HeatmapStage Enhancement
+**File Modified**: `emuses/pipelines/heatmap_stage.py`  
+**Location**: After existing Optuna CV loop (around line 427)
+**Integration**: Add analysis artifact generation using existing functions
+**Risk**: Low (uses existing `save_statistical_maps()` pattern)
 
-#### Parameter File Support
-For complex analysis parameters:
-```yaml
-# analysis_config.yaml
-embeddings_file: "data/embeddings.csv"
-scores_file: "data/scores.csv" 
-input_matrix_file: "data/input_matrix.csv"
-output_folder: "results/analysis"
-grid_size: 100
-effect_size_test: "mann-whitney"
-kernel_params:
-  sigma_range: [0.1, 2.0]
-  uncertainty_penalty: 0.5
-```
+#### Phase 3: InferenceStage Enhancement  
+**File Modified**: `emuses/pipelines/inference_stage.py`
+**Integration Point**: After `_transform_features()`, before results saving
+**New Capabilities**: Load training artifacts, generate overlay visualizations
+**Risk**: Medium (complex but well-defined integration points)
 
-### Integration Strategy
+#### Phase 4: FastAPI Extension
+**New Files**: Analysis artifact serving endpoints
+**Integration**: Leverage existing job artifact serving infrastructure  
+**Scope**: Permission-controlled access to training data and analysis results
+**Risk**: Medium (API design complexity, security considerations)
 
-#### API Endpoint Implementation
-**FastAPI Endpoint Pattern**:
-```python
-@app.post("/analysis/kernel-heatmap/", response_model=AnalysisResponse)
-async def kernel_heatmap_analysis(request: KernelAnalysisRequest):
-    """Execute kernel regression heatmap analysis."""
-    # Parameter validation
-    # Function call with parameter mapping
-    # Response formatting
-    return analysis_response
+### Development Architecture Patterns
 
-@app.post("/analysis/correlation-heatmap/", response_model=AnalysisResponse)  
-async def correlation_heatmap_analysis(request: CorrelationAnalysisRequest):
-    """Execute correlation heatmap analysis."""
-    # Implementation
-    return analysis_response
-```
+#### Existing EMUSES Patterns to Follow
+**ModelIOManager**: Consistent save/load pattern with metadata and manifest generation
+**FastAPI Endpoints**: Job-based artifact serving with security validation
+**CLI Commands**: Typer-based commands with comprehensive help and validation
+**Configuration**: YAML-based configuration with validation and defaults
 
-#### Configuration Integration
-**Pipeline Configuration Enhancement**:
-```yaml
-# Enhanced pipeline config
-analysis:
-  enable_effect_size_maps: true
-  default_grid_size: 100
-  default_effect_test: "mann-whitney"
-  kernel_analysis:
-    auto_optimize_sigma: true
-    default_threshold: 0.5
-  correlation_analysis:
-    default_sigma: 1.0
-    require_clustering: true
-```
+#### LAD Compliance Requirements  
+**Testing**: >90% coverage target for new functionality
+**Documentation**: NumPy-style docstrings, comprehensive user guides
+**Code Quality**: Flake8 compliance, Boy Scout Rule for improvements
+**Architecture**: Component-aware testing, TDD approach for new features
 
-#### Error Handling Strategy
-**Common Error Cases**:
-- Invalid embedding dimensions
-- Mismatched data sizes
-- Missing required parameters for correlation analysis
-- Insufficient memory for large grid sizes
-- Invalid statistical test method
+### Technical Dependencies and Readiness
 
-**Error Response Format**:
-```python
-class AnalysisError(BaseModel):
-    error_type: str                         # Category of error
-    message: str                           # Human-readable message
-    details: Optional[Dict[str, Any]]      # Technical details
-    suggestions: List[str] = []            # Resolution suggestions
-```
+#### All Required Dependencies Available
+**Core Libraries**: numpy, pandas, scipy, sklearn, matplotlib (all present)
+**EMUSES Libraries**: All analysis functions already available and tested
+**Infrastructure**: FastAPI, model registry, CLI framework all production ready
 
-### Testing Strategy Context
+#### No New Infrastructure Required
+**Database**: Existing ModelRegistry schema accommodates analysis artifacts
+**File System**: Current artifact storage patterns extend to analysis data
+**API**: Existing endpoint patterns work for analysis artifact serving
+**Security**: Current permission system extends to analysis data access
 
-#### Existing Test Infrastructure
-EMUSES has established test patterns:
-- Integration tests for API endpoints with FastAPI TestClient
-- Unit tests for analysis functions with mock data
-- Fixture-based test data management
-
-#### Analysis Function Test Requirements
-**Test Data Requirements**:
-- Small synthetic datasets for unit testing
-- Realistic neuroimaging data for integration testing
-- Edge case datasets (single points, identical values)
-- Performance testing with large datasets
-
-**Validation Approaches**:
-- Output format validation against existing `save_statistical_maps()`
-- Statistical correctness validation (known effect sizes)
-- Parameter validation (invalid inputs, boundary conditions)
-- Memory usage monitoring for large analyses
-
-This context provides comprehensive understanding for implementing API and CLI interfaces that expose existing analysis capabilities while maintaining all current functionality and integration patterns.
+This context provides comprehensive understanding of how the Analysis API Enhancement integrates with existing EMUSES architecture while fixing critical bugs and adding advanced analysis capabilities without breaking changes.
