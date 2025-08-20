@@ -44,6 +44,14 @@
 3. **Enhanced Registry Schema**: Support for both complete and individual models
 4. **Hash-based Indexing**: Configuration and content hashes for efficient lookups
 
+### Implementation Notes (From Sub-Plan 0A Experience)
+**Critical Success Patterns**:
+- Always provide `base_path` parameter when creating ModelIOManager instances
+- Use conditional imports for optional dependencies (fastapi_users pattern)
+- Generate manifests in consistent format that validate_model() expects
+- Test with real EMUSES pipeline outputs across versions (2.0.x, 2.1.x)
+- Use tmp_path fixtures for all file operations to ensure test isolation
+
 ### Integration Contracts for Phase 2
 ```python
 # Complete model detection interface
@@ -89,7 +97,14 @@ class LocalModelRegistry:
 - ✅ Backward compatibility maintained for existing workflows
 
 **Ready for Phase 2 when**:
-- All tasks completed and tested
-- Integration contracts implemented
-- Context files updated with actual deliverables
-- Performance benchmarks established for baseline
+- All tasks completed and tested with `python scripts/dev_test_runner.py`
+- Integration contracts implemented and validated with real data
+- Context files updated with actual (not planned) deliverables
+- Performance benchmarks established showing <5% regression
+- Hash calculations consistent across environments
+- Atomic operations tested under failure conditions
+
+### Critical Implementation Resources
+- `SESSION_HANDOVER.md`: Comprehensive handover documentation
+- `IMPLEMENTATION_PATTERNS.md`: Proven codebase patterns and conventions
+- `TROUBLESHOOTING_GUIDE.md`: Common issues and solutions from Sub-Plan 0A

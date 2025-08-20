@@ -142,16 +142,47 @@ Maintain existing individual component workflows:
 - Efficient directory structure validation
 - Minimal performance impact on existing operations
 
+## Implementation Lessons Learned (Sub-Plan 0A Experience)
+
+### Critical Integration Patterns
+```python
+# LESSON: Always provide base_path when creating ModelIOManager
+class LocalModelRegistry:
+    def __init__(self, models_path: Path):
+        self.model_io = ModelIOManager(self.models_path)  # Fixed integration issue
+        
+# LESSON: Use conditional imports for optional dependencies
+try:
+    from multi_user_service.models import User
+    MULTI_USER_AVAILABLE = True
+except ImportError:
+    MULTI_USER_AVAILABLE = False
+    
+# LESSON: Generate manifests in format that validate_model() expects
+def _generate_manifest(self, model_path: Path) -> Dict[str, Any]:
+    return {
+        "model_type": "complete_emuses_model",  # Use new format consistently
+        # ... standard format fields
+    }
+```
+
+### User Design Preferences
+- **Clean Solutions**: "We want to do things cleanly, we don't want to accumulate technical debts"
+- **Complete Model Focus**: "What I viewed as a 'model' to register was the WHOLE EMUSES model"
+- **No Backward Compatibility Hacks**: Focus on correct architecture over legacy support
+
 ## Quality Assurance Focus
 
 ### Critical Testing Scenarios
-1. **Diverse Pipeline Outputs**: Test with real EMUSES runs across versions
-2. **Atomic Operation Safety**: Verify rollback works under failure conditions
-3. **Hash Consistency**: Ensure hashes stable across environments
-4. **Backward Compatibility**: Individual components continue working
+1. **Diverse Pipeline Outputs**: Test with real EMUSES runs across versions (2.0.x, 2.1.x)
+2. **Atomic Operation Safety**: Verify rollback works under concurrent failure conditions
+3. **Hash Consistency**: Ensure hashes stable across environments and Python versions
+4. **Backward Compatibility**: Individual components continue working during transition
+5. **Integration Patterns**: Test ModelIOManager base_path requirements and CI compatibility
 
 ### Success Validation
-- Complete model detection works with 95%+ accuracy on real outputs
-- Atomic operations prevent data corruption under concurrent access
+- Complete model detection works with 95%+ accuracy on real outputs (tested with Sub-Plan 0A)
+- Atomic operations prevent data corruption under concurrent access scenarios
 - Enhanced schema supports both complete and individual models seamlessly
 - Performance impact <5% for existing individual component operations
+- Integration patterns follow proven Sub-Plan 0A approaches
