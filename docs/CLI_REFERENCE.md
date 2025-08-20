@@ -457,32 +457,66 @@ Advanced users can create custom `optim_dict` configurations by understanding th
 
 ### Administrative Commands
 
+**Multi-user service administration with enterprise security (Vault integration supported)**
+
 #### `emuses admin add-user` - Create System User
 ```bash
-emuses admin add-user username \
-  --email user@institution.edu \
-  --role researcher
+# Create user with email and password
+emuses admin add-user researcher@company.com --password SecurePass123
+
+# Create user with organization
+emuses admin add-user postdoc@lab.edu -p MyPass456 -o "Neuroscience Lab"
+
+# Create inactive user for later activation
+emuses admin add-user intern@college.edu -p TempPass789 --inactive
+```
+
+#### `emuses admin list-users` - List All Users
+```bash
+# Default listing (10 users)
+emuses admin list-users
+
+# Extended listing with pagination
+emuses admin list-users --limit 50 --skip 20
 ```
 
 #### `emuses admin system-status` - Monitor System Health  
 ```bash
+# Quick health check
 emuses admin system-status
+
+# Detailed diagnostic information
+emuses admin system-status --detailed
 ```
 
 #### `emuses admin set-quota` - Manage Resource Limits
 ```bash
-emuses admin set-quota username --storage 100GB --compute 50hours
+# Set storage quota (GB)
+emuses admin set-quota user@example.com storage_gb 50
+
+# Set concurrent job limit
+emuses admin set-quota user@example.com concurrent_jobs 2
+
+# Set compute hour limit
+emuses admin set-quota user@example.com compute_hours 500
 ```
 
-#### `emuses admin backup` - System Backup
+#### `emuses admin cancel-job` - Cancel Running Jobs
 ```bash
-emuses admin backup --target external_storage/ --compress
+# Cancel with confirmation
+emuses admin cancel-job 12345678-1234-1234-1234-123456789abc
+
+# Force cancellation (no confirmation)
+emuses admin cancel-job abcd1234-5678-90ef-ghij-klmnopqrstuv --force
 ```
 
-#### `emuses admin restore` - System Restore
+#### `emuses admin help` - Comprehensive Admin Help
 ```bash
-emuses admin restore backup_file.tar.gz --verify
+# Display comprehensive admin guidance
+emuses admin help
 ```
+
+**📚 For detailed usage examples and troubleshooting:** [Admin Guide →](multi-user-service/admin-guide.md)
 
 ### Advanced System Configuration
 

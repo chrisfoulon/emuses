@@ -41,6 +41,11 @@ Centralized model management with versioning, metadata tracking, and collaborati
 
 **[Model Registry Guide →](model-registry/user_guide.md)**
 
+### 👥 Multi-User Enterprise Service
+Enterprise-ready multi-user service with HashiCorp Vault integration, user management, quotas, and compliance features.
+
+**[Admin Guide →](multi-user-service/admin-guide.md) | [Vault Integration →](multi-user-service/vault-integration-guide.md)**
+
 -   :material-database:{ .lg .middle } __Model Registry__
 
     ---
@@ -53,6 +58,11 @@ emuses full dataset.csv --scores behavioral_scores.csv --output results/
 
 # Start web service
 emuses service --port 8000
+
+# Multi-user admin commands (with Vault integration)
+emuses admin add-user researcher@company.com --password SecurePass123
+emuses admin list-users
+emuses admin system-status --detailed
 ```
 
 **Python API:**
@@ -130,7 +140,7 @@ Ready to start analyzing your neuroimaging data? Choose your path:
 ---
 
 <div align="center">
-    <strong>Built for the neuroimaging research community</strong><br>
+    <strong>Built for the scientific research community</strong><br>
     <em>Empowering discoveries through advanced computational methods</em>
 </div>
 

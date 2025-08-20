@@ -7,17 +7,17 @@ including registration, login, logout, and user management functionality.
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request
+from fastapi import APIRouter, Depends, FastAPI
+from fastapi_users.schemas import CreateUpdateDictModel
 from pydantic import BaseModel, EmailStr
 
 from emuses.multi_user_service.auth import fastapi_users, get_auth_backend
-from emuses.multi_user_service.database import get_async_session
 from emuses.multi_user_service.models import User
 
 logger = logging.getLogger(__name__)
 
 
-class UserCreate(BaseModel):
+class UserCreate(CreateUpdateDictModel):
     """User creation schema with EMUSES-specific fields.
 
     Extends the base FastAPI-Users user creation schema with
@@ -30,6 +30,8 @@ class UserCreate(BaseModel):
     role: str = "researcher"
     storage_quota_gb: float = 10.0
     compute_quota_hours: float = 100.0
+    is_active: bool = True
+    is_verified: bool = True
 
 
 class UserRead(BaseModel):
