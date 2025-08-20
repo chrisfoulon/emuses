@@ -10,6 +10,12 @@ from unittest.mock import patch, MagicMock
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+# Skip all tests in this module if fastapi_users is not available
+try:
+    import fastapi_users
+except ImportError:
+    pytest.skip("fastapi_users not available, skipping multi-user service tests", allow_module_level=True)
+
 
 class TestJWTAuthenticationBackend:
     """Test suite for JWT authentication backend and user management."""

@@ -10,7 +10,7 @@
 
 ## Quick Status for New Sessions
 
-**Current Status**: Ready for Analysis API Enhancement development
+**Current Status**: Analysis API Enhancement - Model Registry Redesign planning complete, ready for implementation
 
 **Key Status Files**:
 - **PROJECT_STATUS.md** - Central project status
@@ -23,7 +23,7 @@
 - **Research Labs**: Collaborative sharing with workspaces
 - **Scientific Community**: Public registry with peer review
 
-**Current Phase**: Analysis API Enhancement development
+**Current Phase**: Analysis API Enhancement - Sub-Plan 0A-Extended (Model Registry Redesign)
 
 ## Recent Achievements
 
@@ -39,11 +39,13 @@
 **Current Branch**: `feature/analysis-api-enhancement`
 **Active Phase**: Analysis API Enhancement development
 
-### **CURRENT PRIORITY**: Analysis API Enhancement
-- **Feature Location**: `dev-docs/analysis-api/` with existing functions ready for exposure
-- **Scope**: Expose `run_kernel_heatmap_analysis()` and `run_heatmap_analysis()` functions
-- **Implementation**: FastAPI endpoints, CLI commands, configuration integration
-- **Status**: Ready for development - independent feature with clear business value
+### **CURRENT PRIORITY**: Analysis API Enhancement - Model Registry Redesign
+- **Sub-Plan**: 0A-Extended (Complete EMUSES Model Registry Redesign)
+- **Duration**: 3 weeks across 3 phases (Foundation → Deduplication → Interface)
+- **Feature Location**: `dev-docs/analysis-api/model-registry-redesign/` with comprehensive LAD planning
+- **Critical Discovery**: Registry must handle complete EMUSES models as cohesive units
+- **Status**: LAD Phase 1d complete - Ready for Phase 1 Foundation implementation
+- **Next Step**: Use `plan_1_foundation.md` with LAD Phase 2 iterative implementation
 
 ### **Known Issues**: Optuna Parameter Space Conflicts (low priority)
 - **Problem**: EMUSES crashes when changing `--prediction_optim_dict` during resume
@@ -83,5 +85,5 @@
 - See `/scripts/README.md` for comprehensive testing approach
 
 ---
-*Last Updated: 2025-08-19 - Ready for Analysis API Enhancement development*
+*Last Updated: 2025-08-20 - Model Registry Redesign planning complete, ready for Phase 1 implementation*
 *Static guidelines in `.lad/CLAUDE.md` | Historical details in `dev-docs/project-history/`*

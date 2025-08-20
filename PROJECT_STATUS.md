@@ -6,16 +6,25 @@
 - **Research Labs**: Collaborative model sharing with workspace isolation
 - **Scientific Community**: Public model registry with peer review and benchmarking
 
-## 🎯 CURRENT FOCUS (Updated 2025-08-19)
+## 🎯 CURRENT FOCUS (Updated 2025-08-20)
 
 ### **NEXT PRIORITIES**:
-- **Priority 1**: Analysis API Enhancement 📋 **READY**
-  - Located in `dev-docs/analysis-api/` with existing mature functions ready for exposure
+- **Priority 1**: Analysis API Enhancement - Model Registry Redesign 📋 **ACTIVE**
+  - **Sub-Plan 0A-Extended**: Complete EMUSES Model Registry Redesign (3 weeks, 3 phases)
+  - **Critical Discovery**: Registry must handle complete EMUSES models vs individual components
+  - **Implementation**: 3-phase approach - Foundation → Deduplication → Interface Integration
+  - **Location**: `dev-docs/analysis-api/model-registry-redesign/` with LAD-compliant planning
+- **Priority 2**: Analysis API Enhancement - Core Features 📋 **PLANNED**
   - FastAPI endpoints and CLI commands for effect size map analysis
-- **Priority 2**: CI/CD Task 4.2 Multi-environment deployment automation 📋 **PLANNED**
+  - Depends on Model Registry Redesign completion
+- **Priority 3**: CI/CD Task 4.2 Multi-environment deployment automation 📋 **PLANNED**
 
 ### **RECENTLY COMPLETED**:
-- Model Registry system (production ready with comprehensive testing)
+- **Sub-Plan 0A**: Analysis API Enhancement Critical Infrastructure Fixes ✅
+  - ModelIOManager missing methods implementation (validate_model, install_model)
+  - CI pipeline dependency fixes (fastapi_users ModuleNotFoundError)
+  - HDBSCAN model registration support
+  - Integration testing with real ModelIOManager methods
 - Progressive disclosure documentation system (38,000+ words restructured)
 - FastAPI documentation serving feature
 - Documentation consolidation and LAD compliance restoration
@@ -72,7 +81,8 @@
 
 ## 📋 QUICK REFERENCE
 **Current Branch**: `feature/analysis-api-enhancement`
-**Current Phase**: Analysis API Enhancement development
+**Current Phase**: Analysis API Enhancement - Model Registry Redesign (Sub-Plan 0A-Extended)
+**Implementation Status**: LAD Phase 1d complete - Ready for Phase 1 Foundation implementation
 **Documentation**: User guides in `docs/`, development docs in `dev-docs/`
 **Test Commands**: See `CLAUDE.md` for standard commands
 

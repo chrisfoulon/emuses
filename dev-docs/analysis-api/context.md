@@ -1,229 +1,423 @@
-# Analysis API Enhancement - Technical Context and Architecture
+# Analysis API Enhancement - Implementation Context
 
-## Current State Analysis
+## Level 1: Plain English Summary
 
-### Critical Infrastructure Issues Discovered ⚠️
+EMUSES has comprehensive neuroimaging analysis functions (`run_kernel_heatmap_analysis` and `run_heatmap_analysis`) that generate statistical maps, effect size maps, and interactive visualizations. These functions are production-ready with 19-21 parameters each, but are only accessible through pipeline execution. The enhancement will expose these functions through FastAPI endpoints and CLI commands.
 
-#### 1. ModelIOManager Missing Methods (BLOCKING)
-**Location**: `emuses/tools/model_io.py`  
-**Issue**: Core methods expected by LocalModelRegistry are missing
+**Critical Infrastructure Issue**: ModelIOManager is missing `install_model()` and `validate_model()` methods that LocalModelRegistry expects, completely blocking model installation. Tests pass because they use mocks, hiding this missing implementation.
 
-**Missing Method 1**: `install_model(model_path, destination_path, name=None) -> str`
-- **Called from**: `LocalModelRegistry.install_model()` at line 577
-- **Expected**: Copy model from source to destination, return unique model_id
-- **Current State**: Method doesn't exist, causing `AttributeError`
+**Existing Infrastructure**: Mature FastAPI service, Typer CLI framework, comprehensive model registry database schema, artifact serving system, and security validation - all ready for extension.
 
-**Missing Method 2**: `validate_model(model_path) -> Dict[str, Any]`  
-- **Called from**: `LocalModelRegistry.install_model()` at line 570
-- **Expected**: Return manifest dict `{"name": str, "version": str, "type": str, "description": str}`
-- **Current State**: Method doesn't exist, causing `AttributeError`
+## Level 2: API Integration Table
 
-**Impact**: Model installation via `emuses models install` is completely broken
+| Component | Purpose | Key Methods/Endpoints | Integration Points |
+|-----------|---------|----------------------|-------------------|
+| **Analysis Functions** | Generate statistical maps and visualizations | `run_kernel_heatmap_analysis()`, `run_heatmap_analysis()` | Pipeline stages, artifact generation |
+| **FastAPI Service** | REST API endpoints | `POST /api/v1/analysis/{type}`, `GET /api/v1/analysis/{job_id}/artifacts/{filename}` | Authentication, artifact serving, job management |
+| **CLI Commands** | Command-line interface | `emuses models analyze-kernel`, `emuses models analyze-correlation` | Typer integration, Rich console output |
+| **ModelIOManager** | Model validation and installation | `validate_model()`, `install_model()` ⚠️ **MISSING** | LocalModelRegistry, artifact preservation |
+| **Model Registry** | Analysis artifact storage | `install_model()`, `list_models()`, database persistence | Multi-user permissions, workspace isolation |
+| **Artifact System** | Analysis result serving | File serving, permission control, format detection | FastAPI FileResponse, security validation |
 
-#### 2. Model Registration Gaps
-**HDBSCAN Models**: Currently saved via `ModelIOManager.save_model()` but not discoverable via `emuses models list`
-**UMAP Models**: Same issue - saved as files but require manual registration  
-**Pattern**: Models are saved during pipeline execution but don't automatically appear in registry
+## Level 3: Code Integration Examples
 
-### Existing Analysis Capabilities (Ready for Enhancement)
+### **Analysis Function Signatures and Usage**
 
-#### Core Analysis Functions
-**Location**: `emuses/tools/kernel_regression_utils.py:646` and `emuses/tools/correlation_maps_utils.py:205`
-
-**`run_kernel_heatmap_analysis()`**: Kernel regression-based effect size mapping
-- **Input**: Embeddings, target variables, original data matrix
-- **Output**: Statistical maps, effect size plots, uncertainty visualizations
-- **Integration**: Uses `save_statistical_maps()` for artifact generation
-- **Status**: Mature, extensively tested, ready for integration
-
-**`run_heatmap_analysis()`**: Correlation-based statistical mapping  
-- **Input**: Embeddings, target variables, clustering data
-- **Output**: Correlation heatmaps, cluster-based statistical maps
-- **Integration**: Uses same artifact pipeline as kernel analysis
-- **Status**: Production ready, well-integrated with existing pipeline
-
-#### Current Artifact Generation Pipeline
-**Pattern**: Both analysis functions use standardized output through `save_statistical_maps()`
 ```python
-save_statistical_maps(
-    stat_maps=analysis_results,
-    output_folder=output_folder,
-    input_type="image|nifti|spreadsheet",
-    output_format_info=format_info,
-    filename_prefix="stat_map",
-    save_output=True,
-    generate_plots=True
+# Location: /emuses/tools/kernel_regression_utils.py:641
+def run_kernel_heatmap_analysis(
+    embeddings,                    # np.ndarray: 2D latent space embeddings  
+    scores_vectors_dict,           # dict: Score tags and binary vectors
+    input_matrix,                  # np.ndarray: Original input data matrix
+    output_folder,                 # str: Output directory path
+    grid_size=100,                # int: Heatmap grid resolution
+    sigma_range=None,             # List[float]: Kernel bandwidth range
+    threshold=0.5,                # float: Confidence threshold
+    uncertainty_penalty=0.5,      # float: Uncertainty weighting
+    input_type="image",           # str: "image" | "nifti" | "spreadsheet"
+    classification=False,         # bool: Regression vs classification
+    # ... 11 additional parameters
+) -> Tuple[Dict[str, Any], List[Dict]]:
+    """Returns: (heatmap_data_dict, nested_cv_results)"""
+
+# Location: /emuses/tools/correlation_maps_utils.py:205  
+def run_heatmap_analysis(
+    embeddings,                   # np.ndarray: 2D embeddings
+    scores_vectors_dict,          # dict: Score vectors
+    input_matrix,                 # np.ndarray: Original data
+    output_folder,                # str: Output directory
+    output_format_info,           # Various: Format specification
+    clusterer,                    # object: Trained HDBSCAN clusterer
+    cluster_labels,               # np.ndarray: Cluster assignments
+    input_type="image",           # str: Input data type
+    # ... 11 additional parameters  
+) -> None:
+    """Generates artifacts: effect_size maps, correlation grids, visualizations"""
+```
+
+### **FastAPI Endpoint Integration Pattern**
+
+```python
+# Expected implementation in /emuses/foundation_fastapi_service/app.py
+from pydantic import BaseModel, Field
+from typing import Dict, Any, Optional, List
+
+class AnalysisRequest(BaseModel):
+    model_path: str = Field(..., description="Path to trained model directory")
+    analysis_type: str = Field(..., description="kernel or correlation", regex="^(kernel|correlation)$")
+    output_folder: Optional[str] = Field(None, description="Custom output directory")
+    
+    # Analysis-specific parameters
+    grid_size: int = Field(100, description="Heatmap grid resolution", ge=10, le=500)
+    threshold: float = Field(0.5, description="Confidence threshold", ge=0.0, le=1.0)
+    generate_plots: bool = Field(True, description="Generate visualization plots")
+    
+    # Advanced parameters with defaults
+    sigma_range: Optional[List[float]] = Field(None, description="Kernel bandwidth range")
+    effect_size_threshold: float = Field(0.5, ge=0.0, le=1.0)
+    correlation_method: str = Field("pearson", regex="^(pearson|spearman)$")
+
+class AnalysisResponse(BaseModel):
+    job_id: str = Field(..., description="Unique analysis job identifier")
+    status: str = Field(..., description="pending, running, completed, failed")
+    analysis_type: str = Field(..., description="Type of analysis performed")
+    created_at: str = Field(..., description="ISO timestamp of job creation")
+    artifacts: Optional[List[str]] = Field(None, description="List of generated artifact filenames")
+
+@app.post("/api/v1/analysis/kernel", status_code=201)
+@conditional_rate_limit("10/hour")  
+async def run_kernel_analysis(
+    request: Request, analysis_request: AnalysisRequest
+) -> AnalysisResponse:
+    """Execute kernel regression heatmap analysis."""
+    
+    # Security validation
+    model_path = Path(validate_path(analysis_request.model_path))
+    if not model_path.exists():
+        raise HTTPException(status_code=404, detail="Model path not found")
+    
+    # Load model and metadata
+    model_io = ModelIOManager(model_path.parent)
+    model_data = model_io.load_model(model_path.name)
+    
+    # Parameter validation and preparation
+    analysis_params = analysis_request.dict(exclude={'model_path', 'analysis_type'})
+    
+    # Execute analysis function
+    try:
+        heatmap_results, cv_results = run_kernel_heatmap_analysis(
+            embeddings=model_data.metadata.embeddings,
+            scores_vectors_dict=model_data.metadata.scores_vectors,
+            input_matrix=model_data.metadata.input_matrix,
+            output_folder=str(output_folder),
+            **analysis_params
+        )
+        
+        # Register analysis artifacts in model registry
+        registry = get_model_registry()
+        analysis_model_id = registry.install_analysis_artifacts(
+            model_path=output_folder,
+            parent_model_id=model_data.metadata.model_id,
+            analysis_type="kernel_heatmap",
+            results=heatmap_results
+        )
+        
+        return AnalysisResponse(
+            job_id=analysis_model_id,
+            status="completed",
+            analysis_type="kernel",
+            created_at=datetime.now(timezone.utc).isoformat() + "Z",
+            artifacts=list(heatmap_results.keys())
+        )
+        
+    except Exception as e:
+        logger.error(f"Analysis execution failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Analysis failed: {str(e)}")
+```
+
+### **CLI Command Integration Pattern**
+
+```python
+# Expected implementation in /emuses/cli/models_commands.py
+from rich.progress import Progress, SpinnerColumn, TextColumn
+
+@models_app.command(help="Generate kernel regression heatmap analysis")
+def analyze_kernel(
+    model_path: Annotated[Path, typer.Argument(help="Path to trained model directory")],
+    output: Annotated[Optional[Path], typer.Option("--output", "-o", help="Output directory")] = None,
+    grid_size: Annotated[int, typer.Option("--grid-size", help="Heatmap grid resolution")] = 100,
+    threshold: Annotated[float, typer.Option("--threshold", help="Confidence threshold")] = 0.5,
+    plots: Annotated[bool, typer.Option("--plots/--no-plots", help="Generate visualization plots")] = True,
+    force: Annotated[bool, typer.Option("--force", help="Overwrite existing analysis")] = False
+) -> None:
+    """Generate kernel regression heatmap analysis for a trained model."""
+    
+    # Security and path validation
+    model_path = Path(validate_path(str(model_path)))
+    if not model_path.exists():
+        console.print(f"❌ Model not found: [red]{model_path}[/red]")
+        raise typer.Exit(1)
+    
+    # Load model metadata
+    try:
+        model_io = ModelIOManager(model_path.parent)
+        model_data = model_io.load_model(model_path.name)
+        console.print(f"📊 Loaded model: [green]{model_data.metadata.model_name}[/green]")
+    except Exception as e:
+        console.print(f"❌ Failed to load model: [red]{str(e)}[/red]")
+        raise typer.Exit(1)
+    
+    # Setup output directory
+    if output is None:
+        output = model_path / "analysis_kernel"
+    output.mkdir(parents=True, exist_ok=force)
+    
+    # Execute analysis with progress indicator
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        console=console
+    ) as progress:
+        task = progress.add_task("Generating kernel heatmap analysis...", total=None)
+        
+        try:
+            heatmap_results, cv_results = run_kernel_heatmap_analysis(
+                embeddings=model_data.metadata.embeddings,
+                scores_vectors_dict=model_data.metadata.scores_vectors,
+                input_matrix=model_data.metadata.input_matrix,
+                output_folder=str(output),
+                grid_size=grid_size,
+                threshold=threshold,
+                generate_plots=plots
+            )
+            
+            progress.update(task, description="Registering analysis artifacts...")
+            
+            # Register artifacts in model registry  
+            registry = get_model_registry()
+            analysis_id = registry.install_analysis_artifacts(
+                model_path=output,
+                parent_model_id=model_data.metadata.model_id,
+                analysis_type="kernel_heatmap"
+            )
+            
+            progress.complete_task(task)
+            
+        except Exception as e:
+            progress.stop()
+            console.print(f"❌ Analysis failed: [red]{str(e)}[/red]")
+            raise typer.Exit(1)
+    
+    # Success output
+    console.print(f"✅ Analysis completed: [green]{analysis_id}[/green]")
+    console.print(f"📁 Output directory: [blue]{output}[/blue]")
+    
+    # Display artifact summary
+    artifacts = list(output.glob("*.nii.gz")) + list(output.glob("*.png")) + list(output.glob("*.csv"))
+    if artifacts:
+        console.print(f"📄 Generated {len(artifacts)} artifact files")
+```
+
+### **ModelIOManager Missing Methods Implementation**
+
+```python
+# CRITICAL: Must implement in /emuses/tools/model_io.py
+
+def validate_model(self, model_path: Path) -> Dict[str, Any]:
+    """
+    Validate model directory structure and return manifest information.
+    
+    Args:
+        model_path: Path to model directory or file
+        
+    Returns:
+        Dict with keys: name, version, type, description, integrity_hash
+        
+    Raises:
+        ValueError: If model structure is invalid
+        FileNotFoundError: If required model files are missing
+    """
+    if not model_path.exists():
+        raise FileNotFoundError(f"Model path does not exist: {model_path}")
+    
+    if model_path.is_file():
+        model_path = model_path.parent
+    
+    # Check for existing manifest
+    manifest_path = model_path / "model_manifest.json"
+    if manifest_path.exists():
+        try:
+            with open(manifest_path, 'r') as f:
+                manifest = json.load(f)
+            
+            # Validate manifest structure
+            required_keys = ["name", "version", "model_type", "description"]
+            if not all(key in manifest for key in required_keys):
+                raise ValueError(f"Invalid manifest structure in {manifest_path}")
+            
+            # Verify file integrity if hash present
+            if "integrity_hash" in manifest:
+                current_hash = self._calculate_directory_hash(model_path)
+                if current_hash != manifest["integrity_hash"]:
+                    logger.warning(f"Integrity hash mismatch for {model_path}")
+            
+            return {
+                "name": manifest["name"],
+                "version": manifest["version"], 
+                "type": manifest["model_type"],
+                "description": manifest["description"]
+            }
+            
+        except (json.JSONDecodeError, IOError) as e:
+            raise ValueError(f"Failed to read manifest: {str(e)}")
+    
+    else:
+        # Generate manifest from model files
+        return self._generate_manifest_from_directory(model_path)
+
+def install_model(self, source_path: Path, destination_path: Path, 
+                 name: Optional[str] = None) -> str:
+    """
+    Install model from source to destination directory.
+    
+    Args:
+        source_path: Path to source model directory/file
+        destination_path: Base directory for model installation
+        name: Optional custom name for the model
+        
+    Returns:
+        Unique model_id string for the installed model
+        
+    Raises:
+        ValueError: If source model is invalid
+        PermissionError: If destination is not writable
+        FileExistsError: If model already exists and force=False
+    """
+    # Validate source model
+    manifest = self.validate_model(source_path)
+    
+    # Generate unique model ID
+    model_name = name or manifest["name"]
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    model_id = f"{model_name}_{timestamp}_{uuid.uuid4().hex[:8]}"
+    
+    # Create destination directory
+    destination_path.mkdir(parents=True, exist_ok=True)
+    target_path = destination_path / model_id
+    
+    if target_path.exists():
+        raise FileExistsError(f"Model already exists: {target_path}")
+    
+    # Copy model files
+    try:
+        if source_path.is_file():
+            # Single file model
+            target_path.mkdir()
+            shutil.copy2(source_path, target_path / source_path.name)
+        else:
+            # Directory model  
+            shutil.copytree(source_path, target_path)
+        
+        # Update manifest with installation metadata
+        manifest_path = target_path / "model_manifest.json"
+        updated_manifest = {
+            **manifest,
+            "installed_at": datetime.now(timezone.utc).isoformat() + "Z",
+            "model_id": model_id,
+            "installation_path": str(target_path),
+            "integrity_hash": self._calculate_directory_hash(target_path)
+        }
+        
+        with open(manifest_path, 'w') as f:
+            json.dump(updated_manifest, f, indent=2)
+        
+        logger.info(f"Model installed successfully: {model_id}")
+        return model_id
+        
+    except (shutil.Error, OSError, IOError) as e:
+        # Cleanup on failure
+        if target_path.exists():
+            shutil.rmtree(target_path, ignore_errors=True)
+        raise ValueError(f"Model installation failed: {str(e)}")
+
+def _generate_manifest_from_directory(self, model_path: Path) -> Dict[str, Any]:
+    """Generate manifest from model directory structure."""
+    
+    # Detect model type from files
+    model_files = list(model_path.glob("*.pkl")) + list(model_path.glob("*.joblib"))
+    if not model_files:
+        raise ValueError(f"No model files found in {model_path}")
+    
+    # Basic manifest structure
+    return {
+        "name": model_path.name,
+        "version": "1.0.0",
+        "type": "unknown",  # Would need more sophisticated detection
+        "description": f"Model from {model_path.name}",
+        "created_at": datetime.now(timezone.utc).isoformat() + "Z"
+    }
+
+def _calculate_directory_hash(self, directory: Path) -> str:
+    """Calculate SHA-256 hash of directory contents."""
+    hasher = hashlib.sha256()
+    
+    for file_path in sorted(directory.rglob("*")):
+        if file_path.is_file():
+            with open(file_path, 'rb') as f:
+                for chunk in iter(lambda: f.read(4096), b""):
+                    hasher.update(chunk)
+            hasher.update(str(file_path.relative_to(directory)).encode())
+    
+    return hasher.hexdigest()
+```
+
+## Maintenance Opportunities in Target Files
+
+### High Priority (Address During Implementation)
+- [ ] `/emuses/tools/model_io.py` - **Missing critical methods**: `install_model()` and `validate_model()` (BLOCKING)
+- [ ] `/tests/model_registry/` - **Test gap**: Integration tests using real ModelIOManager instead of mocks
+
+### Medium Priority (Consider for Boy Scout Rule)
+- [ ] `/emuses/tools/correlation_maps_utils.py:205` - **Complex parameters**: 19 parameters could benefit from configuration object
+- [ ] `/emuses/tools/kernel_regression_utils.py:641` - **Complex parameters**: 21 parameters could benefit from configuration object
+- [ ] `/emuses/foundation_fastapi_service/app.py` - **Documentation**: API schema documentation for analysis endpoints
+
+### Integration Architecture Notes
+
+**Request Flow Pattern**:
+```
+API Request → Security Validation → Parameter Validation → Model Loading → 
+Analysis Execution → Artifact Generation → Registry Installation → Response
+```
+
+**Artifact Storage Pattern**:
+```
+Model Directory/
+├── model_manifest.json          # Model metadata
+├── analysis_kernel/             # Analysis artifacts directory
+│   ├── heatmap_data.json       # Analysis results
+│   ├── stat_map_cluster_0.nii.gz
+│   ├── stat_map_cluster_0.png
+│   └── performance_metrics.json
+└── analysis_correlation/        # Alternative analysis type
+    └── ...
+```
+
+**Database Integration Pattern**:
+```python
+# Analysis artifacts as specialized model registry entries
+model_registry.install_model(
+    model_path=analysis_artifacts_path,
+    name=f"{parent_model_name}_analysis_kernel",
+    version="1.0.0",
+    model_type="analysis_artifact_kernel",
+    tags=["analysis", "heatmap", "kernel_regression"],
+    metadata={
+        "parent_model_id": parent_model_id,
+        "analysis_parameters": analysis_params,
+        "performance_metrics": cv_results
+    }
 )
 ```
 
-**Generated Artifacts**:
-- **NIfTI files**: `stat_map_cluster_{cluster}.nii.gz` (medical imaging format)
-- **PNG plots**: `stat_map_cluster_{cluster}.png` (statistical visualizations)
-- **CSV data**: `stat_map_cluster_{cluster}.csv` (tabular statistical data)
-
-### Current Model and Artifact Storage Patterns
-
-#### Model Storage (Functional)
-**UMAP Models**: Saved via `ModelIOManager.save_model()` in `UMAP_utils.py:855`
-```python
-umap_filepath = manager.save_model(
-    model=best_umap_model,
-    model_name="best_umap_model",
-    model_type="umap",
-    config={"best_params": best_params},
-    description="Best UMAP model from optimization",
-    tags=["optimization", "final_model"]
-)
-```
-
-**HDBSCAN Models**: Saved via `ModelIOManager.save_model()` in `UMAP_utils.py:713`  
-```python
-hdbscan_manager.save_model(
-    model=best_clusterer,
-    model_name="hdbscan_model",
-    model_type="hdbscan",
-    config={...clustering_parameters...},
-    description="HDBSCAN clustering model",
-    tags=["clustering", "hdbscan", "optimization"]
-)
-```
-
-#### Data Artifact Storage (Ready for Extension)
-**Embeddings**: `np.save(output_folder / "best_embeddings.npy", best_embeddings)`
-**Cluster Labels**: `np.save(cluster_labels_path, best_labels)`
-**Performance Metrics**: CSV files with CV scores and fold results
-
-### Model Registry Architecture (Production Ready)
-
-#### Database Schema Analysis  
-**Location**: `emuses/multi_user_service/models.py`
-**Schema**: Flexible `ModelRegistry` table with JSON tags and classification fields
-
-**Key Fields for Analysis Integration**:
-- `model_type`: Can accommodate `"analysis_artifact_*"` types
-- `tags`: JSON array perfect for analysis categorization 
-- `model_path`: File system path to artifacts
-- `manifest_hash`: SHA-256 integrity verification
-- `workspace_id`: Scoped access for multi-user scenarios
-
-#### FastAPI Artifact Serving (Ready to Use)
-**Endpoint**: `/api/v1/jobs/{job_id}/artifacts/{filename}`
-**Capability**: Serves ANY file type with proper content-type detection
-**Security**: Path traversal protection, filename sanitization
-**Integration**: Works seamlessly with job-based artifact storage
-
-### Inference System Integration Points
-
-#### Current InferenceStage Architecture
-**Location**: `emuses/pipelines/inference_stage.py`
-**Flow**: Load models → Transform features → Predict → Save results
-
-**Key Integration Points**:
-1. **`_transform_features()`**: New data → UMAP embeddings (embedding coordinates)
-2. **`_predict_with_progress()`**: Embeddings → prediction values + confidence  
-3. **Result formatting**: Currently saves predictions to CSV files
-
-**Enhancement Opportunity**: After step 1, we can visualize transformed embeddings on existing training analysis artifacts
-
-#### Model Loading Pattern
-**Current**: Loads UMAP and prediction models using `ModelIOManager.load_model()`
-**Enhancement**: Extend to load analysis artifacts (embeddings, clusters, heatmaps) alongside models
-
-### Analysis Ecosystem Architecture Design
-
-#### Complete Analysis Artifact Package Structure
-```
-model_package/
-├── models/                          # Reusable inference models (EXISTING)
-│   ├── best_umap_model.joblib       # Transform new data to embeddings
-│   ├── hdbscan_model.joblib         # Assign new data to existing clusters
-│   └── prediction_models/           # Generate predictions for new data
-├── analysis/                        # Analysis artifacts (NEW)
-│   ├── training_data/               # Training context for visualization
-│   │   ├── embeddings.npy           # Original training UMAP coordinates  
-│   │   ├── scaled_embeddings.npy    # Preprocessed coordinates
-│   │   ├── cluster_labels.npy       # Training cluster assignments
-│   │   └── training_labels.npy      # Target variables (permission-controlled)
-│   ├── statistical_maps/            # Generated during training
-│   │   ├── effect_size_maps/        # Per-cluster effect size visualizations
-│   │   ├── grid_predictions/        # 100x100 spatial prediction grids
-│   │   └── statistical_plots/       # PNG/HTML statistical visualizations  
-│   ├── interactive_plots/           # HTML Plotly visualizations
-│   │   ├── embeddings_clustering.html   # Interactive clustering plots
-│   │   └── embeddings_scores.html       # Score-colored embedding plots
-│   └── metadata/
-│       └── analysis_manifest.json   # Analysis parameters and metadata
-```
-
-#### Permission System Integration
-**Public Access**: Statistical maps, interactive plots, grid predictions
-**Researcher Access**: Training embeddings, cluster data, analysis parameters  
-**Admin Access**: Raw training labels and sensitive data
-
-### Integration Strategy with Existing Systems
-
-#### No Breaking Changes Required
-**Model Registry**: Existing schema accommodates analysis artifacts via `model_type` and `tags`
-**FastAPI**: Current artifact serving works for any file type
-**Job System**: Analysis artifacts fit existing job output directory structure
-**CLI**: Model installation pattern extends to analysis artifact installation
-
-#### Backward Compatibility Preservation
-**Existing Workflows**: All current EMUSES functionality continues unchanged
-**Progressive Enhancement**: Analysis features are additive, not replacements
-**Configuration Driven**: New capabilities enabled via configuration flags
-
-### Implementation Integration Points
-
-#### Phase 1: ModelIOManager Fixes (Critical)
-**Files Modified**: `emuses/tools/model_io.py`
-**Methods Added**: `install_model()`, `validate_model()`
-**Integration**: Enables basic model registry functionality
-**Risk**: High (core infrastructure changes require extensive testing)
-
-#### Phase 2: HeatmapStage Enhancement
-**File Modified**: `emuses/pipelines/heatmap_stage.py`  
-**Location**: After existing Optuna CV loop (around line 427)
-**Integration**: Add analysis artifact generation using existing functions
-**Risk**: Low (uses existing `save_statistical_maps()` pattern)
-
-#### Phase 3: InferenceStage Enhancement  
-**File Modified**: `emuses/pipelines/inference_stage.py`
-**Integration Point**: After `_transform_features()`, before results saving
-**New Capabilities**: Load training artifacts, generate overlay visualizations
-**Risk**: Medium (complex but well-defined integration points)
-
-#### Phase 4: FastAPI Extension
-**New Files**: Analysis artifact serving endpoints
-**Integration**: Leverage existing job artifact serving infrastructure  
-**Scope**: Permission-controlled access to training data and analysis results
-**Risk**: Medium (API design complexity, security considerations)
-
-### Development Architecture Patterns
-
-#### Existing EMUSES Patterns to Follow
-**ModelIOManager**: Consistent save/load pattern with metadata and manifest generation
-**FastAPI Endpoints**: Job-based artifact serving with security validation
-**CLI Commands**: Typer-based commands with comprehensive help and validation
-**Configuration**: YAML-based configuration with validation and defaults
-
-#### LAD Compliance Requirements  
-**Testing**: >90% coverage target for new functionality
-**Documentation**: NumPy-style docstrings, comprehensive user guides
-**Code Quality**: Flake8 compliance, Boy Scout Rule for improvements
-**Architecture**: Component-aware testing, TDD approach for new features
-
-### Technical Dependencies and Readiness
-
-#### All Required Dependencies Available
-**Core Libraries**: numpy, pandas, scipy, sklearn, matplotlib (all present)
-**EMUSES Libraries**: All analysis functions already available and tested
-**Infrastructure**: FastAPI, model registry, CLI framework all production ready
-
-#### No New Infrastructure Required
-**Database**: Existing ModelRegistry schema accommodates analysis artifacts
-**File System**: Current artifact storage patterns extend to analysis data
-**API**: Existing endpoint patterns work for analysis artifact serving
-**Security**: Current permission system extends to analysis data access
-
-This context provides comprehensive understanding of how the Analysis API Enhancement integrates with existing EMUSES architecture while fixing critical bugs and adding advanced analysis capabilities without breaking changes.
+This context provides comprehensive integration guidance for implementing the Analysis API Enhancement while addressing the critical ModelIOManager infrastructure issue that blocks current model installation workflows.

@@ -18,14 +18,15 @@ Key Features:
 import hashlib
 import json
 import logging
+import shutil
 import sys
+import uuid
 from dataclasses import asdict, dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 import joblib
-import numpy as np
 # Import bcblib save_json for consistent serialization
 from bcblib.tools.general_utils import save_json
 
@@ -361,6 +362,153 @@ class ModelIOManager:
             logger.error(f"Failed to cleanup old versions for {model_name}: {e}")
 
         return deleted
+
+    def validate_model(self, model_path: Path) -> Dict[str, Any]:
+        """
+        Validate model directory structure and return manifest information.
+
+        Args:
+            model_path: Path to model directory or file
+
+        Returns:
+            Dict with keys: name, version, type, description, integrity_hash
+
+        Raises:
+            ValueError: If model structure is invalid
+            FileNotFoundError: If required model files are missing
+        """
+        if not model_path.exists():
+            raise FileNotFoundError(f"Model path does not exist: {model_path}")
+
+        if model_path.is_file():
+            model_path = model_path.parent
+
+        # Check for existing manifest
+        manifest_path = model_path / "model_manifest.json"
+        if manifest_path.exists():
+            try:
+                with open(manifest_path, 'r') as f:
+                    manifest = json.load(f)
+
+                # Validate manifest structure
+                required_keys = ["name", "version", "model_type", "description"]
+                if not all(key in manifest for key in required_keys):
+                    raise ValueError(f"Invalid manifest structure in {manifest_path}")
+
+                # Verify file integrity if hash present
+                if "integrity_hash" in manifest:
+                    current_hash = self._calculate_directory_hash(model_path)
+                    if current_hash != manifest["integrity_hash"]:
+                        logger.warning(f"Integrity hash mismatch for {model_path}")
+
+                return {
+                    "name": manifest["name"],
+                    "version": manifest["version"],
+                    "type": manifest["model_type"],
+                    "description": manifest["description"]
+                }
+
+            except (json.JSONDecodeError, IOError) as e:
+                raise ValueError(f"Failed to read manifest: {str(e)}")
+
+        else:
+            # Generate manifest from model files
+            return self._generate_manifest_from_directory(model_path)
+
+    def install_model(self, source_path: Path, destination_path: Path,
+                      name: Optional[str] = None) -> str:
+        """
+        Install model from source to destination directory.
+
+        Args:
+            source_path: Path to source model directory/file
+            destination_path: Base directory for model installation
+            name: Optional custom name for the model
+
+        Returns:
+            Unique model_id string for the installed model
+
+        Raises:
+            ValueError: If source model is invalid
+            PermissionError: If destination is not writable
+            FileExistsError: If model already exists and force=False
+        """
+        # Validate source model
+        manifest = self.validate_model(source_path)
+
+        # Generate unique model ID
+        model_name = name or manifest["name"]
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        model_id = f"{model_name}_{timestamp}_{uuid.uuid4().hex[:8]}"
+
+        # Create destination directory
+        destination_path.mkdir(parents=True, exist_ok=True)
+        target_path = destination_path / model_id
+
+        if target_path.exists():
+            raise FileExistsError(f"Model already exists: {target_path}")
+
+        # Copy model files
+        try:
+            if source_path.is_file():
+                # Single file model
+                target_path.mkdir()
+                shutil.copy2(source_path, target_path / source_path.name)
+            else:
+                # Directory model
+                shutil.copytree(source_path, target_path)
+
+            # Update manifest with installation metadata
+            manifest_path = target_path / "model_manifest.json"
+            updated_manifest = {
+                **manifest,
+                "installed_at": datetime.now(timezone.utc).isoformat() + "Z",
+                "model_id": model_id,
+                "installation_path": str(target_path),
+                "integrity_hash": self._calculate_directory_hash(target_path)
+            }
+
+            with open(manifest_path, 'w') as f:
+                json.dump(updated_manifest, f, indent=2)
+
+            logger.info(f"Model installed successfully: {model_id}")
+            return model_id
+
+        except (shutil.Error, OSError, IOError) as e:
+            # Cleanup on failure
+            if target_path.exists():
+                shutil.rmtree(target_path, ignore_errors=True)
+            raise ValueError(f"Model installation failed: {str(e)}")
+
+    def _generate_manifest_from_directory(self, model_path: Path) -> Dict[str, Any]:
+        """Generate manifest from model directory structure."""
+
+        # Detect model type from files
+        model_files = list(model_path.glob("*.pkl")) + list(model_path.glob("*.joblib"))
+        if not model_files:
+            raise ValueError(f"No model files found in {model_path}")
+
+        # Basic manifest structure
+        return {
+            "name": model_path.name,
+            "version": "1.0.0",
+            "type": "unknown",  # Would need more sophisticated detection
+            "description": f"Model from {model_path.name}",
+            "created_at": datetime.now(timezone.utc).isoformat() + "Z"
+        }
+
+    def _calculate_directory_hash(self, directory: Path) -> str:
+        """Calculate SHA-256 hash of directory contents."""
+        hasher = hashlib.sha256()
+
+        for file_path in sorted(directory.rglob("*")):
+            if file_path.is_file():
+                with open(file_path, 'rb') as f:
+                    for chunk in iter(lambda: f.read(4096), b""):
+                        hasher.update(chunk)
+                hasher.update(str(file_path.relative_to(directory)).encode())
+
+        return hasher.hexdigest()
 
     def _create_metadata(
         self,
@@ -873,7 +1021,10 @@ class ModelIOManager:
 
     def _generate_manifest(self, model_filepath: Path, metadata: ModelMetadata) -> None:
         """
-        Generate model manifest with file integrity information.
+        Generate model manifest compatible with validate_model() method.
+        
+        Creates a manifest with top-level keys that can be validated by the
+        install_model workflow.
         
         Args:
             model_filepath: Path to the saved model file
@@ -882,53 +1033,63 @@ class ModelIOManager:
         try:
             manifest_path = self.base_path / "model_manifest.json"
             
-            # Load existing manifest or create new one
-            if manifest_path.exists():
-                with open(manifest_path, 'r') as f:
-                    manifest = json.load(f)
-            else:
-                manifest = {
-                    "model_info": {},
-                    "file_integrity": {},
-                    "training_context": {},
-                    "compatibility": {}
-                }
+            # Extract base name for the model
+            base_name = model_filepath.stem.split('_v')[0]
             
-            # Update model info section
-            manifest["model_info"] = {
-                "name": model_filepath.stem.split('_v')[0],  # Extract base name
-                "version": self._get_next_version(model_filepath.stem.split('_v')[0]),
+            # Create new standardized manifest format
+            manifest = {
+                "name": base_name,
+                "version": self._get_next_version(base_name),
+                "model_type": metadata.model_type,
+                "description": metadata.description,
                 "created_at": metadata.created_at,
                 "emuses_version": metadata.emuses_version,
-                "description": metadata.description
+                
+                # File integrity information
+                "file_integrity": {
+                    model_filepath.name: {
+                        "size": metadata.file_size,
+                        "sha256": self._calculate_file_hash(model_filepath),
+                        "modified": metadata.created_at
+                    }
+                },
+                
+                # Training context
+                "training_context": {
+                    "config_hash": metadata.config_hash,
+                    "dependencies": metadata.dependencies,
+                    "random_seeds": {}  # Will be enhanced with actual seeds
+                },
+                
+                # Compatibility information
+                "compatibility": {
+                    "min_emuses_version": "2.0.0",
+                    "python_version": f"{sys.version_info.major}.{sys.version_info.minor}+",
+                    "required_packages": list(metadata.dependencies.keys())
+                }
             }
             
-            # Update file integrity section
-            file_hash = self._calculate_file_hash(model_filepath)
-            manifest["file_integrity"][model_filepath.name] = {
-                "size": metadata.file_size,
-                "sha256": file_hash,
-                "modified": metadata.created_at
-            }
-            
-            # Update training context section
-            manifest["training_context"] = {
-                "config_hash": metadata.config_hash,
-                "random_seeds": {}  # Will be enhanced with actual seeds
-            }
-            
-            # Update compatibility section
-            manifest["compatibility"] = {
-                "min_emuses_version": "2.0.0",
-                "python_version": f"{sys.version_info.major}.{sys.version_info.minor}+",
-                "required_packages": list(metadata.dependencies.keys())
-            }
+            # If there's an existing manifest, preserve any additional file integrity info
+            if manifest_path.exists():
+                try:
+                    with open(manifest_path, 'r') as f:
+                        existing_manifest = json.load(f)
+                    
+                    # Preserve file integrity for other models in the directory
+                    if "file_integrity" in existing_manifest:
+                        # Keep existing entries, but update current model
+                        existing_integrity = existing_manifest["file_integrity"]
+                        existing_integrity[model_filepath.name] = manifest["file_integrity"][model_filepath.name]
+                        manifest["file_integrity"] = existing_integrity
+                        
+                except (json.JSONDecodeError, IOError) as e:
+                    logger.warning(f"Could not load existing manifest, creating new one: {e}")
             
             # Save updated manifest
             with open(manifest_path, 'w') as f:
                 json.dump(manifest, f, indent=2, sort_keys=True)
                 
-            logger.debug(f"Generated manifest for model: {model_filepath.name}")
+            logger.debug(f"Generated standardized manifest for model: {model_filepath.name}")
             
         except Exception as e:
             logger.warning(f"Failed to generate manifest: {e}")
@@ -1000,7 +1161,7 @@ class ModelIOManager:
             logger.debug(f"Integrity verified for {model_filepath.name}")
             
         except json.JSONDecodeError:
-            logger.warning(f"Corrupted manifest file, skipping integrity check")
+            logger.warning("Corrupted manifest file, skipping integrity check")
         except Exception as e:
             logger.error(f"Integrity verification failed: {e}")
             raise

@@ -562,8 +562,8 @@ class LocalModelRegistry(BaseModelRegistry):
                     logger.warning(f"Storage warning: {storage_warning.message}")
                     # Don't block installation, but include warning in response
                     
-                # Initialize ModelIOManager
-                model_io = ModelIOManager()
+                # Initialize ModelIOManager with the models path
+                model_io = ModelIOManager(self.models_path)
                 
                 # Validate model and get manifest
                 logger.info(f"Validating model at {model_path}")
