@@ -23,7 +23,7 @@
 - [x] 0A-Ext.1.a: Enhance `ModelIOManager.validate_model()` to detect complete EMUSES models with diverse real pipeline outputs
 - [x] 0A-Ext.1.b: Add complete model component discovery (UMAP + HDBSCAN + prediction ensembles)
 - [x] 0A-Ext.1.c: Implement configuration hash extraction from EMUSES pipeline metadata
-- [x] 0A-Ext.1.d: Add content hash calculation for complete model fingerprinting
+- [x] 0A-Ext.1.d: Add content hash calculation for complete model fingerprinting ⚠️ **REQUIRES PHASE 2C FIX**
 - [x] 0A-Ext.1.e: Create comprehensive validation for complete model structure integrity
 
 ### Task 0A-Ext.2: Enhanced Registry Schema with Atomic Operations ⚠️ **ATOMIC SAFETY**

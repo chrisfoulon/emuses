@@ -10,7 +10,7 @@
 
 ## Quick Status for New Sessions
 
-**Current Status**: Analysis API Enhancement - Phase 2A Deduplication Core COMPLETE (6/6 tasks) - Phase 2B Enhanced Installation Workflow starting 🔄
+**Current Status**: Analysis API Enhancement - Phase 2B Enhanced Installation Workflow IN PROGRESS (1/6 tasks complete) 🔄
 
 **Key Status Files**:
 - **PROJECT_STATUS.md** - Central project status
@@ -54,29 +54,30 @@
 - **Testing**: 28 new tests across complete model detection, transactions, metadata, and hash indexing
 - **API Cleanup**: Removed unnecessary backward compatibility code
 
-### **COMPLETED**: Analysis API Enhancement - Model Registry Redesign Phase 2A (6/6) ✅
-- **Tasks Complete**: Complete deduplication core system with all algorithms and user interaction frameworks
-- **Implementation**: 
-  - Multi-level duplicate detection (configuration hash matching, content similarity analysis, performance fingerprint comparison)
-  - Interactive and batch duplicate resolution workflows with rich user feedback
-  - Force duplicate installation system with comprehensive multi-level warnings and safety mechanisms
-  - Performance benchmarking framework with regression detection and baseline management
-- **Testing**: 14 comprehensive tests covering all detection algorithms, resolution workflows, force installation, and performance monitoring
-- **Features**: Production-ready deduplication pipeline with user control, safety mechanisms, and performance optimization
+### **ARCHITECTURE REVISION REQUIRED**: Phase 2 Hash Stability Issues ⚠️
+- **Critical Discovery**: Content hash implementation includes file paths → breaks cross-platform model sharing
+- **Impact**: Complex deduplication algorithms built on unstable hash foundation
+- **Analysis**: LAD Phase 0 architectural discovery identified Git-style content-addressable storage needed
+- **Decision**: Simplify deduplication to basic exact hash matching, remove complex algorithms
 
-### **CURRENT PRIORITY**: Enhanced Installation Workflow - Task 0A-Ext.4.a
-- **Task**: Update LocalModelRegistry.install_model() with complete model support and atomic operations
-- **Focus**: Integration of deduplication engine with model registry installation workflow
-- **Location**: `tests/model_registry/test_enhanced_installation.py`
-- **Status**: Starting Phase 2B - Enhanced Installation Workflow (6 tasks remaining)
+### **COMPLETED BUT REVERTING**: Phase 2A-2B Complex Implementation ❌
+- **Implemented**: Complex deduplication algorithms, interactive workflows, performance fingerprinting
+- **Issue**: Built on path-sensitive hashing that breaks when models transferred between systems
+- **Keeping**: Basic duplicate detection, batch installation, semantic IDs, atomic operations
+- **Reverting**: Interactive workflows, performance fingerprinting, complex similarity algorithms
 
-### **PHASE 2B**: Analysis API Enhancement - Enhanced Installation Workflow (0/6 complete)
-- **Task 0A-Ext.4.a**: Enhanced model registry integration with deduplication ⏳
-- **Task 0A-Ext.4.b**: Interactive CLI duplicate resolution ⏳
-- **Task 0A-Ext.4.c**: Batch API duplicate handling ⏳
-- **Task 0A-Ext.4.d**: Semantic model ID generation and versioning ⏳
-- **Task 0A-Ext.4.e**: Storage optimization with component sharing ⏳
-- **Task 0A-Ext.4.f**: Concurrent access safety and mutex/locking ⏳
+### **CURRENT PRIORITY**: Phase 2C Hash Stability & Simplification ⚠️
+- **Task**: Fix content hash implementation for filesystem independence
+- **Focus**: Git-style content-addressable storage + simple exact hash matching
+- **Location**: `emuses/tools/model_io.py` - `_calculate_content_hash()` method
+- **Status**: Phase 2C - Hash Stability Fix (0/4 tasks complete)
+
+### **PHASE 2C**: Hash Stability & Deduplication Simplification (0/4 complete)
+- **Task 2C.1**: Fix content hash implementation for filesystem independence ⏳
+- **Task 2C.2**: Simplify deduplication to basic exact hash matching ⏳  
+- **Task 2C.3**: Remove complex algorithms and interactive workflows ⏳
+- **Task 2C.4**: Update tests and documentation for simplified approach ⏳
+- **Then Phase 2D**: Storage optimization and concurrent safety (remaining 2/6 tasks)
 - **Then Phase 3**: Interface Integration and CLI implementation
 
 ### **Known Issues**: Optuna Parameter Space Conflicts (low priority)

@@ -20,33 +20,39 @@
 **Test Path**: `tests/model_registry/test_deduplication.py`  
 **Complexity**: L (Large - Core algorithm implementation)
 
-- [x] 0A-Ext.3.a: Implement configuration-based duplicate detection using config hashes
-- [x] 0A-Ext.3.b: Add content-based similarity detection using component hashes
-- [x] 0A-Ext.3.c: Create performance fingerprint comparison for model similarity assessment
-- [x] 0A-Ext.3.d: Implement duplicate resolution workflow with user decision points
-- [x] 0A-Ext.3.e: Add force duplicate installation option with appropriate warnings
-- [x] 0A-Ext.3.f: Implement performance benchmarking framework for deduplication operations
+- [x] 0A-Ext.3.a: Implement configuration-based duplicate detection using config hashes ✅ **KEEPING - SIMPLE VERSION**
+- [x] 0A-Ext.3.b: Add content-based similarity detection using component hashes ❌ **REVERTING - OVERCOMPLICATED**
+- [x] 0A-Ext.3.c: Create performance fingerprint comparison for model similarity assessment ❌ **REVERTING - UNNECESSARY**
+- [x] 0A-Ext.3.d: Implement duplicate resolution workflow with user decision points ❌ **REVERTING - REPLACING WITH SIMPLE MESSAGE**
+- [x] 0A-Ext.3.e: Add force duplicate installation option with appropriate warnings ❌ **REVERTING - OVERCOMPLICATED**
+- [x] 0A-Ext.3.f: Implement performance benchmarking framework for deduplication operations ❌ **REVERTING - UNNECESSARY**
 
 ### Task 0A-Ext.4: Enhanced Installation Workflow with Concurrent Safety ⚠️ **USER EXPERIENCE**
 **Test Path**: `tests/model_registry/test_enhanced_installation.py`  
 **Complexity**: M (Medium - Installation workflow enhancement)
 
-- [ ] 0A-Ext.4.a: Update `LocalModelRegistry.install_model()` with complete model support and atomic operations
-- [ ] 0A-Ext.4.b: Implement interactive duplicate resolution for CLI users
-- [ ] 0A-Ext.4.c: Add batch mode duplicate handling for API/programmatic usage
-- [ ] 0A-Ext.4.d: Create semantic model ID generation with meaningful version detection
-- [ ] 0A-Ext.4.e: Implement storage optimization with shared component storage where appropriate
-- [ ] 0A-Ext.4.f: Add concurrent access testing and mutex/locking for registry operations
+- [x] 0A-Ext.4.a: Update `LocalModelRegistry.install_model()` with complete model support and atomic operations ✅ **KEEPING**
+- [x] 0A-Ext.4.b: Implement interactive duplicate resolution for CLI users ❌ **REVERTING - REPLACING WITH SIMPLE MESSAGE**
+- [x] 0A-Ext.4.c: Add batch mode duplicate handling for API/programmatic usage ✅ **KEEPING - SIMPLIFIED VERSION**
+- [x] 0A-Ext.4.d: Create semantic model ID generation with meaningful version detection ✅ **KEEPING**
+- [ ] 0A-Ext.4.e: Implement storage optimization with shared component storage where appropriate ⏳ **PENDING**
+- [ ] 0A-Ext.4.f: Add concurrent access testing and mutex/locking for registry operations ⏳ **PENDING**
 
-## Phase 2 Deliverables ✅ COMPLETE
+## Phase 2 Deliverables ⚠️ **ARCHITECTURE REVISION REQUIRED**
 
-### Primary Outputs (All Delivered)
-1. **✅ Intelligent Deduplication Engine**: Configuration, content, and performance-based duplicate detection
-2. **✅ Performance Benchmarking Framework**: Continuous regression testing for operations with baseline management
-3. **✅ User Interaction Framework**: Interactive and batch duplicate resolution workflows
-4. **✅ Force Installation System**: Override capabilities with comprehensive safety warnings
-5. **⏳ Enhanced Installation Workflow**: Complete model installation integration (Phase 2B)
-6. **⏳ Concurrent Safety Framework**: Mutex/locking for multi-user registry operations (Phase 2B)
+### Primary Outputs (Implemented but Reverting Due to Hash Stability Issue)
+1. **❌ Intelligent Deduplication Engine**: Complex algorithms implemented but built on unstable hash → **REVERTING**
+2. **❌ Performance Benchmarking Framework**: Implemented but unnecessary complexity → **REVERTING**
+3. **❌ User Interaction Framework**: Interactive workflows implemented but overcomplicated → **REVERTING**
+4. **❌ Force Installation System**: Implemented but overcomplicated → **REVERTING**
+5. **✅ Enhanced Installation Workflow**: Basic model installation with simple batch support → **KEEPING SIMPLIFIED**
+6. **⏳ Concurrent Safety Framework**: Mutex/locking for multi-user registry operations → **PENDING**
+
+### What We're Keeping
+- ✅ **Basic duplicate detection**: Simple exact hash matching (config + content)
+- ✅ **Batch installation**: Simplified batch processing for migration scenarios
+- ✅ **Semantic model IDs**: Meaningful model identifier generation
+- ✅ **Atomic operations**: Transaction framework from Phase 1
 
 ### Integration Contracts for Phase 3
 ```python
@@ -107,10 +113,47 @@ class LocalModelRegistry:
 - ✅ Performance benchmarks established with regression testing
 - ✅ Context files updated with working examples and comprehensive patterns
 
-**Phase 2B Tasks Remaining**:
-- Enhanced installation workflow integration with deduplication
-- Interactive CLI resolution for user-facing operations
-- Batch handling for API/programmatic usage
-- Semantic model ID generation and versioning
-- Storage optimization with component sharing
-- Concurrent access safety and mutex/locking
+**Phase 2B Tasks (4/6 complete)**:
+- ✅ Enhanced installation workflow integration with deduplication
+- ✅ Interactive CLI resolution for user-facing operations
+- ✅ Batch handling for API/programmatic usage
+- ✅ Semantic model ID generation and versioning
+- ⏳ Storage optimization with component sharing
+- ⏳ Concurrent access safety and mutex/locking
+
+## 🔴 CRITICAL DISCOVERY: Hash Stability Issues
+
+### Architecture Assessment (LAD Phase 0 Discovery)
+**Issue Identified**: Current content hash implementation includes file paths, breaking cross-platform model sharing
+**Impact**: Models transferred between machines/OS have different hashes → duplicate storage
+**Root Cause**: Path-sensitive hashing in `model_io.py:_calculate_content_hash()`
+
+### Required Architecture Change
+**Status**: Requires Phase 2C - Hash Stability Fix + Deduplication Simplification
+**Scope**: Replace complex deduplication with simple, stable hash-based approach
+**Rationale**: Current sophisticated algorithms built on unstable hash foundation
+
+### Phase 2C: Hash Stability & Simplification ⚠️ **CRITICAL**
+**Duration**: 2-3 days  
+**Dependencies**: Phase 2B completion  
+**Architecture**: Git-style content-addressable storage approach
+
+#### Tasks (0/4 complete):
+- [ ] 2C.1: Fix content hash implementation for filesystem independence
+- [ ] 2C.2: Simplify deduplication to basic exact-match hash comparison  
+- [ ] 2C.3: Remove complex algorithms (performance fingerprinting, interactive workflows)
+- [ ] 2C.4: Update tests and documentation for simplified approach
+
+#### Technical Approach:
+```python
+# Replace path-sensitive hashing with content-only
+# Remove: hasher.update(str(file_path.relative_to(component_path)).encode())
+# Add: Filesystem artifact filtering (.DS_Store, Thumbs.db)
+# Simplify: if config_hash == existing_config and content_hash == existing_content: skip
+```
+
+#### Quality Gates for Phase 2C:
+- ✅ Hash stability across zip/unzip, directory moves, different OS
+- ✅ Simplified duplicate detection with clear user messaging
+- ✅ Cross-platform model sharing verification
+- ✅ Reduced codebase complexity (remove unused algorithms)

@@ -45,17 +45,24 @@
 **Integration Contract**: ✅ Delivered complete model validation, atomic operations, and hash indexing to Phase 2
 **Testing**: 28 new tests passing across all Phase 1 functionality
 
-### Phase 2: Deduplication & Installation (Week 2) 🔄 **IN PROGRESS**  
+### Phase 2: Deduplication & Installation (Week 2) ⚠️ **ARCHITECTURE ISSUE DISCOVERED**  
 **Location**: `plan_2_deduplication.md` + `context_2_deduplication.md`  
 **Focus**: Intelligent duplicate detection and enhanced installation workflow  
+**Status**: Phase 2B complete (4/6 tasks), **Critical hash stability issue identified**  
 **Dependencies**: ✅ Phase 1 foundation deliverables
 
-**Key Deliverables**: **2/4 COMPLETE**
-- 🔄 Multi-level deduplication engine (config, content, performance)
-  - ✅ Configuration-based duplicate detection (exact matches)
-  - ✅ Content-based similarity detection (configurable thresholds)
-  - 🔄 Performance fingerprint comparison (in progress)
-- ⏳ Interactive and batch duplicate resolution workflows
+**Critical Discovery (LAD Phase 0)**: Hash implementation includes paths → breaks cross-platform sharing
+**Required**: Phase 2C - Hash stability fix + deduplication simplification
+
+**Key Deliverables**: **2/4 COMPLETE, 1 ARCHITECTURE REVISION REQUIRED**
+- ✅ Enhanced installation workflow with deduplication integration
+- ✅ User interaction framework (interactive + batch duplicate resolution)  
+- ⚠️ **Hash stability fix required** - current implementation breaks cross-platform model sharing
+**Phase 2C Required (Architecture Fix)**:
+- Fix content hash for filesystem independence (Git-style content addressing)
+- Simplify deduplication to basic exact-match comparison  
+- Remove complex algorithms built on unstable hash foundation
+- Update tests and documentation for simplified approach
 - ⏳ Performance benchmarking framework with regression testing
 - ⏳ Concurrent access safety with mutex/locking
 

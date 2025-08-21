@@ -497,3 +497,32 @@ Phase 2 provides Phase 3 with:
 - **Documentation**: Complete implementation documentation with examples and integration patterns
 
 **READY FOR**: Phase 2B Enhanced Installation Workflow integration with LocalModelRegistry
+
+---
+
+## 🔴 CRITICAL UPDATE: Hash Stability Issue Discovered
+
+**Date**: 2025-08-21  
+**Scope**: Architecture assessment via LAD Phase 0 discovery  
+**Impact**: Requires Phase 2C before proceeding to Phase 3
+
+### Issue Summary
+Current content hash implementation includes file paths, causing hash instability across:
+- Different filesystems and operating systems
+- Model transfers (zip/unzip, cloud storage)
+- Directory moves and renames
+
+### Solution Approach
+- **Fix**: Replace path-sensitive hashing with Git-style content-only approach
+- **Simplify**: Replace complex deduplication algorithms with simple exact-match detection
+- **Maintain**: Essential features (batch install, atomic operations, model detection)
+
+### Next Phase Required
+**Phase 2C**: Hash Stability & Deduplication Simplification
+**Context**: See `context_2c_hash_stability.md` for detailed implementation plan
+**Duration**: 2-3 days
+**Architecture**: Content-addressable storage (proven Git pattern)
+
+---
+*Created following LAD methodology - provides implementation-ready context*
+*Updated with critical architectural discovery requiring Phase 2C*

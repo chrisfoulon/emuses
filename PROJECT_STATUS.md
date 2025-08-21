@@ -9,27 +9,23 @@
 ## 🎯 CURRENT FOCUS (Updated 2025-08-21)
 
 ### **NEXT PRIORITIES**:
-- **Priority 1**: Analysis API Enhancement - Model Registry Redesign 📋 **ACTIVE**
+- **Priority 1**: Analysis API Enhancement - Model Registry Redesign 📋 **ACTIVE** ⚠️ **ARCHITECTURE REVISION**
   - **Sub-Plan 0A-Extended**: Complete EMUSES Model Registry Redesign (3 weeks, 3 phases)
   - **Phase 1 COMPLETE**: Foundation & Atomic Operations ✅
-    - Complete EMUSES model detection and validation
-    - Atomic transaction framework with rollback capability
-    - Enhanced metadata storage with component tracking and hashes
-    - Configuration and content hash indexing for duplicate detection
-  - **Phase 2A COMPLETE**: Deduplication Core System (6/6 tasks complete) ✅
-    - Configuration-based duplicate detection ✅
-    - Content-based similarity detection ✅
-    - Performance fingerprint comparison ✅
-    - Duplicate resolution workflow with user decision points ✅
-    - Force duplicate installation with warnings ✅
-    - Performance benchmarking framework ✅
-  - **Phase 2B IN PROGRESS**: Enhanced Installation Workflow (0/6 tasks complete)
-    - Enhanced model registry integration with deduplication
-    - Interactive CLI duplicate resolution
-    - Batch API duplicate handling
-    - Semantic model ID generation and versioning
-    - Storage optimization with component sharing
-    - Concurrent access safety and mutex/locking
+    - Complete EMUSES model detection and validation ✅
+    - Atomic transaction framework with rollback capability ✅
+    - Enhanced metadata storage with component tracking and hashes ✅
+    - Configuration and content hash indexing for duplicate detection ✅
+    - ⚠️ Content hash implementation requires fix for cross-platform stability
+  - **Phase 2 ARCHITECTURE REVISION**: Discovered hash stability issues requiring simplification
+    - **Keeping**: Basic duplicate detection, batch installation, semantic IDs, atomic operations ✅
+    - **Reverting**: Complex deduplication algorithms, interactive workflows, performance fingerprinting ❌
+    - **Issue**: Path-sensitive hashing breaks cross-platform model sharing
+  - **Phase 2C REQUIRED**: Hash Stability & Deduplication Simplification (0/4 tasks complete)
+    - ⏳ Fix content hash implementation for filesystem independence
+    - ⏳ Simplify deduplication to basic exact hash matching
+    - ⏳ Remove complex algorithms and interactive workflows
+    - ⏳ Update tests and documentation for simplified approach
   - **Location**: `dev-docs/analysis-api/model-registry-redesign/` with LAD-compliant planning
 - **Priority 2**: Analysis API Enhancement - Core Features 📋 **PLANNED**
   - FastAPI endpoints and CLI commands for effect size map analysis
@@ -52,13 +48,13 @@
   - Force duplicate installation with comprehensive multi-level warnings and safety mechanisms
   - Performance benchmarking framework with regression detection and baseline management
   - 14 new tests passing (complete coverage of detection, resolution, force installation, and benchmarking)
-- **Model Registry Redesign - Phase 2B**: Enhanced Installation Workflow (0/6 complete) ⏳
-  - Integration of deduplication engine with LocalModelRegistry.install_model()
-  - Interactive CLI duplicate resolution for user-facing operations
-  - Batch API duplicate handling for programmatic usage
-  - Semantic model ID generation with meaningful versioning
-  - Storage optimization with shared component storage
-  - Concurrent access safety with mutex/locking for multi-user operations
+- **Model Registry Redesign - Phase 2B**: Enhanced Installation Workflow (1/6 complete) ⏳
+  - ✅ Integration of deduplication engine with LocalModelRegistry.install_model()
+  - ⏳ Interactive CLI duplicate resolution for user-facing operations
+  - ⏳ Batch API duplicate handling for programmatic usage
+  - ⏳ Semantic model ID generation with meaningful versioning
+  - ⏳ Storage optimization with shared component storage
+  - ⏳ Concurrent access safety with mutex/locking for multi-user operations
 - **Sub-Plan 0A**: Analysis API Enhancement Critical Infrastructure Fixes ✅
   - ModelIOManager missing methods implementation (validate_model, install_model)
   - CI pipeline dependency fixes (fastapi_users ModuleNotFoundError)
