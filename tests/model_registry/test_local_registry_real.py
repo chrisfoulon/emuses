@@ -214,7 +214,7 @@ class TestLocalModelRegistryIntegration:
         
         try:
             # This should work - ModelIOManager should generate a manifest
-            result = registry.install_model(model_dir, name="no_manifest_test")
+            result = registry.install_model(model_dir, model_name="no_manifest_test")
             assert result["status"] == "success"
             
             # Verify the model was installed with generated metadata
@@ -290,11 +290,11 @@ class TestLocalModelRegistryIntegration:
     def test_concurrent_model_operations(self, registry, sklearn_model_dir):
         """Test that model operations work correctly when performed in sequence."""
         # Install model
-        result = registry.install_model(sklearn_model_dir, name="concurrent_test_1")
+        result = registry.install_model(sklearn_model_dir, model_name="concurrent_test_1")
         model_id_1 = result["model_id"]
         
         # Install same model again with different name
-        result = registry.install_model(sklearn_model_dir, name="concurrent_test_2")
+        result = registry.install_model(sklearn_model_dir, model_name="concurrent_test_2")
         model_id_2 = result["model_id"]
         
         # Both should exist and be different

@@ -20,21 +20,35 @@
 **Test Path**: `tests/model_registry/test_complete_model_detection.py`  
 **Complexity**: L (Large - Core concept definition)
 
-- [ ] 0A-Ext.1.a: Enhance `ModelIOManager.validate_model()` to detect complete EMUSES models with diverse real pipeline outputs
-- [ ] 0A-Ext.1.b: Add complete model component discovery (UMAP + HDBSCAN + prediction ensembles)
-- [ ] 0A-Ext.1.c: Implement configuration hash extraction from EMUSES pipeline metadata
-- [ ] 0A-Ext.1.d: Add content hash calculation for complete model fingerprinting
-- [ ] 0A-Ext.1.e: Create comprehensive validation for complete model structure integrity
+- [x] 0A-Ext.1.a: Enhance `ModelIOManager.validate_model()` to detect complete EMUSES models with diverse real pipeline outputs
+- [x] 0A-Ext.1.b: Add complete model component discovery (UMAP + HDBSCAN + prediction ensembles)
+- [x] 0A-Ext.1.c: Implement configuration hash extraction from EMUSES pipeline metadata
+- [x] 0A-Ext.1.d: Add content hash calculation for complete model fingerprinting
+- [x] 0A-Ext.1.e: Create comprehensive validation for complete model structure integrity
 
 ### Task 0A-Ext.2: Enhanced Registry Schema with Atomic Operations ⚠️ **ATOMIC SAFETY**
 **Test Path**: `tests/model_registry/test_enhanced_schema.py`  
 **Complexity**: M (Medium - Data structure enhancement)
 
-- [ ] 0A-Ext.2.a: Implement atomic transaction framework for multi-step registry operations
-- [ ] 0A-Ext.2.b: Extend LocalModelRegistry to support complete model entries with rollback capability
-- [ ] 0A-Ext.2.c: Add backward compatibility layer for existing individual component models
-- [ ] 0A-Ext.2.d: Implement enhanced metadata storage with component tracking and hashes
-- [ ] 0A-Ext.2.e: Add configuration and content hash indexing for efficient duplicate detection
+- [x] 0A-Ext.2.a: Implement atomic transaction framework for multi-step registry operations
+- [x] 0A-Ext.2.b: Extend LocalModelRegistry to support complete model entries with rollback capability
+- [x] 0A-Ext.2.c: Add backward compatibility layer for existing individual component models
+- [x] 0A-Ext.2.d: Implement enhanced metadata storage with component tracking and hashes
+- [x] 0A-Ext.2.e: Add configuration and content hash indexing for efficient duplicate detection
+
+### Task 0A-Ext.3: Cleanup - Remove Unnecessary Backward Compatibility ⚡ **CLEANUP**
+**Test Path**: Validate existing tests continue to pass with simplified API  
+**Complexity**: S (Small - API simplification cleanup)
+
+- [x] 0A-Ext.3.a: Remove dual return types from ModelIOManager.validate_model() (always return CompleteModelValidation)
+- [x] 0A-Ext.3.b: Remove dual parameter support from LocalModelRegistry.install_model() (use only model_name, not name)
+- [x] 0A-Ext.3.c: Update all tests to use simplified API (remove return_complete_info, change name→model_name)
+- [x] 0A-Ext.3.d: Remove backward compatibility documentation and comments
+- [x] 0A-Ext.3.e: Remove redundant backward compatibility fields from CompleteModelValidation dataclass
+
+**Rationale**: Since we're not in production, the backward compatibility code added in Phase 1 is unnecessary complexity. This cleanup simplifies the API to a single, clean interface while preserving all functionality.
+
+**Risk**: Very Low - Internal API cleanup only, no functionality changes, comprehensive test coverage will catch any issues.
 
 ## Phase 1 Deliverables
 

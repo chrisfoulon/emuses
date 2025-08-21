@@ -111,6 +111,28 @@ class ModelArtifact:
     filepath: Path
 
 
+@dataclass
+class CompleteModelValidation:
+    """Enhanced validation result for complete EMUSES models.
+    
+    This class provides comprehensive information about EMUSES model
+    structure and validation, supporting complete model detection
+    for both complete EMUSES models and individual component models.
+    """
+    is_complete_model: bool
+    components_found: Dict[str, Path] 
+    configuration_hash: str
+    content_hash: str
+    missing_components: List[str]
+    validation_errors: List[str]
+    
+    # Basic model information
+    name: str
+    version: str
+    type: str
+    description: str
+
+
 class ModelIOManager:
     """
     Centralized model I/O management with versioning and metadata tracking.
@@ -363,19 +385,26 @@ class ModelIOManager:
 
         return deleted
 
-    def validate_model(self, model_path: Path) -> Dict[str, Any]:
+    def validate_model(self, model_path: Path) -> CompleteModelValidation:
         """
-        Validate model directory structure and return manifest information.
+        Validate model directory structure with complete model detection.
 
-        Args:
-            model_path: Path to model directory or file
+        Parameters
+        ----------
+        model_path : Path
+            Path to model directory or file
 
-        Returns:
-            Dict with keys: name, version, type, description, integrity_hash
+        Returns
+        -------
+        CompleteModelValidation
+            Complete validation result with detailed analysis
 
-        Raises:
-            ValueError: If model structure is invalid
-            FileNotFoundError: If required model files are missing
+        Raises
+        ------
+        ValueError
+            If model structure is invalid
+        FileNotFoundError
+            If required model files are missing
         """
         if not model_path.exists():
             raise FileNotFoundError(f"Model path does not exist: {model_path}")
@@ -383,37 +412,8 @@ class ModelIOManager:
         if model_path.is_file():
             model_path = model_path.parent
 
-        # Check for existing manifest
-        manifest_path = model_path / "model_manifest.json"
-        if manifest_path.exists():
-            try:
-                with open(manifest_path, 'r') as f:
-                    manifest = json.load(f)
-
-                # Validate manifest structure
-                required_keys = ["name", "version", "model_type", "description"]
-                if not all(key in manifest for key in required_keys):
-                    raise ValueError(f"Invalid manifest structure in {manifest_path}")
-
-                # Verify file integrity if hash present
-                if "integrity_hash" in manifest:
-                    current_hash = self._calculate_directory_hash(model_path)
-                    if current_hash != manifest["integrity_hash"]:
-                        logger.warning(f"Integrity hash mismatch for {model_path}")
-
-                return {
-                    "name": manifest["name"],
-                    "version": manifest["version"],
-                    "type": manifest["model_type"],
-                    "description": manifest["description"]
-                }
-
-            except (json.JSONDecodeError, IOError) as e:
-                raise ValueError(f"Failed to read manifest: {str(e)}")
-
-        else:
-            # Generate manifest from model files
-            return self._generate_manifest_from_directory(model_path)
+        # Perform complete model analysis
+        return self._analyze_complete_model_structure(model_path)
 
     def install_model(self, source_path: Path, destination_path: Path,
                       name: Optional[str] = None) -> str:
@@ -434,10 +434,10 @@ class ModelIOManager:
             FileExistsError: If model already exists and force=False
         """
         # Validate source model
-        manifest = self.validate_model(source_path)
+        validation_result = self.validate_model(source_path)
 
         # Generate unique model ID
-        model_name = name or manifest["name"]
+        model_name = name or validation_result.name
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         model_id = f"{model_name}_{timestamp}_{uuid.uuid4().hex[:8]}"
 
@@ -460,8 +460,17 @@ class ModelIOManager:
 
             # Update manifest with installation metadata
             manifest_path = target_path / "model_manifest.json"
+            
+            # Create manifest from validation result
+            base_manifest = {
+                "name": validation_result.name,
+                "version": validation_result.version,
+                "type": validation_result.type,
+                "description": validation_result.description
+            }
+            
             updated_manifest = {
-                **manifest,
+                **base_manifest,
                 "installed_at": datetime.now(timezone.utc).isoformat() + "Z",
                 "model_id": model_id,
                 "installation_path": str(target_path),
@@ -509,6 +518,230 @@ class ModelIOManager:
                 hasher.update(str(file_path.relative_to(directory)).encode())
 
         return hasher.hexdigest()
+
+    def _analyze_complete_model_structure(self, model_path: Path) -> CompleteModelValidation:
+        """
+        Analyze directory structure for complete EMUSES model components.
+        
+        Detects UMAP, HDBSCAN, and prediction components, calculates hashes,
+        and provides comprehensive validation information.
+
+        Parameters
+        ----------
+        model_path : Path
+            Path to model directory to analyze
+
+        Returns
+        -------
+        CompleteModelValidation
+            Complete analysis result with component detection and hashes
+        """
+        components_found = {}
+        missing_components = []
+        validation_errors = []
+        
+        # Load manifest for metadata
+        try:
+            manifest = self._load_or_generate_manifest(model_path)
+        except ValueError as e:
+            # Handle directories with no model files
+            validation_errors.append(f"No model files found: {str(e)}")
+            manifest = {
+                "name": model_path.name,
+                "version": "1.0.0",
+                "model_type": "unknown",
+                "description": f"Empty directory: {model_path.name}"
+            }
+        
+        # Detect UMAP components
+        umap_component = self._detect_umap_component(model_path)
+        if umap_component:
+            components_found["umap"] = umap_component
+        else:
+            missing_components.append("umap")
+        
+        # Detect HDBSCAN components
+        hdbscan_component = self._detect_hdbscan_component(model_path)
+        if hdbscan_component:
+            components_found["hdbscan"] = hdbscan_component
+        else:
+            missing_components.append("hdbscan")
+        
+        # Detect prediction components
+        prediction_component = self._detect_prediction_component(model_path)
+        if prediction_component:
+            components_found["prediction"] = prediction_component
+        else:
+            missing_components.append("prediction")
+        
+        # Determine if this is a complete model
+        is_complete = len(missing_components) == 0
+        
+        # Calculate configuration hash from manifest
+        config_hash = self._extract_configuration_hash(manifest)
+        
+        # Calculate content hash from all components
+        content_hash = self._calculate_content_hash(model_path, components_found)
+        
+        # Adjust model type for complete models
+        model_type = manifest.get("model_type", "unknown")
+        if is_complete and model_type not in ["complete_emuses_model"]:
+            model_type = "complete_emuses_model"
+        
+        return CompleteModelValidation(
+            is_complete_model=is_complete,
+            components_found=components_found,
+            configuration_hash=config_hash,
+            content_hash=content_hash,
+            missing_components=missing_components,
+            validation_errors=validation_errors,
+            name=manifest.get("name", "unknown_model"),
+            version=manifest.get("version", "1.0.0"),
+            type=model_type,
+            description=manifest.get("description", "")
+        )
+    
+    def _load_or_generate_manifest(self, model_path: Path) -> Dict[str, Any]:
+        """Load existing manifest or generate one from directory structure."""
+        # Try standard manifest locations
+        manifest_candidates = [
+            model_path / "manifest.json",
+            model_path / "model_manifest.json"
+        ]
+        
+        for manifest_path in manifest_candidates:
+            if manifest_path.exists():
+                try:
+                    with open(manifest_path, 'r') as f:
+                        manifest = json.load(f)
+                    logger.debug(f"Loaded manifest from {manifest_path}")
+                    return manifest
+                except (json.JSONDecodeError, IOError) as e:
+                    logger.warning(f"Failed to read manifest {manifest_path}: {e}")
+                    continue
+        
+        # Generate manifest from directory structure
+        logger.debug(f"Generating manifest for {model_path}")
+        return self._generate_manifest_from_directory(model_path)
+    
+    def _detect_umap_component(self, model_path: Path) -> Optional[Path]:
+        """Detect UMAP model component in directory."""
+        # Standard patterns for UMAP models
+        umap_patterns = [
+            "umap_model.pkl",
+            "*umap*.pkl", 
+            "best_umap_model.pkl",
+            "dimension_reducer.pkl"
+        ]
+        
+        for pattern in umap_patterns:
+            matches = list(model_path.glob(pattern))
+            if matches:
+                return matches[0]  # Return first match
+        
+        return None
+    
+    def _detect_hdbscan_component(self, model_path: Path) -> Optional[Path]:
+        """Detect HDBSCAN model component in directory."""
+        # Standard patterns for HDBSCAN models
+        hdbscan_patterns = [
+            "hdbscan_model.pkl",
+            "*hdbscan*.pkl",
+            "best_hdbscan_model.pkl", 
+            "clustering_model.pkl",
+            "*cluster*.pkl"
+        ]
+        
+        for pattern in hdbscan_patterns:
+            matches = list(model_path.glob(pattern))
+            if matches:
+                return matches[0]  # Return first match
+        
+        return None
+    
+    def _detect_prediction_component(self, model_path: Path) -> Optional[Path]:
+        """Detect prediction model component(s) in directory."""
+        # Check for prediction ensemble directory
+        prediction_dirs = [
+            model_path / "prediction_ensemble",
+            model_path / "predictions",
+            model_path / "models"
+        ]
+        
+        for pred_dir in prediction_dirs:
+            if pred_dir.exists() and pred_dir.is_dir():
+                # Check if directory contains model files
+                model_files = list(pred_dir.glob("*.pkl")) + list(pred_dir.glob("*.joblib"))
+                if model_files:
+                    return pred_dir
+        
+        # Check for individual prediction model files
+        prediction_patterns = [
+            "*prediction*.pkl",
+            "ensemble_model.pkl",
+            "best_prediction_model*.pkl"
+        ]
+        
+        for pattern in prediction_patterns:
+            matches = list(model_path.glob(pattern))
+            if matches:
+                return matches[0]
+        
+        return None
+    
+    def _extract_configuration_hash(self, manifest: Dict[str, Any]) -> str:
+        """Extract configuration hash from manifest metadata."""
+        # Look for pipeline configuration in manifest
+        config_sources = [
+            manifest.get("pipeline_config", {}),
+            manifest.get("config", {}),
+            manifest.get("training_config", {}),
+            manifest.get("parameters", {})
+        ]
+        
+        # Combine all configuration sources
+        combined_config = {}
+        for config in config_sources:
+            if isinstance(config, dict):
+                combined_config.update(config)
+        
+        # Generate hash from configuration
+        if combined_config:
+            config_str = json.dumps(combined_config, sort_keys=True, default=str)
+            return hashlib.sha256(config_str.encode()).hexdigest()[:16]
+        
+        # Fallback: generate hash from manifest metadata
+        stable_fields = {
+            "name": manifest.get("name", ""),
+            "version": manifest.get("version", ""),
+            "model_type": manifest.get("model_type", "")
+        }
+        config_str = json.dumps(stable_fields, sort_keys=True)
+        return hashlib.sha256(config_str.encode()).hexdigest()[:16]
+    
+    def _calculate_content_hash(self, model_path: Path, components: Dict[str, Path]) -> str:
+        """Calculate content hash from model components."""
+        hasher = hashlib.sha256()
+        
+        # Hash each component file/directory
+        for component_type, component_path in sorted(components.items()):
+            hasher.update(component_type.encode())
+            
+            if component_path.is_file():
+                # Hash file contents
+                with open(component_path, 'rb') as f:
+                    for chunk in iter(lambda: f.read(4096), b""):
+                        hasher.update(chunk)
+            elif component_path.is_dir():
+                # Hash directory contents recursively
+                for file_path in sorted(component_path.rglob("*")):
+                    if file_path.is_file():
+                        hasher.update(str(file_path.relative_to(component_path)).encode())
+                        with open(file_path, 'rb') as f:
+                            for chunk in iter(lambda: f.read(4096), b""):
+                                hasher.update(chunk)
+        
+        return hasher.hexdigest()[:16]
 
     def _create_metadata(
         self,

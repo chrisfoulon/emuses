@@ -10,7 +10,7 @@ from pathlib import Path
 from unittest.mock import Mock, patch
 
 from emuses.tools.local_model_registry import LocalModelRegistry
-from emuses.tools.model_io import ModelIOManager
+from emuses.tools.model_io import ModelIOManager, CompleteModelValidation
 
 
 class TestLocalModelRegistryInitialization:
@@ -102,13 +102,19 @@ class TestLocalModelRegistryInstallation:
         with patch('emuses.tools.local_model_registry.ModelIOManager') as mock:
             mock_instance = Mock()
             mock.return_value = mock_instance
-            # Mock validate_model to return valid manifest
-            mock_instance.validate_model.return_value = {
-                "name": "test_model",
-                "version": "1.0.0",
-                "type": "classification",
-                "description": "Test model for unit testing"
-            }
+            # Mock validate_model to return CompleteModelValidation object
+            mock_instance.validate_model.return_value = CompleteModelValidation(
+                name="test_model",
+                version="1.0.0",
+                type="classification", 
+                description="Test model for unit testing",
+                is_complete_model=False,
+                components_found={},
+                missing_components=["umap", "hdbscan", "prediction"],
+                validation_errors=[],
+                configuration_hash="test_config_hash",
+                content_hash="test_content_hash"
+            )
             # Mock install_model to simulate successful installation
             mock_instance.install_model.return_value = "model_12345"
             yield mock_instance
@@ -118,7 +124,7 @@ class TestLocalModelRegistryInstallation:
         with tempfile.NamedTemporaryFile(suffix='.zip') as model_file:
             model_path = Path(model_file.name)
             
-            result = temp_registry.install_model(model_path, name="custom_name")
+            result = temp_registry.install_model(model_path, model_name="custom_name")
             
             # Verify model was validated and installed
             mock_model_io.validate_model.assert_called_once_with(model_path)
@@ -159,7 +165,7 @@ class TestLocalModelRegistryInstallation:
             model_path = Path(model_file.name)
             
             # Install model
-            result = temp_registry.install_model(model_path, name="indexed_model")
+            result = temp_registry.install_model(model_path, model_name="indexed_model")
             
             # Verify model appears in listing
             models = temp_registry.list_models()

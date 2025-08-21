@@ -12,6 +12,8 @@ from pathlib import Path
 from typing import Dict, List, Optional, Any, Tuple, Union
 from datetime import datetime
 from uuid import UUID
+from dataclasses import dataclass, field
+from enum import Enum
 
 from emuses.tools.model_io import ModelIOManager
 from emuses.tools.base_model_registry import BaseModelRegistry
@@ -19,6 +21,38 @@ from emuses.tools.storage_manager import StorageManager
 from emuses.tools.model_registry_metrics import track_list_models, track_install_model, track_search_models, track_get_model_info, track_remove_model, track_model_storage
 
 logger = logging.getLogger(__name__)
+
+
+class TransactionState(Enum):
+    """Transaction state enumeration."""
+    PENDING = "pending"
+    COMMITTED = "committed"
+    ROLLED_BACK = "rolled_back"
+
+
+@dataclass
+class RegistryOperation:
+    """Registry operation with rollback information.
+    
+    Represents a single atomic operation within a registry transaction,
+    including the information needed to rollback the operation if needed.
+    """
+    operation_type: str
+    target_path: Path
+    rollback_info: Dict[str, Any]
+
+
+@dataclass
+class RegistryTransaction:
+    """Atomic registry transaction.
+    
+    Manages a sequence of registry operations that must be executed
+    atomically - either all operations succeed or all are rolled back.
+    """
+    transaction_id: str
+    operations: List[RegistryOperation] = field(default_factory=list)
+    rollback_data: Dict[str, Any] = field(default_factory=dict)
+    state: TransactionState = TransactionState.PENDING
 
 
 class LocalModelRegistry(BaseModelRegistry):
@@ -499,27 +533,23 @@ class LocalModelRegistry(BaseModelRegistry):
                 logger.error(f"Error loading registry index: {e}")
                 return []
     
-    def install_model(self, model_path: Path, name: Optional[str] = None, 
-                     model_name: Optional[str] = None, version: Optional[str] = None,
-                     description: str = "", tags: Optional[List[str]] = None,
+    def install_model(self, model_path: Path, model_name: Optional[str] = None, 
+                     version: Optional[str] = None, description: str = "", 
+                     tags: Optional[List[str]] = None,
                      user_id: Optional[Union[UUID, str]] = None,
                      workspace_id: Optional[Union[UUID, str]] = None,
+                     transaction: Optional[RegistryTransaction] = None,
                      **kwargs) -> Dict[str, Any]:
         """Install a model into the registry.
-        
-        Supports both original signature (model_path, name) and BaseModelRegistry 
-        interface (model_path, model_name, version).
         
         Parameters
         ----------
         model_path : Path
             Path to the model file or directory
-        name : Optional[str]
-            Custom name for the model (original pattern)
         model_name : Optional[str] 
-            Name of the model (BaseModelRegistry pattern)
+            Name of the model. If not provided, uses name from model manifest.
         version : Optional[str]
-            Version string for the model (BaseModelRegistry pattern)
+            Version string for the model. If not provided, uses version from model manifest.
         description : str, default=""
             Description of the model
         tags : Optional[List[str]]
@@ -528,6 +558,9 @@ class LocalModelRegistry(BaseModelRegistry):
             User ID for ownership (ignored in local mode)
         workspace_id : Optional[Union[UUID, str]]
             Workspace ID for workspace association (ignored in local mode)
+        transaction : Optional[RegistryTransaction]
+            Transaction for atomic operations. If provided, changes are not
+            committed until transaction.commit() is called.
         **kwargs
             Additional mode-specific parameters
             
@@ -536,20 +569,12 @@ class LocalModelRegistry(BaseModelRegistry):
         Dict[str, Any]
             Installed model metadata
         """
-        # Determine which pattern is being used
-        if model_name is not None:
-            # New BaseModelRegistry pattern
-            effective_name = model_name
-        elif name is not None:
-            # Original pattern
-            effective_name = name
-            if version is None:
-                version = "1.0.0"  # Default version for old pattern
-        else:
-            # No name provided, use original behavior (name from manifest)
-            effective_name = None
-            if version is None:
-                version = "1.0.0"  # Default version
+        # Use provided model_name or fall back to name from manifest
+        effective_name = model_name
+        
+        # Set default version if not provided
+        if version is None:
+            version = "1.0.0"
         
         user_str = str(user_id) if user_id else None
         
@@ -565,16 +590,33 @@ class LocalModelRegistry(BaseModelRegistry):
                 # Initialize ModelIOManager with the models path
                 model_io = ModelIOManager(self.models_path)
                 
-                # Validate model and get manifest
+                # Validate model and get enhanced information
                 logger.info(f"Validating model at {model_path}")
-                manifest = model_io.validate_model(model_path)
+                validation_result = model_io.validate_model(model_path)
                 
-                # Use provided name or fall back to manifest name
-                final_name = effective_name if effective_name is not None else manifest.get("name", "unnamed_model")
+                # Extract basic manifest information from validation result
+                manifest = {
+                    "name": validation_result.name,
+                    "version": validation_result.version,
+                    "type": validation_result.type,
+                    "description": validation_result.description
+                }
+                
+                # Use provided name or fall back to validation result name
+                final_name = effective_name if effective_name is not None else validation_result.name
                 
                 # Install model using ModelIOManager
                 logger.info(f"Installing model '{final_name}'")
                 model_id = model_io.install_model(model_path, self.models_path, name=effective_name)
+                
+                # Record operation for transaction rollback
+                if transaction:
+                    model_dir = self.models_path / model_id
+                    transaction.operations.append(RegistryOperation(
+                        operation_type="copy_files",
+                        target_path=model_dir,
+                        rollback_info={"model_id": model_id}
+                    ))
                 
                 # Track model storage size for metrics
                 model_dir = self.models_path / model_id
@@ -582,7 +624,7 @@ class LocalModelRegistry(BaseModelRegistry):
                     model_size = sum(f.stat().st_size for f in model_dir.rglob('*') if f.is_file())
                     track_model_storage(model_size, manifest.get("type", "unknown"))
                 
-                # Create model metadata entry
+                # Create model metadata entry with enhanced validation info
                 model_info = {
                     "model_id": model_id,
                     "name": final_name,
@@ -592,13 +634,28 @@ class LocalModelRegistry(BaseModelRegistry):
                     "installed_at": datetime.utcnow().isoformat(),
                     "source_path": str(model_path),
                     "manifest": manifest,
-                    "tags": tags or []
+                    "tags": tags or [],
+                    # Enhanced validation information
+                    "complete_model_info": {
+                        "is_complete_model": validation_result.is_complete_model,
+                        "configuration_hash": validation_result.configuration_hash,
+                        "content_hash": validation_result.content_hash,
+                        "components_found": {k: str(v) for k, v in validation_result.components_found.items()},
+                        "missing_components": validation_result.missing_components,
+                        "validation_errors": validation_result.validation_errors
+                    }
                 }
                 
-                # Update registry index
-                index = self._load_index()
-                index["models"][model_id] = model_info
-                self._save_index(index)
+                if transaction:
+                    # Store index update for later commit
+                    if "pending_index_updates" not in transaction.rollback_data:
+                        transaction.rollback_data["pending_index_updates"] = {}
+                    transaction.rollback_data["pending_index_updates"][model_id] = model_info
+                else:
+                    # Update registry index immediately (backward compatibility)
+                    index = self._load_index()
+                    index["models"][model_id] = model_info
+                    self._save_index(index)
                 
                 logger.info(f"Successfully installed model '{final_name}' with ID {model_id}")
                 
@@ -627,6 +684,14 @@ class LocalModelRegistry(BaseModelRegistry):
                 
             except Exception as e:
                 logger.error(f"Error installing model: {e}")
+                
+                # Rollback transaction on error
+                if transaction:
+                    try:
+                        self.rollback_transaction(transaction)
+                    except Exception as rollback_error:
+                        logger.error(f"Rollback failed: {rollback_error}")
+                
                 return {
                     "status": "error",
                     "message": str(e)
@@ -874,3 +939,310 @@ class LocalModelRegistry(BaseModelRegistry):
                     return {"status": "error", "message": str(e)}
                 else:
                     return False
+
+    # Atomic Transaction Framework
+
+    def begin_transaction(self) -> RegistryTransaction:
+        """
+        Begin a new atomic transaction for registry operations.
+        
+        Returns
+        -------
+        RegistryTransaction
+            New transaction object with unique ID
+        """
+        transaction_id = str(uuid.uuid4())
+        transaction = RegistryTransaction(transaction_id=transaction_id)
+        
+        logger.debug(f"Started registry transaction: {transaction_id}")
+        return transaction
+    
+    def commit_transaction(self, transaction: RegistryTransaction) -> bool:
+        """
+        Commit a transaction, making all pending operations permanent.
+        
+        Parameters
+        ----------
+        transaction : RegistryTransaction
+            Transaction to commit
+            
+        Returns
+        -------
+        bool
+            True if commit succeeded, False otherwise
+        """
+        if transaction.state != TransactionState.PENDING:
+            logger.error(f"Cannot commit transaction {transaction.transaction_id}: state is {transaction.state}")
+            return False
+        
+        try:
+            # Apply all pending index updates atomically
+            if "pending_index_updates" in transaction.rollback_data:
+                index = self._load_index()
+                pending_updates = transaction.rollback_data["pending_index_updates"]
+                
+                # Apply all updates to the index
+                for model_id, model_info in pending_updates.items():
+                    index["models"][model_id] = model_info
+                
+                # Save updated index atomically
+                self._save_index(index)
+            
+            # Mark transaction as committed
+            transaction.state = TransactionState.COMMITTED
+            logger.info(f"Committed transaction {transaction.transaction_id} with {len(transaction.operations)} operations")
+            
+            return True
+            
+        except Exception as e:
+            logger.error(f"Failed to commit transaction {transaction.transaction_id}: {e}")
+            # Attempt rollback
+            try:
+                self.rollback_transaction(transaction)
+            except Exception as rollback_error:
+                logger.error(f"Rollback also failed: {rollback_error}")
+            return False
+    
+    def rollback_transaction(self, transaction: RegistryTransaction) -> bool:
+        """
+        Rollback a transaction, undoing all operations.
+        
+        Parameters
+        ----------
+        transaction : RegistryTransaction
+            Transaction to rollback
+            
+        Returns
+        -------
+        bool
+            True if rollback succeeded, False otherwise
+        """
+        if transaction.state == TransactionState.ROLLED_BACK:
+            logger.warning(f"Transaction {transaction.transaction_id} already rolled back")
+            return True
+        
+        if transaction.state == TransactionState.COMMITTED:
+            logger.error(f"Cannot rollback committed transaction {transaction.transaction_id}")
+            return False
+        
+        try:
+            # Rollback operations in reverse order
+            for operation in reversed(transaction.operations):
+                self._rollback_operation(operation)
+            
+            # Mark transaction as rolled back
+            transaction.state = TransactionState.ROLLED_BACK
+            logger.info(f"Rolled back transaction {transaction.transaction_id}")
+            
+            return True
+            
+        except Exception as e:
+            logger.error(f"Failed to rollback transaction {transaction.transaction_id}: {e}")
+            return False
+    
+    def _rollback_operation(self, operation: RegistryOperation) -> None:
+        """
+        Rollback a specific registry operation.
+        
+        Parameters
+        ----------
+        operation : RegistryOperation
+            Operation to rollback
+        """
+        try:
+            if operation.operation_type == "create_directory":
+                # Remove created directory
+                if operation.target_path.exists():
+                    shutil.rmtree(operation.target_path, ignore_errors=True)
+                    logger.debug(f"Removed directory: {operation.target_path}")
+            
+            elif operation.operation_type == "copy_files":
+                # Remove copied files/directories
+                if operation.target_path.exists():
+                    if operation.target_path.is_dir():
+                        shutil.rmtree(operation.target_path, ignore_errors=True)
+                    else:
+                        operation.target_path.unlink(missing_ok=True)
+                    logger.debug(f"Removed copied files: {operation.target_path}")
+            
+            # Additional operation types can be added here
+            
+        except Exception as e:
+            logger.warning(f"Failed to rollback operation {operation.operation_type} on {operation.target_path}: {e}")
+            # Continue with other operations even if one fails
+
+    # Hash-based Duplicate Detection
+
+    def find_duplicates_by_configuration_hash(self, configuration_hash: str) -> List[Dict[str, Any]]:
+        """
+        Find all models with the given configuration hash.
+        
+        Parameters
+        ----------
+        configuration_hash : str
+            Configuration hash to search for
+            
+        Returns
+        -------
+        List[Dict[str, Any]]
+            List of models with matching configuration hash
+        """
+        try:
+            index = self._load_index()
+            models = index.get("models", {})
+            
+            matching_models = []
+            for model_id, model_info in models.items():
+                complete_info = model_info.get("complete_model_info", {})
+                model_config_hash = complete_info.get("configuration_hash", "")
+                
+                if model_config_hash == configuration_hash:
+                    matching_models.append(model_info)
+            
+            logger.debug(f"Found {len(matching_models)} models with configuration hash {configuration_hash}")
+            return matching_models
+            
+        except Exception as e:
+            logger.error(f"Error finding duplicates by configuration hash: {e}")
+            return []
+    
+    def find_duplicates_by_content_hash(self, content_hash: str) -> List[Dict[str, Any]]:
+        """
+        Find all models with the given content hash.
+        
+        Parameters
+        ----------
+        content_hash : str
+            Content hash to search for
+            
+        Returns
+        -------
+        List[Dict[str, Any]]
+            List of models with matching content hash
+        """
+        try:
+            index = self._load_index()
+            models = index.get("models", {})
+            
+            matching_models = []
+            for model_id, model_info in models.items():
+                complete_info = model_info.get("complete_model_info", {})
+                model_content_hash = complete_info.get("content_hash", "")
+                
+                if model_content_hash == content_hash:
+                    matching_models.append(model_info)
+            
+            logger.debug(f"Found {len(matching_models)} models with content hash {content_hash}")
+            return matching_models
+            
+        except Exception as e:
+            logger.error(f"Error finding duplicates by content hash: {e}")
+            return []
+    
+    def get_duplicate_summary(self) -> Dict[str, Dict[str, List[Dict[str, Any]]]]:
+        """
+        Get a comprehensive summary of all duplicate models in the registry.
+        
+        Returns
+        -------
+        Dict[str, Dict[str, List[Dict[str, Any]]]]
+            Dictionary with 'configuration_duplicates' and 'content_duplicates' keys,
+            each containing hash -> list of models mappings
+        """
+        try:
+            index = self._load_index()
+            models = index.get("models", {})
+            
+            # Group models by configuration hash
+            config_hash_groups = {}
+            content_hash_groups = {}
+            
+            for model_id, model_info in models.items():
+                complete_info = model_info.get("complete_model_info", {})
+                
+                config_hash = complete_info.get("configuration_hash", "")
+                content_hash = complete_info.get("content_hash", "")
+                
+                # Lightweight model info for summary
+                model_summary = {
+                    "model_id": model_info.get("model_id", model_id),
+                    "name": model_info.get("name", "unknown"),
+                    "version": model_info.get("version", "unknown"),
+                    "type": model_info.get("type", "unknown"),
+                    "installed_at": model_info.get("installed_at", "unknown")
+                }
+                
+                # Group by configuration hash
+                if config_hash:
+                    if config_hash not in config_hash_groups:
+                        config_hash_groups[config_hash] = []
+                    config_hash_groups[config_hash].append(model_summary)
+                
+                # Group by content hash
+                if content_hash:
+                    if content_hash not in content_hash_groups:
+                        content_hash_groups[content_hash] = []
+                    content_hash_groups[content_hash].append(model_summary)
+            
+            # Filter to only include groups with duplicates (>1 model)
+            config_duplicates = {h: models for h, models in config_hash_groups.items() if len(models) > 1}
+            content_duplicates = {h: models for h, models in content_hash_groups.items() if len(models) > 1}
+            
+            return {
+                "configuration_duplicates": config_duplicates,
+                "content_duplicates": content_duplicates
+            }
+            
+        except Exception as e:
+            logger.error(f"Error getting duplicate summary: {e}")
+            return {
+                "configuration_duplicates": {},
+                "content_duplicates": {}
+            }
+    
+    def find_potential_duplicates(self, model_id: str) -> Dict[str, List[Dict[str, Any]]]:
+        """
+        Find potential duplicates for a specific model.
+        
+        Parameters
+        ----------
+        model_id : str
+            ID of the model to find duplicates for
+            
+        Returns
+        -------
+        Dict[str, List[Dict[str, Any]]]
+            Dictionary with 'configuration_matches' and 'content_matches' keys
+        """
+        try:
+            model_info = self.get_model_info(model_id)
+            if not model_info:
+                return {"configuration_matches": [], "content_matches": []}
+            
+            complete_info = model_info.get("complete_model_info", {})
+            config_hash = complete_info.get("configuration_hash", "")
+            content_hash = complete_info.get("content_hash", "")
+            
+            config_matches = []
+            content_matches = []
+            
+            if config_hash:
+                config_matches = [
+                    m for m in self.find_duplicates_by_configuration_hash(config_hash)
+                    if m.get("model_id") != model_id
+                ]
+            
+            if content_hash:
+                content_matches = [
+                    m for m in self.find_duplicates_by_content_hash(content_hash)
+                    if m.get("model_id") != model_id
+                ]
+            
+            return {
+                "configuration_matches": config_matches,
+                "content_matches": content_matches
+            }
+            
+        except Exception as e:
+            logger.error(f"Error finding potential duplicates for {model_id}: {e}")
+            return {"configuration_matches": [], "content_matches": []}

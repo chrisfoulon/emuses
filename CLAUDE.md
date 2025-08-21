@@ -10,7 +10,7 @@
 
 ## Quick Status for New Sessions
 
-**Current Status**: Analysis API Enhancement - Model Registry Redesign planning complete, ready for implementation
+**Current Status**: Analysis API Enhancement - Phase 2A Deduplication Core COMPLETE (6/6 tasks) - Phase 2B Enhanced Installation Workflow starting 🔄
 
 **Key Status Files**:
 - **PROJECT_STATUS.md** - Central project status
@@ -34,19 +34,50 @@
 - **FastAPI Documentation Serving**: Unified development server with environment-aware serving
 - **Documentation Organization**: Clear separation of user docs/ vs internal dev-docs/
 - **LAD Compliance**: Separated static guidelines from dynamic project tracking
+- **Analysis API Enhancement - Phase 1**: Complete Model Registry Redesign with atomic operations ✅
+  - Complete EMUSES model detection and validation
+  - Atomic transaction framework with rollback capability
+  - Enhanced metadata storage with component tracking and hashes
+  - Configuration and content hash indexing for duplicate detection
+  - Full backward compatibility with existing individual component models
 
 ## Active Development Context
 
 **Current Branch**: `feature/analysis-api-enhancement`
 **Active Phase**: Analysis API Enhancement development
 
-### **CURRENT PRIORITY**: Analysis API Enhancement - Model Registry Redesign
-- **Sub-Plan**: 0A-Extended (Complete EMUSES Model Registry Redesign)
-- **Duration**: 3 weeks across 3 phases (Foundation → Deduplication → Interface)
-- **Feature Location**: `dev-docs/analysis-api/model-registry-redesign/` with comprehensive LAD planning
-- **Critical Discovery**: Registry must handle complete EMUSES models as cohesive units
-- **Status**: LAD Phase 1d complete - Ready for Phase 1 Foundation implementation
-- **Next Step**: Use `plan_1_foundation.md` with LAD Phase 2 iterative implementation
+### **COMPLETED**: Analysis API Enhancement - Model Registry Redesign Phase 1 ✅
+- **Sub-Plan**: 0A-Extended (Complete EMUSES Model Registry Redesign)  
+- **Phase 1 Status**: COMPLETE - Foundation & Atomic Operations implemented
+- **Feature Location**: `dev-docs/analysis-api/model-registry-redesign/`
+- **Implementation**: Complete model detection, atomic transactions, enhanced metadata, hash indexing
+- **Testing**: 28 new tests across complete model detection, transactions, metadata, and hash indexing
+- **API Cleanup**: Removed unnecessary backward compatibility code
+
+### **COMPLETED**: Analysis API Enhancement - Model Registry Redesign Phase 2A (6/6) ✅
+- **Tasks Complete**: Complete deduplication core system with all algorithms and user interaction frameworks
+- **Implementation**: 
+  - Multi-level duplicate detection (configuration hash matching, content similarity analysis, performance fingerprint comparison)
+  - Interactive and batch duplicate resolution workflows with rich user feedback
+  - Force duplicate installation system with comprehensive multi-level warnings and safety mechanisms
+  - Performance benchmarking framework with regression detection and baseline management
+- **Testing**: 14 comprehensive tests covering all detection algorithms, resolution workflows, force installation, and performance monitoring
+- **Features**: Production-ready deduplication pipeline with user control, safety mechanisms, and performance optimization
+
+### **CURRENT PRIORITY**: Enhanced Installation Workflow - Task 0A-Ext.4.a
+- **Task**: Update LocalModelRegistry.install_model() with complete model support and atomic operations
+- **Focus**: Integration of deduplication engine with model registry installation workflow
+- **Location**: `tests/model_registry/test_enhanced_installation.py`
+- **Status**: Starting Phase 2B - Enhanced Installation Workflow (6 tasks remaining)
+
+### **PHASE 2B**: Analysis API Enhancement - Enhanced Installation Workflow (0/6 complete)
+- **Task 0A-Ext.4.a**: Enhanced model registry integration with deduplication ⏳
+- **Task 0A-Ext.4.b**: Interactive CLI duplicate resolution ⏳
+- **Task 0A-Ext.4.c**: Batch API duplicate handling ⏳
+- **Task 0A-Ext.4.d**: Semantic model ID generation and versioning ⏳
+- **Task 0A-Ext.4.e**: Storage optimization with component sharing ⏳
+- **Task 0A-Ext.4.f**: Concurrent access safety and mutex/locking ⏳
+- **Then Phase 3**: Interface Integration and CLI implementation
 
 ### **Known Issues**: Optuna Parameter Space Conflicts (low priority)
 - **Problem**: EMUSES crashes when changing `--prediction_optim_dict` during resume
@@ -86,5 +117,5 @@
 - See `/scripts/README.md` for comprehensive testing approach
 
 ---
-*Last Updated: 2025-08-20 - Model Registry Redesign planning complete, ready for Phase 1 implementation*
+*Last Updated: 2025-08-21 - Model Registry Redesign Phase 2A complete, Phase 2B enhanced installation workflow starting*
 *Static guidelines in `.lad/CLAUDE.md` | Historical details in `dev-docs/project-history/`*

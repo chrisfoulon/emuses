@@ -6,13 +6,30 @@
 - **Research Labs**: Collaborative model sharing with workspace isolation
 - **Scientific Community**: Public model registry with peer review and benchmarking
 
-## 🎯 CURRENT FOCUS (Updated 2025-08-20)
+## 🎯 CURRENT FOCUS (Updated 2025-08-21)
 
 ### **NEXT PRIORITIES**:
 - **Priority 1**: Analysis API Enhancement - Model Registry Redesign 📋 **ACTIVE**
   - **Sub-Plan 0A-Extended**: Complete EMUSES Model Registry Redesign (3 weeks, 3 phases)
-  - **Critical Discovery**: Registry must handle complete EMUSES models vs individual components
-  - **Implementation**: 3-phase approach - Foundation → Deduplication → Interface Integration
+  - **Phase 1 COMPLETE**: Foundation & Atomic Operations ✅
+    - Complete EMUSES model detection and validation
+    - Atomic transaction framework with rollback capability
+    - Enhanced metadata storage with component tracking and hashes
+    - Configuration and content hash indexing for duplicate detection
+  - **Phase 2A COMPLETE**: Deduplication Core System (6/6 tasks complete) ✅
+    - Configuration-based duplicate detection ✅
+    - Content-based similarity detection ✅
+    - Performance fingerprint comparison ✅
+    - Duplicate resolution workflow with user decision points ✅
+    - Force duplicate installation with warnings ✅
+    - Performance benchmarking framework ✅
+  - **Phase 2B IN PROGRESS**: Enhanced Installation Workflow (0/6 tasks complete)
+    - Enhanced model registry integration with deduplication
+    - Interactive CLI duplicate resolution
+    - Batch API duplicate handling
+    - Semantic model ID generation and versioning
+    - Storage optimization with component sharing
+    - Concurrent access safety and mutex/locking
   - **Location**: `dev-docs/analysis-api/model-registry-redesign/` with LAD-compliant planning
 - **Priority 2**: Analysis API Enhancement - Core Features 📋 **PLANNED**
   - FastAPI endpoints and CLI commands for effect size map analysis
@@ -20,11 +37,32 @@
 - **Priority 3**: CI/CD Task 4.2 Multi-environment deployment automation 📋 **PLANNED**
 
 ### **RECENTLY COMPLETED**:
+- **Model Registry Redesign - Phase 1**: Foundation & Atomic Operations ✅
+  - Complete EMUSES model detection (treats models as cohesive units)
+  - Atomic transaction framework with rollback capability
+  - Enhanced metadata storage with component tracking
+  - Configuration and content hash indexing for duplicate detection
+  - API cleanup - removed unnecessary backward compatibility
+  - 28 new tests passing (complete model detection, transactions, metadata, hash indexing)
+- **Model Registry Redesign - Phase 2A**: Deduplication Core System (6/6 complete) ✅
+  - Configuration-based duplicate detection using config hashes with exact matching
+  - Content-based similarity detection with configurable thresholds and hash algorithms
+  - Performance fingerprint comparison with weighted multi-metric analysis
+  - Duplicate resolution workflow (interactive + batch policies) with rich user feedback
+  - Force duplicate installation with comprehensive multi-level warnings and safety mechanisms
+  - Performance benchmarking framework with regression detection and baseline management
+  - 14 new tests passing (complete coverage of detection, resolution, force installation, and benchmarking)
+- **Model Registry Redesign - Phase 2B**: Enhanced Installation Workflow (0/6 complete) ⏳
+  - Integration of deduplication engine with LocalModelRegistry.install_model()
+  - Interactive CLI duplicate resolution for user-facing operations
+  - Batch API duplicate handling for programmatic usage
+  - Semantic model ID generation with meaningful versioning
+  - Storage optimization with shared component storage
+  - Concurrent access safety with mutex/locking for multi-user operations
 - **Sub-Plan 0A**: Analysis API Enhancement Critical Infrastructure Fixes ✅
   - ModelIOManager missing methods implementation (validate_model, install_model)
   - CI pipeline dependency fixes (fastapi_users ModuleNotFoundError)
   - HDBSCAN model registration support
-  - Integration testing with real ModelIOManager methods
 - Progressive disclosure documentation system (38,000+ words restructured)
 - FastAPI documentation serving feature
 - Documentation consolidation and LAD compliance restoration
@@ -87,4 +125,4 @@
 **Test Commands**: See `CLAUDE.md` for standard commands
 
 ---
-*Last Updated: 2025-08-19 - Ready for Analysis API Enhancement development*
+*Last Updated: 2025-08-21 - Phase 2A Deduplication Core complete, Phase 2B Enhanced Installation Workflow starting*
