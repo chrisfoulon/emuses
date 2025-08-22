@@ -10,7 +10,7 @@
 
 ## Quick Status for New Sessions
 
-**Current Status**: Analysis API Enhancement - Phase 2B Enhanced Installation Workflow IN PROGRESS (1/6 tasks complete) 🔄
+**Current Status**: Model Registry Architecture Fix - LAD Review Integration Complete - Ready for Implementation ⚠️
 
 **Key Status Files**:
 - **PROJECT_STATUS.md** - Central project status
@@ -40,6 +40,12 @@
   - Enhanced metadata storage with component tracking and hashes
   - Configuration and content hash indexing for duplicate detection
   - Full backward compatibility with existing individual component models
+- **Analysis API Enhancement - Phase 2**: Hash Stability & Storage Optimization ✅
+  - Git-style content-addressable storage for cross-platform model sharing
+  - Simplified exact-match duplicate detection with 0% false positive rate
+  - Shared component storage optimization reducing disk usage
+  - Thread-safe concurrent access with comprehensive mutex/locking
+  - 16 new tests covering hash stability, storage optimization, and concurrent safety
 
 ## Active Development Context
 
@@ -54,31 +60,32 @@
 - **Testing**: 28 new tests across complete model detection, transactions, metadata, and hash indexing
 - **API Cleanup**: Removed unnecessary backward compatibility code
 
-### **ARCHITECTURE REVISION REQUIRED**: Phase 2 Hash Stability Issues ⚠️
-- **Critical Discovery**: Content hash implementation includes file paths → breaks cross-platform model sharing
-- **Impact**: Complex deduplication algorithms built on unstable hash foundation
-- **Analysis**: LAD Phase 0 architectural discovery identified Git-style content-addressable storage needed
-- **Decision**: Simplify deduplication to basic exact hash matching, remove complex algorithms
+### **COMPLETED**: Analysis API Enhancement - Model Registry Redesign Phase 2 ✅
+- **Phase 2C**: Hash Stability & Deduplication Simplification - ALL COMPLETE ✅
+  - ✅ Fixed content hash implementation for filesystem independence (Git-style content addressing)
+  - ✅ Simplified deduplication to basic exact hash matching
+  - ✅ Removed complex algorithms and interactive workflows
+  - ✅ Updated tests and documentation for simplified approach
+- **Phase 2D**: Storage Optimization & Concurrent Safety - ALL COMPLETE ✅
+  - ✅ Implemented storage optimization with shared component storage
+  - ✅ Added concurrent access testing and mutex/locking for registry operations
+- **Implementation**: Hash stability fixes, storage optimization, concurrent safety
+- **Testing**: 16 additional tests for hash stability, storage optimization, and concurrent access
 
-### **COMPLETED BUT REVERTING**: Phase 2A-2B Complex Implementation ❌
-- **Implemented**: Complex deduplication algorithms, interactive workflows, performance fingerprinting
-- **Issue**: Built on path-sensitive hashing that breaks when models transferred between systems
-- **Keeping**: Basic duplicate detection, batch installation, semantic IDs, atomic operations
-- **Reverting**: Interactive workflows, performance fingerprinting, complex similarity algorithms
+### **CRITICAL STATUS CORRECTION**: Previous Claims Were Incorrect ⚠️
+- **Discovery**: Implementation contains fundamental architectural violations
+- **Issue**: CompleteEmusesModel class treats EMUSES components as separable (architecturally wrong)
+- **Truth**: EMUSES models are complete folder units, components NOT interchangeable
+- **Action Required**: Delete violations, implement registry as folder lookup service only
+- **Status**: LAD review integration complete, validated implementation plan ready
+- **Location**: `dev-docs/analysis-api/model-registry-redesign/`
 
-### **CURRENT PRIORITY**: Phase 2C Hash Stability & Simplification ⚠️
-- **Task**: Fix content hash implementation for filesystem independence
-- **Focus**: Git-style content-addressable storage + simple exact hash matching
-- **Location**: `emuses/tools/model_io.py` - `_calculate_content_hash()` method
-- **Status**: Phase 2C - Hash Stability Fix (0/4 tasks complete)
-
-### **PHASE 2C**: Hash Stability & Deduplication Simplification (0/4 complete)
-- **Task 2C.1**: Fix content hash implementation for filesystem independence ⏳
-- **Task 2C.2**: Simplify deduplication to basic exact hash matching ⏳  
-- **Task 2C.3**: Remove complex algorithms and interactive workflows ⏳
-- **Task 2C.4**: Update tests and documentation for simplified approach ⏳
-- **Then Phase 2D**: Storage optimization and concurrent safety (remaining 2/6 tasks)
-- **Then Phase 3**: Interface Integration and CLI implementation
+### **URGENT: Implementation Requirements** ⚠️
+- **MANDATORY READING**: `dev-docs/analysis-api/model-registry-redesign/review-integration/architectural_guardrails.md`
+- **MANDATORY TEST**: `dev-docs/analysis-api/model-registry-redesign/review-integration/proof_of_concept_test.py`
+- **Implementation Plan**: `dev-docs/analysis-api/model-registry-redesign/plan.md` (6 phases, LAD-validated)
+- **Context**: `dev-docs/analysis-api/model-registry-redesign/context.md` (correct architecture)
+- **Session Handover**: `dev-docs/analysis-api/model-registry-redesign/SESSION_HANDOVER.md`
 
 ### **Known Issues**: Optuna Parameter Space Conflicts (low priority)
 - **Problem**: EMUSES crashes when changing `--prediction_optim_dict` during resume
@@ -118,5 +125,5 @@
 - See `/scripts/README.md` for comprehensive testing approach
 
 ---
-*Last Updated: 2025-08-21 - Model Registry Redesign Phase 2A complete, Phase 2B enhanced installation workflow starting*
+*Last Updated: 2025-08-22 - CRITICAL: Architecture violations discovered, LAD review integration complete, corrected implementation plan ready*
 *Static guidelines in `.lad/CLAUDE.md` | Historical details in `dev-docs/project-history/`*

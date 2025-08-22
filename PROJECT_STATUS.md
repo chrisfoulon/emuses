@@ -6,55 +6,48 @@
 - **Research Labs**: Collaborative model sharing with workspace isolation
 - **Scientific Community**: Public model registry with peer review and benchmarking
 
-## 🎯 CURRENT FOCUS (Updated 2025-08-21)
+## 🎯 CURRENT FOCUS (Updated 2025-08-22)
 
-### **NEXT PRIORITIES**:
-- **Priority 1**: Analysis API Enhancement - Model Registry Redesign 📋 **ACTIVE** ⚠️ **ARCHITECTURE REVISION**
-  - **Sub-Plan 0A-Extended**: Complete EMUSES Model Registry Redesign (3 weeks, 3 phases)
-  - **Phase 1 COMPLETE**: Foundation & Atomic Operations ✅
-    - Complete EMUSES model detection and validation ✅
-    - Atomic transaction framework with rollback capability ✅
-    - Enhanced metadata storage with component tracking and hashes ✅
-    - Configuration and content hash indexing for duplicate detection ✅
-    - ⚠️ Content hash implementation requires fix for cross-platform stability
-  - **Phase 2 ARCHITECTURE REVISION**: Discovered hash stability issues requiring simplification
-    - **Keeping**: Basic duplicate detection, batch installation, semantic IDs, atomic operations ✅
-    - **Reverting**: Complex deduplication algorithms, interactive workflows, performance fingerprinting ❌
-    - **Issue**: Path-sensitive hashing breaks cross-platform model sharing
-  - **Phase 2C REQUIRED**: Hash Stability & Deduplication Simplification (0/4 tasks complete)
-    - ⏳ Fix content hash implementation for filesystem independence
-    - ⏳ Simplify deduplication to basic exact hash matching
-    - ⏳ Remove complex algorithms and interactive workflows
-    - ⏳ Update tests and documentation for simplified approach
-  - **Location**: `dev-docs/analysis-api/model-registry-redesign/` with LAD-compliant planning
+### **CRITICAL STATUS CORRECTION** ⚠️:
+- **Priority 1**: Model Registry Architecture Fix 📋 **URGENT - READY FOR IMPLEMENTATION**
+  - **DISCOVERED**: Previous "complete" status was INCORRECT - implementation contains fundamental architectural violations
+  - **ISSUE**: CompleteEmusesModel treats EMUSES components as separable (architecturally wrong)
+  - **TRUTH**: EMUSES models are complete folder units, components NOT interchangeable between datasets
+  - **SOLUTION**: Registry as EMUSES folder lookup service, preserve InferenceStage unchanged
+  - **STATUS**: LAD review integration complete, corrected implementation plan ready
+  - **URGENT REQUIREMENTS**:
+    - 🚨 **MANDATORY READING**: `dev-docs/analysis-api/model-registry-redesign/review-integration/architectural_guardrails.md`
+    - 🚨 **MANDATORY TEST**: `dev-docs/analysis-api/model-registry-redesign/review-integration/proof_of_concept_test.py`
+    - 📋 **Implementation Plan**: `dev-docs/analysis-api/model-registry-redesign/plan.md` (6 phases, LAD-validated)
+  - **ACTIONS REQUIRED**:
+    - Delete architectural violations (CompleteEmusesModel, complete model endpoints)
+    - Implement registry as simple folder path lookup service
+    - Add CLI --model-id option for registry integration
+    - Track feature augmentation models (PCA/kPCA/Autoencoder)
+  - **Location**: `dev-docs/analysis-api/model-registry-redesign/` with corrected LAD-compliant planning
 - **Priority 2**: Analysis API Enhancement - Core Features 📋 **PLANNED**
   - FastAPI endpoints and CLI commands for effect size map analysis
   - Depends on Model Registry Redesign completion
 - **Priority 3**: CI/CD Task 4.2 Multi-environment deployment automation 📋 **PLANNED**
 
 ### **RECENTLY COMPLETED**:
-- **Model Registry Redesign - Phase 1**: Foundation & Atomic Operations ✅
-  - Complete EMUSES model detection (treats models as cohesive units)
-  - Atomic transaction framework with rollback capability
-  - Enhanced metadata storage with component tracking
-  - Configuration and content hash indexing for duplicate detection
-  - API cleanup - removed unnecessary backward compatibility
-  - 28 new tests passing (complete model detection, transactions, metadata, hash indexing)
-- **Model Registry Redesign - Phase 2A**: Deduplication Core System (6/6 complete) ✅
-  - Configuration-based duplicate detection using config hashes with exact matching
-  - Content-based similarity detection with configurable thresholds and hash algorithms
-  - Performance fingerprint comparison with weighted multi-metric analysis
-  - Duplicate resolution workflow (interactive + batch policies) with rich user feedback
-  - Force duplicate installation with comprehensive multi-level warnings and safety mechanisms
-  - Performance benchmarking framework with regression detection and baseline management
-  - 14 new tests passing (complete coverage of detection, resolution, force installation, and benchmarking)
-- **Model Registry Redesign - Phase 2B**: Enhanced Installation Workflow (1/6 complete) ⏳
-  - ✅ Integration of deduplication engine with LocalModelRegistry.install_model()
-  - ⏳ Interactive CLI duplicate resolution for user-facing operations
-  - ⏳ Batch API duplicate handling for programmatic usage
-  - ⏳ Semantic model ID generation with meaningful versioning
-  - ⏳ Storage optimization with shared component storage
-  - ⏳ Concurrent access safety with mutex/locking for multi-user operations
+- **LAD Review Integration & Architecture Correction** ✅
+  - Comprehensive analysis identified fundamental architectural violations in model registry
+  - LAD Phase 1b review validation identified critical implementation flaws
+  - Created architectural guardrails document to prevent future mistakes
+  - Developed proof-of-concept test to validate correct approach
+  - Integrated review findings into corrected 6-phase implementation plan
+  - Simplified approach for pre-production environment (no backward compatibility needed)
+  - **Key Discovery**: EMUSES models are complete folder units, NOT separable components
+  - **Corrected Approach**: Registry as folder lookup service, preserve InferenceStage unchanged
+- **Model Registry System Code** ⚠️ **STATUS CORRECTED**
+  - ⚠️ **Previous "complete" claims were INCORRECT** - contains architectural violations
+  - ⚠️ **CompleteEmusesModel class violates EMUSES architecture** (treats components as separable)
+  - ✅ **Atomic transaction framework** - this part is correct and useful
+  - ✅ **Hash stability improvements** - cross-platform compatibility achieved
+  - ✅ **Storage optimization** - shared component storage working
+  - ❌ **Complete model detection patterns** - wrong approach, needs deletion
+  - ❌ **CLI commands for "complete models"** - based on incorrect architecture
 - **Sub-Plan 0A**: Analysis API Enhancement Critical Infrastructure Fixes ✅
   - ModelIOManager missing methods implementation (validate_model, install_model)
   - CI pipeline dependency fixes (fastapi_users ModuleNotFoundError)
@@ -121,4 +114,4 @@
 **Test Commands**: See `CLAUDE.md` for standard commands
 
 ---
-*Last Updated: 2025-08-21 - Phase 2A Deduplication Core complete, Phase 2B Enhanced Installation Workflow starting*
+*Last Updated: 2025-08-22 - CRITICAL: Architecture violations discovered and corrected, LAD review integration complete, ready for proper implementation*

@@ -1,438 +1,320 @@
-# Model Registry Redesign - Implementation Context
+# Model Registry Architecture Fix - Implementation Context
+
+⚠️ **CRITICAL STATUS CORRECTION**: Previous context was incorrect - implementation contains fundamental architectural violations
+
+## What This Feature Actually Fixes
+
+### The Fundamental Problem (Clearly Documented)
+Previous implementation created **architectural violations** by treating EMUSES model components (UMAP, HDBSCAN, prediction) as separable entities. This is **fundamentally wrong**.
+
+**EMUSES Truth**: Models are complete training folder units where all components are trained together and are NOT interchangeable between datasets.
+
+### The Correct Solution
+**Registry as EMUSES Folder Lookup Service**: Map model IDs to complete folder paths, preserve existing InferenceStage unchanged.
 
 ## Level 1: Plain English Summary
 
-EMUSES generates complete machine learning models consisting of multiple interdependent components (UMAP dimensionality reduction, HDBSCAN clustering, and ensemble prediction models). Currently, the model registry incorrectly treats these components as separate "models" that can be installed individually. This creates duplicate installations, storage waste, and prevents users from sharing complete research analyses.
+### What EMUSES Models Actually Are
+**Complete training folder** (`model_registry_final/`) containing:
+- UMAP model for dimensionality reduction
+- HDBSCAN model for clustering  
+- Prediction models (ensemble in `target_*` directories)
+- Training metadata and manifests
+- **All trained together** on same dataset (atomic unit)
 
-The redesign will treat complete EMUSES pipeline outputs as single installable units with intelligent deduplication based on training configuration and model content. Users will be able to install, share, and discover complete EMUSES models while the system prevents duplicate installations and provides access to physical model files for research purposes.
+### What Registry Should Do
+**Path lookup service ONLY**:
+1. Register complete EMUSES training folders
+2. Map model IDs to folder paths
+3. Validate folder contains complete structure
+4. Provide path resolution for CLI/API convenience
 
-**Core Enhancement**: Transform from individual component registry to complete EMUSES model registry with content-based deduplication and intelligent model management.
+### What Registry Should NEVER Do
+❌ Register individual components separately  
+❌ Create model abstractions or wrappers  
+❌ Duplicate InferenceStage functionality  
+❌ Pattern-based component detection
 
-## Level 2: Technical Architecture Overview
-
-### **Complete EMUSES Model Concept**
-
-A complete EMUSES model represents the entire output of a successful EMUSES pipeline run, containing:
-
-| Component Type | Purpose | Files | Dependencies |
-|----------------|---------|-------|--------------|
-| **Dimensionality Reduction** | UMAP transform from high-dim features to 2D embeddings | `best_umap_model.joblib`, `embeddings.npy` | Training features |
-| **Clustering** | HDBSCAN clustering of embeddings into meaningful groups | `hdbscan_model.joblib`, `cluster_labels.npy` | UMAP embeddings |
-| **Prediction Ensemble** | Multi-target CV fold models for robust prediction | `target_N/best_pipeline_foldK.joblib` | UMAP embeddings |
-| **Performance Context** | Cross-validation scores, optimization results | `performance_summary/` | All components |
-| **Reproducibility** | Random seeds, data splits, configuration | `random_seeds.json`, `split_dataset/` | Pipeline execution |
-
-### **Enhanced Registry Schema**
-
+### What Currently Works (Preserve Unchanged)
+**InferenceStage** already handles complete model folders perfectly:
 ```python
-# Current Schema (Individual Components)
-{
-  "model_id": "hdbscan_model_20250820_130405",
-  "name": "hdbscan_model", 
-  "type": "hdbscan",
-  "version": "1.0.1"
-}
-
-# Enhanced Schema (Complete EMUSES Models)
-{
-  "model_id": "hcp_analysis_v1.2.3_abc123",
-  "name": "HCP Psychological Analysis",
-  "type": "emuses_complete_model",
-  "version": "1.2.3",
-  "content_hash": "sha256:abc123...",
-  "config_hash": "sha256:def456...",
-  "components": {
-    "umap_model": {"path": "best_umap_model.joblib", "hash": "sha256:..."},
-    "hdbscan_model": {"path": "hdbscan_model.joblib", "hash": "sha256:..."},
-    "prediction_models": [/* CV fold models with hashes */],
-    "embeddings": {"path": "embeddings.npy", "hash": "sha256:..."},
-    "performance_data": {"path": "performance_summary/", "type": "directory"}
-  }
-}
+# This works and should remain unchanged
+config = PipelineConfig(model_path="/path/to/model_registry_final/", ...)
+inference_stage = InferenceStage(config)
+results = inference_stage.run()  # Complete pipeline: UMAP → Scale → Predict
 ```
 
-### **Deduplication Strategy Architecture**
+## Level 2: API Integration Table
 
+| Symbol | Purpose | Inputs | Outputs | Side-effects |
+|--------|---------|--------|---------|--------------|
+| `LocalModelRegistry.get_model_path()` | Resolve model ID to folder path | model_id: str | Path to EMUSES folder | None |
+| `LocalModelRegistry.install_model()` | Register complete EMUSES folder | folder_path: Path, name: str | model_id: str | Registry entry created |
+| `inference --model-id` | CLI inference with registry lookup | model_id, data_path | Inference results | None |
+| `InferenceStage.run()` | Complete EMUSES inference pipeline | model_path: Path, data_path: Path | Predictions + metadata | None (existing code) |
+| `_validate_emuses_folder()` | Validate complete folder structure | folder_path: Path | bool (valid/invalid) | None |
+
+## Level 3: Code Integration Points
+
+### Registry Path Resolution (Core Integration)
 ```python
-# Three-tier deduplication approach:
-
-# 1. Fast Configuration Check
-config_signature = hash(training_config + data_source + hyperparameters)
-existing_models = registry.find_by_config_hash(config_signature)
-
-# 2. Content Verification  
-content_signature = combined_hash(umap_hash + hdbscan_hash + prediction_hashes)
-potential_duplicates = filter_by_content_similarity(existing_models)
-
-# 3. User Decision Workflow
-if potential_duplicates:
-    action = prompt_user_decision(potential_duplicates, new_model_info)
-    # Options: use_existing, install_variant, replace_existing, force_duplicate
-```
-
-## Level 3: Implementation Integration Examples
-
-### **Enhanced ModelIOManager Integration**
-
-```python
-# Current: Component-level validation
-manager = ModelIOManager(model_path)
-manifest = manager.validate_model(model_path)
-# Returns: {"name": "hdbscan_model", "type": "hdbscan", ...}
-
-# Enhanced: Complete model detection and validation
-def validate_complete_emuses_model(self, model_path: Path) -> Dict[str, Any]:
-    """
-    Validate complete EMUSES model directory structure.
-    
-    Detects EMUSES pipeline outputs and validates all components.
-    """
-    components_found = {}
-    
-    # Core component detection
-    if (model_path / "best_umap_model.joblib").exists():
-        components_found["umap_model"] = {
-            "path": "best_umap_model.joblib",
-            "hash": self._calculate_file_hash(model_path / "best_umap_model.joblib")
-        }
-    
-    if (model_path / "hdbscan_model.joblib").exists():
-        components_found["hdbscan_model"] = {
-            "path": "hdbscan_model.joblib", 
-            "hash": self._calculate_file_hash(model_path / "hdbscan_model.joblib")
-        }
-    
-    # Prediction model ensemble detection
-    prediction_models = []
-    for target_dir in model_path.glob("target_*"):
-        for fold_model in target_dir.glob("best_pipeline_fold*.joblib"):
-            prediction_models.append({
-                "path": str(fold_model.relative_to(model_path)),
-                "hash": self._calculate_file_hash(fold_model)
-            })
-    
-    if prediction_models:
-        components_found["prediction_models"] = prediction_models
-    
-    # Performance data detection
-    if (model_path / "performance_summary").exists():
-        components_found["performance_data"] = {
-            "path": "performance_summary/",
-            "type": "directory",
-            "hash": self._calculate_directory_hash(model_path / "performance_summary")
-        }
-    
-    # EMUSES model detection logic
-    required_components = ["umap_model", "hdbscan_model", "prediction_models"]
-    is_complete_emuses = all(comp in components_found for comp in required_components)
-    
-    if is_complete_emuses:
-        # Load configuration for complete model identification
-        config_hash = self._extract_config_hash(model_path)
-        content_hash = self._calculate_combined_hash(components_found)
+# CORRECT: Registry as simple lookup service
+class LocalModelRegistry:
+    def get_model_path(self, model_id: str) -> Path:
+        """Resolve model ID to complete EMUSES training folder path.
         
-        return {
-            "name": self._extract_model_name(model_path),
-            "version": self._detect_version(model_path),
-            "type": "emuses_complete_model",
-            "description": f"Complete EMUSES model with {len(components_found)} components",
-            "content_hash": content_hash,
-            "config_hash": config_hash,
-            "components": components_found
-        }
-    else:
-        # Fallback to individual component validation
-        return self._validate_individual_component(model_path)
+        Returns
+        -------
+        Path
+            Path to complete EMUSES folder containing all components
+        """
+        if model_id not in self.models:
+            raise KeyError(f"Model not found: {model_id}")
+        return Path(self.models[model_id])
+
+# Usage with existing InferenceStage (unchanged)
+registry = LocalModelRegistry()
+folder_path = registry.get_model_path("HCP_Model_v1_abc123")
+config = PipelineConfig(model_path=folder_path, data_path=data_path)
+inference_stage = InferenceStage(config)
+results = inference_stage.run()  # Existing proven code
 ```
 
-### **Enhanced Registry Installation with Deduplication**
-
+### CLI Enhancement (Minimal Change)
 ```python
-# Enhanced LocalModelRegistry.install_model() with deduplication
-def install_model(self, model_path: Path, name: Optional[str] = None, 
-                  force_duplicate: bool = False) -> Dict[str, Any]:
-    """
-    Install complete EMUSES model with intelligent deduplication.
+def inference(
+    model: Optional[Path] = typer.Option(None, help="Path to model directory"),
+    model_id: Optional[str] = typer.Option(None, help="Registry model ID"),
+    data: Path = typer.Argument(..., help="Path to input data"),
+    # ... existing parameters unchanged
+):
+    """Run inference with EMUSES model (file path or registry ID)."""
     
-    Args:
-        model_path: Path to complete EMUSES model directory
-        name: Optional custom name
-        force_duplicate: Skip deduplication checks
-    """
-    # Phase 1: Validate and analyze model
-    model_io = ModelIOManager(self.models_path)
-    manifest = model_io.validate_model(model_path)
+    # Validation: exactly one of model or model_id required
+    if not (model or model_id) or (model and model_id):
+        raise typer.BadParameter("Provide either --model or --model-id, not both")
     
-    if manifest.get("type") != "emuses_complete_model":
-        # Handle individual components or unsupported models
-        return self._install_legacy_model(model_path, name)
+    # Registry path resolution (only addition)
+    if model_id:
+        registry = LocalModelRegistry()
+        model = registry.get_model_path(model_id)
     
-    # Phase 2: Deduplication check (unless forced)
-    if not force_duplicate:
-        duplicates = self._find_potential_duplicates(manifest)
-        if duplicates:
-            return self._handle_duplicate_models(duplicates, manifest, model_path)
-    
-    # Phase 3: Install new complete model
-    model_id = self._generate_semantic_model_id(manifest)
-    installation_result = model_io.install_model(model_path, self.models_path, name=name)
-    
-    # Phase 4: Register in enhanced schema
-    model_info = {
-        "model_id": model_id,
-        "name": manifest["name"],
-        "type": "emuses_complete_model",
-        "version": manifest["version"],
-        "content_hash": manifest["content_hash"],
-        "config_hash": manifest["config_hash"],
-        "components": manifest["components"],
-        "installed_at": datetime.now(timezone.utc).isoformat() + "Z",
-        "source_path": str(model_path),
-        "manifest": manifest
-    }
-    
-    # Update registry index
-    index = self._load_index()
-    index["models"][model_id] = model_info
-    self._save_index(index)
-    
-    return {
-        "status": "success",
-        "model_id": model_id,
-        "name": manifest["name"],
-        "action": "installed_new_model",
-        "components_count": len(manifest["components"]),
-        "message": f"Successfully installed complete EMUSES model '{manifest['name']}'"
-    }
-
-def _find_potential_duplicates(self, manifest: Dict[str, Any]) -> List[Dict[str, Any]]:
-    """Find models with similar configuration or content."""
-    index = self._load_index()
-    duplicates = []
-    
-    for existing_id, existing_model in index["models"].items():
-        if existing_model.get("type") != "emuses_complete_model":
-            continue
-            
-        # Configuration-based similarity
-        if existing_model.get("config_hash") == manifest.get("config_hash"):
-            duplicates.append({
-                "model_id": existing_id,
-                "similarity_type": "config_identical",
-                "model_info": existing_model
-            })
-            
-        # Content-based similarity  
-        elif existing_model.get("content_hash") == manifest.get("content_hash"):
-            duplicates.append({
-                "model_id": existing_id,
-                "similarity_type": "content_identical", 
-                "model_info": existing_model
-            })
-    
-    return duplicates
-
-def _handle_duplicate_models(self, duplicates: List[Dict], manifest: Dict, 
-                           model_path: Path) -> Dict[str, Any]:
-    """Handle duplicate model detection with user interaction."""
-    
-    # In CLI mode: prompt user for decision
-    if self._is_interactive_mode():
-        return self._interactive_duplicate_resolution(duplicates, manifest, model_path)
-    
-    # In API/batch mode: return duplicate information for client decision
-    return {
-        "status": "duplicate_detected",
-        "duplicates": duplicates,
-        "new_model_info": manifest,
-        "available_actions": [
-            "use_existing",
-            "install_variant", 
-            "replace_existing",
-            "force_duplicate"
-        ]
-    }
+    # Use existing InferenceStage (completely unchanged)
+    config = PipelineConfig(model_path=model, data_path=data, ...)
+    inference_stage = InferenceStage(config)
+    return inference_stage.run()
 ```
 
-### **Enhanced CLI Commands**
-
+### EMUSES Folder Validation
 ```python
-# Enhanced CLI for complete EMUSES model management
-
-@models_app.command(name="install", help="Install complete EMUSES model")
-def install_complete_model(
-    model_path: Annotated[Path, typer.Argument(help="Path to EMUSES model directory")],
-    name: Annotated[Optional[str], typer.Option("--name", "-n", help="Custom model name")] = None,
-    force: Annotated[bool, typer.Option("--force", help="Skip deduplication checks")] = False,
-    interactive: Annotated[bool, typer.Option("--interactive/--batch", help="Interactive duplicate resolution")] = True
-) -> None:
-    """Install complete EMUSES model with intelligent deduplication."""
+def _validate_emuses_folder(self, folder_path: Path) -> bool:
+    """Validate complete EMUSES training folder structure.
     
-    registry = get_registry()
+    Required components:
+    - model_manifest.json (root manifest)
+    - *umap*.joblib (UMAP model file)
+    - *hdbscan*.joblib (HDBSCAN model file)
+    - target_*/model_manifest.json (prediction manifests)
+    - target_*/best_pipeline_fold*.joblib (CV fold models)
     
-    console.print(f"🔍 Analyzing EMUSES model at [cyan]{model_path}[/cyan]...")
+    Future requirement:
+    - feature_models/*.joblib (PCA/kPCA/Autoencoder)
+    """
+    # Check core components
+    has_root_manifest = (folder_path / "model_manifest.json").exists()
+    has_umap = len(list(folder_path.glob("*umap*.joblib"))) > 0
+    has_hdbscan = len(list(folder_path.glob("*hdbscan*.joblib"))) > 0
     
-    result = registry.install_model(model_path, name=name, force_duplicate=force)
-    
-    if result["status"] == "duplicate_detected":
-        if interactive:
-            action = handle_duplicate_interactive(result["duplicates"], result["new_model_info"])
-            # Re-run installation with user's decision
-            result = registry.install_model(model_path, name=name, action=action)
-        else:
-            console.print("❌ Duplicate models detected. Use --force to install anyway or run interactively.")
-            display_duplicate_summary(result["duplicates"])
-            raise typer.Exit(1)
-    
-    if result["status"] == "success":
-        console.print(f"✅ Successfully installed complete EMUSES model")
-        console.print(f"   Model ID: [green]{result['model_id']}[/green]")
-        console.print(f"   Components: [blue]{result['components_count']}[/blue]")
-        console.print(f"   Action: [yellow]{result['action']}[/yellow]")
-    else:
-        console.print(f"❌ Installation failed: {result.get('message', 'Unknown error')}")
-        raise typer.Exit(1)
-
-def handle_duplicate_interactive(duplicates: List[Dict], new_model: Dict) -> str:
-    """Interactive duplicate resolution workflow."""
-    
-    console.print("\n🔍 [yellow]Duplicate Models Detected[/yellow]")
-    console.print(f"New model: [cyan]{new_model['name']} v{new_model['version']}[/cyan]")
-    
-    table = Table(title="Similar Existing Models")
-    table.add_column("Model ID", style="blue")
-    table.add_column("Name", style="green") 
-    table.add_column("Version", style="yellow")
-    table.add_column("Similarity", style="red")
-    
-    for i, dup in enumerate(duplicates, 1):
-        model_info = dup["model_info"]
-        table.add_row(
-            model_info["model_id"][:20] + "...",
-            model_info["name"],
-            model_info.get("version", "unknown"),
-            dup["similarity_type"]
-        )
-    
-    console.print(table)
-    
-    choices = [
-        "use_existing: Use existing similar model",
-        "install_variant: Install as new variant/version",
-        "replace_existing: Replace existing model", 
-        "force_duplicate: Install duplicate anyway"
-    ]
-    
-    choice = typer.prompt(
-        "\nHow would you like to proceed?",
-        type=click.Choice([c.split(':')[0] for c in choices])
+    # Check prediction ensemble
+    target_dirs = list(folder_path.glob("target_*"))
+    has_predictions = any(
+        (target_dir / "model_manifest.json").exists() and
+        len(list(target_dir.glob("best_pipeline_fold*.joblib"))) > 0
+        for target_dir in target_dirs
     )
     
-    return choice
-
-@models_app.command(name="info", help="Get detailed information about EMUSES model")
-def model_info_enhanced(
-    model_id: Annotated[str, typer.Argument(help="Model ID or name")],
-    show_components: Annotated[bool, typer.Option("--components", help="Show component details")] = False,
-    show_path: Annotated[bool, typer.Option("--path", help="Show physical file path")] = False
-) -> None:
-    """Enhanced model info for complete EMUSES models."""
-    
-    registry = get_registry()
-    model = registry.get_model_info(model_id)
-    
-    if not model:
-        console.print(f"❌ Model not found: [red]{model_id}[/red]")
-        raise typer.Exit(1)
-    
-    # Basic model information
-    console.print(f"\n📊 [green]{model['name']}[/green] (ID: {model['model_id']})")
-    console.print(f"Version: [yellow]{model.get('version', 'unknown')}[/yellow]")
-    console.print(f"Type: [blue]{model.get('type', 'unknown')}[/blue]")
-    console.print(f"Description: {model.get('description', 'No description')}")
-    
-    if model.get("type") == "emuses_complete_model":
-        # Enhanced information for complete models
-        components = model.get("components", {})
-        console.print(f"\n🧩 Components ({len(components)}):")
-        
-        if show_components:
-            for comp_type, comp_info in components.items():
-                if isinstance(comp_info, list):
-                    console.print(f"  • [cyan]{comp_type}[/cyan]: {len(comp_info)} files")
-                    for item in comp_info[:3]:  # Show first 3
-                        console.print(f"    - {item['path']}")
-                    if len(comp_info) > 3:
-                        console.print(f"    ... and {len(comp_info) - 3} more")
-                else:
-                    console.print(f"  • [cyan]{comp_type}[/cyan]: {comp_info['path']}")
-        else:
-            for comp_type in components:
-                comp_count = len(components[comp_type]) if isinstance(components[comp_type], list) else 1
-                console.print(f"  • [cyan]{comp_type}[/cyan] ({comp_count} files)")
-    
-    if show_path:
-        physical_path = registry.get_model_physical_path(model_id)
-        console.print(f"\n📁 Physical Location: [blue]{physical_path}[/blue]")
+    return has_root_manifest and has_umap and has_hdbscan and has_predictions
 ```
 
-### **Integration with Inference and Analysis API**
+## Architecture Violations to Remove
+
+### Files to Delete Completely
+```python
+# ❌ DELETE: emuses/models/complete_emuses_model.py
+class CompleteEmusesModel:  # WRONG - parallel abstraction
+    def __init__(self, model_id: str):
+        self.model_id = model_id
+        self.registry = LocalModelRegistry()
+        # This creates competing system with InferenceStage
+    
+    def predict(self, data):  # WRONG - duplicates InferenceStage
+        # InferenceStage already does this perfectly
+
+# ❌ DELETE: emuses/api/complete_model_endpoints.py  
+@router.get("/models/{model_id}/components")
+def get_model_components():  # WRONG - treats as separable
+    # Components should never be accessed individually
+```
+
+### Code to Revert
+```python
+# ❌ REVERT: Changes to emuses/pipelines/inference_stage.py
+# Remove registry integration added to InferenceStage
+self.complete_model_id = getattr(config, 'complete_model_id', None)
+self.complete_model = None
+# InferenceStage should remain file-based only
+
+# ❌ REVERT: Changes to emuses/cli/main.py  
+# Remove --complete-model option added to inference command
+# Keep original signature: inference(model: Path, data: Path, ...)
+```
+
+### Pattern Detection to Remove
+```python
+# ❌ REMOVE: Component detection patterns in model_io.py
+def _detect_umap_component(self, model_path: Path):  # WRONG approach
+def _detect_hdbscan_component(self, model_path: Path):  # WRONG approach  
+def _detect_prediction_component(self, model_path: Path):  # WRONG approach
+# These ignore native EMUSES folder structure
+```
+
+## Critical Missing Component: Feature Augmentation Models
+
+### Current Gap (Must Address)
+EMUSES training may use feature augmentation models that are **essential for inference**:
 
 ```python
-# Enhanced inference integration for complete EMUSES models
-class InferenceStage:
-    def load_complete_emuses_model(self, model_id: str) -> 'CompleteEmusesModel':
-        """Load complete EMUSES model for inference."""
-        
-        registry = get_model_registry()
-        model_info = registry.get_model_info(model_id)
-        
-        if model_info.get("type") != "emuses_complete_model":
-            raise ValueError(f"Model {model_id} is not a complete EMUSES model")
-        
-        model_path = registry.get_model_physical_path(model_id)
-        
-        # Load all components
-        umap_model = joblib.load(model_path / "best_umap_model.joblib")
-        hdbscan_model = joblib.load(model_path / "hdbscan_model.joblib")
-        
-        # Load prediction model ensemble
-        prediction_models = []
-        for comp in model_info["components"]["prediction_models"]:
-            model_file = model_path / comp["path"]
-            prediction_models.append(joblib.load(model_file))
-        
-        return CompleteEmusesModel(
-            umap_model=umap_model,
-            hdbscan_model=hdbscan_model,
-            prediction_models=prediction_models,
-            model_id=model_id,
-            model_info=model_info
-        )
-
-# Integration with Analysis API Enhancement
-@app.post("/api/v1/analysis/inference")
-async def run_inference_on_complete_model(
-    model_id: Annotated[str, Body(..., description="Complete EMUSES model ID")],
-    input_data: Annotated[UploadFile, File(..., description="Input data for inference")]
-) -> InferenceResponse:
-    """Run inference using complete EMUSES model."""
-    
-    # Load complete model from registry
-    inference_stage = InferenceStage(config=current_config)
-    complete_model = inference_stage.load_complete_emuses_model(model_id)
-    
-    # Process input data through complete pipeline
-    # UMAP → HDBSCAN → Prediction ensemble
-    results = complete_model.predict(input_data)
-    
-    return InferenceResponse(
-        model_id=model_id,
-        predictions=results.predictions,
-        embeddings=results.embeddings,
-        cluster_assignments=results.clusters,
-        confidence_scores=results.confidence
-    )
+# Missing models that MUST be tracked:
+feature_models/
+├── pca_model_v1_0_0.joblib           # PCA for GWD dimensionality reduction
+├── kpca_model_v1_0_0.joblib          # Kernel PCA for non-linear reduction  
+└── autoencoder_v1_0_0.joblib         # Neural network feature models
 ```
 
-This implementation context provides comprehensive integration examples for transforming EMUSES model registry from individual component management to complete model management with intelligent deduplication and enhanced user workflows.
+**Why Critical**: New data must use the SAME feature transformations as training data. Without these models, inference pipeline is incomplete.
+
+### Implementation Required
+```python
+# Enhanced folder validation (Phase 4)
+def _validate_emuses_folder_with_features(self, folder_path: Path) -> bool:
+    """Enhanced validation including feature augmentation models."""
+    
+    # Core validation (existing)
+    is_valid_core = self._validate_emuses_folder(folder_path)
+    
+    # Feature augmentation check (new requirement)
+    feature_dir = folder_path / "feature_models"
+    if feature_dir.exists():
+        # Validate feature models are properly stored
+        pca_models = list(feature_dir.glob("*pca*.joblib"))
+        kpca_models = list(feature_dir.glob("*kpca*.joblib"))
+        ae_models = list(feature_dir.glob("*autoencoder*.joblib"))
+        
+        # At least one feature model type should exist if directory present
+        has_feature_models = len(pca_models + kpca_models + ae_models) > 0
+        return is_valid_core and has_feature_models
+    
+    return is_valid_core  # Feature models optional for now
+```
+
+## Testing Strategy with Real Data
+
+### Integration Testing Requirements
+```python
+# CRITICAL: Test with actual EMUSES training output
+real_folder = Path("/mnt/s/GIN Dropbox/Chris Foulon/EMUSE/HCP_psy/model_registry_final")
+
+def test_registry_with_real_emuses_folder():
+    """Test registry using actual EMUSES training output."""
+    registry = LocalModelRegistry()
+    
+    # Test registration
+    model_id = registry.install_model(real_folder, name="test_model")
+    
+    # Test path resolution  
+    resolved_path = registry.get_model_path(model_id)
+    assert resolved_path == real_folder
+    
+    # Test InferenceStage integration (critical test)
+    config = PipelineConfig(model_path=resolved_path, ...)
+    inference_stage = InferenceStage(config)
+    results = inference_stage.run()  # Must work unchanged
+    assert results is not None
+```
+
+### Error Condition Testing
+```python
+def test_error_conditions():
+    """Test registry error handling."""
+    registry = LocalModelRegistry()
+    
+    # Invalid folder structure
+    with pytest.raises(ValueError):
+        registry.install_model("/invalid/path", name="invalid")
+    
+    # Missing model ID
+    with pytest.raises(KeyError):
+        registry.get_model_path("nonexistent_id")
+    
+    # Corrupted manifest files
+    # Missing component files
+    # Invalid folder permissions
+```
+
+## Implementation Dependencies
+
+### Existing Components to Preserve
+- **InferenceStage**: Complete inference pipeline (keep unchanged)
+- **ModelIOManager**: Manifest loading/saving (use existing functionality)
+- **Native manifests**: `model_manifest.json` files (use as-is, don't create parallel metadata)
+- **EMUSES folder structure**: Native training output structure (respect completely)
+
+### Components to Modify
+- **LocalModelRegistry**: Enhance for folder-based registration only
+- **CLI commands**: Add --model-id option to inference command
+- **Model validation**: Focus on complete folder validation, not pattern detection
+
+### Components to Remove
+- **CompleteEmusesModel**: Delete entire artificial abstraction
+- **Complete model API endpoints**: Delete parallel REST API
+- **Component detection patterns**: Remove pattern-based logic
+- **Complete model tests**: Delete tests for wrong architecture
+
+## Development Constraints (No Production)
+
+### Simplified Requirements (No Backward Compatibility)
+- ✅ Can delete violations directly (no migration needed)
+- ✅ Can break existing registry entries (no production data)
+- ✅ Can change APIs without versioning (no external users)
+- ✅ Can use git revert for recovery (no complex rollback)
+
+### Development Protections (Maintain)
+- ⚠️ Don't break core EMUSES pipeline functionality
+- ⚠️ Don't break other CLI commands or API modules
+- ⚠️ Don't break test suite compatibility
+- ⚠️ Maintain development workflow integrity
+
+## Success Criteria
+
+### Functional Validation
+- Registry resolves model IDs to complete EMUSES folder paths ✅
+- InferenceStage works unchanged with registry-resolved paths ✅
+- CLI supports both --model and --model-id options ✅
+- Only complete EMUSES folders can be registered ✅
+- Feature augmentation models tracked and validated ✅
+
+### Architectural Validation  
+- No model abstractions or wrappers exist ✅
+- Native EMUSES folder structure preserved ✅
+- Registry functions as service layer only ✅
+- InferenceStage functionality completely unchanged ✅
+
+### Quality Validation
+- Integration tests with real EMUSES folders pass ✅
+- Documentation reflects correct architecture ✅
+- No duplicate inference functionality exists ✅
+- All system components remain functional ✅
+
+---
+
+**Key Implementation Principle**: Registry provides convenience (model ID lookup) without changing EMUSES architecture (complete folders + proven InferenceStage).
