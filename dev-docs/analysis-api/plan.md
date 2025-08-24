@@ -68,10 +68,10 @@
   - [ ] 0B.1.c: Identify reusable functions: `input_matrix_stat_map()`, `calculate_correlation_grid()`, `plot_clustering_interactive_with_hover()`
   - [ ] 0B.1.d: Define integration strategy for existing vs new statistical analysis capabilities
 
-- [ ] **Task 0B.2: Analysis Parameter Management System** ║ `tests/tools/test_analysis_config.py` ║ Configuration handling ║ M
-  - [ ] 0B.2.a: Create `AnalysisConfig` dataclass for complex parameter management
-  - [ ] 0B.2.b: Implement parameter validation and default value handling
-  - [ ] 0B.2.c: Add configuration serialization for API request/response
+- [ ] **Task 0B.2: Analysis Parameter Management System** ║ `tests/tools/test_pipeline_config_extensions.py` ║ Configuration handling ║ M
+  - [ ] 0B.2.a: Extend `PipelineConfig` dataclass with statistical analysis parameters
+  - [ ] 0B.2.b: Implement parameter validation and default value handling for new analysis fields
+  - [ ] 0B.2.c: Add configuration serialization for API request/response (reuse existing patterns)
   - [ ] 0B.2.d: Create parameter transformation utilities for analysis function integration
 
 - [ ] **Task 0B.3: FastAPI Analysis Endpoints** ║ `tests/api/test_analysis_endpoints.py` ║ REST API ║ L

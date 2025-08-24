@@ -58,7 +58,7 @@
 - **Data Model**: `PipelineConfig` (location: `/emuses/pipelines/pipeline_config.py`)
   - **Schema/Format**: Dataclass with comprehensive parameter validation, default handling
   - **Usage patterns**: Configuration validation, parameter transformation, environment-specific settings
-  - **Extension needs**: Create `AnalysisConfig` following same patterns for complex parameter management
+  - **Extension needs**: Extend `PipelineConfig` with statistical analysis parameters following existing patterns
 
 ### **Infrastructure Components**
 
@@ -145,7 +145,7 @@ Comprehensive testing ←── Quality validation
 - Model registry: Add analysis artifact support (use existing patterns)
 - CLI commands: Add analysis command group (follow models command patterns)
 - API endpoints: Add analysis endpoints (follow existing endpoint patterns)
-- Configuration: Create AnalysisConfig (follow PipelineConfig patterns)
+- Configuration: Extend PipelineConfig with analysis parameters (follow existing patterns)
 
 ### **⚠️ Critical Missing - Must Implement**
 - ModelIOManager.install_model() method (BLOCKING all model installation)
