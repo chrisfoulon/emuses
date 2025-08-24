@@ -1757,8 +1757,15 @@ def heatmap(
 
 @app.command(help="Run inference on trained model")
 def inference(
-    model: Annotated[Path, typer.Argument(help="Path to trained model directory")],
     data: Annotated[Path, typer.Argument(help="Path to input data for inference")],
+    model: Annotated[
+        Optional[Path], 
+        typer.Option("--model", help="Path to trained model directory")
+    ] = None,
+    model_id: Annotated[
+        Optional[str], 
+        typer.Option("--model-id", help="Registry model ID for trained model")
+    ] = None,
     output: Annotated[
         Optional[Path],
         typer.Option("--output", "-o", help="Output path for results (default: model_dir/inference_results)")
@@ -1781,13 +1788,19 @@ def inference(
 
     This command loads a trained model and runs inference on new data,
     automatically detecting validation vs pure inference modes.
+    
+    Model specification (exactly one required):
+    - Use --model for direct path to model directory
+    - Use --model-id for registry-based model lookup
 
     Parameters
     ----------
-    model : Path
-        Path to trained model directory
     data : Path
         Path to input data for inference
+    model : Optional[Path]
+        Path to trained model directory (use with --model)
+    model_id : Optional[str]
+        Registry model ID for trained model (use with --model-id)
     output : Optional[Path]
         Output path for results (default: model_dir/inference_results)
     validate : bool
@@ -1801,11 +1814,30 @@ def inference(
     -------
     None
     """
-    # Validate arguments
+    # Validate model specification: exactly one of --model or --model-id required
+    if model and model_id:
+        typer.echo("❌ Cannot specify both --model and --model-id. Use exactly one.", err=True)
+        raise typer.Exit(code=1)
+    elif model_id:
+        # Registry-based model lookup
+        try:
+            from emuses.tools.local_model_registry import LocalModelRegistry
+            registry = LocalModelRegistry()
+            model = registry.get_model_path(model_id)
+            typer.echo(f"🔍 Registry lookup: {model_id} -> {model}")
+        except Exception as e:
+            typer.echo(f"❌ Registry lookup failed for model ID '{model_id}': {e}", err=True)
+            raise typer.Exit(code=1)
+    elif not model:
+        typer.echo("❌ Model specification required. Use --model <path> or --model-id <id>", err=True)
+        raise typer.Exit(code=1)
+
+    # Validate resolved model path exists
     if not model.exists():
         typer.echo(f"❌ Model directory not found: {model}", err=True)
         raise typer.Exit(code=1)
 
+    # Validate input data
     if not data.exists():
         typer.echo(f"❌ Input data not found: {data}", err=True)
         raise typer.Exit(code=1)

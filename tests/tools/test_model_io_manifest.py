@@ -59,18 +59,16 @@ class TestModelManifestGeneration:
             manifest = json.load(f)
         
         # Validate required sections
-        assert "model_info" in manifest
         assert "file_integrity" in manifest
         assert "training_context" in manifest
         assert "compatibility" in manifest
         
-        # Validate model_info section
-        model_info = manifest["model_info"]
-        assert model_info["name"] == "test_model"
-        assert "version" in model_info
-        assert "created_at" in model_info
-        assert "emuses_version" in model_info
-        assert model_info["description"] == "Test model for manifest generation"
+        # Validate top-level model metadata
+        assert manifest["name"] == "test_model"
+        assert "version" in manifest
+        assert "created_at" in manifest
+        assert "emuses_version" in manifest
+        assert manifest["description"] == "Test model for manifest generation"
 
     def test_manifest_file_integrity_section(self, model_manager, dummy_model, temp_dir):
         """Test that file integrity section contains SHA-256 hashes."""
@@ -122,7 +120,7 @@ class TestModelManifestGeneration:
             manifest = json.load(f)
         
         # Should be version 1.0.1 (second save)
-        version = manifest["model_info"]["version"]
+        version = manifest["version"]
         assert version == "1.0.1"
 
 

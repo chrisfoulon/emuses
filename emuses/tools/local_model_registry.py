@@ -8,12 +8,21 @@ import json
 import logging
 import shutil
 import uuid
+import threading
 from pathlib import Path
 from typing import Dict, List, Optional, Any, Tuple, Union
 from datetime import datetime
 from uuid import UUID
 from dataclasses import dataclass, field
 from enum import Enum
+from contextlib import contextmanager
+
+# File locking support - fallback for Windows
+try:
+    import fcntl
+    HAS_FCNTL = True
+except ImportError:
+    HAS_FCNTL = False
 
 from emuses.tools.model_io import ModelIOManager
 from emuses.tools.base_model_registry import BaseModelRegistry
@@ -55,36 +64,11 @@ class RegistryTransaction:
     state: TransactionState = TransactionState.PENDING
 
 
-class DuplicateResolutionMode(Enum):
-    """Duplicate resolution options during installation."""
-    SKIP = "skip"
-    FORCE = "force"
-    INTERACTIVE = "interactive"
-    BATCH = "batch"
-
-
-@dataclass
-class DuplicateMatch:
-    """Represents a potential duplicate model match."""
-    model_id: str
-    similarity_score: float
-    match_type: str  # 'configuration', 'content', 'performance'
-    existing_model_info: Dict[str, str]
-
-
-@dataclass
-class InstallationOptions:
-    """Options for enhanced model installation."""
-    duplicate_resolution: DuplicateResolutionMode = DuplicateResolutionMode.INTERACTIVE
-    force_unique_id: bool = False
-    check_performance: bool = True
-    batch_decisions: Optional[Dict[str, str]] = None
-    batch_policies: Optional[Dict[str, str]] = None
-    use_semantic_ids: bool = False
+# Complex deduplication classes removed - simplified to basic skip_duplicates flag
 
 
 class LocalModelRegistry(BaseModelRegistry):
-    """Local file-based model registry.
+    """Local file-based model registry with thread-safe operations.
 
     Manages a collection of models stored in a local directory structure
     with JSON-based metadata indexing.
@@ -124,7 +108,71 @@ class LocalModelRegistry(BaseModelRegistry):
         # Initialize storage manager
         self.storage_manager = StorageManager(self.registry_path)
 
+        # Thread-safe access control
+        self._index_lock = threading.RLock()  # Reentrant lock for nested operations
+
         self._initialize_registry()
+
+    @contextmanager
+    def _safe_index_access(self, mode='r'):
+        """
+        Context manager for thread-safe and file-safe index access.
+
+        Provides both thread-level locking and file-level locking to prevent
+        race conditions during concurrent registry operations.
+
+        Parameters
+        ----------
+        mode : str
+            File access mode ('r' for read, 'w' for write, 'r+' for read/write)
+        """
+        with self._index_lock:  # Thread-level synchronization
+            # Ensure index file exists before attempting to lock it
+            if not self.index_path.exists() and 'r' in mode:
+                # Create empty index if it doesn't exist for read operations
+                self._create_empty_index()
+
+            try:
+                # File-level locking for cross-process safety
+                with open(self.index_path, mode) as f:
+                    try:
+                        if HAS_FCNTL:
+                            if 'w' in mode or '+' in mode:
+                                fcntl.flock(f.fileno(), fcntl.LOCK_EX)  # Exclusive lock for writes
+                            else:
+                                fcntl.flock(f.fileno(), fcntl.LOCK_SH)  # Shared lock for reads
+
+                        yield f
+
+                    finally:
+                        if HAS_FCNTL:
+                            fcntl.flock(f.fileno(), fcntl.LOCK_UN)  # Always unlock
+
+            except (OSError, IOError) as e:
+                if 'w' in mode and not self.index_path.exists():
+                    # Create the index file if it doesn't exist for write operations
+                    self._create_empty_index()
+                    with open(self.index_path, mode) as f:
+                        if HAS_FCNTL:
+                            fcntl.flock(f.fileno(), fcntl.LOCK_EX)
+                        yield f
+                        if HAS_FCNTL:
+                            fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+                else:
+                    raise
+
+    def _create_empty_index(self) -> None:
+        """Create an empty registry index file."""
+        empty_index = {
+            "version": self.REGISTRY_VERSION,
+            "created": datetime.utcnow().isoformat() + "Z",
+            "last_modified": datetime.utcnow().isoformat() + "Z",
+            "models": {}
+        }
+
+        self.registry_path.mkdir(parents=True, exist_ok=True)
+        with open(self.index_path, 'w') as f:
+            json.dump(empty_index, f, indent=2)
 
     def _initialize_registry(self) -> None:
         """Initialize registry directory structure and index file.
@@ -150,7 +198,7 @@ class LocalModelRegistry(BaseModelRegistry):
             logger.debug(f"Using existing model registry at {self.registry_path}")
 
     def _load_index(self) -> Dict[str, Any]:
-        """Load the registry index from JSON file.
+        """Load the registry index from JSON file with thread-safe access.
 
         Returns
         -------
@@ -164,11 +212,30 @@ class LocalModelRegistry(BaseModelRegistry):
         json.JSONDecodeError
             If registry.json contains invalid JSON
         """
-        with open(self.index_path, 'r') as f:
-            return json.load(f)
+        try:
+            with self._safe_index_access('r') as f:
+                content = f.read().strip()
+                if not content:
+                    # Handle empty file - return default structure
+                    return {
+                        "version": self.REGISTRY_VERSION,
+                        "created": datetime.utcnow().isoformat() + "Z",
+                        "last_modified": datetime.utcnow().isoformat() + "Z",
+                        "models": {}
+                    }
+                return json.loads(content)
+        except (FileNotFoundError, json.JSONDecodeError) as e:
+            logger.error(f"Error loading registry index: {e}")
+            # Return empty structure on error
+            return {
+                "version": self.REGISTRY_VERSION,
+                "created": datetime.utcnow().isoformat() + "Z",
+                "last_modified": datetime.utcnow().isoformat() + "Z",
+                "models": {}
+            }
 
     def _save_index(self, index_data: Dict[str, Any]) -> None:
-        """Save the registry index to JSON file.
+        """Save the registry index to JSON file with thread-safe access.
 
         Parameters
         ----------
@@ -180,9 +247,56 @@ class LocalModelRegistry(BaseModelRegistry):
         OSError
             If unable to write to registry.json
         """
-        index_data["last_updated"] = datetime.utcnow().isoformat()
-        with open(self.index_path, 'w') as f:
+        index_data["last_modified"] = datetime.utcnow().isoformat() + "Z"
+
+        with self._safe_index_access('w') as f:
+            f.truncate(0)  # Clear file content completely before writing
+            f.seek(0)      # Reset file position to beginning
             json.dump(index_data, f, indent=2, sort_keys=True)
+            f.flush()      # Ensure data is written to disk
+
+    def _atomic_index_update(self, update_func) -> None:
+        """
+        Atomically update the registry index using a function.
+
+        This ensures the load-modify-save cycle is atomic to prevent
+        race conditions during concurrent operations.
+
+        Parameters
+        ----------
+        update_func : callable
+            Function that takes the index dict and modifies it in place
+        """
+        with self._safe_index_access('r+') as f:
+            # Read current index
+            content = f.read().strip()
+            if content:
+                index = json.loads(content)
+            else:
+                index = {
+                    "version": self.REGISTRY_VERSION,
+                    "created": datetime.utcnow().isoformat() + "Z",
+                    "last_modified": datetime.utcnow().isoformat() + "Z",
+                    "models": {}
+                }
+
+            # Apply update function
+            update_func(index)
+
+            # Update timestamp and write back atomically
+            index["last_modified"] = datetime.utcnow().isoformat() + "Z"
+
+            # Write back to file
+            f.seek(0)
+            f.truncate(0)
+            json.dump(index, f, indent=2, sort_keys=True)
+            f.flush()
+
+    def _add_model_to_index(self, index: Dict[str, Any], model_id: str, model_info: Dict[str, Any]) -> None:
+        """Add a model to the registry index."""
+        if "models" not in index:
+            index["models"] = {}
+        index["models"][model_id] = model_info
 
     def _model_matches_filters(self, model: Dict[str, Any], filters: Dict[str, Any]) -> bool:
         """Check if a model matches the given filters.
@@ -622,6 +736,15 @@ class LocalModelRegistry(BaseModelRegistry):
                 logger.info(f"Validating model at {model_path}")
                 validation_result = model_io.validate_model(model_path)
 
+                # Reject invalid EMUSES folders
+                if not validation_result.is_complete_model:
+                    error_msg = f"Invalid EMUSES folder: {'; '.join(validation_result.validation_errors)}"
+                    logger.error(error_msg)
+                    return {
+                        "status": "error",
+                        "message": error_msg
+                    }
+
                 # Extract basic manifest information from validation result
                 manifest = {
                     "name": validation_result.name,
@@ -633,9 +756,15 @@ class LocalModelRegistry(BaseModelRegistry):
                 # Use provided name or fall back to validation result name
                 final_name = effective_name if effective_name is not None else validation_result.name
 
-                # Install model using ModelIOManager
+                # Install model using ModelIOManager with shared storage optimization
                 logger.info(f"Installing model '{final_name}'")
-                model_id = model_io.install_model(model_path, self.models_path, name=effective_name)
+                model_id = model_io.install_model(
+                    source_path=model_path,
+                    destination_path=self.models_path,
+                    name=effective_name,
+                    use_shared_storage=True,
+                    registry_base_path=self.registry_path
+                )
 
                 # Record operation for transaction rollback
                 if transaction:
@@ -652,25 +781,25 @@ class LocalModelRegistry(BaseModelRegistry):
                     model_size = sum(f.stat().st_size for f in model_dir.rglob('*') if f.is_file())
                     track_model_storage(model_size, manifest.get("type", "unknown"))
 
-                # Create model metadata entry with enhanced validation info
+                # Create model metadata entry for complete EMUSES folder
                 model_info = {
                     "model_id": model_id,
                     "name": final_name,
                     "version": version,
-                    "type": manifest.get("type", "unknown"),
+                    "type": manifest.get("type", "emuses_model"),
                     "description": description or manifest.get("description", ""),
                     "installed_at": datetime.utcnow().isoformat(),
                     "source_path": str(model_path),
                     "manifest": manifest,
                     "tags": tags or [],
-                    # Enhanced validation information
-                    "complete_model_info": {
-                        "is_complete_model": validation_result.is_complete_model,
+                    # Simple validation info - treat folder as atomic unit
+                    "validation_info": {
+                        "is_valid_emuses_folder": validation_result.is_complete_model,
                         "configuration_hash": validation_result.configuration_hash,
                         "content_hash": validation_result.content_hash,
-                        "components_found": {k: str(v) for k, v in validation_result.components_found.items()},
-                        "missing_components": validation_result.missing_components,
-                        "validation_errors": validation_result.validation_errors
+                        "validation_errors": validation_result.validation_errors,
+                        # Feature augmentation models detected (optional components)
+                        "feature_models": self._extract_feature_model_info(validation_result.components_found)
                     }
                 }
 
@@ -680,10 +809,8 @@ class LocalModelRegistry(BaseModelRegistry):
                         transaction.rollback_data["pending_index_updates"] = {}
                     transaction.rollback_data["pending_index_updates"][model_id] = model_info
                 else:
-                    # Update registry index immediately (backward compatibility)
-                    index = self._load_index()
-                    index["models"][model_id] = model_info
-                    self._save_index(index)
+                    # Update registry index atomically
+                    self._atomic_index_update(lambda index: self._add_model_to_index(index, model_id, model_info))
 
                 logger.info(f"Successfully installed model '{final_name}' with ID {model_id}")
 
@@ -711,7 +838,9 @@ class LocalModelRegistry(BaseModelRegistry):
                 return result
 
             except Exception as e:
-                logger.error(f"Error installing model: {e}")
+                # Enhanced error reporting for better debugging
+                error_message = str(e) if str(e) and str(e) != "message" else f"{type(e).__name__}: {repr(e)}"
+                logger.error(f"Error installing model: {error_message}")
 
                 # Rollback transaction on error
                 if transaction:
@@ -722,7 +851,7 @@ class LocalModelRegistry(BaseModelRegistry):
 
                 return {
                     "status": "error",
-                    "message": str(e)
+                    "message": error_message
                 }
 
     def get_model_info(self, model_id: Optional[str] = None,
@@ -777,6 +906,11 @@ class LocalModelRegistry(BaseModelRegistry):
             except (FileNotFoundError, json.JSONDecodeError) as e:
                 logger.error(f"Error loading registry index: {e}")
                 return None
+
+    # REMOVED: get_model_components() method
+    # This method violated EMUSES architecture by treating models as collections
+    # of separable components. EMUSES models are complete training folder units.
+    # Use get_model_path() to access the complete folder instead.
 
     def search_models(self, query: str, limit: int = 20,
                      user_id: Optional[Union[UUID, str]] = None,
@@ -1006,15 +1140,14 @@ class LocalModelRegistry(BaseModelRegistry):
         try:
             # Apply all pending index updates atomically
             if "pending_index_updates" in transaction.rollback_data:
-                index = self._load_index()
                 pending_updates = transaction.rollback_data["pending_index_updates"]
 
-                # Apply all updates to the index
-                for model_id, model_info in pending_updates.items():
-                    index["models"][model_id] = model_info
+                def apply_updates(index):
+                    """Apply all pending updates to the index."""
+                    for model_id, model_info in pending_updates.items():
+                        self._add_model_to_index(index, model_id, model_info)
 
-                # Save updated index atomically
-                self._save_index(index)
+                self._atomic_index_update(apply_updates)
 
             # Mark transaction as committed
             transaction.state = TransactionState.COMMITTED
@@ -1103,7 +1236,7 @@ class LocalModelRegistry(BaseModelRegistry):
 
     def find_duplicates_by_configuration_hash(self, configuration_hash: str) -> List[Dict[str, Any]]:
         """
-        Find all models with the given configuration hash.
+        Find all EMUSES folders with the given configuration hash.
 
         Parameters
         ----------
@@ -1113,7 +1246,7 @@ class LocalModelRegistry(BaseModelRegistry):
         Returns
         -------
         List[Dict[str, Any]]
-            List of models with matching configuration hash
+            List of EMUSES models with matching configuration hash
         """
         try:
             index = self._load_index()
@@ -1121,8 +1254,8 @@ class LocalModelRegistry(BaseModelRegistry):
 
             matching_models = []
             for model_id, model_info in models.items():
-                complete_info = model_info.get("complete_model_info", {})
-                model_config_hash = complete_info.get("configuration_hash", "")
+                validation_info = model_info.get("validation_info", {})
+                model_config_hash = validation_info.get("configuration_hash", "")
 
                 if model_config_hash == configuration_hash:
                     matching_models.append(model_info)
@@ -1136,7 +1269,7 @@ class LocalModelRegistry(BaseModelRegistry):
 
     def find_duplicates_by_content_hash(self, content_hash: str) -> List[Dict[str, Any]]:
         """
-        Find all models with the given content hash.
+        Find all EMUSES folders with the given content hash.
 
         Parameters
         ----------
@@ -1146,7 +1279,7 @@ class LocalModelRegistry(BaseModelRegistry):
         Returns
         -------
         List[Dict[str, Any]]
-            List of models with matching content hash
+            List of EMUSES models with matching content hash
         """
         try:
             index = self._load_index()
@@ -1154,8 +1287,8 @@ class LocalModelRegistry(BaseModelRegistry):
 
             matching_models = []
             for model_id, model_info in models.items():
-                complete_info = model_info.get("complete_model_info", {})
-                model_content_hash = complete_info.get("content_hash", "")
+                validation_info = model_info.get("validation_info", {})
+                model_content_hash = validation_info.get("content_hash", "")
 
                 if model_content_hash == content_hash:
                     matching_models.append(model_info)
@@ -1186,10 +1319,10 @@ class LocalModelRegistry(BaseModelRegistry):
             content_hash_groups = {}
 
             for model_id, model_info in models.items():
-                complete_info = model_info.get("complete_model_info", {})
+                validation_info = model_info.get("validation_info", {})
 
-                config_hash = complete_info.get("configuration_hash", "")
-                content_hash = complete_info.get("content_hash", "")
+                config_hash = validation_info.get("configuration_hash", "")
+                content_hash = validation_info.get("content_hash", "")
 
                 # Lightweight model info for summary
                 model_summary = {
@@ -1247,9 +1380,9 @@ class LocalModelRegistry(BaseModelRegistry):
             if not model_info:
                 return {"configuration_matches": [], "content_matches": []}
 
-            complete_info = model_info.get("complete_model_info", {})
-            config_hash = complete_info.get("configuration_hash", "")
-            content_hash = complete_info.get("content_hash", "")
+            validation_info = model_info.get("validation_info", {})
+            config_hash = validation_info.get("configuration_hash", "")
+            content_hash = validation_info.get("content_hash", "")
 
             config_matches = []
             content_matches = []
@@ -1278,22 +1411,21 @@ class LocalModelRegistry(BaseModelRegistry):
     # Enhanced Installation Workflow with Deduplication Integration
 
     def install_model_with_deduplication(self, model_path: Path,
-                                       options: Optional[InstallationOptions] = None,
+                                       skip_duplicates: bool = True,
                                        transaction: Optional[RegistryTransaction] = None,
                                        **kwargs) -> Dict[str, Any]:
         """
-        Install a model with intelligent deduplication detection and resolution.
+        Install a model with simple duplicate detection based on exact hash matching.
 
-        This enhanced installation workflow integrates deduplication checking
-        directly into the installation process, providing seamless duplicate
-        detection and resolution based on configuration, content, and performance.
+        Uses stable content and configuration hashes to detect exact duplicates.
+        When duplicates are found, provides clear messaging and skips installation.
 
         Parameters
         ----------
         model_path : Path
             Path to the model file or directory to install
-        options : Optional[InstallationOptions]
-            Installation options including duplicate resolution mode
+        skip_duplicates : bool, default=True
+            Whether to skip installation if exact duplicate found
         transaction : Optional[RegistryTransaction]
             Optional transaction for atomic operations
         **kwargs
@@ -1302,231 +1434,91 @@ class LocalModelRegistry(BaseModelRegistry):
         Returns
         -------
         Dict[str, Any]
-            Installation result with duplicate check information
+            Installation result with duplicate status information
         """
-        if options is None:
-            options = InstallationOptions()
-
         try:
             # Initialize ModelIOManager for validation
             model_io = ModelIOManager(self.models_path)
 
-            # Validate the model first to get hashes for duplicate detection
-            logger.info(f"Validating model at {model_path} for deduplication check")
+            # Validate the model to get stable hashes
+            logger.info(f"Validating model at {model_path}")
             validation_result = model_io.validate_model(model_path)
 
-            # Perform duplicate detection
-            duplicate_check = self._check_for_duplicates(validation_result)
+            # Check for exact duplicate using stable hashes
+            if skip_duplicates:
+                duplicate_check = self._check_exact_duplicate(validation_result)
+                if duplicate_check["duplicate_found"]:
+                    existing_info = duplicate_check["existing_model"]
+                    print(f"✓ Model already installed as '{existing_info['name']}' ({existing_info['model_id']})")
+                    return {
+                        "status": "skipped",
+                        "reason": "duplicate_model",
+                        "existing_model_id": existing_info["model_id"],
+                        "existing_model_name": existing_info["name"]
+                    }
 
-            # Handle duplicate resolution based on options
-            resolution_result = self._resolve_duplicates(duplicate_check, options)
-
-            if resolution_result["action"] == "skip":
-                return {
-                    "status": "skipped",
-                    "reason": "duplicate_detected",
-                    "duplicate_check": duplicate_check,
-                    "resolution": resolution_result
-                }
-
-            # Proceed with installation (forced or no duplicates found)
-            install_kwargs = kwargs.copy()
-
-            # Handle force installation with unique ID generation
-            if options.force_unique_id or resolution_result["action"] == "force":
-                unique_model_name = self._generate_unique_model_name(validation_result)
-                install_kwargs["model_name"] = unique_model_name
-
-            # Generate semantic model ID if option is enabled
-            if options.use_semantic_ids:
-                # Check if model_name was already set (due to force unique)
-                if "model_name" not in install_kwargs:
-                    semantic_id = self.generate_semantic_model_id(validation_result)
-                    install_kwargs["model_name"] = semantic_id
-
-            # Call the base install_model method
+            # No duplicate found or skip_duplicates=False, proceed with installation
             result = self.install_model(
                 model_path=model_path,
                 transaction=transaction,
-                **install_kwargs
+                **kwargs
             )
-
-            # Enhance result with deduplication information
-            if result.get("status") == "success":
-                result.update({
-                    "duplicate_check": duplicate_check,
-                    "resolution": resolution_result,
-                    "forced_installation": (
-                        resolution_result["action"] == "force" or
-                        options.force_unique_id
-                    )
-                })
-
-                if transaction:
-                    result["transaction_id"] = transaction.transaction_id
-
-                if options.duplicate_resolution == DuplicateResolutionMode.BATCH:
-                    result["batch_processing"] = True
 
             return result
 
         except Exception as e:
-            logger.error(f"Error in enhanced installation: {e}")
+            # Enhanced error reporting for better debugging
+            error_message = str(e) if str(e) and str(e) != "message" else f"{type(e).__name__}: {repr(e)}"
+            logger.error(f"Error in model installation: {error_message}")
             return {
                 "status": "error",
-                "message": str(e)
+                "message": error_message
             }
 
-    def _check_for_duplicates(self, validation_result) -> Dict[str, Any]:
+    def _check_exact_duplicate(self, validation_result) -> Dict[str, Any]:
         """
-        Check for duplicates based on validation result hashes.
+        Simple exact hash matching for complete EMUSES folder duplicates.
+
+        Uses stable content and configuration hashes to identify exact duplicates
+        of complete EMUSES training folders. Treats folders as atomic units.
 
         Parameters
         ----------
         validation_result : CompleteModelValidation
-            Model validation result with hashes
+            EMUSES folder validation result with stable hashes
 
         Returns
         -------
         Dict[str, Any]
-            Duplicate check results
+            Duplicate check result with existing model info if found
         """
-        duplicates_found = []
+        existing_models = self._load_index().get("models", {})
 
-        # Check configuration-based duplicates
-        config_duplicates = self.find_duplicates_by_configuration_hash(
-            validation_result.configuration_hash
-        )
-        for duplicate in config_duplicates:
-            duplicates_found.append(DuplicateMatch(
-                model_id=duplicate.get("model_id", "unknown"),
-                similarity_score=1.0,  # Exact configuration match
-                match_type="configuration",
-                existing_model_info={
-                    "name": duplicate.get("name", "unknown"),
-                    "version": duplicate.get("version", "unknown"),
-                    "created_at": duplicate.get("installed_at", "unknown")
-                }
-            ))
+        for model_id, model_info in existing_models.items():
+            validation_info = model_info.get("validation_info", {})
+            existing_config = validation_info.get("configuration_hash", "")
+            existing_content = validation_info.get("content_hash", "")
 
-        # Check content-based duplicates
-        content_duplicates = self.find_duplicates_by_content_hash(
-            validation_result.content_hash
-        )
-        for duplicate in content_duplicates:
-            duplicates_found.append(DuplicateMatch(
-                model_id=duplicate.get("model_id", "unknown"),
-                similarity_score=0.95,  # High similarity for content match
-                match_type="content",
-                existing_model_info={
-                    "name": duplicate.get("name", "unknown"),
-                    "version": duplicate.get("version", "unknown"),
-                    "created_at": duplicate.get("installed_at", "unknown")
-                }
-            ))
-
-        return {
-            "duplicates_found": [
-                {
-                    "model_id": dup.model_id,
-                    "similarity_score": dup.similarity_score,
-                    "match_type": dup.match_type,
-                    "existing_model_info": dup.existing_model_info
-                }
-                for dup in duplicates_found
-            ],
-            "has_duplicates": len(duplicates_found) > 0,
-            "duplicate_count": len(duplicates_found)
-        }
-
-    def _resolve_duplicates(self, duplicate_check: Dict[str, Any],
-                          options: InstallationOptions) -> Dict[str, Any]:
-        """
-        Resolve duplicate detection based on installation options.
-
-        Parameters
-        ----------
-        duplicate_check : Dict[str, Any]
-            Results from duplicate detection
-        options : InstallationOptions
-            Installation options with resolution mode
-
-        Returns
-        -------
-        Dict[str, Any]
-            Resolution decision and metadata
-        """
-        if not duplicate_check["has_duplicates"]:
-            return {
-                "action": "proceed",
-                "reason": "no_duplicates_found"
-            }
-
-        if options.duplicate_resolution == DuplicateResolutionMode.SKIP:
-            return {
-                "action": "skip",
-                "reason": "user_configured_skip_on_duplicates"
-            }
-        elif options.duplicate_resolution == DuplicateResolutionMode.FORCE:
-            return {
-                "action": "force",
-                "reason": "user_configured_force_installation"
-            }
-        elif options.duplicate_resolution == DuplicateResolutionMode.BATCH:
-            return self._handle_batch_resolution(duplicate_check, options)
-        else:  # INTERACTIVE mode
-            return {
-                "action": "interactive",
-                "reason": "user_interaction_required",
-                "pending": True
-            }
-
-    def _handle_batch_resolution(self, duplicate_check: Dict[str, Any],
-                               options: InstallationOptions) -> Dict[str, Any]:
-        """
-        Handle batch mode duplicate resolution using predefined decisions.
-
-        Parameters
-        ----------
-        duplicate_check : Dict[str, Any]
-            Results from duplicate detection
-        options : InstallationOptions
-            Installation options with batch decisions
-
-        Returns
-        -------
-        Dict[str, Any]
-            Batch resolution decision
-        """
-        if not options.batch_decisions:
-            return {
-                "action": "proceed",
-                "reason": "no_batch_decisions_configured"
-            }
-
-        # Apply batch decisions based on duplicate types found
-        for duplicate in duplicate_check["duplicates_found"]:
-            match_type = duplicate["match_type"]
-            decision_key = f"{match_type}_duplicates"
-
-            if decision_key in options.batch_decisions:
-                decision = options.batch_decisions[decision_key]
-                if decision == "skip":
-                    return {
-                        "action": "skip",
-                        "reason": f"batch_decision_skip_for_{match_type}"
+            # Check for exact match on both configuration and content hashes
+            if (validation_result.configuration_hash == existing_config and
+                validation_result.content_hash == existing_content):
+                return {
+                    "duplicate_found": True,
+                    "existing_model": {
+                        "model_id": model_id,
+                        "name": model_info.get("name", "unknown"),
+                        "version": model_info.get("version", "unknown"),
+                        "created_at": model_info.get("installed_at", "unknown")
                     }
-                elif decision == "force":
-                    return {
-                        "action": "force",
-                        "reason": f"batch_decision_force_for_{match_type}"
-                    }
+                }
 
-        # Default to proceed if no specific batch decision matches
-        return {
-            "action": "proceed",
-            "reason": "batch_decisions_allow_installation"
-        }
+        return {"duplicate_found": False}
+
+    # Removed complex _check_for_duplicates method - replaced with _check_exact_duplicate
+
+    # Removed complex _resolve_duplicates method - replaced with simple skip_duplicates flag
+
+    # Removed complex _handle_batch_resolution method - replaced with simple batch handling
 
     def _generate_unique_model_name(self, validation_result) -> str:
         """
@@ -1547,6 +1539,53 @@ class LocalModelRegistry(BaseModelRegistry):
         unique_suffix = uuid.uuid4().hex[:8]
 
         return f"{base_name}_{timestamp}_{unique_suffix}"
+
+    def _extract_feature_model_info(self, components_found: Dict[str, Any]) -> Dict[str, List[str]]:
+        """
+        Extract feature model information from validation components.
+
+        This method processes the components found during model validation
+        and extracts information about feature augmentation models (PCA,
+        kPCA, autoencoder) that are part of the EMUSES folder.
+
+        Parameters
+        ----------
+        components_found : Dict[str, Any]
+            Components dictionary from model validation
+
+        Returns
+        -------
+        Dict[str, List[str]]
+            Dictionary mapping feature model types to lists of model filenames
+
+        Example
+        -------
+        {
+            'pca': ['pca_model_v1_0_0.joblib'],
+            'autoencoder': ['autoencoder_model_v1_0_0.joblib'],
+            'kpca': []  # None found
+        }
+        """
+        feature_info = {
+            'pca': [],
+            'kpca': [],
+            'autoencoder': []
+        }
+
+        # Process components to extract feature model filenames
+        for key, value in components_found.items():
+            if key.endswith('_models'):
+                # Extract model type from key (e.g., 'pca_models' -> 'pca')
+                model_type = key[:-7]  # Remove '_models' suffix
+
+                if model_type in feature_info and isinstance(value, list):
+                    # Extract filenames from Path objects
+                    feature_info[model_type] = [
+                        path.name if hasattr(path, 'name') else str(path)
+                        for path in value
+                    ]
+
+        return feature_info
 
     def generate_semantic_model_id(self, validation_result, suffix_counter: int = 1) -> str:
         """
@@ -1596,22 +1635,21 @@ class LocalModelRegistry(BaseModelRegistry):
         return semantic_id
 
     def install_model_with_interactive_resolution(self, model_path: Path,
-                                                 options: Optional[InstallationOptions] = None,
+                                                 options: Optional[Dict[str, Any]] = None,
                                                  transaction: Optional[RegistryTransaction] = None,
                                                  **kwargs) -> Dict[str, Any]:
         """
         Install a model with interactive CLI duplicate resolution.
 
-        This method provides a user-friendly CLI interface for resolving
-        duplicate models, allowing users to view details, skip, or force
-        installation based on their interactive choices.
+        NOTE: Interactive workflows have been simplified. This method now
+        delegates to the basic deduplication workflow for consistent behavior.
 
         Parameters
         ----------
         model_path : Path
             Path to the model file or directory to install
-        options : Optional[InstallationOptions]
-            Installation options including resolution mode
+        options : Optional[Dict[str, Any]]
+            Installation options (ignored - simplified behavior)
         transaction : Optional[RegistryTransaction]
             Optional transaction for atomic operations
         **kwargs
@@ -1620,312 +1658,146 @@ class LocalModelRegistry(BaseModelRegistry):
         Returns
         -------
         Dict[str, Any]
-            Installation result with user decision information
+            Installation result with duplicate status information
         """
-        if options is None:
-            options = InstallationOptions()
+        # Interactive workflows have been simplified - delegate to basic deduplication
+        return self.install_model_with_deduplication(
+            model_path=model_path,
+            skip_duplicates=True,
+            transaction=transaction,
+            **kwargs
+        )
 
-        try:
-            # Initialize ModelIOManager for validation
-            model_io = ModelIOManager(self.models_path)
-
-            # Validate the model first to get hashes for duplicate detection
-            logger.info(f"Validating model at {model_path} for interactive resolution")
-            validation_result = model_io.validate_model(model_path)
-
-            # Perform duplicate detection
-            duplicate_check = self._check_for_duplicates(validation_result)
-
-            if not duplicate_check["has_duplicates"]:
-                # No duplicates found, proceed with normal installation
-                result = self.install_model(
-                    model_path=model_path,
-                    transaction=transaction,
-                    **kwargs
-                )
-                if result.get("status") == "success":
-                    result.update({
-                        "duplicate_check": duplicate_check,
-                        "user_decision": "proceed",
-                        "forced_installation": False
-                    })
-                return result
-
-            # Handle interactive duplicate resolution
-            user_decision = self._prompt_user_for_duplicate_resolution(
-                duplicate_check, validation_result
-            )
-
-            if user_decision == "skip":
-                return {
-                    "status": "skipped",
-                    "reason": "user_chose_skip",
-                    "duplicate_check": duplicate_check,
-                    "user_decision": user_decision
-                }
-            elif user_decision == "force":
-                # Force installation with unique name
-                install_kwargs = kwargs.copy()
-                unique_model_name = self._generate_unique_model_name(validation_result)
-                install_kwargs["model_name"] = unique_model_name
-
-                result = self.install_model(
-                    model_path=model_path,
-                    transaction=transaction,
-                    **install_kwargs
-                )
-
-                if result.get("status") == "success":
-                    result.update({
-                        "duplicate_check": duplicate_check,
-                        "user_decision": user_decision,
-                        "forced_installation": True
-                    })
-
-                return result
-
-            # Should not reach here, but handle gracefully
-            return {
-                "status": "error",
-                "message": f"Unknown user decision: {user_decision}"
-            }
-
-        except Exception as e:
-            logger.error(f"Error in interactive installation: {e}")
-            return {
-                "status": "error",
-                "message": str(e)
-            }
-
-    def _prompt_user_for_duplicate_resolution(self, duplicate_check: Dict[str, Any],
-                                            validation_result) -> str:
-        """
-        Prompt user for duplicate resolution decision via CLI interaction.
-
-        Parameters
-        ----------
-        duplicate_check : Dict[str, Any]
-            Results from duplicate detection
-        validation_result : CompleteModelValidation
-            Model validation result for the new model
-
-        Returns
-        -------
-        str
-            User decision: 'skip', 'force', or 'details'
-        """
-        # Display duplicate detection summary
-        print("\n🔍 Duplicate Model Detected!")
-        print(f"Attempting to install: {validation_result.name} v{validation_result.version}")
-        print(f"Found {duplicate_check['duplicate_count']} similar model(s) in registry:")
-
-        for i, duplicate in enumerate(duplicate_check["duplicates_found"], 1):
-            match_info = duplicate["existing_model_info"]
-            similarity = duplicate["similarity_score"]
-            match_type = duplicate["match_type"]
-
-            print(f"  {i}. {match_info['name']} v{match_info['version']} "
-                  f"({match_type} match, {similarity:.1%} similar)")
-
-        while True:
-            print("\nOptions:")
-            print("  [s] Skip installation (keep existing model)")
-            print("  [f] Force installation (install with unique name)")
-            print("  [d] View duplicate details")
-
-            try:
-                choice = input("Your choice (s/f/d): ").lower().strip()
-            except (EOFError, KeyboardInterrupt):
-                print("\nInstallation cancelled by user.")
-                return "skip"
-
-            if choice == 's':
-                return "skip"
-            elif choice == 'f':
-                return "force"
-            elif choice == 'd':
-                self._display_duplicate_details(duplicate_check)
-                continue  # Show prompt again after displaying details
-            else:
-                print(f"Invalid choice: '{choice}'. Please enter 's', 'f', or 'd'.")
-
-    def _display_duplicate_details(self, duplicate_check: Dict[str, Any]) -> None:
-        """
-        Display detailed information about found duplicates.
-
-        Parameters
-        ----------
-        duplicate_check : Dict[str, Any]
-            Results from duplicate detection with detailed match information
-        """
-        print("\n📋 Duplicate Model Details:")
-        print("=" * 50)
-
-        for i, duplicate in enumerate(duplicate_check["duplicates_found"], 1):
-            model_info = duplicate["existing_model_info"]
-            match_type = duplicate["match_type"]
-            similarity = duplicate["similarity_score"]
-
-            print(f"\nDuplicate #{i}:")
-            print(f"  Name: {model_info['name']}")
-            print(f"  Version: {model_info['version']}")
-            print(f"  Installed: {model_info['created_at']}")
-            print(f"  Match Type: {match_type}")
-            print(f"  Similarity: {similarity:.1%}")
-
-            if match_type == "configuration":
-                print("  → Same model configuration (identical training parameters)")
-            elif match_type == "content":
-                print("  → Similar model content (shared components or data)")
-
-        print("\n" + "=" * 50)
+    # Removed complex interactive resolution methods - replaced with simple deduplication
 
     def install_model_with_batch_deduplication(self, model_path: Path,
-                                              options: Optional[InstallationOptions] = None,
+                                              options: Optional[Dict[str, Any]] = None,
                                               transaction: Optional[RegistryTransaction] = None,
                                               **kwargs) -> Dict[str, Any]:
         """
-        Install a model with batch duplicate resolution using predefined policies.
-        
+        Install a model with batch duplicate resolution using simple policies.
+
+        NOTE: Batch workflows have been simplified. This method now delegates
+        to the basic deduplication workflow for consistent behavior.
+
         Parameters
         ----------
         model_path : Path
             Path to the model directory to install
-        options : InstallationOptions, optional
-            Installation options including batch policies
+        options : Optional[Dict[str, Any]], optional
+            Installation options (ignored - simplified behavior)
         transaction : RegistryTransaction, optional
             Existing transaction to use for atomic operations
-            
+
         Returns
         -------
         Dict[str, Any]
-            Installation result with batch processing details
+            Installation result with batch processing status
         """
-        if options is None:
-            options = InstallationOptions()
-            
-        # Install with deduplication but apply batch policies instead of user interaction
-        result = self.install_model_with_deduplication(
+        # Simplified batch processing - delegate to basic deduplication
+        return self.install_model_with_deduplication(
             model_path=model_path,
-            options=options,
+            skip_duplicates=True,
             transaction=transaction,
             **kwargs
         )
-        
-        # Apply batch policies to any duplicate decisions
-        if "duplicate_check" in result and result["duplicate_check"]["has_duplicates"]:
-            batch_policies = options.batch_policies or {}
-            duplicate_check = result["duplicate_check"]
-            
-            batch_decision = self._apply_batch_policies(duplicate_check, batch_policies)
-            
-            result.update({
-                "batch_processing_log": batch_decision["log"],
-                "duplicate_decisions_applied": batch_decision["decisions"],
-                "status": batch_decision["final_status"]
-            })
-            
-        return result
 
     def batch_install_models_with_deduplication(self, model_paths: List[Path],
-                                               batch_policies: Dict[str, str],
+                                               batch_policies: Dict[str, str] = None,
                                                continue_on_error: bool = False) -> List[Dict[str, Any]]:
         """
-        Install multiple models with consistent batch duplicate resolution policies.
-        
+        Install multiple models with simplified batch duplicate resolution.
+
+        NOTE: Batch policies have been simplified. This method now uses
+        basic deduplication for all models in the batch.
+
         Parameters
         ----------
         model_paths : List[Path]
             List of model directory paths to install
-        batch_policies : Dict[str, str]
-            Batch policies for duplicate resolution
+        batch_policies : Dict[str, str], optional
+            Batch policies (ignored - simplified behavior)
         continue_on_error : bool, optional
             Whether to continue processing if one model fails
-            
+
         Returns
         -------
         List[Dict[str, Any]]
             List of installation results for each model
         """
         results = []
-        options = InstallationOptions(
-            duplicate_resolution=DuplicateResolutionMode.BATCH,
-            batch_policies=batch_policies
-        )
-        
+
         for model_path in model_paths:
             try:
-                result = self.install_model_with_batch_deduplication(
+                # Use simplified deduplication for each model in batch
+                result = self.install_model_with_deduplication(
                     model_path=model_path,
-                    options=options
+                    skip_duplicates=True
                 )
-                result["batch_policy_applied"] = True
+                result["batch_processed"] = True
                 results.append(result)
-                
+
             except Exception as e:
                 error_result = {
                     "model_path": str(model_path),
                     "status": "error",
                     "error": str(e),
-                    "batch_policy_applied": False
+                    "batch_processed": False
                 }
                 results.append(error_result)
-                
+
                 if not continue_on_error:
                     break
-                    
+
         return results
 
-    def _apply_batch_policies(self, duplicate_check: Dict[str, Any], 
-                             batch_policies: Dict[str, str]) -> Dict[str, Any]:
-        """
-        Apply batch policies to duplicate resolution decisions.
-        
+    def get_model_path(self, model_id: str) -> Path:
+        """Resolve model ID to complete EMUSES training folder path.
+
+        This is the core registry functionality - simple path lookup service.
+        Following architectural guardrails: Registry as lookup service ONLY.
+
         Parameters
         ----------
-        duplicate_check : Dict[str, Any]
-            Results from duplicate detection
-        batch_policies : Dict[str, str]
-            Policies for different types of duplicates
-            
+        model_id : str
+            ID of the registered model
+
         Returns
         -------
-        Dict[str, Any]
-            Batch decision results with logs and final status
+        Path
+            Path to complete EMUSES folder containing all components
+
+        Raises
+        ------
+        KeyError
+            If model_id is not found in registry
+        FileNotFoundError
+            If model path no longer exists on disk
         """
-        decisions = []
-        log_entries = []
-        final_status = "success"
-        
-        for duplicate in duplicate_check["duplicates_found"]:
-            match_type = duplicate["match_type"]
-            
-            # Determine policy key
-            policy_key = f"{match_type}_duplicates"
-            if policy_key not in batch_policies:
-                policy_key = "all_duplicates"  # Fallback policy
-                
-            policy = batch_policies.get(policy_key, "skip")  # Default to skip
-            
-            decision = {
-                "duplicate_id": duplicate["existing_model_info"].get("id", duplicate["existing_model_info"].get("model_id", "unknown")),
-                "match_type": match_type,
-                "policy_applied": policy,
-                "similarity_score": duplicate["similarity_score"]
-            }
-            decisions.append(decision)
-            
-            log_entry = f"Applied '{policy}' policy to {match_type} duplicate (similarity: {duplicate['similarity_score']:.1%})"
-            log_entries.append(log_entry)
-            
-            # Update final status based on policy
-            if policy == "manual_review":
-                final_status = "manual_review_required"
-            elif policy == "skip" and final_status == "success":
-                final_status = "skipped"
-                
-        return {
-            "decisions": decisions,
-            "log": log_entries,
-            "final_status": final_status
-        }
+        try:
+            index = self._load_index()
+            models = index.get("models", {})
+
+            if model_id not in models:
+                raise KeyError(f"Model not found: {model_id}")
+
+            model_info = models[model_id]
+            model_path_str = model_info.get("source_path")
+
+            if not model_path_str:
+                raise KeyError(f"Model path not found for ID: {model_id}")
+
+            model_path = Path(model_path_str)
+
+            # Verify path still exists
+            if not model_path.exists():
+                raise FileNotFoundError(f"Model path no longer exists: {model_path}")
+
+            logger.info(f"Resolved model ID '{model_id}' to path: {model_path}")
+            return model_path
+
+        except (FileNotFoundError, json.JSONDecodeError) as e:
+            logger.error(f"Error loading registry index: {e}")
+            raise KeyError(f"Registry error for model {model_id}: {e}")
+
+    # Removed complex batch policy method - replaced with simple batch processing

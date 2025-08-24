@@ -27,7 +27,7 @@ class TestEnhancedMetadataStorage:
         manifest = {
             "name": "hash_test_model",
             "version": "2.1.0",
-            "model_type": "complete_emuses_model",
+            "model_type": "emuses_model",
             "description": "Complete model for hash testing",
             "pipeline_config": {
                 "umap_params": {
@@ -113,7 +113,7 @@ class TestEnhancedMetadataStorage:
         print(f"Model manifest: {json.dumps(model_info['manifest'], indent=2)}")
         
         # Verify basic complete model detection worked
-        assert model_info["type"] == "complete_emuses_model"
+        assert model_info["type"] == "emuses_model"
         
         # Verify enhanced metadata is stored
         assert "complete_model_info" in model_info
@@ -173,7 +173,7 @@ class TestEnhancedMetadataStorage:
             manifest = {
                 "name": f"identical_model_{i}",
                 "version": "1.0.0",
-                "model_type": "complete_emuses_model",
+                "model_type": "emuses_model",
                 "description": f"Identical model {i}",
                 "pipeline_config": identical_config
             }
@@ -222,7 +222,7 @@ class TestEnhancedMetadataStorage:
             manifest = {
                 "name": f"different_model_{i}",
                 "version": "1.0.0",
-                "model_type": "complete_emuses_model",
+                "model_type": "emuses_model",
                 "description": f"Different model {i}",
                 "pipeline_config": config
             }
@@ -274,5 +274,5 @@ class TestEnhancedMetadataStorage:
         
         # Test passes if basic information is preserved
         # Enhanced information storage would be an additional feature
-        assert model_info["type"] == "complete_emuses_model"
+        assert model_info["type"] == "emuses_model"
         assert "manifest" in model_info

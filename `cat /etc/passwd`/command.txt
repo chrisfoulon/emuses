@@ -1,0 +1,6 @@
+# EMUSES Pipeline Command
+# Generated on: 2025-08-23 16:49:45
+# To rerun: /home/tolhsadum/miniforge3/envs/emuses/bin/pytest -v --cov=. --cov-report=term-missing --cov-report=html
+# Or use: emuses rerun "`cat /etc/passwd`"
+
+/home/tolhsadum/miniforge3/envs/emuses/bin/pytest -v --cov=. --cov-report=term-missing --cov-report=html

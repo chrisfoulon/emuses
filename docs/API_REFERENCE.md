@@ -100,10 +100,12 @@ curl "http://localhost:8000/api/v1/jobs/{job_id}/artifacts"
 | `/api/v1/jobs/{id}/status` | GET | Check job progress | Optional |
 | `/api/v1/jobs/{id}/artifacts` | GET | List result files | Optional |
 | `/api/v1/jobs/{id}/artifacts/{file}` | GET | Download specific file | Optional |
+| `/api/v1/complete-models/` | GET | List complete models | Optional |
+| `/api/v1/complete-models/{id}/inference` | POST | **NEW** Complete model inference | Optional |
 | `/api/health` | GET | Service health check | None |
 
 ### **Response Format**
-All API responses follow consistent JSON structure:
+All API responses follow consistent JSON structure. For detailed result format specifications, see [Output Formats Guide](emuses/output_formats.md).
 ```json
 {
   "status": "success|error|accepted",
@@ -681,11 +683,315 @@ curl -X POST "http://localhost:8000/api/v1/upload/labels" \
 <details markdown="1">
 <summary>⚙️ **Advanced Integration**</summary>
 
+## 🤖 **Complete Model Registry API**
+
+### `GET /api/v1/complete-models/` - List Complete Models
+
+Retrieve list of complete EMUSES models with component information.
+
+#### Query Parameters
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `limit` | integer | Number of results (default: 50, max: 100) |
+| `offset` | integer | Pagination offset (default: 0) |
+| `complete_only` | boolean | Show only complete models (default: false) |
+
+#### Request
+```bash
+curl -X GET "http://localhost:8000/api/v1/complete-models/?limit=10&complete_only=true"
+```
+
+#### Response
+```json
+{
+  "models": [
+    {
+      "model_id": "brain_classifier_v2_abc123",
+      "name": "Brain Classification Model v2",
+      "is_complete": true,
+      "components": {
+        "umap_model": true,
+        "hdbscan_model": true,
+        "prediction_model": true
+      },
+      "created_at": "2024-08-16T14:30:15Z",
+      "total_size_mb": 4.6,
+      "performance_metrics": {
+        "r_squared": 0.847,
+        "rmse": 0.234
+      }
+    }
+  ],
+  "total_count": 23,
+  "complete_models": 18,
+  "incomplete_models": 5
+}
+```
+
+### `GET /api/v1/complete-models/{model_id}` - Get Complete Model Details
+
+Retrieve detailed information about a specific complete model.
+
+#### Request
+```bash
+curl -X GET "http://localhost:8000/api/v1/complete-models/brain_classifier_v2_abc123"
+```
+
+#### Response
+```json
+{
+  "model_id": "brain_classifier_v2_abc123",
+  "name": "Brain Classification Model v2",
+  "description": "Advanced brain classification using HCP dataset",
+  "is_complete": true,
+  "components": {
+    "umap_model": {
+      "file_path": "/registry/models/brain_classifier_v2_abc123/umap_model.joblib",
+      "size_mb": 2.3,
+      "parameters": {
+        "n_neighbors": 15,
+        "min_dist": 0.1,
+        "n_components": 2
+      }
+    },
+    "hdbscan_model": {
+      "file_path": "/registry/models/brain_classifier_v2_abc123/hdbscan_model.joblib",
+      "size_mb": 0.8,
+      "parameters": {
+        "min_cluster_size": 10,
+        "min_samples": 5
+      }
+    },
+    "prediction_model": {
+      "file_path": "/registry/models/brain_classifier_v2_abc123/prediction_model.joblib",
+      "size_mb": 1.5,
+      "model_type": "Ridge Regression"
+    }
+  },
+  "created_at": "2024-08-16T14:30:15Z",
+  "performance_metrics": {
+    "r_squared": 0.847,
+    "rmse": 0.234,
+    "cross_val_score": 0.823
+  }
+}
+```
+
+### `GET /api/v1/complete-models/{model_id}/components` - Inspect Model Components
+
+Get detailed component information for debugging and analysis.
+
+#### Request
+```bash
+curl -X GET "http://localhost:8000/api/v1/complete-models/brain_classifier_v2_abc123/components"
+```
+
+#### Response
+```json
+{
+  "model_id": "brain_classifier_v2_abc123",
+  "components": {
+    "umap_model": {
+      "component_type": "umap_model",
+      "file_path": "/registry/models/brain_classifier_v2_abc123/umap_model.joblib",
+      "size_mb": 2.3,
+      "last_modified": "2024-08-16T14:30:15Z",
+      "exists": true,
+      "content_hash": "sha256:abc123..."
+    },
+    "hdbscan_model": {
+      "component_type": "hdbscan_model",
+      "file_path": "/registry/models/brain_classifier_v2_abc123/hdbscan_model.joblib",
+      "size_mb": 0.8,
+      "last_modified": "2024-08-16T14:30:15Z",
+      "exists": true,
+      "content_hash": "sha256:def456..."
+    },
+    "prediction_model": {
+      "component_type": "prediction_model",
+      "file_path": "/registry/models/brain_classifier_v2_abc123/prediction_model.joblib",
+      "size_mb": 1.5,
+      "last_modified": "2024-08-16T14:30:15Z",
+      "exists": true,
+      "content_hash": "sha256:ghi789..."
+    }
+  },
+  "total_components": 3,
+  "total_size_mb": 4.6
+}
+```
+
+### `POST /api/v1/complete-models/{model_id}/inference` - **NEW** Complete Model Inference
+
+Run inference using a complete EMUSES model with full pipeline execution.
+
+#### Request
+```json
+{
+  "data": [
+    [0.23, 0.45, 0.67, 0.12],
+    [0.34, 0.56, 0.78, 0.23],
+    [0.45, 0.67, 0.89, 0.34]
+  ],
+  "subject_ids": ["subj_001", "subj_002", "subj_003"],
+  "output_format": "json",
+  "include_embeddings": true,
+  "include_clusters": true
+}
+```
+
+#### Response
+```json
+{
+  "model_id": "brain_classifier_v2_abc123",
+  "predictions": [
+    {
+      "subject_id": "subj_001",
+      "prediction": 115.7,
+      "confidence": 0.89,
+      "umap_embedding": [1.23, -0.45],
+      "cluster_id": 2
+    },
+    {
+      "subject_id": "subj_002",
+      "prediction": 98.3,
+      "confidence": 0.76,
+      "umap_embedding": [-0.67, 1.89],
+      "cluster_id": 1
+    },
+    {
+      "subject_id": "subj_003",
+      "prediction": 127.1,
+      "confidence": 0.92,
+      "umap_embedding": [2.15, 0.33],
+      "cluster_id": 2
+    }
+  ],
+  "pipeline_performance": {
+    "umap_time_ms": 45,
+    "hdbscan_time_ms": 23,
+    "prediction_time_ms": 12,
+    "total_time_ms": 80
+  },
+  "model_info": {
+    "is_complete": true,
+    "components_used": ["umap_model", "hdbscan_model", "prediction_model"],
+    "performance_metrics": {
+      "r_squared": 0.847,
+      "rmse": 0.234
+    }
+  }
+}
+```
+
+### `POST /api/v1/complete-models/duplicates/resolve` - Resolve Duplicate Models
+
+Resolve duplicate complete models in the registry.
+
+#### Request
+```json
+{
+  "action": "remove_duplicates",
+  "keep_newest": true,
+  "dry_run": false
+}
+```
+
+#### Response
+```json
+{
+  "duplicates_found": 3,
+  "models_removed": 2,
+  "models_kept": 1,
+  "space_freed_mb": 8.4,
+  "actions_taken": [
+    {
+      "action": "removed",
+      "model_id": "brain_classifier_v1_old123",
+      "reason": "older_duplicate"
+    },
+    {
+      "action": "removed",
+      "model_id": "brain_classifier_v1_dup456",
+      "reason": "exact_duplicate"
+    },
+    {
+      "action": "kept",
+      "model_id": "brain_classifier_v2_abc123",
+      "reason": "newest_version"
+    }
+  ]
+}
+```
+
+### `GET /api/v1/complete-models/health` - Complete Model Registry Health
+
+Health check specifically for the complete model registry system.
+
+#### Response
+```json
+{
+  "status": "healthy",
+  "total_models": 156,
+  "complete_models": 134,
+  "incomplete_models": 22,
+  "registry_size_gb": 2.4,
+  "duplicate_models": 3,
+  "corrupted_models": 0,
+  "last_cleanup": "2024-08-15T09:30:00Z",
+  "components_health": {
+    "storage": "healthy",
+    "metadata_db": "healthy",
+    "hash_index": "healthy"
+  }
+}
+```
+
 ## 🤖 **Inference API**
 
-### `POST /api/v1/inference` - Synchronous Inference
+### `POST /api/v1/inference` - Registry-Enabled Inference
 
-Run immediate predictions on new data using trained models.
+**Enhanced with Model Registry Support**
+
+Run predictions using either registry model IDs or direct model paths, supporting both EMUSES folders and individual models.
+
+#### Request (Registry Model ID)
+```json
+{
+  "model_id": "brain_classifier_v2_abc123",
+  "data": [
+    [0.23, 0.45, 0.67, 0.12],
+    [0.34, 0.56, 0.78, 0.23],
+    [0.45, 0.67, 0.89, 0.34]
+  ],
+  "subject_ids": ["subj_001", "subj_002", "subj_003"],
+  "output_format": "json"
+}
+```
+
+#### Request (Direct Model Path)
+```json
+{
+  "model_path": "/path/to/emuses/folder",
+  "data": [
+    [0.23, 0.45, 0.67, 0.12],
+    [0.34, 0.56, 0.78, 0.23]  
+  ],
+  "subject_ids": ["subj_001", "subj_002"],
+  "output_format": "json"
+}
+```
+
+*Note: Exactly one of `model_id` or `model_path` must be provided.*
+
+<details markdown="1">
+<summary>🔧 **Legacy Individual Model Support**</summary>
+
+### Legacy Individual Model Inference
+
+### `POST /api/v1/inference` - Synchronous Inference (Individual Models)
+
+Run immediate predictions using individual trained model files.
 
 #### Request
 ```json
@@ -732,6 +1038,8 @@ Run immediate predictions on new data using trained models.
   "processing_time_ms": 23
 }
 ```
+
+</details>
 
 ### `POST /api/v1/inference/async` - Asynchronous Inference
 
@@ -911,18 +1219,53 @@ All API errors follow a consistent format:
 
 ## 🚀 **Integration Examples**
 
-### Python Integration
+### Python Integration with Complete Models
 ```python
 import requests
 import time
+import numpy as np
 
 class EmusesClient:
     def __init__(self, base_url="http://localhost:8000"):
         self.base_url = base_url
         self.session = requests.Session()
     
+    def list_complete_models(self, complete_only=True):
+        """List available complete models"""
+        url = f"{self.base_url}/api/v1/complete-models/"
+        params = {'complete_only': complete_only}
+        
+        response = self.session.get(url, params=params)
+        response.raise_for_status()
+        return response.json()
+    
+    def get_model_info(self, model_id):
+        """Get detailed information about a complete model"""
+        url = f"{self.base_url}/api/v1/complete-models/{model_id}"
+        
+        response = self.session.get(url)
+        response.raise_for_status()
+        return response.json()
+    
+    def run_complete_model_inference(self, model_id, data, subject_ids=None, 
+                                   include_embeddings=True, include_clusters=True):
+        """Run inference using a complete EMUSES model"""
+        url = f"{self.base_url}/api/v1/complete-models/{model_id}/inference"
+        
+        payload = {
+            'data': data.tolist() if isinstance(data, np.ndarray) else data,
+            'subject_ids': subject_ids or [f"subj_{i:03d}" for i in range(len(data))],
+            'output_format': 'json',
+            'include_embeddings': include_embeddings,
+            'include_clusters': include_clusters
+        }
+        
+        response = self.session.post(url, json=payload)
+        response.raise_for_status()
+        return response.json()
+    
     def submit_analysis(self, features_file, scores_file, **kwargs):
-        """Submit full pipeline analysis"""
+        """Submit full pipeline analysis (legacy method)"""
         url = f"{self.base_url}/api/v1/jobs/pipeline/full"
         files = {
             'features_file': open(features_file, 'rb'),
@@ -975,25 +1318,45 @@ class EmusesClient:
             
             print(f"Downloaded: {artifact['filename']} ({artifact['size']})")
 
-# Usage example
+# Complete Model Workflow Example
 client = EmusesClient()
 
-# Submit analysis
-job = client.submit_analysis(
-    'brain_features.csv',
-    'cognitive_scores.csv',
-    job_name='my_analysis',
-    n_neighbors=20
+# 1. List available complete models
+models = client.list_complete_models()
+print(f"Found {len(models['models'])} complete models")
+
+# 2. Select a model and get details
+model_id = models['models'][0]['model_id']
+model_info = client.get_model_info(model_id)
+print(f"Using model: {model_info['name']}")
+print(f"Components: {list(model_info['components'].keys())}")
+
+# 3. Prepare data for inference
+data = np.random.randn(10, 284)  # 10 subjects, 284 features
+subject_ids = [f"patient_{i:03d}" for i in range(10)]
+
+# 4. Run complete model inference
+results = client.run_complete_model_inference(
+    model_id, data, subject_ids,
+    include_embeddings=True, 
+    include_clusters=True
 )
 
-print(f"Job submitted: {job['job_id']}")
+# 5. Process results
+print(f"Inference completed in {results['pipeline_performance']['total_time_ms']}ms")
+for pred in results['predictions']:
+    print(f"Subject {pred['subject_id']}: prediction={pred['prediction']:.2f}, "
+          f"cluster={pred['cluster_id']}, embedding={pred['umap_embedding']}")
 
-# Wait for completion
-result = client.wait_for_completion(job['job_id'])
-print(f"Analysis completed in {result['timing']['total_duration_seconds']} seconds")
-
-# Download results
-client.download_artifacts(job['job_id'])
+# Legacy Pipeline Workflow (for comparison)
+# job = client.submit_analysis(
+#     'brain_features.csv',
+#     'cognitive_scores.csv',
+#     job_name='my_analysis',
+#     n_neighbors=20
+# )
+# result = client.wait_for_completion(job['job_id'])
+# client.download_artifacts(job['job_id'])
 ```
 
 ### R Integration

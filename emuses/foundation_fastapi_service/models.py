@@ -202,9 +202,11 @@ class InferenceRequest(BaseModel):
     
     This model defines the request structure for running inference
     on trained EMUSES models with validation and format options.
+    Supports both traditional model paths and complete model IDs from registry.
     """
     
-    model_path: str = Field(..., description="Path to trained model directory")
+    model_path: Optional[str] = Field(None, description="Path to trained model directory (for traditional models)")
+    model_id: Optional[str] = Field(None, description="Registry model ID (alternative to model_path)")
     data_path: str = Field(..., description="Path to input data for inference")
     output_path: Optional[str] = Field(
         default=None, 
@@ -222,6 +224,13 @@ class InferenceRequest(BaseModel):
         default="csv", 
         description="Output format (csv or npy)"
     )
+    
+    def model_post_init(self, __context):
+        """Validate that exactly one of model_path or model_id is provided."""
+        if not self.model_path and not self.model_id:
+            raise ValueError("Either model_path or model_id must be provided")
+        if self.model_path and self.model_id:
+            raise ValueError("Cannot specify both model_path and model_id")
     
     model_config = ConfigDict(
         protected_namespaces=(),

@@ -4,6 +4,8 @@
 
 The EMUSES (Emerging-properties Mapping via UMAP Spatial Exploration) pipeline is a comprehensive machine learning framework that transforms high-dimensional data into interpretable, low-dimensional representations through a multi-stage workflow. Starting from diverse input datasets (CSV files, images, NIfTI files, BIDS datasets, MNIST, or other data formats), the pipeline performs dimensionality reduction using UMAP with nested clustering optimization, generates predictive models through advanced hyperparameter optimization, and creates interpretable heatmaps showing spatial relationships between data patterns and target variables. The framework emphasizes reproducibility through deterministic random seed management, supports both regression and classification tasks, and provides extensive model selection capabilities using Optuna-based Bayesian optimization across multiple feature extraction methods and machine learning algorithms.
 
+Pipeline outputs are documented in [Output Formats Guide](output_formats.md).
+
 </details>
 
 <details><summary>🛠️ Level 2 · API & I/O table</summary>

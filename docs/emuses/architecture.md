@@ -105,6 +105,11 @@ Configuration → Validation → Execution → Results → Storage → Output
 
 Each stage implements the `PipelineStage` interface:
 
+**Key Stages**:
+- **UMAPStage**: Dimensionality reduction with optimization
+- **HeatmapStage**: Cross-validation and model training  
+- **[InferenceStage](inference_stage.md)**: Unified prediction processing
+
 ```python
 class PipelineStage:
     def validate_input(self, data: Any) -> bool

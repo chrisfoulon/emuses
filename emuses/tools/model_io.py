@@ -32,6 +32,13 @@ from bcblib.tools.general_utils import save_json
 
 logger = logging.getLogger(__name__)
 
+# Feature augmentation model patterns for detection
+FEATURE_MODEL_PATTERNS = {
+    'pca': '*pca_model_*.joblib',
+    'kpca': '*kpca_model_*.joblib',
+    'autoencoder': '*autoencoder_model_*.joblib'
+}
+
 
 @dataclass
 class OptunaTrial:
@@ -114,18 +121,18 @@ class ModelArtifact:
 @dataclass
 class CompleteModelValidation:
     """Enhanced validation result for complete EMUSES models.
-    
+
     This class provides comprehensive information about EMUSES model
     structure and validation, supporting complete model detection
     for both complete EMUSES models and individual component models.
     """
     is_complete_model: bool
-    components_found: Dict[str, Path] 
+    components_found: Dict[str, Path]
     configuration_hash: str
     content_hash: str
     missing_components: List[str]
     validation_errors: List[str]
-    
+
     # Basic model information
     name: str
     version: str
@@ -173,6 +180,7 @@ class ModelIOManager:
         # Optuna-specific parameters
         optuna_study: Optional[Any] = None,
         optuna_trial: Optional[Any] = None,
+        optimization_time: Optional[float] = None,
         cv_score: Optional[float] = None,
         cv_scores: Optional[List[float]] = None,
         cv_folds: Optional[int] = None,
@@ -416,7 +424,8 @@ class ModelIOManager:
         return self._analyze_complete_model_structure(model_path)
 
     def install_model(self, source_path: Path, destination_path: Path,
-                      name: Optional[str] = None) -> str:
+                      name: Optional[str] = None, use_shared_storage: bool = True,
+                      registry_base_path: Optional[Path] = None) -> str:
         """
         Install model from source to destination directory.
 
@@ -424,6 +433,8 @@ class ModelIOManager:
             source_path: Path to source model directory/file
             destination_path: Base directory for model installation
             name: Optional custom name for the model
+            use_shared_storage: Enable storage optimization with shared components
+            registry_base_path: Registry base path for shared storage (defaults to destination_path parent)
 
         Returns:
             Unique model_id string for the installed model
@@ -448,19 +459,35 @@ class ModelIOManager:
         if target_path.exists():
             raise FileExistsError(f"Model already exists: {target_path}")
 
-        # Copy model files
+        # Determine registry base path for shared storage
+        if use_shared_storage:
+            if registry_base_path is None:
+                # Default to parent of destination_path (assuming destination is 'models' subdirectory)
+                registry_base_path = destination_path.parent
+
+        # Copy model files with optional storage optimization
         try:
             if source_path.is_file():
                 # Single file model
                 target_path.mkdir()
-                shutil.copy2(source_path, target_path / source_path.name)
+                if use_shared_storage:
+                    self._install_file_with_shared_storage(
+                        source_path, target_path / source_path.name, registry_base_path
+                    )
+                else:
+                    shutil.copy2(source_path, target_path / source_path.name)
             else:
                 # Directory model
-                shutil.copytree(source_path, target_path)
+                if use_shared_storage:
+                    self._install_directory_with_shared_storage(
+                        source_path, target_path, registry_base_path
+                    )
+                else:
+                    shutil.copytree(source_path, target_path)
 
             # Update manifest with installation metadata
             manifest_path = target_path / "model_manifest.json"
-            
+
             # Create manifest from validation result
             base_manifest = {
                 "name": validation_result.name,
@@ -468,7 +495,7 @@ class ModelIOManager:
                 "type": validation_result.type,
                 "description": validation_result.description
             }
-            
+
             updated_manifest = {
                 **base_manifest,
                 "installed_at": datetime.now(timezone.utc).isoformat() + "Z",
@@ -521,86 +548,90 @@ class ModelIOManager:
 
     def _analyze_complete_model_structure(self, model_path: Path) -> CompleteModelValidation:
         """
-        Analyze directory structure for complete EMUSES model components.
-        
-        Detects UMAP, HDBSCAN, and prediction components, calculates hashes,
-        and provides comprehensive validation information.
+        Validate EMUSES folder structure following architectural guardrails.
+
+        EMUSES models are complete training folder units - this method validates
+        the folder contains necessary EMUSES structure without treating components
+        as separable entities.
 
         Parameters
         ----------
         model_path : Path
-            Path to model directory to analyze
+            Path to EMUSES model directory to validate
 
         Returns
         -------
         CompleteModelValidation
-            Complete analysis result with component detection and hashes
+            Validation result for complete EMUSES folder
         """
-        components_found = {}
-        missing_components = []
         validation_errors = []
-        
-        # Load manifest for metadata
+
+        # Load manifest for metadata - EMUSES folders have manifests
         try:
             manifest = self._load_or_generate_manifest(model_path)
         except ValueError as e:
-            # Handle directories with no model files
-            validation_errors.append(f"No model files found: {str(e)}")
+            validation_errors.append(f"Invalid EMUSES folder: {str(e)}")
             manifest = {
                 "name": model_path.name,
                 "version": "1.0.0",
                 "model_type": "unknown",
-                "description": f"Empty directory: {model_path.name}"
+                "description": f"Invalid EMUSES folder: {model_path.name}"
             }
-        
-        # Detect UMAP components
-        umap_component = self._detect_umap_component(model_path)
-        if umap_component:
-            components_found["umap"] = umap_component
-        else:
-            missing_components.append("umap")
-        
-        # Detect HDBSCAN components
-        hdbscan_component = self._detect_hdbscan_component(model_path)
-        if hdbscan_component:
-            components_found["hdbscan"] = hdbscan_component
-        else:
-            missing_components.append("hdbscan")
-        
-        # Detect prediction components
-        prediction_component = self._detect_prediction_component(model_path)
-        if prediction_component:
-            components_found["prediction"] = prediction_component
-        else:
-            missing_components.append("prediction")
-        
-        # Determine if this is a complete model
-        is_complete = len(missing_components) == 0
-        
-        # Calculate configuration hash from manifest
+
+        # Validate this is a complete EMUSES training folder
+        # EMUSES folders contain: manifest, model files, embeddings, and target directories
+        is_complete = self._validate_emuses_folder_structure(model_path)
+
+        if not is_complete:
+            validation_errors.append("Not a complete EMUSES training folder")
+
+        # Calculate configuration hash from manifest (EMUSES-native metadata)
         config_hash = self._extract_configuration_hash(manifest)
-        
-        # Calculate content hash from all components
-        content_hash = self._calculate_content_hash(model_path, components_found)
-        
-        # Adjust model type for complete models
-        model_type = manifest.get("model_type", "unknown")
-        if is_complete and model_type not in ["complete_emuses_model"]:
-            model_type = "complete_emuses_model"
-        
+
+        # Calculate content hash from entire folder (treated as atomic unit)
+        content_hash = self._calculate_folder_content_hash(model_path)
+
+        # Detect feature augmentation models (optional)
+        feature_models = self._detect_feature_models(model_path)
+
+        # Override metadata for complete EMUSES models to prevent component metadata confusion
+        if is_complete:
+            model_type = "emuses_model"
+            # Generate EMUSES-specific manifest metadata
+            emuses_description = self._generate_emuses_model_description(model_path, feature_models)
+            manifest_override = {
+                "name": manifest.get("name", model_path.name),
+                "version": manifest.get("version", "1.0.0"),
+                "model_type": model_type,
+                "description": emuses_description,
+                "created_at": manifest.get("created_at", datetime.now(timezone.utc).isoformat() + "Z")
+            }
+            manifest.update(manifest_override)
+        else:
+            model_type = manifest.get("model_type", "unknown")
+
+        # Build components found dictionary
+        components_found = {}
+        if is_complete:
+            components_found["emuses_folder"] = model_path
+            # Add feature models to components if found
+            for feature_type, model_files in feature_models.items():
+                if model_files:  # Only include if files were found
+                    components_found[f"{feature_type}_models"] = model_files
+
         return CompleteModelValidation(
             is_complete_model=is_complete,
             components_found=components_found,
             configuration_hash=config_hash,
             content_hash=content_hash,
-            missing_components=missing_components,
+            missing_components=[] if is_complete else ["emuses_structure"],
             validation_errors=validation_errors,
-            name=manifest.get("name", "unknown_model"),
+            name=manifest.get("name", model_path.name),
             version=manifest.get("version", "1.0.0"),
             type=model_type,
             description=manifest.get("description", "")
         )
-    
+
     def _load_or_generate_manifest(self, model_path: Path) -> Dict[str, Any]:
         """Load existing manifest or generate one from directory structure."""
         # Try standard manifest locations
@@ -608,7 +639,7 @@ class ModelIOManager:
             model_path / "manifest.json",
             model_path / "model_manifest.json"
         ]
-        
+
         for manifest_path in manifest_candidates:
             if manifest_path.exists():
                 try:
@@ -619,76 +650,140 @@ class ModelIOManager:
                 except (json.JSONDecodeError, IOError) as e:
                     logger.warning(f"Failed to read manifest {manifest_path}: {e}")
                     continue
-        
+
         # Generate manifest from directory structure
         logger.debug(f"Generating manifest for {model_path}")
         return self._generate_manifest_from_directory(model_path)
     
-    def _detect_umap_component(self, model_path: Path) -> Optional[Path]:
-        """Detect UMAP model component in directory."""
-        # Standard patterns for UMAP models
-        umap_patterns = [
-            "umap_model.pkl",
-            "*umap*.pkl", 
-            "best_umap_model.pkl",
-            "dimension_reducer.pkl"
-        ]
+    def _generate_emuses_model_description(self, model_path: Path, feature_models: Dict[str, List[Path]]) -> str:
+        """
+        Generate description for complete EMUSES models using path-based heuristics.
         
-        for pattern in umap_patterns:
-            matches = list(model_path.glob(pattern))
-            if matches:
-                return matches[0]  # Return first match
+        Args:
+            model_path: Path to EMUSES model directory
+            feature_models: Dictionary of detected feature augmentation models
+            
+        Returns:
+            Description derived from directory name and structure
+        """
+        # Use directory name as base description
+        base_name = model_path.name
+        description_parts = [f"Complete EMUSES analysis model: {base_name}"]
         
-        return None
-    
-    def _detect_hdbscan_component(self, model_path: Path) -> Optional[Path]:
-        """Detect HDBSCAN model component in directory."""
-        # Standard patterns for HDBSCAN models
-        hdbscan_patterns = [
-            "hdbscan_model.pkl",
-            "*hdbscan*.pkl",
-            "best_hdbscan_model.pkl", 
-            "clustering_model.pkl",
-            "*cluster*.pkl"
-        ]
+        # Analyze actual model components found
+        components = []
         
-        for pattern in hdbscan_patterns:
-            matches = list(model_path.glob(pattern))
-            if matches:
-                return matches[0]  # Return first match
-        
-        return None
-    
-    def _detect_prediction_component(self, model_path: Path) -> Optional[Path]:
-        """Detect prediction model component(s) in directory."""
-        # Check for prediction ensemble directory
-        prediction_dirs = [
-            model_path / "prediction_ensemble",
-            model_path / "predictions",
-            model_path / "models"
-        ]
-        
-        for pred_dir in prediction_dirs:
-            if pred_dir.exists() and pred_dir.is_dir():
-                # Check if directory contains model files
-                model_files = list(pred_dir.glob("*.pkl")) + list(pred_dir.glob("*.joblib"))
-                if model_files:
-                    return pred_dir
-        
-        # Check for individual prediction model files
-        prediction_patterns = [
-            "*prediction*.pkl",
-            "ensemble_model.pkl",
-            "best_prediction_model*.pkl"
-        ]
-        
-        for pattern in prediction_patterns:
-            matches = list(model_path.glob(pattern))
-            if matches:
-                return matches[0]
-        
-        return None
-    
+        # Check for core EMUSES components
+        if (model_path / "umap_model.joblib").exists():
+            components.append("UMAP")
+        if (model_path / "hdbscan_model.joblib").exists():
+            components.append("HDBSCAN")
+            
+        # Count prediction targets
+        target_dirs = [d for d in model_path.iterdir() if d.is_dir() and d.name.startswith("target_")]
+        if target_dirs:
+            components.append(f"{len(target_dirs)} prediction targets")
+            
+        # Add feature augmentation if detected
+        for feature_type, models in feature_models.items():
+            if models:
+                components.append(f"{feature_type.upper()}")
+                
+        if components:
+            description_parts.append(f"Contains: {', '.join(components)}")
+            
+        return ". ".join(description_parts)
+
+    def _validate_emuses_folder_structure(self, model_path: Path) -> bool:
+        """
+        Validate that folder contains complete EMUSES training output structure.
+
+        EMUSES training folders contain specific files and directories that
+        indicate a complete training run. This validates the folder as an
+        atomic unit without separating components.
+
+        Parameters
+        ----------
+        model_path : Path
+            Path to folder to validate
+
+        Returns
+        -------
+        bool
+            True if folder contains complete EMUSES structure
+        """
+        # EMUSES folders must have a root manifest
+        manifest_files = list(model_path.glob("*manifest*.json"))
+        if not manifest_files:
+            return False
+
+        # EMUSES folders contain model files (.joblib files)
+        model_files = list(model_path.glob("*.joblib"))
+        if len(model_files) < 2:  # At least UMAP and HDBSCAN
+            return False
+
+        # EMUSES folders contain embeddings and training data
+        required_data = ["embeddings.npy", "input_matrix.npy"]
+        for data_file in required_data:
+            if not (model_path / data_file).exists():
+                return False
+
+        # EMUSES folders contain target prediction directories
+        target_dirs = list(model_path.glob("target_*"))
+        if not target_dirs:
+            return False
+
+        # Each target directory should have its own manifest and models
+        for target_dir in target_dirs:
+            target_manifest = target_dir / "model_manifest.json"
+            if not target_manifest.exists():
+                return False
+
+            target_models = list(target_dir.glob("*.joblib"))
+            if not target_models:
+                return False
+
+        return True
+
+    def _detect_feature_models(self, model_path: Path) -> Dict[str, List[Path]]:
+        """
+        Detect feature augmentation models in EMUSES folder.
+
+        Feature models are optional components that may be present for
+        feature preprocessing (PCA, kPCA, autoencoders). This method
+        identifies which feature models are available.
+
+        Parameters
+        ----------
+        model_path : Path
+            Path to EMUSES folder to search
+
+        Returns
+        -------
+        Dict[str, List[Path]]
+            Dictionary mapping feature model types to found model files
+
+        Example
+        -------
+        {
+            'pca': [Path('/models/pca_model_v1_0_0.joblib')],
+            'autoencoder': [Path('/models/autoencoder_model_v1_0_0.joblib')],
+            'kpca': []  # None found
+        }
+        """
+        detected_models = {}
+
+        for model_type, pattern in FEATURE_MODEL_PATTERNS.items():
+            model_files = list(model_path.glob(pattern))
+            detected_models[model_type] = model_files
+
+            if model_files:
+                logger.info(f"Found {len(model_files)} {model_type} feature model(s) in {model_path.name}")
+                for model_file in model_files:
+                    logger.debug(f"  - {model_file.name}")
+
+        return detected_models
+
     def _extract_configuration_hash(self, manifest: Dict[str, Any]) -> str:
         """Extract configuration hash from manifest metadata."""
         # Look for pipeline configuration in manifest
@@ -698,18 +793,18 @@ class ModelIOManager:
             manifest.get("training_config", {}),
             manifest.get("parameters", {})
         ]
-        
+
         # Combine all configuration sources
         combined_config = {}
         for config in config_sources:
             if isinstance(config, dict):
                 combined_config.update(config)
-        
+
         # Generate hash from configuration
         if combined_config:
             config_str = json.dumps(combined_config, sort_keys=True, default=str)
             return hashlib.sha256(config_str.encode()).hexdigest()[:16]
-        
+
         # Fallback: generate hash from manifest metadata
         stable_fields = {
             "name": manifest.get("name", ""),
@@ -718,30 +813,204 @@ class ModelIOManager:
         }
         config_str = json.dumps(stable_fields, sort_keys=True)
         return hashlib.sha256(config_str.encode()).hexdigest()[:16]
-    
-    def _calculate_content_hash(self, model_path: Path, components: Dict[str, Path]) -> str:
-        """Calculate content hash from model components."""
+
+    def _calculate_folder_content_hash(self, model_path: Path) -> str:
+        """
+        Calculate filesystem-independent content hash for complete EMUSES folder.
+
+        Uses Git-style content-addressable storage approach for cross-platform stability.
+        Ignores file paths and filesystem artifacts to ensure consistent hashes
+        when models are transferred between machines or operating systems.
+
+        Treats the entire EMUSES folder as an atomic unit following architectural
+        guardrails - no component separation.
+
+        Parameters
+        ----------
+        model_path : Path
+            Path to complete EMUSES model directory.
+
+        Returns
+        -------
+        str
+            16-character hex hash string that remains consistent across
+            filesystem operations, transfers, and different operating systems.
+        """
         hasher = hashlib.sha256()
-        
-        # Hash each component file/directory
-        for component_type, component_path in sorted(components.items()):
-            hasher.update(component_type.encode())
-            
-            if component_path.is_file():
-                # Hash file contents
-                with open(component_path, 'rb') as f:
-                    for chunk in iter(lambda: f.read(4096), b""):
-                        hasher.update(chunk)
-            elif component_path.is_dir():
-                # Hash directory contents recursively
-                for file_path in sorted(component_path.rglob("*")):
-                    if file_path.is_file():
-                        hasher.update(str(file_path.relative_to(component_path)).encode())
-                        with open(file_path, 'rb') as f:
-                            for chunk in iter(lambda: f.read(4096), b""):
-                                hasher.update(chunk)
-        
+
+        # Hash the entire folder contents as atomic unit
+        self._hash_directory_content_stable(hasher, model_path)
+
         return hasher.hexdigest()[:16]
+
+    def _hash_file_content(self, hasher, file_path: Path) -> None:
+        """
+        Hash file contents without path information.
+
+        Parameters
+        ----------
+        hasher : hashlib object
+            Hash object to update with file content.
+        file_path : Path
+            Path to the file to hash.
+        """
+        with open(file_path, 'rb') as f:
+            for chunk in iter(lambda: f.read(4096), b""):
+                hasher.update(chunk)
+
+    def _hash_directory_content_stable(self, hasher, directory_path: Path) -> None:
+        """
+        Hash directory contents with filesystem independence.
+
+        Only hashes actual file contents, ignoring paths and filesystem artifacts.
+        Ensures consistent hashes across different operating systems and transfers.
+
+        Parameters
+        ----------
+        hasher : hashlib object
+            Hash object to update with directory content.
+        directory_path : Path
+            Path to the directory to hash.
+        """
+        for file_path in sorted(directory_path.rglob("*")):
+            if file_path.is_file() and not self._is_filesystem_artifact(file_path):
+                # Hash only file contents, no path information
+                self._hash_file_content(hasher, file_path)
+
+    def _is_filesystem_artifact(self, file_path: Path) -> bool:
+        """
+        Identify filesystem artifacts to exclude from hashing.
+
+        These files are created by operating systems or applications and should
+        not affect model content hashes as they vary across platforms.
+
+        Parameters
+        ----------
+        file_path : Path
+            Path to check for filesystem artifacts.
+
+        Returns
+        -------
+        bool
+            True if the file is a filesystem artifact that should be ignored.
+        """
+        name = file_path.name.lower()
+        return (
+            name.startswith('.ds_store') or      # macOS Finder metadata
+            name.startswith('._') or            # macOS resource forks
+            name == 'thumbs.db' or              # Windows thumbnail cache
+            name == 'desktop.ini' or           # Windows folder settings
+            name.startswith('.trash') or        # Linux trash metadata
+            name == '.directory' or            # KDE folder metadata
+            name.endswith('.tmp') or           # Temporary files
+            name.startswith('~') or            # Backup files
+            name.startswith('.git')            # Git repository files
+        )
+
+    def _calculate_file_hash(self, file_path: Path) -> str:
+        """
+        Calculate SHA256 hash for a single file.
+
+        Used for identifying identical components across models
+        for storage optimization purposes.
+
+        Parameters
+        ----------
+        file_path : Path
+            Path to the file to hash.
+
+        Returns
+        -------
+        str
+            SHA256 hash of the file content as hexadecimal string.
+        """
+        hasher = hashlib.sha256()
+        with open(file_path, 'rb') as f:
+            for chunk in iter(lambda: f.read(4096), b""):
+                hasher.update(chunk)
+        return hasher.hexdigest()
+
+    def _install_file_with_shared_storage(self, source_file: Path, target_file: Path,
+                                          registry_path: Path) -> None:
+        """
+        Install a single file using shared storage optimization.
+
+        If an identical file already exists in shared storage, creates a symlink.
+        Otherwise, stores the file in shared storage and creates a symlink.
+
+        Parameters
+        ----------
+        source_file : Path
+            Source file to install.
+        target_file : Path
+            Target location for the file.
+        registry_path : Path
+            Registry base path for shared storage.
+        """
+        # Calculate file hash
+        file_hash = self._calculate_file_hash(source_file)
+
+        # Set up shared storage structure
+        shared_storage_path = registry_path / "shared_components"
+        shared_storage_path.mkdir(exist_ok=True)
+
+        # Use first 2 chars of hash for directory sharding (Git-style)
+        shard_dir = shared_storage_path / file_hash[:2]
+        shard_dir.mkdir(exist_ok=True)
+
+        # Full hash directory
+        hash_dir = shard_dir / file_hash
+        shared_file_path = hash_dir / source_file.name
+
+        if not shared_file_path.exists():
+            # First time seeing this content - store it
+            hash_dir.mkdir(exist_ok=True)
+            shutil.copy2(source_file, shared_file_path)
+            logger.debug(f"Stored new shared component: {file_hash[:8]}")
+        else:
+            logger.debug(f"Reusing shared component: {file_hash[:8]}")
+
+        # Create symlink from target to shared storage
+        target_file.parent.mkdir(parents=True, exist_ok=True)
+        if target_file.exists():
+            target_file.unlink()
+
+        try:
+            target_file.symlink_to(shared_file_path)
+        except OSError:
+            # Fallback to hard copy if symlinks aren't supported
+            logger.warning("Symlinks not supported, falling back to copy")
+            shutil.copy2(shared_file_path, target_file)
+
+    def _install_directory_with_shared_storage(self, source_dir: Path, target_dir: Path,
+                                               registry_path: Path) -> None:
+        """
+        Install a directory using shared storage optimization.
+
+        Recursively processes directory, optimizing storage for individual files
+        while preserving directory structure.
+
+        Parameters
+        ----------
+        source_dir : Path
+            Source directory to install.
+        target_dir : Path
+            Target directory location.
+        registry_path : Path
+            Registry base path for shared storage.
+        """
+        target_dir.mkdir(parents=True, exist_ok=True)
+
+        for item in source_dir.iterdir():
+            if item.is_file() and not self._is_filesystem_artifact(item):
+                # Install file with shared storage
+                target_file = target_dir / item.name
+                self._install_file_with_shared_storage(item, target_file, registry_path)
+            elif item.is_dir():
+                # Recursively install subdirectory
+                self._install_directory_with_shared_storage(
+                    item, target_dir / item.name, registry_path
+                )
 
     def _create_metadata(
         self,
@@ -772,7 +1041,7 @@ class ModelIOManager:
         optuna_study_metadata = None
         if optuna_study:
             optuna_study_metadata = self._extract_optuna_study_metadata(
-                optuna_study, optuna_trial
+                optuna_study, optuna_trial, optimization_time
             )
 
         return ModelMetadata(
@@ -799,7 +1068,7 @@ class ModelIOManager:
             target_id=target_id,
         )
 
-    def _extract_optuna_study_metadata(self, study: Any, trial: Any) -> OptunaStudy:
+    def _extract_optuna_study_metadata(self, study: Any, trial: Any, optimization_time: Optional[float] = None) -> OptunaStudy:
         """Extract metadata from Optuna study and trial objects."""
         try:
             # Extract best trial information
@@ -846,6 +1115,7 @@ class ModelIOManager:
                 best_value=study.best_value,
                 best_trial=best_trial_data,
                 n_trials=len(study.trials),
+                optimization_time=optimization_time or 0.0,
                 sampler_name=(
                     str(type(study.sampler).__name__)
                     if hasattr(study, "sampler")
@@ -1255,20 +1525,20 @@ class ModelIOManager:
     def _generate_manifest(self, model_filepath: Path, metadata: ModelMetadata) -> None:
         """
         Generate model manifest compatible with validate_model() method.
-        
+
         Creates a manifest with top-level keys that can be validated by the
         install_model workflow.
-        
+
         Args:
             model_filepath: Path to the saved model file
             metadata: Model metadata
         """
         try:
             manifest_path = self.base_path / "model_manifest.json"
-            
+
             # Extract base name for the model
             base_name = model_filepath.stem.split('_v')[0]
-            
+
             # Create new standardized manifest format
             manifest = {
                 "name": base_name,
@@ -1277,7 +1547,7 @@ class ModelIOManager:
                 "description": metadata.description,
                 "created_at": metadata.created_at,
                 "emuses_version": metadata.emuses_version,
-                
+
                 # File integrity information
                 "file_integrity": {
                     model_filepath.name: {
@@ -1286,14 +1556,14 @@ class ModelIOManager:
                         "modified": metadata.created_at
                     }
                 },
-                
+
                 # Training context
                 "training_context": {
                     "config_hash": metadata.config_hash,
                     "dependencies": metadata.dependencies,
                     "random_seeds": {}  # Will be enhanced with actual seeds
                 },
-                
+
                 # Compatibility information
                 "compatibility": {
                     "min_emuses_version": "2.0.0",
@@ -1301,98 +1571,90 @@ class ModelIOManager:
                     "required_packages": list(metadata.dependencies.keys())
                 }
             }
-            
+
             # If there's an existing manifest, preserve any additional file integrity info
             if manifest_path.exists():
                 try:
                     with open(manifest_path, 'r') as f:
                         existing_manifest = json.load(f)
-                    
+
                     # Preserve file integrity for other models in the directory
                     if "file_integrity" in existing_manifest:
                         # Keep existing entries, but update current model
                         existing_integrity = existing_manifest["file_integrity"]
                         existing_integrity[model_filepath.name] = manifest["file_integrity"][model_filepath.name]
                         manifest["file_integrity"] = existing_integrity
-                        
+
                 except (json.JSONDecodeError, IOError) as e:
                     logger.warning(f"Could not load existing manifest, creating new one: {e}")
-            
+
             # Save updated manifest
             with open(manifest_path, 'w') as f:
                 json.dump(manifest, f, indent=2, sort_keys=True)
-                
+
             logger.debug(f"Generated standardized manifest for model: {model_filepath.name}")
-            
+
         except Exception as e:
             logger.warning(f"Failed to generate manifest: {e}")
             # Don't fail the save operation if manifest generation fails
 
-    def _calculate_file_hash(self, filepath: Path) -> str:
-        """Calculate SHA-256 hash of a file."""
-        hash_sha256 = hashlib.sha256()
-        with open(filepath, "rb") as f:
-            for chunk in iter(lambda: f.read(4096), b""):
-                hash_sha256.update(chunk)
-        return hash_sha256.hexdigest()
-
     def _get_next_version(self, model_name: str) -> str:
         """Get next version number for a model."""
         manifest_path = self.base_path / "model_manifest.json"
-        
+
         if not manifest_path.exists():
             return "1.0.0"
-        
+
         try:
             with open(manifest_path, 'r') as f:
                 manifest = json.load(f)
-            
+
             current_version = manifest.get("model_info", {}).get("version", "1.0.0")
             major, minor, patch = map(int, current_version.split('.'))
-            
+
             # Increment patch version
             return f"{major}.{minor}.{patch + 1}"
-            
+
         except (json.JSONDecodeError, ValueError, KeyError):
             return "1.0.0"
 
     def _verify_model_integrity(self, model_filepath: Path) -> None:
         """
         Verify model integrity using manifest.
-        
+
         Args:
             model_filepath: Path to model file to verify
-            
+
         Raises:
             ValueError: If integrity verification fails
         """
         manifest_path = self.base_path / "model_manifest.json"
-        
+
         if not manifest_path.exists():
             logger.warning(f"No manifest found for {model_filepath.name}, skipping integrity check")
             return
-        
+
         try:
             with open(manifest_path, 'r') as f:
                 manifest = json.load(f)
-            
+
             file_integrity = manifest.get("file_integrity", {})
-            
+
             if model_filepath.name not in file_integrity:
                 logger.warning(f"No integrity information for {model_filepath.name}")
                 return
-            
+
             expected_hash = file_integrity[model_filepath.name]["sha256"]
             actual_hash = self._calculate_file_hash(model_filepath)
-            
+
             if actual_hash != expected_hash:
                 raise ValueError(
                     f"Model integrity verification failed for {model_filepath.name}: "
                     f"expected {expected_hash}, got {actual_hash}"
                 )
-            
+
             logger.debug(f"Integrity verified for {model_filepath.name}")
-            
+
         except json.JSONDecodeError:
             logger.warning("Corrupted manifest file, skipping integrity check")
         except Exception as e:
@@ -1402,18 +1664,18 @@ class ModelIOManager:
     def get_manifest_info(self, model_name: str) -> Optional[Dict]:
         """
         Get manifest information for a model without loading it.
-        
+
         Args:
             model_name: Name of the model
-            
+
         Returns:
             Manifest dictionary or None if not found
         """
         manifest_path = self.base_path / "model_manifest.json"
-        
+
         if not manifest_path.exists():
             return None
-        
+
         try:
             with open(manifest_path, 'r') as f:
                 return json.load(f)
@@ -1423,10 +1685,10 @@ class ModelIOManager:
     def verify_model_integrity(self, model_name: str) -> bool:
         """
         Standalone function to verify model integrity.
-        
+
         Args:
             model_name: Name of the model to verify
-            
+
         Returns:
             True if integrity check passes, False otherwise
         """
@@ -1438,16 +1700,16 @@ class ModelIOManager:
             else:
                 pattern = f"{model_name}*.joblib"
                 matches = list(self.base_path.glob(pattern))
-            
+
             if not matches:
                 logger.warning(f"No model file found matching pattern: {pattern}")
                 return False
-            
+
             # Use the first match (most recent by default)
             model_filepath = matches[0]
             self._verify_model_integrity(model_filepath)
             return True
-            
+
         except Exception as e:
             logger.error(f"Integrity verification failed for {model_name}: {e}")
             return False

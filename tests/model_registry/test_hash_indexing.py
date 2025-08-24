@@ -34,7 +34,7 @@ class TestHashIndexing:
             manifest = {
                 "name": f"duplicate_test_{i+1}",
                 "version": "1.0.0",
-                "model_type": "complete_emuses_model",
+                "model_type": "emuses_model",
                 "description": f"Duplicate model {i+1} for testing",
                 "pipeline_config": identical_config,
                 "created_at": "2025-08-20T15:30:00Z"
@@ -79,7 +79,7 @@ class TestHashIndexing:
             manifest = {
                 "name": f"similar_test_{i+1}",
                 "version": "1.0.0",
-                "model_type": "complete_emuses_model",
+                "model_type": "emuses_model",
                 "description": f"Similar model {i+1} for testing",
                 "pipeline_config": config
             }
@@ -221,7 +221,7 @@ class TestHashIndexing:
             manifest = {
                 "name": f"performance_test_{i}",
                 "version": "1.0.0",
-                "model_type": "complete_emuses_model",
+                "model_type": "emuses_model",
                 "description": f"Performance test model {i}",
                 "pipeline_config": config
             }

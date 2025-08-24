@@ -13,9 +13,7 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-import joblib
 import numpy as np
-import pandas as pd
 from rich.console import Console
 from rich.progress import (
     Progress,
@@ -26,9 +24,7 @@ from rich.progress import (
     TimeRemainingColumn,
     TimeElapsedColumn
 )
-from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score, accuracy_score
 
-from bcblib.tools.general_utils import save_json
 from emuses.pipelines.pipeline_stage import PipelineStage
 from emuses.tools.emuses_utils import rescale_embedding
 from emuses.tools.model_io import ModelIOManager
@@ -63,9 +59,7 @@ class InferenceStage(PipelineStage):
         # Extract inference-specific configuration
         self.model_path = getattr(config, 'model_path', None)
         self.data_path = getattr(config, 'data_path', None)
-        # Convert output_path to string for JSON serialization compatibility
-        output_path = getattr(config, 'output_path', None)
-        self.output_path = str(output_path) if output_path is not None else None
+        self.output_path = getattr(config, 'output_path', None)
         self.validate_mode = getattr(config, 'validate_mode', False)
 
         # Initialize model storage
@@ -122,7 +116,7 @@ class InferenceStage(PipelineStage):
                 # Task 3: Transform features
                 sample_count = len(new_features)
                 transform_task = progress.add_task(
-                    f"Transforming features ({sample_count} samples)...",
+                    f"Transforming features ({sample_count} samples)...", 
                     total=sample_count
                 )
                 transform_start = time.time()
@@ -133,7 +127,7 @@ class InferenceStage(PipelineStage):
 
                 # Task 4: Run predictions
                 predict_task = progress.add_task(
-                    f"Running predictions ({sample_count} samples)...",
+                    f"Running predictions ({sample_count} samples)...", 
                     total=sample_count
                 )
                 predict_start = time.time()
@@ -144,7 +138,7 @@ class InferenceStage(PipelineStage):
 
                 # Task 5: Save results
                 save_task = progress.add_task("Saving results...", total=1)
-
+                
                 # Calculate performance breakdown with actual measurements
                 total_duration = time.time() - start_time
                 performance_data = {
@@ -158,11 +152,22 @@ class InferenceStage(PipelineStage):
                 # Calculate validation metrics if in validation mode
                 validation_metrics = None
                 if mode == "validation" and hasattr(self, '_detected_labels') and self._detected_labels is not None:
-                    validation_metrics = self._calculate_validation_metrics(
-                        prediction_results['ensemble_predictions'],
-                        self._detected_labels
-                    )
-                    logger.info("Validation metrics calculated successfully")
+                    # Check if this is a multi-target scenario
+                    if 'target_results' in prediction_results:
+                        # Multi-target validation
+                        validation_metrics = self._calculate_multi_target_validation_metrics(
+                            prediction_results['target_results'], 
+                            self._detected_labels
+                        )
+                        if validation_metrics:
+                            logger.info("Multi-target validation metrics calculated successfully")
+                    else:
+                        # Single-target validation (existing behavior)
+                        validation_metrics = self._calculate_validation_metrics(
+                            prediction_results['ensemble_predictions'], 
+                            self._detected_labels
+                        )
+                        logger.info("Single-target validation metrics calculated successfully")
 
                 # Format results for output
                 formatted_results = self._format_results(prediction_results, mode, performance_data, validation_metrics)
@@ -173,7 +178,7 @@ class InferenceStage(PipelineStage):
                 progress.advance(save_task, 1)
 
                 # Display summary
-                console.print("✅ [bold green]Inference completed successfully![/bold green]")
+                console.print(f"✅ [bold green]Inference completed successfully![/bold green]")
                 console.print(f"   • Processed {sample_count} samples in {total_duration:.2f}s")
                 console.print(f"   • Throughput: {performance_data['throughput_samples_per_sec']:.1f} samples/sec")
                 console.print(f"   • Mode: {mode}")
@@ -183,19 +188,17 @@ class InferenceStage(PipelineStage):
                 logger.error(f"Inference pipeline execution failed: {e}")
                 raise
 
-        # Return comprehensive results structure (after progress context)
+        # Return results using consistent target_results structure
         results = {
             'mode': mode,
             'status': 'completed',
             'samples_processed': sample_count,
             'embeddings_shape': transformed_features.shape,
-            'predictions': prediction_results['ensemble_predictions'],
-            'prediction_details': {
-                'individual_predictions': prediction_results['individual_predictions'],
-                'confidence_scores': prediction_results['confidence_scores'],
-                'model_count': prediction_results['model_count'],
-                'model_names': prediction_results['model_names']
-            },
+            'target_results': prediction_results['target_results'],
+            'target_count': prediction_results.get('target_count', 1),
+            'model_count': prediction_results['model_count'],
+            'model_names': prediction_results['model_names'],
+            'individual_predictions': prediction_results['individual_predictions'],
             'performance_breakdown': performance_data,
             'output_files': output_paths,
             'model_info': self._get_model_info()
@@ -229,11 +232,11 @@ class InferenceStage(PipelineStage):
         # 1. Check context for in-memory models first (pipeline-integrated mode)
         umap_model = context.get("embedding_train_umap_model")
         prediction_models = context.get("prediction_models")
-
+        
         if umap_model is not None:
             models['umap_model'] = umap_model
             logger.info("Using UMAP model from pipeline context (fast)")
-
+            
             # Get scaling parameters from context or model attributes
             models['metadata']['min_embeddings'] = getattr(umap_model, 'min_embeddings_', None)
             models['metadata']['max_embeddings'] = getattr(umap_model, 'max_embeddings_', None)
@@ -243,20 +246,20 @@ class InferenceStage(PipelineStage):
             if umap_model is not None:
                 models['umap_model'] = umap_model
                 logger.info("Loaded UMAP model from disk (slower)")
-
+                
                 # Load scaling parameters needed for rescaling
                 models['metadata']['min_embeddings'] = getattr(umap_model, 'min_embeddings_', None)
                 models['metadata']['max_embeddings'] = getattr(umap_model, 'max_embeddings_', None)
             else:
                 logger.warning("UMAP model not available - inference will be limited")
-
+            
         if prediction_models is not None and len(prediction_models) > 0:
             models['prediction_models'] = prediction_models
             logger.info(f"Using {len(prediction_models)} prediction models from pipeline context (fast)")
         else:
             # 3. Load prediction models from disk only if not in context
             models['prediction_models'] = self._load_prediction_models_from_disk()
-
+            
         return models
 
     def _load_umap_from_disk(self):
@@ -271,7 +274,7 @@ class InferenceStage(PipelineStage):
         if not self.model_path:
             logger.warning("No model_path specified - cannot load UMAP from disk")
             return None
-
+            
         model_dir = Path(self.model_path)
         if not model_dir.exists():
             logger.warning(f"Model directory not found: {model_dir}")
@@ -301,26 +304,27 @@ class InferenceStage(PipelineStage):
         if not self.model_path:
             logger.warning("No model_path specified - cannot load prediction models from disk")
             return []
-
+            
         model_dir = Path(self.model_path)
         if not model_dir.exists():
             logger.warning(f"Model directory not found: {model_dir}")
             return []
 
         prediction_models = []
-
+        
         # Search for prediction model files (pattern: target_*/best_pipeline_fold*_*.joblib)
         target_dirs = list(model_dir.glob('target_*'))
         logger.info(f"Found {len(target_dirs)} target directories for model loading")
-
+        
         for target_dir in target_dirs:
             if target_dir.is_dir():
                 # Find best pipeline models
                 model_files = list(target_dir.glob('best_pipeline_fold*_*.joblib'))
                 logger.info(f"Found {len(model_files)} model files in {target_dir.name}")
-
+                
                 for model_file in model_files:
                     try:
+                        import joblib
                         model = joblib.load(model_file)
                         prediction_models.append({
                             'model': model,
@@ -331,7 +335,7 @@ class InferenceStage(PipelineStage):
                         logger.info(f"Successfully loaded prediction model: {model_file.name}")
                     except Exception as e:
                         logger.warning(f"Failed to load model {model_file}: {e}")
-
+        
         logger.info(f"Successfully loaded {len(prediction_models)} prediction models from disk")
         return prediction_models
 
@@ -385,19 +389,20 @@ class InferenceStage(PipelineStage):
 
         # Load prediction models from HeatmapStage outputs
         prediction_models = []
-
+        
         # Search for prediction model files (pattern: target_*/best_pipeline_fold*_*.joblib)
         target_dirs = list(model_dir.glob('target_*'))
         logger.info(f"Found {len(target_dirs)} target directories for model loading")
-
+        
         for target_dir in target_dirs:
             if target_dir.is_dir():
                 # Find best pipeline models
                 model_files = list(target_dir.glob('best_pipeline_fold*_*.joblib'))
                 logger.info(f"Found {len(model_files)} model files in {target_dir.name}")
-
+                
                 for model_file in model_files:
                     try:
+                        import joblib
                         model = joblib.load(model_file)
                         prediction_models.append({
                             'model': model,
@@ -408,14 +413,14 @@ class InferenceStage(PipelineStage):
                         logger.info(f"Successfully loaded prediction model: {model_file.name}")
                     except Exception as e:
                         logger.warning(f"Failed to load model {model_file}: {e}")
-
+        
         models['prediction_models'] = prediction_models
         logger.info(f"Successfully loaded {len(prediction_models)} prediction models")
-
+        
         # If no prediction models found, log warning but continue
         if len(prediction_models) == 0:
             logger.warning("No prediction models found - inference will be limited to UMAP transformation")
-
+            
         return models
 
     def _detect_labels(self):
@@ -431,12 +436,12 @@ class InferenceStage(PipelineStage):
         if hasattr(self, '_detected_labels') and self._detected_labels is not None:
             logger.info(f"Labels detected during data loading: shape {self._detected_labels.shape}")
             return True
-
+            
         # Check for explicit validation mode flag
         if self.validate_mode:
             logger.info("Validation mode explicitly enabled")
             return True
-
+            
         # Check data path for label indicators
         if self.data_path:
             data_path_str = str(self.data_path).lower()
@@ -445,7 +450,7 @@ class InferenceStage(PipelineStage):
             if has_indicators:
                 logger.info(f"Label indicators found in data path: {self.data_path}")
                 return True
-
+                
         logger.info("No labels detected - running in inference-only mode")
         return False
 
@@ -477,39 +482,32 @@ class InferenceStage(PipelineStage):
         np.ndarray
             Feature matrix for inference from context
         """
-        # Get inference features from context using semantic aliasing pattern
-        # Priority order: pipeline context -> standalone context -> generic fallbacks
-        features = context.get("prediction_test_features")  # Full pipeline context (existing standard)
+        # Get inference features from context (standard stage pattern)
+        features = context.get("inference_features")
         if features is None:
-            features = context.get("inference_features")    # Standalone context (new)
-        if features is None:
-            # Generic fallbacks for compatibility
+            # Fallback: check for other common feature keys in context
             features = context.get("features")
             if features is None:
                 features = context.get("input_matrix")
-
+            
         if features is None:
             raise ValueError("No inference features found in context. InferenceStage must receive data from EMUSESPipeline.")
-
+            
         logger.info(f"Retrieved features from context: shape {features.shape}")
-
-        # Check for labels in context for validation mode using semantic aliasing
-        # Priority order: pipeline context -> standalone context -> generic fallbacks
-        labels = context.get("prediction_test_labels")  # Full pipeline context (existing standard)
+        
+        # Check for labels in context for validation mode
+        labels = context.get("inference_labels") 
         if labels is None:
-            labels = context.get("inference_labels")    # Standalone context (new)
-        if labels is None:
-            # Generic fallbacks for compatibility
             labels = context.get("labels")
-            if labels is None:
-                labels = context.get("scores")
-
+        if labels is None:
+            labels = context.get("scores")
+            
         if labels is not None:
             logger.info(f"Labels found in context: shape {labels.shape}")
             self._detected_labels = labels
         else:
             self._detected_labels = None
-
+            
         return features
 
     def _transform_features(self, features, models):
@@ -555,7 +553,12 @@ class InferenceStage(PipelineStage):
 
     def _predict(self, embeddings, models):
         """
-        Run ensemble predictions with per-model performance insights.
+        Run ensemble predictions using unified multi-target processing.
+
+        Uses a single unified workflow where single-target is treated as 
+        multi-target with n=1 targets. All models are grouped by target
+        (assigning 'target_0' for models without explicit target) and
+        processed consistently.
 
         Parameters
         ----------
@@ -567,8 +570,12 @@ class InferenceStage(PipelineStage):
         Returns
         -------
         dict
-            Prediction results with ensemble predictions, individual predictions,
-            and confidence scores
+            Prediction results with target_results structure containing:
+            - target_results: Dict[str, dict] with per-target predictions
+            - target_count: int number of targets
+            - model_count: int total number of models
+            - individual_predictions: dict aggregated individual predictions
+            - model_names: list aggregated model names
         """
         prediction_models = models.get('prediction_models', [])
         if not prediction_models:
@@ -583,66 +590,30 @@ class InferenceStage(PipelineStage):
                 'model_names': []
             }
 
-        logger.info(f"Running ensemble prediction with {len(prediction_models)} models")
+        # Group models by target (assigns 'target_0' if no target specified)
+        models_by_target = self._group_models_by_target(prediction_models)
+        n_targets = len(models_by_target)
+        
+        logger.info(f"Processing {len(prediction_models)} models across {n_targets} target(s)")
 
-        # Collect individual predictions from each model
-        individual_predictions = {}
-        model_scores = []
-
-        for model_info in prediction_models:
-            model = model_info['model']
-            model_name = model_info.get('name', 'unknown')
-            model_score = model_info.get('score', 1.0)
-
-            # Get predictions from this model
-            predictions = model.predict(embeddings)
-            individual_predictions[model_name] = predictions
-            model_scores.append(model_score)
-
-        # Create weighted ensemble predictions
-        # Simple weighted average based on model scores
-        model_names = list(individual_predictions.keys())
-        if len(model_names) == 1:
-            # Single model case
-            ensemble_predictions = individual_predictions[model_names[0]]
-        else:
-            # Multi-model ensemble
-            weighted_predictions = []
-            total_weight = sum(model_scores)
-
-            for i, model_name in enumerate(model_names):
-                weight = model_scores[i] / total_weight
-                weighted_predictions.append(weight * individual_predictions[model_name])
-
-            ensemble_predictions = np.sum(weighted_predictions, axis=0)
-
-        # Calculate confidence scores (standard deviation across models)
-        if len(model_names) > 1:
-            pred_matrix = np.array([individual_predictions[name] for name in model_names])
-            confidence_scores = 1.0 - np.std(pred_matrix, axis=0)  # Higher std = lower confidence
-        else:
-            # Single model - use uniform confidence
-            confidence_scores = np.ones(len(ensemble_predictions)) * 0.8
-
-        results = {
-            'ensemble_predictions': ensemble_predictions,
-            'individual_predictions': individual_predictions,
-            'confidence_scores': confidence_scores,
-            'model_count': len(prediction_models),
-            'model_names': model_names
-        }
-
-        logger.info(f"Ensemble prediction completed for {len(embeddings)} samples")
-        return results
+        # Process predictions with target-specific ensembles (handles single-target as n=1 case)
+        target_results = self._predict_multi_target(embeddings, models_by_target)
+        
+        # Format results in consistent target_results structure
+        return self._format_multi_target_results(target_results)
 
     def _format_results(self, predictions, mode, performance_data, validation_metrics=None):
         """
         Format inference results with performance breakdown and metadata.
+        
+        Processes predictions from the unified multi-target workflow and
+        adds performance metrics and metadata. Always expects target_results
+        structure from _predict method.
 
         Parameters
         ----------
         predictions : dict
-            Prediction results from _predict method
+            Prediction results from _predict method with target_results structure
         mode : str
             Inference mode ("inference" or "validation")
         performance_data : dict
@@ -653,14 +624,22 @@ class InferenceStage(PipelineStage):
         Returns
         -------
         dict
-            Formatted results with predictions, performance, and metadata
+            Formatted results with target_results, performance, and metadata
         """
         logger.info(f"Formatting {mode} results for output")
 
-        # Extract core predictions
-        ensemble_predictions = predictions.get('ensemble_predictions', [])
-        confidence_scores = predictions.get('confidence_scores', [])
+        # Extract predictions from target_results structure (always present now)
+        target_results = predictions['target_results']
         individual_predictions = predictions.get('individual_predictions', {})
+        
+        # For metadata, calculate total samples from first target
+        if target_results:
+            first_target = list(target_results.keys())[0]
+            ensemble_predictions = target_results[first_target]['ensemble_predictions']
+            confidence_scores = target_results[first_target].get('confidence_scores', [])
+        else:
+            ensemble_predictions = []
+            confidence_scores = []
 
         # Format performance breakdown
         performance_breakdown = {
@@ -688,6 +667,10 @@ class InferenceStage(PipelineStage):
             'performance_breakdown': performance_breakdown,
             'metadata': metadata
         }
+        
+        # Always preserve target_results structure
+        formatted_results['target_results'] = predictions['target_results']
+        formatted_results['target_count'] = predictions.get('target_count', len(predictions['target_results']))
 
         # Add validation metrics if available
         if validation_metrics:
@@ -736,6 +719,7 @@ class InferenceStage(PipelineStage):
             metadata_content['validation_metrics'] = results['validation_metrics']
 
         # Use bcblib save_json for consistency
+        from bcblib.tools.general_utils import save_json
         save_json(metadata_file, metadata_content)
 
         output_paths = {'metadata_file': str(metadata_file)}
@@ -769,54 +753,99 @@ class InferenceStage(PipelineStage):
 
     def _save_predictions_csv(self, results, output_file):
         """
-        Save predictions in CSV format consistent with training scores.
+        Save predictions in CSV format with target-specific columns.
+        Handles both single-target (n=1) and multi-target (n>1) scenarios consistently.
 
         Parameters
         ----------
         results : dict
-            Formatted results containing predictions and metadata
+            Formatted results containing target_results structure
         output_file : Path
             Path to output CSV file
         """
+        import pandas as pd
 
-        # Create DataFrame with consistent structure
-        n_samples = len(results['predictions'])
+        # Always expect target_results structure now
+        target_results = results['target_results']
+        
+        # Determine sample count from first target
+        first_target = list(target_results.keys())[0]
+        n_samples = len(target_results[first_target]['ensemble_predictions'])
+        
+        # Start with sample IDs
         data = {
-            'sample_id': [f"sample_{i:04d}" for i in range(n_samples)],
-            'ensemble_prediction': results['predictions'],
-            'confidence_score': results.get('confidence_scores', [0.0] * n_samples)
+            'sample_id': [f"sample_{i:04d}" for i in range(n_samples)]
         }
-
-        # Add individual model predictions as separate columns
-        individual_preds = results.get('individual_predictions', {})
-        for model_name, predictions in individual_preds.items():
-            data[model_name] = predictions
-
+        
+        # Add ensemble predictions per target
+        for target in sorted(target_results.keys()):
+            target_result = target_results[target]
+            data[f'{target}_ensemble_prediction'] = target_result['ensemble_predictions']
+            data[f'{target}_confidence_score'] = target_result.get('confidence_scores', [0.0] * n_samples)
+        
+        # Add individual model predictions with target prefixes
+        for target in sorted(target_results.keys()):
+            target_result = target_results[target]
+            individual_preds = target_result.get('individual_predictions', {})
+            for model_name, predictions in individual_preds.items():
+                # Ensure model names are prefixed with target for clarity
+                if not model_name.startswith(f"{target}_"):
+                    column_name = f"{target}_{model_name}"
+                else:
+                    column_name = model_name
+                data[column_name] = predictions
+        
         df = pd.DataFrame(data)
         df.to_csv(output_file, index=False)
-        logger.info(f"Predictions saved to CSV: {output_file}")
+        logger.info(f"Predictions saved to CSV: {output_file} ({len(target_results)} target(s))")
 
     def _save_confidence_csv(self, results, output_file):
         """
-        Save confidence scores in CSV format.
+        Save confidence scores in CSV format with target-specific columns.
+        Handles both single-target (n=1) and multi-target (n>1) scenarios consistently.
 
         Parameters
         ----------
         results : dict
-            Formatted results containing confidence scores
+            Formatted results containing target_results structure
         output_file : Path
             Path to output CSV file
         """
+        import pandas as pd
 
-        confidence_scores = results.get('confidence_scores', [])
-        if len(confidence_scores) > 0:
-            data = {
-                'sample_id': [f"sample_{i:04d}" for i in range(len(confidence_scores))],
-                'confidence_score': confidence_scores
-            }
-            df = pd.DataFrame(data)
-            df.to_csv(output_file, index=False)
-            logger.info(f"Confidence scores saved to CSV: {output_file}")
+        # Always expect target_results structure now
+        target_results = results['target_results']
+        
+        # Check if any target has confidence scores
+        has_confidence = False
+        for target_result in target_results.values():
+            if len(target_result.get('confidence_scores', [])) > 0:
+                has_confidence = True
+                break
+        
+        if not has_confidence:
+            logger.info("No confidence scores available for any target")
+            return
+        
+        # Determine sample count from first target
+        first_target = list(target_results.keys())[0]
+        n_samples = len(target_results[first_target]['ensemble_predictions'])
+        
+        # Start with sample IDs
+        data = {
+            'sample_id': [f"sample_{i:04d}" for i in range(n_samples)]
+        }
+        
+        # Add confidence scores per target
+        for target in sorted(target_results.keys()):
+            target_result = target_results[target]
+            confidence_scores = target_result.get('confidence_scores', [0.0] * n_samples)
+            data[f'{target}_confidence_score'] = confidence_scores
+        
+        df = pd.DataFrame(data)
+        df.to_csv(output_file, index=False)
+        logger.info(f"Confidence scores saved to CSV: {output_file} ({len(target_results)} target(s))")
+
 
     def _transform_features_with_progress(self, features, models, progress, task_id):
         """
@@ -841,10 +870,10 @@ class InferenceStage(PipelineStage):
         # For now, use the existing transform method and update progress
         # In a real implementation, this could track batch-wise progress
         transformed_features = self._transform_features(features, models)
-
+        
         # Update progress based on feature count
         progress.advance(task_id, len(features))
-
+        
         return transformed_features
 
     def _predict_with_progress(self, embeddings, models, progress, task_id):
@@ -869,10 +898,10 @@ class InferenceStage(PipelineStage):
         """
         # Use existing predict method and update progress
         prediction_results = self._predict(embeddings, models)
-
+        
         # Update progress based on sample count
         progress.advance(task_id, len(embeddings))
-
+        
         return prediction_results
 
     def _calculate_validation_metrics(self, predictions, ground_truth):
@@ -891,9 +920,18 @@ class InferenceStage(PipelineStage):
         dict
             Dictionary containing validation metrics (MSE, MAE, R², etc.)
         """
+        import numpy as np
+        from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score, accuracy_score, classification_report
+
         predictions = np.array(predictions)
         ground_truth = np.array(ground_truth)
-
+        
+        # Ensure consistent shapes (flatten if needed)
+        if predictions.ndim > 1:
+            predictions = predictions.flatten()
+        if ground_truth.ndim > 1:
+            ground_truth = ground_truth.flatten()
+            
         # Ensure same length
         if len(predictions) != len(ground_truth):
             min_len = min(len(predictions), len(ground_truth))
@@ -911,7 +949,7 @@ class InferenceStage(PipelineStage):
             },
             'ground_truth_range': {
                 'min': float(np.min(ground_truth)),
-                'max': float(np.max(ground_truth)),
+                'max': float(np.max(ground_truth)), 
                 'mean': float(np.mean(ground_truth)),
                 'std': float(np.std(ground_truth))
             }
@@ -923,31 +961,398 @@ class InferenceStage(PipelineStage):
             metrics['mae'] = float(mean_absolute_error(ground_truth, predictions))
             metrics['rmse'] = float(np.sqrt(metrics['mse']))
             metrics['r2_score'] = float(r2_score(ground_truth, predictions))
-
+            
             # Correlation coefficient
             correlation = np.corrcoef(ground_truth, predictions)[0, 1]
             metrics['correlation'] = float(correlation) if not np.isnan(correlation) else 0.0
 
             # Check if data appears to be classification (integer values in small range)
             unique_gt = np.unique(ground_truth)
-            # Check unique predictions for classification detection
-            np.unique(predictions)
-
+            unique_pred = np.unique(predictions)
+            
             if len(unique_gt) <= 10 and np.all(unique_gt == unique_gt.astype(int)):
                 # Classification-like data
                 # Round predictions to nearest integers for classification metrics
                 pred_rounded = np.round(predictions).astype(int)
-
+                
                 try:
                     metrics['accuracy'] = float(accuracy_score(ground_truth.astype(int), pred_rounded))
                     logger.info("Added classification metrics (accuracy) for discrete target values")
                 except Exception as e:
                     logger.warning(f"Could not calculate classification metrics: {e}")
-
+                    
             logger.info(f"Calculated validation metrics: R² = {metrics['r2_score']:.3f}, RMSE = {metrics['rmse']:.3f}")
-
+            
         except Exception as e:
             logger.error(f"Error calculating validation metrics: {e}")
             metrics['error'] = str(e)
-
+            
         return metrics
+
+    def _is_sklearn_pipeline(self, model):
+        """
+        Detect if a model is an sklearn Pipeline.
+        
+        Parameters
+        ----------
+        model : object
+            Model object to check
+            
+        Returns
+        -------
+        bool
+            True if model is an sklearn Pipeline, False otherwise
+        """
+        if model is None:
+            return False
+        
+        # Check if it's an sklearn Pipeline by checking for expected attributes
+        return (
+            hasattr(model, 'named_steps') and 
+            hasattr(model, 'steps') and
+            hasattr(model, 'predict')
+        )
+
+    def _detect_multi_target_scenario(self, prediction_models):
+        """
+        Detect if this is a multi-target scenario and extract target information.
+        
+        Parameters
+        ----------
+        prediction_models : list
+            List of model dictionaries with target information
+            
+        Returns
+        -------
+        tuple
+            (is_multi_target: bool, targets: list) - detection result and sorted target list
+        """
+        if not prediction_models:
+            return False, []
+            
+        targets_found = set()
+        
+        for model_info in prediction_models:
+            target = model_info.get('target', 'target_0')  # Default for legacy models
+            targets_found.add(target)
+        
+        sorted_targets = sorted(targets_found)
+        is_multi_target = len(targets_found) > 1
+        
+        logger.info(f"Detected {'multi-target' if is_multi_target else 'single-target'} scenario: {sorted_targets}")
+        return is_multi_target, sorted_targets
+
+    def _group_models_by_target(self, prediction_models):
+        """
+        Group prediction models by target for target-specific processing.
+        
+        Parameters
+        ----------
+        prediction_models : list
+            List of model dictionaries with target information
+            
+        Returns
+        -------
+        dict
+            Dictionary mapping target names to lists of model dictionaries
+        """
+        models_by_target = {}
+        
+        for model_info in prediction_models:
+            target = model_info.get('target', 'target_0')  # Default for legacy models
+            
+            if target not in models_by_target:
+                models_by_target[target] = []
+            models_by_target[target].append(model_info)
+        
+        # Log target distribution
+        for target, models in models_by_target.items():
+            logger.info(f"Target {target}: {len(models)} models loaded")
+        
+        return models_by_target
+
+    def _get_enhanced_model_name(self, model_info):
+        """
+        Get enhanced model name with better fallback logic for multi-target scenarios.
+        
+        Parameters
+        ----------
+        model_info : dict
+            Model information dictionary
+            
+        Returns
+        -------
+        str
+            Enhanced model name with target and fold information
+        """
+        # Enhanced model name generation from available information
+        model_name = (
+            model_info.get('name') or                     # Direct name (test/manual usage)
+            model_info.get('model_name') or               # Alternate name field 
+            model_info.get('fold_info') or                # From disk loading (fold info)
+            f"{model_info.get('target', 'model')}"        # Target-based fallback
+        )
+        
+        # Add target prefix only if we don't have a direct name and target info is available
+        target = model_info.get('target')
+        if (target and 
+            not model_info.get('name') and               # Don't prefix if direct name provided
+            not model_name.startswith(target) and        # Don't prefix if already has target
+            model_name != target):                        # Don't prefix if model_name is just target
+            model_name = f"{target}_{model_name}"
+        
+        return model_name if model_name != 'model' else 'unknown'
+
+    def _predict_multi_target(self, embeddings, models_by_target):
+        """
+        Process predictions with target-specific ensembles.
+        
+        Parameters
+        ----------
+        embeddings : np.ndarray
+            Transformed feature embeddings
+        models_by_target : dict
+            Models grouped by target
+            
+        Returns
+        -------
+        dict
+            Target-specific prediction results
+        """
+        target_results = {}
+        
+        for target, target_models in models_by_target.items():
+            logger.info(f"Processing ensemble for {target} with {len(target_models)} models")
+            
+            target_predictions = []
+            target_individual = {}
+            target_model_names = []
+            
+            for model_info in target_models:
+                model = model_info['model']
+                model_name = self._get_enhanced_model_name(model_info)
+                
+                # Use existing pipeline component extraction (reuse from recent enhancement)
+                if self._is_sklearn_pipeline(model):
+                    feature_transformer, estimator = self._extract_pipeline_components(model)
+                    if feature_transformer is not None and estimator is not None:
+                        # Apply model-specific feature transformations
+                        transformed_features = feature_transformer.transform(embeddings)
+                        predictions = estimator.predict(transformed_features)
+                        logger.debug(f"Pipeline component extraction successful for {model_name}: {embeddings.shape} → {transformed_features.shape} → {predictions.shape}")
+                    else:
+                        # Fallback: use whole pipeline if component extraction failed
+                        logger.warning(f"Pipeline component extraction failed for {model_name}, using whole pipeline")
+                        predictions = model.predict(embeddings)
+                else:
+                    # Non-pipeline model: use directly (backward compatibility)
+                    logger.debug(f"Non-pipeline model {model_name}, using directly")
+                    predictions = model.predict(embeddings)
+                
+                target_predictions.append(predictions)
+                target_individual[model_name] = predictions
+                target_model_names.append(model_name)
+            
+            # Target-specific ensemble calculation
+            if len(target_predictions) > 0:
+                ensemble_predictions = np.mean(target_predictions, axis=0)
+                
+                # Target-specific confidence calculation
+                if len(target_predictions) > 1:
+                    pred_matrix = np.array(target_predictions)
+                    confidence_scores = 1.0 - np.std(pred_matrix, axis=0)  # Higher std = lower confidence
+                else:
+                    # Single model - use uniform confidence
+                    confidence_scores = np.ones(len(ensemble_predictions)) * 0.8
+            else:
+                # No models for this target - create empty results
+                logger.warning(f"No models found for {target}")
+                ensemble_predictions = np.zeros(len(embeddings))
+                confidence_scores = np.zeros(len(embeddings))
+            
+            target_results[target] = {
+                'ensemble_predictions': ensemble_predictions,
+                'individual_predictions': target_individual,
+                'confidence_scores': confidence_scores,
+                'model_count': len(target_models),
+                'model_names': target_model_names
+            }
+            
+            logger.info(f"Target {target} ensemble complete: {len(embeddings)} predictions generated")
+        
+        return target_results
+
+    def _format_multi_target_results(self, target_results):
+        """
+        Format target-specific results using unified structure.
+        
+        Processes results from the unified prediction workflow, where
+        single-target is treated as multi-target with n=1. Always
+        returns target_results structure for consistency.
+        
+        Parameters
+        ----------
+        target_results : dict
+            Target-specific prediction results from _predict_multi_target
+            
+        Returns
+        -------
+        dict
+            Consistent results structure containing:
+            - target_results: dict with per-target predictions
+            - target_count: int number of targets  
+            - model_count: int total models across all targets
+            - individual_predictions: dict aggregated individual predictions
+            - model_names: list aggregated model names
+        """
+        if not target_results:
+            return {
+                'ensemble_predictions': np.array([]),
+                'individual_predictions': {},
+                'confidence_scores': np.array([]),
+                'model_count': 0,
+                'model_names': []
+            }
+        
+        # Always return target_results format (single-target is just n=1 case)
+        all_individual_predictions = {}
+        all_model_names = []
+        
+        # Aggregate individual predictions and model names across all targets
+        for target, results in target_results.items():
+            all_individual_predictions.update(results['individual_predictions'])
+            all_model_names.extend(results['model_names'])
+        
+        # Create consistent result structure (works for single-target n=1 and multi-target n>1)
+        result = {
+            'target_results': target_results,              # Full target-specific results
+            'individual_predictions': all_individual_predictions,  # For CSV compatibility
+            'model_names': all_model_names,
+            'model_count': sum(results['model_count'] for results in target_results.values()),
+            'target_count': len(target_results)
+        }
+        
+        return result
+
+    def _calculate_multi_target_validation_metrics(self, target_results, ground_truth_labels):
+        """
+        Calculate validation metrics per target with summary statistics.
+        
+        Parameters
+        ----------
+        target_results : dict
+            Target-specific prediction results from _predict_multi_target
+        ground_truth_labels : np.ndarray or None
+            Ground truth labels for validation
+            
+        Returns
+        -------
+        dict or None
+            Validation metrics per target with summary, or None if no labels available
+        """
+        if ground_truth_labels is None:
+            logger.warning("No ground truth labels available for validation")
+            return None
+        
+        if not target_results:
+            logger.warning("No target results available for validation")
+            return {}
+        
+        ground_truth_labels = np.array(ground_truth_labels)
+        validation_metrics = {}
+        
+        # Handle single vs multi-target ground truth
+        if ground_truth_labels.ndim == 1:
+            # Single target case
+            if len(target_results) == 1:
+                target = list(target_results.keys())[0]
+                metrics = self._calculate_validation_metrics(
+                    target_results[target]['ensemble_predictions'], 
+                    ground_truth_labels
+                )
+                validation_metrics[target] = metrics
+                logger.info(f"Single-target validation metrics calculated for {target}")
+            else:
+                logger.warning("Single-dimensional ground truth with multi-target predictions - validation skipped")
+                return None
+        else:
+            # Multi-target case
+            if ground_truth_labels.shape[1] != len(target_results):
+                logger.warning(f"Ground truth dimensions ({ground_truth_labels.shape[1]}) don't match target count ({len(target_results)})")
+                return None
+                
+            for target_idx, target in enumerate(sorted(target_results.keys())):
+                target_predictions = target_results[target]['ensemble_predictions']
+                target_ground_truth = ground_truth_labels[:, target_idx]
+                
+                metrics = self._calculate_validation_metrics(target_predictions, target_ground_truth)
+                validation_metrics[target] = metrics
+                
+                logger.info(f"Validation metrics calculated for {target}: R² = {metrics.get('r2_score', 'N/A'):.3f}")
+        
+        # Add summary statistics for multi-target scenarios
+        if len(validation_metrics) > 1:
+            validation_metrics['_summary'] = self._calculate_validation_summary(validation_metrics)
+            logger.info(f"Multi-target validation summary calculated across {len(validation_metrics)-1} targets")
+        
+        return validation_metrics
+
+    def _calculate_validation_summary(self, target_metrics):
+        """
+        Calculate summary statistics across all targets.
+        
+        Parameters
+        ----------
+        target_metrics : dict
+            Validation metrics per target
+            
+        Returns
+        -------
+        dict
+            Summary statistics across targets
+        """
+        metrics_keys = ['r2_score', 'mse', 'mae', 'rmse', 'correlation']
+        summary = {}
+        
+        for key in metrics_keys:
+            values = [metrics.get(key, 0) for target, metrics in target_metrics.items() 
+                     if not target.startswith('_')]  # Skip summary entries
+            if values:
+                summary[f'mean_{key}'] = float(np.mean(values))
+                summary[f'std_{key}'] = float(np.std(values))
+                summary[f'min_{key}'] = float(np.min(values))
+                summary[f'max_{key}'] = float(np.max(values))
+        
+        # Add target count
+        summary['target_count'] = len([t for t in target_metrics.keys() if not t.startswith('_')])
+        
+        return summary
+
+    def _extract_pipeline_components(self, pipeline):
+        """
+        Extract feature transformer and estimator from sklearn Pipeline.
+        
+        Parameters
+        ----------
+        pipeline : sklearn.pipeline.Pipeline
+            Fitted pipeline with 'feat' and 'est' components
+            
+        Returns
+        -------
+        tuple
+            (feature_transformer, estimator) or (None, None) if extraction fails
+        """
+        try:
+            feature_transformer = pipeline.named_steps.get('feat')
+            estimator = pipeline.named_steps.get('est')
+            
+            if feature_transformer is None:
+                logger.warning("Pipeline missing 'feat' component - cannot extract feature transformer")
+            if estimator is None:
+                logger.warning("Pipeline missing 'est' component - cannot extract estimator")
+                
+            return feature_transformer, estimator
+            
+        except Exception as e:
+            logger.error(f"Failed to extract pipeline components: {e}")
+            return None, None

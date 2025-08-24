@@ -32,7 +32,7 @@ class TestAtomicTransactionFramework:
         manifest = {
             "name": "test_model",
             "version": "1.0.0",
-            "model_type": "complete_emuses_model",
+            "model_type": "emuses_model",
             "description": "Test model for atomic operations"
         }
         with open(model_dir / "manifest.json", 'w') as f:

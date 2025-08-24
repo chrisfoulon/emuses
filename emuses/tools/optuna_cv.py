@@ -237,14 +237,16 @@ def nested_optuna_cv(
                 saved_path = model_manager.save_model(
                     model=best_pipe,
                     model_name=f"best_pipeline_fold{fold}",
-                    model_type="sklearn_pipeline",
-                    description=f"Best pipeline for {target_tag} fold {fold}/{n_outer} "
-                    f"(outer score: {score:.4f}, inner CV: {study.best_value:.4f})",
+                    model_type="emuses_prediction_pipeline",
+                    description=f"EMUSES complete prediction pipeline for {target_tag}: optimized feature engineering "
+                    f"+ {best_params['model']['name']} estimator (fold {fold}/{n_outer}, "
+                    f"CV score: {study.best_value:.4f}, test score: {score:.4f})",
                     tags=["cv", "pipeline", f"fold_{fold}", target_tag, task],
                     config=best_params,
                     # Enhanced Optuna metadata
                     optuna_study=study,
                     optuna_trial=study.best_trial,
+                    optimization_time=optimization_time,
                     # CV metadata
                     cv_score=score,  # Outer fold score
                     cv_scores=inner_cv_scores,  # Inner CV scores

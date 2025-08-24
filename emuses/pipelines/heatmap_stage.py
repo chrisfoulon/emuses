@@ -691,8 +691,30 @@ class HeatmapStage(PipelineStage):
         #     classification=getattr(self.config, "classification", False),
         # )
 
-        # # Store results in context
-        # context.update(results)
+        # Prepare context for InferenceStage (required for pipeline completion)
+        prediction_test_features = context.get("prediction_test_features")
+        prediction_test_labels = context.get("prediction_test_labels")
+        prediction_train_features = context.get("prediction_train_features")
+        prediction_train_labels = context.get("prediction_train_labels")
+
+        if prediction_test_features is not None:
+            # Use test data for inference (preferred for validation)
+            context["inference_features"] = prediction_test_features
+            if prediction_test_labels is not None:
+                context["inference_labels"] = prediction_test_labels
+            logger.info(
+                "Prepared prediction test data for inference stage."
+            )
+        elif prediction_train_features is not None:
+            # Fallback to train data if no test data available
+            context["inference_features"] = prediction_train_features
+            if prediction_train_labels is not None:
+                context["inference_labels"] = prediction_train_labels
+            logger.info(
+                "Prepared prediction training data for inference stage (fallback)."
+            )
+        else:
+            logger.warning("No prediction features found - inference stage may fail")
 
     def _generate_performance_csv_files(self, context, task, n_targets, logger):
         """

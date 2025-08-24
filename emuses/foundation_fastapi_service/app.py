@@ -284,6 +284,7 @@ except ImportError as e:
 except Exception as e:
     logger.error(f"Failed to set up registry health endpoints: {e}")
 
+
 # Initialize core components lazily to avoid import issues
 job_manager = None
 pipeline_runner = None
@@ -624,29 +625,110 @@ class BackgroundTaskManager:
                     return
                 self.tasks[task_id]["status"] = "running"
                 self.tasks[task_id]["started_at"] = datetime.now(timezone.utc).isoformat()
-            
-            # Simulate inference processing with progress updates
-            for i in range(0, 101, 20):
-                with self.lock:
-                    if self.tasks[task_id]["status"] == "cancelled":
-                        return
-                    self.tasks[task_id]["progress"] = i
                 
-                time.sleep(0.1)  # Simulate work
+                # Get the inference request
+                inference_data = self.tasks[task_id]["request"]
             
-            # Mock inference result (in real implementation, would call InferenceStage)
-            mock_result = {
-                "predictions": [0.7, 0.8, 0.6],
-                "confidence_scores": [0.9, 0.85, 0.75],
-                "processing_time_ms": 500,
-                "samples_processed": 3
+            # Reconstruct the inference request object
+            from emuses.foundation_fastapi_service.models import InferenceRequest
+            inference_request = InferenceRequest(**inference_data)
+            
+            # Update progress
+            with self.lock:
+                if self.tasks[task_id]["status"] == "cancelled":
+                    return
+                self.tasks[task_id]["progress"] = 20
+            
+            # Import inference components
+            from emuses.pipelines.inference_stage import InferenceStage
+            from emuses.pipelines.pipeline_config import PipelineConfig
+            from emuses.tools.local_model_registry import LocalModelRegistry
+            
+            # Handle model resolution (registry lookup if needed)
+            resolved_model_path = inference_request.model_path
+            if inference_request.model_id:
+                registry = LocalModelRegistry()
+                resolved_model_path = registry.get_model_path(inference_request.model_id)
+                if not resolved_model_path:
+                    raise Exception(f"Registry lookup failed: Model ID '{inference_request.model_id}' not found")
+            
+            # Update progress
+            with self.lock:
+                if self.tasks[task_id]["status"] == "cancelled":
+                    return
+                self.tasks[task_id]["progress"] = 40
+            
+            # Determine output folder
+            if inference_request.output_path:
+                output_folder = inference_request.output_path
+            elif resolved_model_path:
+                output_folder = resolved_model_path + "/inference_results"
+            else:
+                output_folder = "inference_results"
+            
+            # Create pipeline configuration (InferenceStage works with resolved paths only)
+            inference_config = PipelineConfig(
+                model_path=resolved_model_path,
+                data_path=inference_request.data_path,
+                output_path=inference_request.output_path,
+                validate_mode=inference_request.validation_mode,
+                output_folder=output_folder
+            )
+            
+            # Update progress
+            with self.lock:
+                if self.tasks[task_id]["status"] == "cancelled":
+                    return
+                self.tasks[task_id]["progress"] = 60
+            
+            # Create and run inference stage
+            stage = InferenceStage(inference_config)
+            
+            # Prepare execution context
+            context = {
+                "verify_integrity": inference_request.verify_integrity,
+                "output_format": inference_request.output_format
+            }
+            
+            # Update progress
+            with self.lock:
+                if self.tasks[task_id]["status"] == "cancelled":
+                    return
+                self.tasks[task_id]["progress"] = 80
+            
+            # Execute inference
+            results = stage.run(context)
+            
+            # Extract results for response
+            predictions = results.get("predictions", [])
+            if hasattr(predictions, 'tolist'):
+                predictions = predictions.tolist()
+                
+            confidence_scores = None
+            if "prediction_details" in results:
+                confidence_scores = results["prediction_details"].get("confidence_scores", [])
+                if hasattr(confidence_scores, 'tolist'):
+                    confidence_scores = confidence_scores.tolist()
+            
+            performance = results.get("performance_breakdown", {})
+            
+            # Prepare final result
+            result = {
+                "status": results.get("status", "completed"),
+                "predictions": predictions,
+                "confidence_scores": confidence_scores,
+                "processing_time_ms": performance.get("total_time_ms", 0),
+                "samples_processed": len(predictions) if predictions else 0,
+                "model_info": results.get("model_info", {}),
+                "output_files": results.get("output_files", {}),
+                "validation_metrics": results.get("validation_metrics")
             }
             
             with self.lock:
                 self.tasks[task_id]["status"] = "completed"
                 self.tasks[task_id]["completed_at"] = datetime.now(timezone.utc).isoformat()
                 self.tasks[task_id]["progress"] = 100
-                self.tasks[task_id]["result"] = mock_result
+                self.tasks[task_id]["result"] = result
                 
         except Exception as e:
             with self.lock:
@@ -1689,6 +1771,7 @@ async def run_inference(
                 extra={
                     "request_id": request_id,
                     "model_path": inference_request.model_path,
+                    "model_id": inference_request.model_id,
                     "data_path": inference_request.data_path,
                     "output_format": inference_request.output_format,
                     "validation_mode": inference_request.validation_mode
@@ -1698,14 +1781,35 @@ async def run_inference(
             # Import inference components
             from emuses.pipelines.inference_stage import InferenceStage
             from emuses.pipelines.pipeline_config import PipelineConfig
+            from emuses.tools.local_model_registry import LocalModelRegistry
             
-            # Create pipeline configuration
+            # Handle model resolution (registry lookup if needed)
+            resolved_model_path = inference_request.model_path
+            if inference_request.model_id:
+                registry = LocalModelRegistry()
+                resolved_model_path = registry.get_model_path(inference_request.model_id)
+                if not resolved_model_path:
+                    raise HTTPException(
+                        status_code=422, 
+                        detail=f"Registry lookup failed: Model ID '{inference_request.model_id}' not found"
+                    )
+                logger.info(f"Registry lookup: {inference_request.model_id} -> {resolved_model_path}")
+            
+            # Determine output folder
+            if inference_request.output_path:
+                output_folder = inference_request.output_path
+            elif resolved_model_path:
+                output_folder = resolved_model_path + "/inference_results"
+            else:
+                output_folder = "inference_results"
+            
+            # Create pipeline configuration (InferenceStage works with resolved paths only)
             inference_config = PipelineConfig(
-                model_path=inference_request.model_path,
+                model_path=resolved_model_path,
                 data_path=inference_request.data_path,
                 output_path=inference_request.output_path,
                 validate_mode=inference_request.validation_mode,
-                output_folder=inference_request.output_path or (inference_request.model_path + "/inference_results")
+                output_folder=output_folder
             )
             
             # Create and run inference stage

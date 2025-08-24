@@ -454,9 +454,10 @@ def train_and_save_umap_optim_with_nested_clustering(
             manager.save_model(
                 model=best_model,
                 model_name="best_umap_model",
-                model_type="umap",
+                model_type="emuses_umap_component",
                 config=best_umap_params,
-                description=f"Best UMAP model from trial {trial.number} with score {trial.value}",
+                description=f"EMUSES dimensionality reduction component: UMAP embedding optimized "
+                f"for neuroimaging analysis (trial {trial.number}, score: {trial.value:.4f})",
                 tags=["optimization", "best_model", f"trial_{trial.number}"],
             )
             print(

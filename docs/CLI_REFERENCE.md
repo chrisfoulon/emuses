@@ -100,11 +100,18 @@ emuses umap embeddings_output/ brain_features.csv
 
 ### `emuses models list` - View Available Models
 
-List all models in your registry.
+List all models in your registry with completeness indicators.
 
 ```bash
 emuses models list                    # List all models
 emuses models list --workspace lab1   # Filter by workspace
+```
+
+**Output Format**:
+```
+✅ brain_classifier_v2_abc123 (Complete) - Brain classification model
+⚠️  legacy_umap_model_def456 (Incomplete) - Individual UMAP component
+✅ hcp_analysis_v1_ghi789 (Complete) - HCP task analysis
 ```
 
 ### `emuses --help` - Get Help
@@ -236,26 +243,48 @@ emuses heatmap heatmap_output/ embeddings.npy --scores cognitive_scores.csv
 <details markdown="1">
 <summary>📚 **Model Registry and Collaboration**</summary>
 
-### Model Registry Commands
+### Complete Model Registry Commands
+
+The Model Registry now supports **Complete EMUSES Models** - unified models containing UMAP, HDBSCAN, and prediction components for streamlined workflows.
 
 #### `emuses models install` - Register New Models
 ```bash
-emuses models install trained_model/ --name "Brain Age Predictor"
+# Install complete model (auto-detects all components)
+emuses models install complete_model_directory/ --name "Brain Age Predictor v2"
+
+# Install individual component (legacy support)
+emuses models install single_model.pkl --name "UMAP Component"
+```
+
+#### `emuses models list` - List Models with Completeness
+```bash
+emuses models list                    # Show all models with ✅/⚠️ indicators
+emuses models list --complete-only    # Show only complete models
+```
+
+#### `emuses models components` - **NEW** Inspect Model Components
+```bash
+emuses models components brain_classifier_v2_abc123
+# Output:
+# UMAP Model: /path/to/umap_model.joblib (2.3 MB)
+# HDBSCAN Model: /path/to/hdbscan_model.joblib (0.8 MB) 
+# Prediction Model: /path/to/prediction_model.joblib (1.5 MB)
 ```
 
 #### `emuses models info` - Get Model Details
 ```bash
-emuses models info model_id_or_name
+emuses models info model_id_or_name    # Enhanced with component information
 ```
 
-#### `emuses models download` - Download Models
+#### `emuses models deduplicate` - **NEW** Clean Up Duplicates
 ```bash
-emuses models download model_id_or_name output_directory/
+emuses models deduplicate              # Interactive duplicate resolution
 ```
 
 #### `emuses models search` - Find Models
 ```bash
-emuses models search --tags neuroimaging --type regression
+emuses models search "motor cortex"    # Search model descriptions
+emuses models search --complete-only   # Find only complete models
 ```
 
 #### `emuses models remove` - Delete Models
@@ -263,14 +292,14 @@ emuses models search --tags neuroimaging --type regression
 emuses models remove model_id_or_name
 ```
 
-#### `emuses models export` - Export Models
+#### `emuses models status` - Registry Health Check
 ```bash
-emuses models export model_id_or_name --format zip
+emuses models status                   # Show registry statistics and health
 ```
 
-#### `emuses models validate` - Check Model Integrity
+#### `emuses models storage` - Storage Usage
 ```bash
-emuses models validate model_id_or_name
+emuses models storage                  # View storage usage and statistics
 ```
 
 ### Workspace Management Commands
@@ -382,19 +411,52 @@ emuses full large_study_analysis/ \
 
 ### `emuses inference` - Run Predictions
 
-Run predictions on new data using trained models.
+Run predictions on new data using trained EMUSES models with registry support.
 
-**Usage**
+**Registry Model Inference** (Recommended)
 ```bash
-emuses inference predictions/ trained_model.pkl new_data.csv
+# Use registry model ID - runs complete EMUSES folder pipeline
+emuses inference --model-id brain_classifier_v2_abc123 \
+  --data new_patient_features.csv \
+  --output predictions_output/
 ```
 
-**Parameters**
+**Direct Path Inference** (Traditional)
+```bash
+# Direct EMUSES folder path usage
+emuses inference --model /path/to/emuses/folder \
+  --data new_data.csv \
+  --output results/
+```
+
+**Registry Model Parameters**
+
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `OUTPUT_FOLDER` | path | ✅ Required | Directory for prediction results |
-| `MODEL_FILE` | path | ✅ Required | Trained model file (.pkl) |
-| `DATA_FILE` | path | ✅ Required | New data for predictions (CSV) |
+| `--model-id` | string | ✅ Required* | Registry model ID for EMUSES folder |
+| `--data` | path | ✅ Required | New data for predictions (CSV) |
+| `--output` | path | Optional | Directory for prediction results |
+
+**Direct Path Parameters**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `--model` | path | ✅ Required* | Path to EMUSES training folder |
+| `--data` | path | ✅ Required | New data for predictions (CSV) |
+| `--output` | path | Optional | Directory for prediction results |
+
+*Note: Exactly one of `--model-id` or `--model` must be provided.
+
+**Example Workflows**
+```bash
+# Registry workflow - from model discovery to predictions
+emuses models list                    # Find available EMUSES models
+emuses models info model_id          # Inspect model details and components  
+emuses inference --model-id model_id --data data.csv --output results/
+
+# Direct path workflow - using folder paths
+emuses inference --model /path/to/emuses/folder --data data.csv --output results/
+```
 
 ### Shell Integration
 
@@ -514,6 +576,29 @@ emuses admin cancel-job abcd1234-5678-90ef-ghij-klmnopqrstuv --force
 ```bash
 # Display comprehensive admin guidance
 emuses admin help
+```
+
+### Model Registry Administration
+
+#### `emuses models cleanup` - Clean Registry Storage
+```bash
+# Preview cleanup operations
+emuses models cleanup --dry-run
+
+# Clean orphaned files and temporary data
+emuses models cleanup
+```
+
+#### `emuses models mode-info` - Registry Configuration
+```bash
+# Check registry deployment mode and configuration
+emuses models mode-info
+```
+
+#### `emuses models api-info` - API Integration Status
+```bash
+# View API configuration for database/cloud modes
+emuses models api-info
 ```
 
 **📚 For detailed usage examples and troubleshooting:** [Admin Guide →](multi-user-service/admin-guide.md)

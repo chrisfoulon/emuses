@@ -161,14 +161,18 @@ class TestInferenceStageEnsemblePrediction(unittest.TestCase):
         # Test prediction
         predictions = stage._predict(embeddings, mock_models)
         
-        # Verify prediction structure
+        # Verify prediction structure (new target_results format)
         self.assertIsInstance(predictions, dict)
-        self.assertIn('ensemble_predictions', predictions)
+        self.assertIn('target_results', predictions)
+        self.assertIn('target_0', predictions['target_results'])
         self.assertIn('individual_predictions', predictions)
-        self.assertIn('confidence_scores', predictions)
+        
+        target_0_result = predictions['target_results']['target_0']
+        self.assertIn('ensemble_predictions', target_0_result)
+        self.assertIn('confidence_scores', target_0_result)
         
         # Verify ensemble predictions shape
-        ensemble_pred = predictions['ensemble_predictions']
+        ensemble_pred = target_0_result['ensemble_predictions']
         self.assertEqual(len(ensemble_pred), 50)  # Same as input embeddings
         
     def test_predict_with_confidence_scoring(self):
@@ -189,9 +193,12 @@ class TestInferenceStageEnsemblePrediction(unittest.TestCase):
         
         predictions = stage._predict(embeddings, mock_models)
         
-        # Verify confidence scores are included
-        self.assertIn('confidence_scores', predictions)
-        confidence = predictions['confidence_scores']
+        # Verify confidence scores are included in target_results structure
+        self.assertIn('target_results', predictions)
+        self.assertIn('target_0', predictions['target_results'])
+        target_0_result = predictions['target_results']['target_0']
+        self.assertIn('confidence_scores', target_0_result)
+        confidence = target_0_result['confidence_scores']
         self.assertEqual(len(confidence), 10)  # One per sample
         
     def test_predict_handles_empty_prediction_models(self):

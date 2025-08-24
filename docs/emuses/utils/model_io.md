@@ -7,7 +7,7 @@ The Model I/O Management System provides a comprehensive, versioned approach to 
 | Class/Function | Purpose | Inputs | Outputs | Side-effects |
 |---|---|---|---|---|
 | `ModelIOManager.__init__(base_path, version)` | Initialize model I/O manager | `base_path: Path, version: str` | `ModelIOManager` | Creates directory structure |
-| `ModelIOManager.save_model(model, model_name, model_type, **kwargs)` | Save model with metadata | `model: Any, model_name: str, model_type: str, config: dict, **kwargs` | `Path` | Saves model + metadata to disk |
+| `ModelIOManager.save_model(model, model_name, model_type, **kwargs)` | Save model with metadata | `model: Any, model_name: str, model_type: str, config: dict, optimization_time: float, **kwargs` | `Path` | Saves model + metadata to disk |
 | `ModelIOManager.load_model(model_name, model_type, **kwargs)` | Load model with fallback | `model_name: str, model_type: str, **kwargs` | `ModelArtifact` | None |
 | `ModelArtifact` | Container for model + metadata | `model: Any, metadata: ModelMetadata, filepath: Path` | `ModelArtifact` | None |
 | `ModelMetadata` | Enhanced metadata with Optuna support | `model_type: str, version: str, created_at: str, **kwargs` | `ModelMetadata` | None |
@@ -200,6 +200,61 @@ metadata = ModelMetadata(
     target_id=target_id
 )
 ```
+
+## **Optuna Timing Integration (Fixed)**
+
+The Model I/O system now correctly captures optimization timing information, fixing the issue where `optimization_time` was always 0.0 in saved model metadata.
+
+<details markdown="1">
+<summary>🔧 **Optuna Timing Parameters**</summary>
+
+**New Parameters for `save_model()`**:
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `optimization_time` | `Optional[float]` | `None` | Total Optuna optimization duration in seconds |
+| `optuna_study` | `Optional[Any]` | `None` | Complete Optuna study object with trial history |
+| `optuna_trial` | `Optional[Any]` | `None` | Best trial information and parameters |
+
+**Usage Example**:
+```python
+# In optuna_cv.py - optimization_time now properly passed
+optimization_start = time.time()
+study.optimize(objective, n_trials=n_trials)
+optimization_time = time.time() - optimization_start
+
+# Save model with correct timing
+model_manager.save_model(
+    model=best_pipeline,
+    model_name="best_pipeline_fold0",
+    model_type="sklearn_pipeline",
+    optuna_study=study,
+    optuna_trial=study.best_trial,
+    optimization_time=optimization_time,  # ✅ Now correctly captured
+    config=best_params
+)
+```
+
+**Result in Metadata**:
+```json
+{
+    "optuna_study": {
+        "study_name": "nested_optuna_cv_target_0_fold_1",
+        "best_value": 0.2451,
+        "n_trials": 50,
+        "optimization_time": 7.76,
+        "sampler_name": "TPESampler"
+    }
+}
+```
+
+**Fix Details**:
+- **Problem**: `optimization_time` in saved model metadata was always 0.0
+- **Root Cause**: Calculated optimization time was never passed to `save_model()` method  
+- **Solution**: Added `optimization_time` parameter and updated `nested_optuna_cv()` to pass the value
+- **Impact**: All future model saves will include accurate optimization timing
+
+</details>
 
 ## Robust Model Loading with Fallback
 

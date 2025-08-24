@@ -15,6 +15,7 @@ This guide provides structured learning paths for researchers at all levels, com
 ### **By Task**
 - [🚀 **Getting Started**](#getting-started) - Installation and first analysis
 - [📊 **Core Analysis Workflows**](#core-analysis-workflows) - Full pipeline and individual stages
+- [📋 **Results & Output Formats**](emuses/output_formats.md) - Complete format specifications
 - [🔬 **Research Reproducibility**](#research-reproducibility) - Scientific best practices
 - [🤝 **Collaboration**](#collaboration) - Team workflows and sharing
 - [🔌 **Integration**](#integration) - API usage and custom tools
@@ -1110,6 +1111,156 @@ plt.scatter(results['umap_embeddings'][:, 0],
            results['umap_embeddings'][:, 1])
 plt.title('UMAP Brain Network Embedding')
 plt.show()
+```
+
+#### **Complete Model Python API Examples**
+
+**NEW**: Enhanced Python integration with complete EMUSES models for streamlined workflows.
+
+**Complete Model Registry Integration**:
+```python
+import numpy as np
+import pandas as pd
+from emuses.models.complete_emuses_model import CompleteEmusesModel
+from emuses.tools.local_model_registry import LocalModelRegistry
+import requests
+
+class CompleteModelWorkflow:
+    def __init__(self, base_url="http://localhost:8000"):
+        self.base_url = base_url
+        self.session = requests.Session()
+        self.registry = LocalModelRegistry()
+    
+    def list_complete_models(self):
+        """List all complete models in registry"""
+        if self.base_url:
+            # Use API for remote registry
+            url = f"{self.base_url}/api/v1/complete-models/"
+            response = self.session.get(url, params={'complete_only': True})
+            return response.json()
+        else:
+            # Use local registry directly
+            models = self.registry.list_models()
+            return {
+                'models': [
+                    model for model in models 
+                    if model.get('is_complete', False)
+                ]
+            }
+    
+    def run_inference_pipeline(self, model_id, data, subject_ids=None):
+        """Run complete inference pipeline: UMAP → HDBSCAN → Prediction"""
+        if self.base_url:
+            # Use API endpoint
+            url = f"{self.base_url}/api/v1/complete-models/{model_id}/inference"
+            payload = {
+                'data': data.tolist() if isinstance(data, np.ndarray) else data,
+                'subject_ids': subject_ids or [f"subj_{i:03d}" for i in range(len(data))],
+                'include_embeddings': True,
+                'include_clusters': True
+            }
+            response = self.session.post(url, json=payload)
+            return response.json()
+        else:
+            # Use local complete model directly
+            complete_model = CompleteEmusesModel(model_id, self.registry)
+            return complete_model.predict(data)
+
+# Example 1: Quick Complete Model Usage
+print("=== Quick Complete Model Example ===")
+workflow = CompleteModelWorkflow(base_url=None)  # Local registry
+
+# List and select a complete model
+models = workflow.list_complete_models()
+if models['models']:
+    model_id = models['models'][0]['model_id']
+    
+    # Prepare sample data (replace with your data)
+    sample_data = np.random.randn(10, 284)  # 10 subjects, 284 features
+    subject_ids = [f"patient_{i:03d}" for i in range(10)]
+    
+    # Run complete inference pipeline
+    results = workflow.run_inference_pipeline(model_id, sample_data, subject_ids)
+    
+    # Display results
+    for pred in results['predictions'][:3]:  # Show first 3
+        print(f"Subject {pred['subject_id']}: "
+              f"prediction={pred['prediction']:.2f}, "
+              f"cluster={pred.get('cluster_id', 'N/A')}")
+
+# Example 2: Direct Complete Model Access
+print("\n=== Direct Complete Model Access ===")
+if models['models']:
+    # Create complete model instance with performance optimizations
+    complete_model = CompleteEmusesModel(
+        model_id, 
+        registry=LocalModelRegistry(),
+        lazy_loading=True,      # Load components only when needed
+        cache_components=True   # Cache for better performance
+    )
+    
+    # Access individual components if needed
+    print(f"UMAP model: {complete_model.umap_model is not None}")
+    print(f"HDBSCAN model: {complete_model.hdbscan_model is not None}")
+    print(f"Prediction model: {complete_model.prediction_model is not None}")
+    
+    # Run prediction with timing
+    prediction_results = complete_model.predict(sample_data[:5])
+    if 'timing' in prediction_results:
+        timing = prediction_results['timing']
+        print(f"Pipeline timing - UMAP: {timing.get('umap_time_ms')}ms, "
+              f"HDBSCAN: {timing.get('hdbscan_time_ms')}ms, "
+              f"Prediction: {timing.get('prediction_time_ms')}ms")
+
+# Example 3: Research Workflow
+def analyze_patient_cohort(features_csv, model_id, output_prefix="analysis"):
+    """Complete research workflow with visualization"""
+    
+    # Load and prepare data
+    patient_data = pd.read_csv(features_csv)
+    subject_ids = patient_data.iloc[:, 0].astype(str).tolist()
+    features = patient_data.iloc[:, 1:].values
+    
+    # Run inference
+    complete_model = CompleteEmusesModel(model_id, LocalModelRegistry())
+    results = complete_model.predict(features)
+    
+    # Create results dataframe
+    results_df = pd.DataFrame([
+        {
+            'subject_id': pred['subject_id'],
+            'prediction': pred['prediction'],
+            'confidence': pred.get('confidence', 0.0),
+            'umap_x': pred.get('umap_embedding', [0, 0])[0],
+            'umap_y': pred.get('umap_embedding', [0, 0])[1],
+            'cluster_id': pred.get('cluster_id', -1)
+        }
+        for pred in results['predictions']
+    ])
+    
+    # Save and visualize results
+    results_df.to_csv(f"{output_prefix}_predictions.csv", index=False)
+    
+    import matplotlib.pyplot as plt
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
+    
+    # UMAP embedding colored by prediction
+    scatter = ax1.scatter(results_df['umap_x'], results_df['umap_y'], 
+                         c=results_df['prediction'], cmap='viridis', alpha=0.7)
+    ax1.set_title('UMAP Embedding (colored by prediction)')
+    plt.colorbar(scatter, ax=ax1)
+    
+    # Prediction distribution
+    ax2.hist(results_df['prediction'], bins=20, alpha=0.7)
+    ax2.set_title('Prediction Distribution')
+    
+    plt.tight_layout()
+    plt.savefig(f"{output_prefix}_visualization.png", dpi=300)
+    print(f"Analysis complete - results saved to {output_prefix}_*")
+    
+    return results_df
+
+# Usage: analyze_patient_cohort('patient_features.csv', 'brain_classifier_v2_abc123')
 ```
 
 #### **R Integration Examples**
