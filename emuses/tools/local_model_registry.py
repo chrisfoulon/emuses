@@ -814,6 +814,18 @@ class LocalModelRegistry(BaseModelRegistry):
 
                 logger.info(f"Successfully installed model '{final_name}' with ID {model_id}")
 
+                # Enhance model manifest with pipeline data
+                try:
+                    from emuses.tools.model_io import enhance_model_manifest_with_pipeline_data
+                    logger.info("Enhancing installed model manifest with pipeline data...")
+                    success = enhance_model_manifest_with_pipeline_data(model_path)
+                    if success:
+                        logger.info("Installed model manifest successfully enhanced")
+                    else:
+                        logger.warning("Installed model manifest enhancement failed")
+                except Exception as e:
+                    logger.warning(f"Could not enhance installed model manifest: {e}")
+
                 # Check for post-installation storage warnings
                 post_warning = self.storage_manager.check_storage_thresholds()
 

@@ -83,11 +83,7 @@ class TestLegacyArgumentMapping:
             add_random_state_argument(cmd_parser)
             
         # Add full command specific arguments
-        subcommands["full"].add_argument(
-            "--run_old_prediction",
-            action="store_true",
-            help="Run the old prediction pipeline"
-        )
+        # (no additional full-specific arguments currently)
         
         # Extract all arguments for analysis
         argument_mapping = self._extract_all_arguments(subcommands)
@@ -155,7 +151,7 @@ class TestLegacyArgumentMapping:
             'boolean_flags': ['recursive_input_file_search', 'columns_are_features', 'scores_are_rows',
                               'classification', 'filter_labelled_by_scores', 'interactive_plot',
                               'hdbscan_approx_min_span_tree', 'inspect_data_state', 'use_enhanced_pipeline',
-                              'parallel_models', 'run_old_prediction'],
+                              'parallel_models'],
             'integer_args': ['input_header', 'input_index_column', 'scores_header', 'scores_index_column',
                              'test_size', 'umap_trials', 'hdbscan_trials', 'min_cluster_size',
                              'hdbscan_core_dist_n_jobs', 'optuna_trials', 'n_jobs', 'random_state',

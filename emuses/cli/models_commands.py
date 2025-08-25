@@ -387,13 +387,85 @@ def info(
         if tags:
             console.print(f"\nTags: [cyan]{', '.join(tags)}[/cyan]")
 
-        # Display manifest info if available
+        # Display enhanced manifest info if available
         manifest = model_info.get("manifest", {})
-        if manifest and isinstance(manifest, dict):
+        enhanced_manifest = {}
+        
+        # Try to load enhanced manifest from the model's source path
+        if "source_path" in model_info:
+            try:
+                import json
+                from pathlib import Path
+                manifest_path = Path(model_info["source_path"]) / "model_manifest.json"
+                if manifest_path.exists():
+                    with open(manifest_path, 'r') as f:
+                        enhanced_manifest = json.load(f)
+            except Exception:
+                pass  # Fall back to basic manifest
+        
+        # Combine basic manifest with enhanced data
+        all_manifest_data = {**manifest, **enhanced_manifest}
+        
+        if all_manifest_data and isinstance(all_manifest_data, dict):
             console.print(f"\n[bold]Manifest Details:[/bold]")
-            for key, value in manifest.items():
-                if key not in ["name", "version", "type", "description"]:  # Skip already displayed
-                    console.print(f"  {key}: {value}")
+            
+            # Skip basic fields that are already displayed
+            skip_keys = {"name", "version", "type", "description", "compatibility", 
+                        "created_at", "emuses_version", "file_integrity", "model_type"}
+            
+            for key, value in all_manifest_data.items():
+                if key not in skip_keys:
+                    if key == "component_configuration":
+                        console.print(f"  [cyan]Component Configuration:[/cyan]")
+                        if isinstance(value, dict):
+                            for component, params in value.items():
+                                if isinstance(params, dict):
+                                    param_str = ", ".join([f"{k}={v}" for k, v in params.items()])
+                                    console.print(f"    {component.upper()}: {param_str}")
+                                else:
+                                    console.print(f"    {component}: {params}")
+                    elif key == "performance_metrics":
+                        console.print(f"  [cyan]Performance Metrics:[/cyan]")
+                        if isinstance(value, dict):
+                            if "optimization" in value:
+                                opt = value["optimization"]
+                                if "composite_score" in opt:
+                                    console.print(f"    Composite Score: {opt['composite_score']:.4f}")
+                            if "prediction" in value and value["prediction"]["targets"] != ["Not Found"]:
+                                console.print(f"    Prediction Targets: {len(value['prediction']['targets'])}")
+                                for target in value["prediction"]["targets"][:3]:  # Show first 3
+                                    if isinstance(target, dict):
+                                        console.print(f"      Target {target['target_id']}: CV {target.get('avg_cv_score', 'N/A'):.4f} ({target.get('cv_folds', 'N/A')} folds)")
+                                if len(value["prediction"]["targets"]) > 3:
+                                    console.print(f"      ... and {len(value['prediction']['targets'])-3} more")
+                    elif key == "file_statistics":
+                        console.print(f"  [cyan]File Statistics:[/cyan]")
+                        if isinstance(value, dict):
+                            console.print(f"    Total Size: {value.get('total_size_mb', 'N/A')} MB")
+                            console.print(f"    Total Files: {value.get('file_count', 'N/A')}")
+                            if "components" in value:
+                                comp = value["components"]
+                                if "prediction_targets" in comp:
+                                    console.print(f"    Prediction Models: {comp.get('prediction_models_mb', 'N/A')} MB ({comp.get('prediction_targets', 'N/A')} targets)")
+                    elif key == "training_context":
+                        console.print(f"  [cyan]Training Context:[/cyan]")
+                        if isinstance(value, dict):
+                            if "dataset" in value and value["dataset"] != "Not Found":
+                                dataset_name = str(value["dataset"]).split("/")[-1] if "/" in str(value["dataset"]) else value["dataset"]
+                                console.print(f"    Dataset: {dataset_name}")
+                            if "training_date" in value and value["training_date"] != "Not Found":
+                                console.print(f"    Training Date: {value['training_date']}")
+                            if "optimization_config" in value:
+                                opt_cfg = value["optimization_config"]
+                                trials_info = []
+                                for trial_type, count in opt_cfg.items():
+                                    if count != "Not Found":
+                                        trials_info.append(f"{trial_type.replace('_', ' ').title()}: {count}")
+                                if trials_info:
+                                    console.print(f"    Optimization: {', '.join(trials_info)}")
+                    else:
+                        # Display other fields as-is
+                        console.print(f"  {key}: {value}")
 
     except Exception as e:
         console.print(f"❌ Error getting model info: [red]{str(e)}[/red]")

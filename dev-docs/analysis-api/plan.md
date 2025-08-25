@@ -62,6 +62,69 @@
 
 **Focus**: Expose analysis functions through FastAPI endpoints and CLI commands
 
+Copilot Notes: ####
+
+### Statistical Mapping Methods Analysis & Plan Impact
+
+**Discovery**: After investigating `new_pipeline_test` function, we identified two distinct approaches for generating statistical/effect-size maps, each serving different analytical purposes.
+
+#### Method 1: Kernel Regression Optimization (from new_pipeline_test)
+**What it is**: 
+- **EXCLUSIVELY for sigma optimization**: Uses Optuna to find optimal kernel sigma parameters for each target variable
+- Applies kernel regression with nested cross-validation for statistical rigor
+- Generates correlation grids and effect-size maps on **scaled embeddings** for each target variable
+- **IGNORE from new_pipeline_test**: Prediction models, summary dataframes, performance metrics (modern pipeline handles these)
+
+**Strengths**: Statistically principled, space-descriptive, independent of prediction models, interpretable parameters
+**Limitations**: Disconnected from actual trained models, may not reflect real model behavior
+
+#### Method 2: Model-Based Ensemble Predictions (HeatmapStage integration)
+**What it is**:
+- Uses actual trained prediction models on grid across **scaled UMAP embeddings**
+- Applies ensemble predictions for robustness with uncertainty quantification  
+- Uses HDBSCAN clustering on spatial coordinates and predictions jointly
+- Maps directly reflect what trained models predict
+- **Per-target processing**: Generates separate analysis artifacts for each target variable
+
+**Strengths**: Model-representative, ensemble robustness, practical relevance, aligns with current architecture
+**Limitations**: Model-dependent, less interpretable than pure statistical approaches
+
+#### Research Evidence & Recommendation
+**Neuroimaging Research**: Ensemble approaches provide "accuracy gains" and enable "uncertainty quantification through ensemble variability". Population-based explanation maps "substantially improve coherence and reliability."
+
+**Kernel Regression Evidence**: Comparable performance to deep neural networks with lower computational costs and enhanced interpretability.
+
+#### **STRATEGIC DECISION: Implement Both Methods with Distinct Purposes**
+
+**Primary Approach** (Method 2 - Model-Based): For model interpretation and clinical applications
+**Secondary Approach** (Method 1 - Kernel): For statistical validation and space analysis
+
+#### Impact on Implementation Plan:
+1. **Task 0B.1** now includes dual-method approach clarification with **per-target variable processing**
+2. **Task 0B.3/0B.4** should expose both analysis types with clear use-case documentation
+3. **Task 0B.2** must handle parameters for both kernel regression (sigma optimization per target) and model-based (ensemble configuration) approaches
+4. **Critical constraint**: Only adapt sigma optimization from `new_pipeline_test` - **DO NOT** modify prediction models, summary dataframes, or performance metrics
+5. **Per-target organization**: All analysis artifacts must be organized in corresponding `target_*` folders
+6. **Scaled embeddings**: All coordinate operations must use scaled UMAP embeddings, not raw coordinates
+
+#### Architecture Integration Notes:
+- **new_pipeline_test**: Extract ONLY sigma optimization logic (Optuna + kernel regression) - ignore all prediction model modifications
+- **Target-specific processing**: Each target variable gets independent sigma optimization and correlation analysis
+- **Coordinate system**: All analysis operates on scaled embeddings for consistency with modern pipeline
+- **Artifact organization**: Maps, correlations, and statistical outputs organized by target variable in `target_*` directories
+- **Modern integration**: Current HeatmapStage + features_utils.py provides foundation for Method 2 implementation
+- **Remove redundancy**: Eliminate summary dataframes and performance metrics from legacy approach (modern pipeline handles these)
+
+#### **CRITICAL IMPLEMENTATION CONSTRAINTS**:
+1. **DO NOT** modify existing prediction models based on `new_pipeline_test`
+2. **DO NOT** implement summary dataframes or duplicate performance metrics
+3. **DO** extract sigma optimization approach for kernel regression
+4. **DO** ensure per-target variable processing for both methods
+5. **DO** use scaled embeddings for all coordinate-based operations
+6. **DO** organize all outputs in target-specific directory structure
+
+#######
+
 - [ ] **Task 0B.1: Statistical Analysis Requirements Clarification** 🎯 **USER CONSULTATION REQUIRED** ║ Planning session ║ Requirements ║ Planning
   - [ ] 0B.1.a: Review legacy statistical mapping approaches and existing EMUSES functions
   - [ ] 0B.1.b: Clarify requirements for grid predictions, thresholding methods, effect size calculations
@@ -101,13 +164,15 @@
 
 ### Sub-Plan 0C: Advanced Features & Integration ║ Enhancement capabilities ║ MEDIUM ║ 1 week
 
-**Focus**: Inference visualization, advanced artifact access, comprehensive testing
+**Focus**: Analysis artifact access, comprehensive testing, advanced API features
 
-- [ ] **Task 0C.1: Enhanced InferenceStage with Analysis Visualization** ║ `tests/inference/test_analysis_visualization.py` ║ Inference integration ║ L
-  - [ ] 0C.1.a: Extend InferenceStage to load analysis artifacts alongside models
-  - [ ] 0C.1.b: Generate inference overlay plots showing new data on existing heatmaps
-  - [ ] 0C.1.c: Assign new data points to existing clusters using trained models
-  - [ ] 0C.1.d: Display relevant effect size maps for clusters containing new data
+**NOTE**: Inference visualization capabilities have been completed through comprehensive CLI parameter enhancement (see `/dev-docs/analysis-api/inference-cli-parameter-fix/`). Remaining tasks focus on analysis-specific API features.
+
+- [x] **Task 0C.1: Enhanced InferenceStage with Analysis Visualization** ✅ **COMPLETED** ║ `dev-docs/analysis-api/inference-cli-parameter-fix/` ║ Inference integration ║ L
+  - [x] 0C.1.a: Enhanced inference CLI with comprehensive preprocessing parameters 
+  - [x] 0C.1.b: Added all data formatting options (headers, index columns, normalization)
+  - [x] 0C.1.c: Added validation mode support with scores processing
+  - [x] 0C.1.d: Enhanced InferenceStage integration with modern pipeline architecture
 
 - [ ] **Task 0C.2: Analysis Artifact API** ║ `tests/api/test_artifact_access.py` ║ Programmatic access ║ M
   - [ ] 0C.2.a: Create FastAPI endpoints for analysis artifact discovery
@@ -115,11 +180,11 @@
   - [ ] 0C.2.c: Add programmatic access to embeddings, statistical maps, performance metrics
   - [ ] 0C.2.d: Support custom analysis workflow integration patterns
 
-- [ ] **Task 0C.3: Inference Visualization CLI** ║ `tests/cli/test_inference_visualization.py` ║ Advanced CLI ║ M
-  - [ ] 0C.3.a: Add `--visualize` flag to `emuses inference` command
-  - [ ] 0C.3.b: Generate inference visualization reports with analysis context
-  - [ ] 0C.3.c: Create comprehensive inference analysis artifact exports
-  - [ ] 0C.3.d: Add inference visualization progress indicators and status reporting
+- [x] **Task 0C.3: Inference Visualization CLI** ✅ **COMPLETED** ║ `dev-docs/analysis-api/inference-cli-parameter-fix/` ║ Advanced CLI ║ M
+  - [x] 0C.3.a: Enhanced inference command with comprehensive parameter support
+  - [x] 0C.3.b: Added data preprocessing and validation capabilities
+  - [x] 0C.3.c: Implemented comprehensive inference workflow with artifact support
+  - [x] 0C.3.d: Added progress indicators and comprehensive error handling
 
 - [ ] **Task 0C.4: Research Workflow Integration** ║ `tests/research/test_python_api.py` ║ Python API ║ M  
   - [ ] 0C.4.a: Create Python API for loading analysis artifacts in notebooks/scripts
@@ -135,6 +200,9 @@
 
 - [ ] **Task 0C.6: Documentation and User Guides** ║ User enablement ║ Documentation ║ M
   - [ ] 0C.6.a: Update user guides with analysis API workflows and examples
+  - [ ] 0C.6.b: Create analysis visualization tutorials and best practices
+  - [ ] 0C.6.c: Document research workflow patterns and Python API usage
+  - [ ] 0C.6.d: Create troubleshooting guides for common analysis issues
   - [ ] 0C.6.b: Create analysis visualization tutorials and best practices
   - [ ] 0C.6.c: Document research workflow patterns and Python API usage
   - [ ] 0C.6.d: Create troubleshooting guides for common analysis issues

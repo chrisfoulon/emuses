@@ -1794,3 +1794,247 @@ def load_model(
             model_type=model_type,
         )
         return artifact.model if artifact else None
+
+
+def enhance_model_manifest_with_pipeline_data(output_folder: Union[str, Path]) -> bool:
+    """
+    Enhance model_manifest.json with rich information from EMUSES pipeline output files.
+    
+    Reads existing JSON files produced by EMUSES pipeline and adds comprehensive
+    metadata sections to the model manifest. Uses graceful degradation - missing
+    files or fields result in "Not Found" entries rather than errors.
+    
+    Parameters
+    ----------
+    output_folder : Union[str, Path]
+        Path to EMUSES pipeline output directory containing model artifacts
+        
+    Returns
+    -------
+    bool
+        True if manifest was successfully enhanced, False otherwise
+    """
+    output_folder = Path(output_folder)
+    manifest_path = output_folder / "model_manifest.json"
+    
+    logger.info(f"Enhancing model manifest: {manifest_path}")
+    
+    try:
+        # Load existing manifest
+        if manifest_path.exists():
+            with open(manifest_path, 'r') as f:
+                manifest = json.load(f)
+        else:
+            logger.warning(f"No existing manifest found at {manifest_path}")
+            return False
+        
+        # Helper function to get latest file matching pattern
+        def get_latest_file(pattern: str) -> Optional[Path]:
+            """Get the most recent file matching the glob pattern."""
+            files = list(output_folder.glob(pattern))
+            if not files:
+                return None
+            # Sort by modification time, return newest
+            return max(files, key=lambda f: f.stat().st_mtime)
+        
+        # Helper function to safely load JSON
+        def load_json_safe(filepath: Optional[Path]) -> Dict[str, Any]:
+            """Safely load JSON file, return empty dict if failed."""
+            if not filepath or not filepath.exists():
+                return {}
+            try:
+                with open(filepath, 'r') as f:
+                    return json.load(f)
+            except (json.JSONDecodeError, IOError) as e:
+                logger.warning(f"Failed to load JSON from {filepath}: {e}")
+                return {}
+        
+        # 1. Extract component configuration from best_trial_info.json
+        best_trial_file = output_folder / "best_trial_info.json" 
+        best_trial_data = load_json_safe(best_trial_file)
+        
+        component_config = {}
+        if best_trial_data and "param" in best_trial_data:
+            component_config = {
+                "umap": best_trial_data.get("param", {}).get("umap", "Not Found"),
+                "hdbscan": best_trial_data.get("param", {}).get("hdbscan", "Not Found")
+            }
+        else:
+            component_config = {
+                "umap": "Not Found",
+                "hdbscan": "Not Found"
+            }
+        
+        # 2. Extract performance metrics from best_trial_info.json
+        performance_metrics = {
+            "optimization": {
+                "composite_score": best_trial_data.get("composite_score", "Not Found"),
+                "umap_metrics": best_trial_data.get("metrics", {}).get("umap", "Not Found"),
+                "hdbscan_metrics": best_trial_data.get("metrics", {}).get("hdbscan", "Not Found")
+            },
+            "prediction": {"targets": []}
+        }
+        
+        # 3. Extract prediction performance and model details from target directories
+        target_dirs = list(output_folder.glob("target_*"))
+        for target_dir in sorted(target_dirs):
+            if not target_dir.is_dir():
+                continue
+                
+            # Get all pipeline metadata files from this target
+            metadata_files = list(target_dir.glob(".metadata/best_pipeline_fold*_v*.json"))
+            if not metadata_files:
+                continue
+            
+            # Extract target ID from directory name
+            target_id = target_dir.name.replace("target_", "")
+            
+            # Analyze all CV fold models for this target
+            fold_data = []
+            model_types = set()
+            total_size = 0
+            cv_scores = []
+            
+            for meta_file in metadata_files:
+                pipeline_data = load_json_safe(meta_file)
+                if pipeline_data:
+                    fold_data.append(pipeline_data)
+                    
+                    # Collect model type
+                    model_type = pipeline_data.get("processed_params", {}).get("model", {}).get("model_type", "Unknown")
+                    model_types.add(model_type)
+                    
+                    # Collect file size
+                    total_size += pipeline_data.get("file_size", 0)
+                    
+                    # Collect CV scores
+                    cv_scores.append(pipeline_data.get("cv_score", 0))
+            
+            if fold_data:
+                # Use first fold for representative data (all folds have same structure)
+                representative_fold = fold_data[0]
+                
+                target_metrics = {
+                    "target_id": target_id,
+                    "cv_folds": len(fold_data),
+                    "model_types": list(model_types),
+                    "avg_cv_score": sum(cv_scores) / len(cv_scores) if cv_scores else "Not Found",
+                    "cv_score_range": [min(cv_scores), max(cv_scores)] if cv_scores else "Not Found",
+                    "inner_cv_score": representative_fold.get("optuna_study", {}).get("best_value", "Not Found"),
+                    "optimization_trials": representative_fold.get("optuna_study", {}).get("n_trials", "Not Found"),
+                    "scoring_metric": representative_fold.get("optuna_study", {}).get("best_trial", {}).get("user_attrs", {}).get("scoring_metric", "Not Found"),
+                    "cv_std": representative_fold.get("optuna_study", {}).get("best_trial", {}).get("user_attrs", {}).get("cv_std", "Not Found"),
+                    "total_size_kb": round(total_size / 1024, 1),
+                    "model_parameters": representative_fold.get("processed_params", "Not Found")
+                }
+                performance_metrics["prediction"]["targets"].append(target_metrics)
+        
+        # If no target data found
+        if not performance_metrics["prediction"]["targets"]:
+            performance_metrics["prediction"]["targets"] = ["Not Found"]
+        
+        # 4. Extract training context from various files
+        training_context = manifest.get("training_context", {})
+        
+        # Get random seeds
+        random_seeds_file = output_folder / "random_seeds.json"
+        random_seeds_data = load_json_safe(random_seeds_file)
+        if random_seeds_data:
+            training_context["random_seeds"] = random_seeds_data
+        else:
+            training_context["random_seeds"] = "Not Found"
+        
+        # Get training arguments (latest log file)  
+        log_pattern = "log/arguments_*.json"
+        latest_args_file = get_latest_file(log_pattern)
+        args_data = load_json_safe(latest_args_file)
+        
+        if args_data:
+            # Extract dataset info and training config
+            training_context.update({
+                "dataset": args_data.get("input_dataset", "Not Found"),
+                "training_date": args_data.get("datetime", "Not Found"),
+                "optimization_config": {
+                    "umap_trials": args_data.get("umap_trials", "Not Found"),
+                    "hdbscan_trials": args_data.get("hdbscan_trials", "Not Found"),
+                    "prediction_trials": args_data.get("optuna_trials", "Not Found"),
+                    "cv_folds": args_data.get("outer_folds", "Not Found")
+                }
+            })
+        else:
+            training_context.update({
+                "dataset": "Not Found",
+                "training_date": "Not Found", 
+                "optimization_config": {
+                    "umap_trials": "Not Found",
+                    "hdbscan_trials": "Not Found",
+                    "prediction_trials": "Not Found",
+                    "cv_folds": "Not Found"
+                }
+            })
+        
+        # 5. Calculate enhanced file statistics from existing file_integrity and prediction models
+        file_stats = {"total_size_mb": 0, "file_count": 0, "components": {}}
+        
+        # Start with core model files from file_integrity
+        core_size = 0
+        core_count = 0
+        if "file_integrity" in manifest:
+            for filename, file_info in manifest["file_integrity"].items():
+                size_bytes = file_info.get("size", 0)
+                core_size += size_bytes
+                core_count += 1
+                
+                # Categorize by component type
+                if "umap" in filename.lower():
+                    file_stats["components"]["umap_model_size_mb"] = round(size_bytes / (1024 * 1024), 3)
+                elif "hdbscan" in filename.lower():
+                    file_stats["components"]["hdbscan_model_size_mb"] = round(size_bytes / (1024 * 1024), 3)
+        
+        # Add prediction model statistics
+        prediction_size = 0
+        prediction_count = 0
+        num_targets = 0
+        
+        if performance_metrics["prediction"]["targets"] != ["Not Found"]:
+            for target_info in performance_metrics["prediction"]["targets"]:
+                if isinstance(target_info, dict) and "total_size_kb" in target_info:
+                    target_size_bytes = target_info["total_size_kb"] * 1024
+                    prediction_size += target_size_bytes
+                    prediction_count += target_info.get("cv_folds", 0)
+                    num_targets += 1
+        
+        # Calculate totals
+        total_size = core_size + prediction_size
+        total_count = core_count + prediction_count
+        
+        file_stats.update({
+            "total_size_mb": round(total_size / (1024 * 1024), 3),
+            "file_count": total_count,
+            "components": {
+                **file_stats.get("components", {}),
+                "prediction_models_mb": round(prediction_size / (1024 * 1024), 3),
+                "prediction_targets": num_targets,
+                "prediction_cv_folds_total": prediction_count
+            }
+        })
+        
+        if total_size == 0:
+            file_stats = "Not Found"
+        
+        # 6. Add enhanced sections to manifest
+        manifest["component_configuration"] = component_config
+        manifest["performance_metrics"] = performance_metrics  
+        manifest["training_context"] = training_context
+        manifest["file_statistics"] = file_stats
+        
+        # 7. Save enhanced manifest
+        with open(manifest_path, 'w') as f:
+            json.dump(manifest, f, indent=2)
+        
+        logger.info(f"Successfully enhanced manifest with pipeline data: {manifest_path}")
+        return True
+        
+    except Exception as e:
+        logger.error(f"Failed to enhance manifest: {e}")
+        return False

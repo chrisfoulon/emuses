@@ -3,7 +3,6 @@
 This module tests the stage runners for EMUSES pipeline including:
 - UMAPStageRunner with parameter validation and resource limits
 - HeatmapStageRunner with optimization progress tracking
-- PredictionStageRunner with test evaluation mode
 - Stage-specific artifact organization with secure file handling
 """
 
@@ -19,7 +18,6 @@ from uuid import uuid4
 from emuses.foundation_fastapi_service.stage_runners import (
     UMAPStageRunner,
     HeatmapStageRunner,
-    PredictionStageRunner,
     ResourceMonitor,
     ProgressTracker,
     BaseStageRunner
@@ -501,71 +499,3 @@ class TestHeatmapStageRunner:
 
         with pytest.raises(ValueError, match="Parameter cv_folds=1 would cause breaking behavior"):
             await heatmap_runner.run_stage(job_id, context)
-
-
-class TestPredictionStageRunner:
-    """Test PredictionStageRunner functionality"""
-
-    @pytest.fixture
-    def job_manager(self):
-        """Create a mock JobManager for testing"""
-        manager = Mock(spec=JobManager)
-        manager.get_job_directory.return_value = Path("/tmp/test_job")
-        return manager
-
-    @pytest.fixture
-    def prediction_runner(self, job_manager):
-        """Create PredictionStageRunner instance for testing"""
-        return PredictionStageRunner(job_manager)
-
-    @pytest.fixture
-    def valid_context(self):
-        """Create valid context for prediction stage"""
-        config = Mock()
-        config.output_folder = Path("/tmp/test_output")
-
-        return {
-            "models": {"model1": Mock(), "model2": Mock()},
-            "test_features": np.random.rand(50, 10),
-            "config": config
-        }
-
-    def test_prediction_stage_runner_initialization(self, job_manager):
-        """Test PredictionStageRunner initialization"""
-        runner = PredictionStageRunner(job_manager)
-
-        assert runner.job_manager == job_manager
-        assert isinstance(runner, BaseStageRunner)
-
-    @pytest.mark.asyncio
-    async def test_prediction_stage_runner_missing_context(self, prediction_runner):
-        """Test PredictionStageRunner with missing context keys"""
-        job_id = str(uuid4())
-        invalid_context = {"config": Mock()}  # Missing models and test_features
-
-        with pytest.raises(ValueError, match="Missing required context keys"):
-            await prediction_runner.run_stage(job_id, invalid_context)
-
-    @pytest.mark.asyncio
-    @patch('emuses.foundation_fastapi_service.stage_runners.PredictionStage')
-    async def test_prediction_stage_runner_successful_execution(self, mock_prediction_stage, prediction_runner, valid_context):
-        """Test successful prediction stage execution"""
-        job_id = str(uuid4())
-
-        # Mock prediction stage
-        mock_stage_instance = Mock()
-        mock_stage_instance.run.return_value = valid_context
-        mock_prediction_stage.return_value = mock_stage_instance
-
-        # Mock job directory structure
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            job_dir = Path(tmp_dir) / "test_job"
-            prediction_runner.job_manager.get_job_directory.return_value = job_dir
-
-            # Execute stage
-            result = await prediction_runner.run_stage(job_id, valid_context)
-
-            # Verify result
-            assert result == valid_context
-            mock_prediction_stage.assert_called_once()
-            mock_stage_instance.run.assert_called_once()

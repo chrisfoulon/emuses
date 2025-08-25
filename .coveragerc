@@ -1,0 +1,19 @@
+[run]
+branch = True
+source = .
+omit = 
+    */tests/*
+    */test_*
+    */__pycache__/*
+    */.*
+    .lad/*
+    setup.py
+    */venv/*
+    */env/*
+
+[report]
+show_missing = True
+skip_covered = False
+
+[html]
+directory = coverage_html

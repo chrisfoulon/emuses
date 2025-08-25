@@ -139,7 +139,9 @@ class EMUSESPipeline:
             else:
                 self.load_and_process_scores(expected_length=self.input_matrix.shape[0])
         # After processing the datasets, perform the splitting:
-        self.split_dataset()
+        # Skip dataset splitting in inference mode
+        if not getattr(self.config, 'inference_mode', False):
+            self.split_dataset()
 
     def process_dataset(self, dataset_identifier, is_labelled=False):
         """
@@ -734,3 +736,15 @@ class EMUSESPipeline:
                 "stages_completed",
                 len(self.context["pipeline_metadata"]["stages_completed"]),
             )
+
+            # Enhance model manifest with pipeline data
+            try:
+                from emuses.tools.model_io import enhance_model_manifest_with_pipeline_data
+                self.logger.info("Enhancing model manifest with pipeline data...")
+                success = enhance_model_manifest_with_pipeline_data(self.output_folder)
+                if success:
+                    self.logger.info("Model manifest successfully enhanced")
+                else:
+                    self.logger.warning("Model manifest enhancement failed")
+            except Exception as e:
+                self.logger.warning(f"Could not enhance model manifest: {e}")
