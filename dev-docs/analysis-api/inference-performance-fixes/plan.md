@@ -6,9 +6,9 @@
 **Implementation Approach**: Fix critical data normalization mismatch + coordinated logging architecture
 **Key Challenges**: 
 - **CRITICAL**: Inference embeddings not normalized to training data scale (causing zero predictions)
-- Must preserve training-time normalization parameters and apply to inference data
-- Multiple logging systems require architectural coordination
-- Complex embedding processing pipeline needs normalization integration
+- Must save and reuse training-time normalization parameters for scores and input data
+- Multiple logging systems require architectural coordination  
+- Embeddings rescaling already implemented correctly in UMAPStage
 
 **Resource Requirements**: 4-6 hours implementation + comprehensive testing with user's actual model files
 
@@ -16,29 +16,35 @@
 
 ### Phase 1: Critical Data Normalization Fix (Issue 2) ║ High Priority
 
-- [ ] **Task 1.1: Research Existing Normalization Infrastructure** ║ `tests/inference/test_normalization_research.py` ║ Discover current normalization approach ║ M
-  - [ ] 1.1.1: Find where embedding normalization happens during training pipeline
-  - [ ] 1.1.2: Identify if normalization parameters are saved to model files
-  - [ ] 1.1.3: Check UMAP stage outputs and downstream processing
-  - [ ] 1.1.4: Analyze how ElasticNet models handle unnormalized data vs KernelRegressor
+- [ ] **Task 1.1: Analyze Current Normalization Implementation** ║ `tests/inference/test_normalization_analysis.py` ║ Document existing normalization status ║ S
+  - [ ] 1.1.1: ✅ Embeddings normalization: UMAPStage correctly saves min/max coords to context
+  - [ ] 1.1.2: ❌ Scores normalization: EMUSESPipeline does NOT save normalization parameters  
+  - [ ] 1.1.3: ⚠️ Input normalization: Partially saves input_scaling_factors but not to model files
+  - [ ] 1.1.4: Verify KernelRegressor requires normalized embeddings (distance-based models sensitive)
 
-- [ ] **Task 1.2: Implement Training-Time Normalization Parameter Storage** ║ `tests/inference/test_normalization_storage.py` ║ Ensure normalization params are saved ║ L  
-  - [ ] 1.2.1: Modify training pipeline to save embedding normalization parameters (min/max/mean/std)
-  - [ ] 1.2.2: Store normalization parameters in model manifest or separate file
-  - [ ] 1.2.3: Ensure backward compatibility with existing trained models
-  - [ ] 1.2.4: Add validation that normalization parameters are correctly saved
+- [ ] **Task 1.2: Implement Scores and Input Normalization Parameter Storage** ║ `tests/inference/test_normalization_storage.py` ║ Save normalization params for inference reuse ║ L  
+  - [ ] 1.2.1: Modify EMUSESPipeline.load_and_process_scores() to save scores normalization scaler object
+  - [ ] 1.2.2: Extend input normalization in EMUSESPipeline.process_dataset() to save scaler to model files
+  - [ ] 1.2.3: Store scaler objects in model directory using joblib (scores_scaler.joblib, input_scaler.joblib)
+  - [ ] 1.2.4: **CRITICAL**: Update model manifest JSON to include normalization scaler references for automatic detection
+    - Add "scores_scaler_path": "scores_scaler.joblib" (if scores normalization used during training)
+    - Add "input_scaler_path": "input_scaler.joblib" (if input normalization used during training)
+    - Ensure InferenceStage can detect and load scalers automatically from manifest
 
-- [ ] **Task 1.3: Implement Inference-Time Normalization Application** ║ `tests/inference/test_inference_normalization.py` ║ Apply training normalization to inference ║ L
-  - [ ] 1.3.1: Load normalization parameters during inference
-  - [ ] 1.3.2: Apply identical training-time normalization to inference embeddings
-  - [ ] 1.3.3: Ensure normalization applied AFTER UMAP transform, BEFORE model prediction
-  - [ ] 1.3.4: Add diagnostic logging for normalization parameters and ranges
+- [ ] **Task 1.3: Implement Inference-Time Normalization Loading and Application** ║ `tests/inference/test_inference_normalization.py` ║ Apply training normalization to inference ║ L
+  - [ ] 1.3.1: **CRITICAL**: Modify InferenceStage model loading to automatically detect and load scaler objects from JSON manifest
+    - Check for "scores_scaler_path" and "input_scaler_path" fields in model manifest
+    - Load scaler objects using joblib.load() if references exist
+    - Store loaded scalers for use during inference pipeline
+  - [ ] 1.3.2: Apply input data normalization using loaded input_scaler (if exists) BEFORE UMAP transform
+  - [ ] 1.3.3: Apply scores normalization using loaded scores_scaler for validation comparisons  
+  - [ ] 1.3.4: Add normalization validation and logging: "Using saved input scaler", "Using saved scores scaler"
 
 - [ ] **Task 1.4: Validate Complete Normalization Fix** ║ `tests/inference/test_normalization_validation.py` ║ Comprehensive testing with real models ║ L
-  - [ ] 1.4.1: Test all KernelRegressor models produce non-zero predictions
-  - [ ] 1.4.2: Verify ElasticNet models still work correctly (no regression)
-  - [ ] 1.4.3: Compare embedding ranges: training [0,1] vs normalized inference [0,1]
-  - [ ] 1.4.4: Validate distance calculations now work correctly for KernelRegressor
+  - [ ] 1.4.1: Test KernelRegressor models produce non-zero predictions with consistent input scaling
+  - [ ] 1.4.2: Verify ElasticNet models continue working (should be less sensitive to scaling)
+  - [ ] 1.4.3: Compare embedding coordinate ranges: training [0,1] vs inference [0,1] (UMAPStage handles)
+  - [ ] 1.4.4: Validate denormalization: apply inverse_transform to verify score interpretability
 
 ### Phase 2: User Experience Fix (Issue 1) ║ Medium Priority
 
@@ -102,11 +108,12 @@
 ## Acceptance Criteria Mapping
 
 ### Issue 2 (Zero Predictions) Success Criteria:
-- [ ] **CRITICAL**: Inference embeddings normalized to same scale as training ([0,1] range)
-- [ ] KernelRegressor models produce non-zero predictions (not due to weight_sum=0)
+- [ ] **CRITICAL**: Input data and scores normalized using saved parameters during inference
+- [ ] **CRITICAL**: UMAP embeddings use existing rescaling ([0,1] range already implemented)
+- [ ] KernelRegressor models produce non-zero predictions with proper input normalization
 - [ ] ElasticNet models continue working without regression
-- [ ] Training-time normalization parameters correctly saved and loaded
-- [ ] Identical normalization applied to inference as was applied to training data
+- [ ] Scores and input normalization parameters saved as scaler objects and loaded during inference
+- [ ] Denormalization capability available for interpretable output
 
 ### Issue 1 (Duplicate Output) Success Criteria:
 - [ ] Single "Starting inference pipeline execution" message
@@ -116,16 +123,61 @@
 
 ## Decision Points Requiring User Input
 
-- **[USER_INPUT]** Task 1.2: Normalization parameter storage location - model manifest vs separate normalization file?
-- **[USER_INPUT]** Task 1.3: Backward compatibility - how to handle existing models without saved normalization parameters?
+- **[INVESTIGATION NEEDED]** Task 1.2: bcblib normalize_dataframe capabilities - does it return scaler objects for reuse?
+- **[FALLBACK READY]** Migration to sklearn scalers (StandardScaler/MinMaxScaler/RobustScaler) if bcblib insufficient
+- **[RESOLVED]** Storage approach: Save scaler objects to model directory AND reference in JSON manifest for automatic detection
 - **[USER_INPUT]** Task 2.2: Logging detail level - which diagnostic messages are essential vs. redundant?
+
+## Implementation Technical Details
+
+### Key Files to Modify (Based on Codebase Analysis)
+
+1. **EMUSESPipeline.load_and_process_scores()**: Line ~388 (scores normalization) - Save scaler object
+2. **EMUSESPipeline.process_dataset()**: Line ~250 (input normalization) - Save scaler object
+3. **InferenceStage._load_trained_models_with_context()**: Line ~85 - Add scaler loading from manifest
+4. **ModelIOManager._generate_manifest_from_directory()**: Extend to detect and reference scaler files
+5. **Model manifest JSON**: Automatic scaler detection and referencing
+
+### Existing Infrastructure Integration (PERFECT MATCH!)
+- **✅ ModelIOManager**: Full manifest system with auto-generation, integrity checking, versioning
+- **✅ InferenceStage loading**: Already uses `ModelIOManager(base_path=model_dir)` pattern
+- **✅ Joblib pattern**: Established loading with `joblib.load()` throughout codebase
+- **✅ Context storage**: Models stored in context dictionary for pipeline stages
+- **✅ File integrity**: SHA256 verification system ready for scaler files
+- **✅ Backward compatibility**: Manifest system handles missing files gracefully
+
+### Detailed Implementation Specifications
+See `manifest_integration_spec.md` for complete technical specifications including:
+- Enhanced manifest JSON schema with `normalization` section
+- Code examples for EMUSESPipeline scaler saving
+- InferenceStage automatic scaler loading from manifest
+- File integrity integration for scaler validation
+- Backward compatibility handling for legacy models
+
+### Available Normalization Methods (normalize_dataframe)
+- Requires investigation of bcblib.tools.dataframe_filtering implementation
+- May need migration to sklearn StandardScaler/MinMaxScaler/RobustScaler for reversibility
+- Recommendation: Use sklearn scalers for guaranteed inverse_transform() support
+
+### Storage Strategy (Integrated with Existing EMUSES Infrastructure)
+- **✅ Embedding normalization**: Already implemented in UMAPStage (min/max coords saved)
+- **Scores normalization**: Save scaler as `{model_dir}/scores_scaler.joblib` + manifest reference
+- **Input normalization**: Save scaler as `{model_dir}/input_scaler.joblib` + manifest reference
+- **Automatic manifest integration**: 
+  - Extend `ModelIOManager._generate_manifest_from_directory()` to detect scaler files
+  - Enhanced schema: `"normalization": {"scores_scaler": "scores_scaler.joblib", "input_scaler": "input_scaler.joblib", "scores_method": "standardscaler", "input_method": "minmaxscaler"}`
+  - SHA256 integrity: Scaler files added to `file_integrity` section automatically
+  - InferenceStage auto-loading: Detect normalization section, load scalers with joblib
+  - Context integration: Store loaded scalers in context like `models['input_scaler']`
+  - Perfect backward compatibility: Legacy models without scalers continue working unchanged
 
 ## Implementation Dependencies
 
-1. **Task 1.1** must complete before **Task 1.2** (need root cause before fix)
-2. **Task 1.3** depends on **Task 1.2** completion (need fix before validation)
+1. **Task 1.1** must complete before **Task 1.2** (need analysis before implementation)
+2. **Task 1.3** depends on **Task 1.2** completion (need saved scalers before loading)
 3. **Task 2.1** can run in parallel with Phase 1
 4. **Phase 3** requires both Phase 1 and 2 completion
+5. **No backward compatibility constraints** - can modify existing models without migration
 
 ---
 

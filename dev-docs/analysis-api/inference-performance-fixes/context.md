@@ -48,8 +48,8 @@ KernelRegressor.predict()
     ↓ (distance ~8-12 from training → weight_sum ≈ 0 → prediction = 0)
 ```
 
-### **CRITICAL MISSING COMPONENT**: Embedding Normalization
-The pipeline is missing **post-UMAP normalization** to match training data scale. Training models expect embeddings in [0,1] range, but inference provides [1.5-13] range.
+### **CRITICAL MISSING COMPONENT**: Input and Scores Normalization
+The pipeline is missing **pre-UMAP input normalization** and **scores normalization parameter saving/loading**. UMAP embeddings are correctly rescaled to [0,1] by UMAPStage, but input data reaching UMAP may be unnormalized, causing the transformed embeddings to fall outside the training distribution.
 
 ## Level 2: API Integration Points
 
@@ -90,7 +90,7 @@ def predict(self, X):
         predictions.append(prediction)
 ```
 
-**Root Cause**: When inference embeddings are too far from training data or sigma is inappropriate, weight_sum becomes zero (numerical precision), triggering zero fallback.
+**Root Cause**: When inference embeddings are too far from training data due to **missing input/scores normalization**, weight_sum becomes zero (numerical precision), triggering zero fallback. **Embeddings rescaling is already correctly implemented in UMAPStage**.
 
 #### InferenceStage Pipeline Extraction
 **File**: `emuses/pipelines/inference_stage.py:_predict_multi_target()`
@@ -124,9 +124,72 @@ def predict(self, X):
 ## Technical Constraints
 
 - **No Fallback Allowed**: User explicitly stated "There cannot be a fall back, it either works or we throw an error"
-- **No Backward Compatibility**: User confirmed no backward compatibility requirements  
+- **No Backward Compatibility**: User confirmed no backward compatibility requirements - can modify existing trained models without migration concerns
 - **High Confidence Required**: User requested proper LAD process due to previous shallow analysis
 - **Data Accuracy Critical**: Zero predictions affect real scientific analysis results
+
+## Specific Implementation Findings
+
+### Normalization Implementation Status
+1. **✅ Embeddings Normalization**: UMAPStage correctly implements rescaling with min/max coords saved to context
+2. **❌ Scores Normalization**: EMUSESPipeline uses normalize_dataframe but doesn't save parameters for inference reuse
+3. **⚠️ Input Normalization**: Partially implemented - saves input_scaling_factors to context but not to model files
+
+### Key Code Locations
+- **UMAPStage rescaling**: `/emuses/pipelines/umap_stage.py:144-146` (already correct)
+- **Scores normalization**: `/emuses/pipelines/emuses_pipeline.py:~388` (needs parameter saving)
+- **Input normalization**: `/emuses/pipelines/emuses_pipeline.py:~250` (needs extension to model files)
+- **Inference loading**: `/emuses/pipelines/inference_stage.py` (needs scaler loading)
+
+### Available Tools
+- **rescale_embedding()**: Already reversible with inverse_rescale_embedding()
+- **normalize_dataframe()**: From bcblib - reversibility unknown, may need sklearn migration
+- **sklearn scalers**: StandardScaler, MinMaxScaler, RobustScaler all support inverse_transform()
+
+## Existing EMUSES Manifest Infrastructure Analysis
+
+### ModelIOManager System
+**Location**: `/mnt/c/Users/Tolhsadum/PycharmProjects/emuses/emuses/tools/model_io.py`
+
+**Key Features Found**:
+- **Automatic manifest generation**: `_load_or_generate_manifest()` method
+- **Manifest locations**: Looks for `manifest.json` or `model_manifest.json` in model directories
+- **File integrity**: SHA256 hash verification for all model files
+- **Version management**: Automatic version incrementing on model updates
+- **Directory scanning**: Automatically detects model files and generates manifests
+
+**Current Integration**:
+- **InferenceStage**: Already uses `ModelIOManager(base_path=model_dir)` at line ~85
+- **Loading pattern**: Models loaded with joblib, stored in context dictionary
+- **Validation**: File integrity checked before loading models
+
+### Current Manifest Schema (From Code Analysis)
+```json
+{
+  "model_info": {
+    "version": "1.0.0",
+    "model_type": "complete_emuses_model"
+  },
+  "file_integrity": {
+    "best_umap_model.joblib": {"sha256": "hash_value"},
+    "hdbscan_model.joblib": {"sha256": "hash_value"}
+  }
+}
+```
+
+### InferenceStage Model Loading Flow
+**Location**: `/mnt/c/Users/Tolhsadum/PycharmProjects/emuses/emuses/pipelines/inference_stage.py`
+
+**Current Loading Methods**:
+1. **`_load_trained_models_with_context()`** - Main entry point (line ~85)
+2. **`_load_umap_from_disk()`** - UMAP model loading
+3. **`_load_prediction_models_from_disk()`** - Prediction models loading
+4. **Context storage**: All loaded models stored in context dictionary for downstream use
+
+**Integration Points for Scalers**:
+- Models loaded into `context` dictionary with keys like `'umap_model'`, `'prediction_models'`
+- Perfect place to add `'input_scaler'` and `'scores_scaler'` entries
+- Follow existing pattern: `joblib.load()` → store in context → use in downstream processing
 
 ## Test Data Availability
 
