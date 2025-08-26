@@ -229,6 +229,46 @@ Copilot Notes: ####
 - **Focus**: Installation workflows, artifact relationships, permission controls  
 - **Coverage Target**: 90% - essential for data integrity
 
+## Known Issues - Investigation Required
+
+### Missing .metadata Files in target_* Subdirectories
+
+**Issue**: After implementing normalization fixes, retrained models are missing `.metadata/` directories in `target_*` subdirectories (e.g., `S:\GIN Dropbox\Chris Foulon\EMUSE\HCP_psy\model_registry_final_one_target\target_0\.metadata\`).
+
+**Discovery Context**: During inference testing on 2025-08-26, user retrained model after normalization implementation. The retraining completed successfully and model works for inference, but the target subdirectories lost their `.metadata/` files that contain important prediction model information.
+
+**Impact**: 
+- **Inference**: Works correctly (models load and predict successfully)
+- **Model Registry**: May not properly detect prediction targets or metadata
+- **Analysis API**: Future analysis functions may expect `.metadata/` files for target information
+
+**Root Cause Investigation Attempts** (What didn't work):
+1. **Normalization Implementation Review**: The inference mode checks in `emuses_pipeline.py:321` and `emuses_pipeline.py:394-397` prevent normalization during inference but didn't resolve the metadata issue
+2. **Model File Pattern Matching**: Fixed glob patterns in `inference_stage.py:326-328` to match new filename patterns, but metadata files are generated elsewhere
+3. **optuna_cv.py Fixes**: Fixed 'name' KeyError and optimization_time scope issues, but these were unrelated to metadata generation
+
+**Investigation Focus Areas** (for fresh Claude session):
+1. **Target Directory Structure**: Examine how `target_*` subdirectories and `.metadata/` files are generated during training
+2. **HeatmapStage Integration**: Check if HeatmapStage or prediction model training generates the `.metadata/` directories
+3. **ModelIOManager Role**: Investigate if ModelIOManager or model manifest system should handle `.metadata/` creation
+4. **Training vs Inference Logic**: Compare successful old model structure with new model structure to identify missing step
+5. **Pipeline Stage Coordination**: Check if metadata generation occurs in a specific pipeline stage that may have been affected
+
+**File Locations to Investigate**:
+- `/mnt/s/GIN Dropbox/Chris Foulon/EMUSE/HCP_psy/model_registry_final_multi_target/target_0/.metadata/` (working old model)
+- `/mnt/s/GIN Dropbox/Chris Foulon/EMUSE/HCP_psy/model_registry_final_one_target/target_0/` (missing .metadata)
+- `emuses/pipelines/heatmap_stage.py` (prediction model training)
+- `emuses/tools/stats_utils.py` (prediction model utilities)
+- `emuses/tools/model_io.py` (model saving/loading logic)
+
+**Priority**: HIGH - While inference works, this may block analysis API features and indicates incomplete model training artifacts
+
+**Next Steps**: 
+1. Compare directory structures between working and broken models
+2. Trace metadata file generation through the training pipeline
+3. Identify which training stage creates `.metadata/` directories
+4. Fix the metadata generation step that was disrupted by normalization implementation
+
 ## Risk Assessment and Mitigation
 
 ### **Technical Risks**

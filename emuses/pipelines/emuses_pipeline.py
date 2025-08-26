@@ -318,7 +318,7 @@ class EMUSESPipeline:
                 filter_rows_list=None,
                 columns_are_features=args.columns_are_features,
             )
-            if args.input_normalization and args.input_normalization.lower() != "none":
+            if args.input_normalization and args.input_normalization.lower() != "none" and not getattr(args, 'inference_mode', False):
                 self.logger.info(
                     f"Normalizing dataset with method={args.input_normalization}"
                 )
@@ -330,6 +330,21 @@ class EMUSESPipeline:
                         inputs_df, method=args.input_normalization
                     )
                     self.context["input_scaling_factors"] = scaling_factors
+                    
+                    # Save input scaler to model directory for inference reuse (ONLY during training)
+                    if not getattr(args, 'inference_mode', False):
+                        import joblib
+                        self.output_folder.mkdir(parents=True, exist_ok=True)
+                        input_scaler_path = self.output_folder / "input_scaler.joblib"
+                        joblib.dump(scaling_factors, input_scaler_path)
+                        self.logger.info(f"Saved input scaler ({args.input_normalization}) to {input_scaler_path}")
+                        
+                        # Store scaler info in context for manifest generation
+                        self.context["input_scaler_info"] = {
+                            "path": "input_scaler.joblib",
+                            "method": args.input_normalization,
+                            "scaling_factors": scaling_factors
+                        }
                 else:
                     scaling_factors = self.context.get("input_scaling_factors", None)
                     if scaling_factors is None:
@@ -379,14 +394,31 @@ class EMUSESPipeline:
             if (
                 args.scores_normalization
                 and args.scores_normalization.lower() != "none"
+                and not getattr(args, 'inference_mode', False)
             ):
                 self.logger.info(
                     f"Normalizing scores dataframe with method={args.scores_normalization}"
                 )
                 before_shape = scores_df.shape
-                scores_df = normalize_dataframe(
+                scores_df, scores_scaling_factors = normalize_dataframe(
                     scores_df, method=args.scores_normalization
                 )
+                
+                # Save scores scaler to model directory for inference reuse (ONLY during training)
+                if not getattr(args, 'inference_mode', False):
+                    import joblib
+                    self.output_folder.mkdir(parents=True, exist_ok=True)
+                    scores_scaler_path = self.output_folder / "scores_scaler.joblib"
+                    joblib.dump(scores_scaling_factors, scores_scaler_path)
+                    self.logger.info(f"Saved scores scaler ({args.scores_normalization}) to {scores_scaler_path}")
+                    
+                    # Store scaler info in context for manifest generation
+                    self.context["scores_scaler_info"] = {
+                        "path": "scores_scaler.joblib",
+                        "method": args.scores_normalization,
+                        "scaling_factors": scores_scaling_factors
+                    }
+                
                 after_shape = scores_df.shape
                 if after_shape != before_shape:
                     self.logger.warning(

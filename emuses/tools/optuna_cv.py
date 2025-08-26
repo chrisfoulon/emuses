@@ -5,7 +5,6 @@
 # ---------------------------------------------------------------
 import logging
 import time
-import warnings
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -14,6 +13,7 @@ import numpy as np
 import optuna
 from sklearn.model_selection import KFold, StratifiedKFold, cross_val_score
 from sklearn.pipeline import Pipeline
+
 
 from emuses.config.optim_configs_predict import optim_dict_predict
 from emuses.tools.models_utils import build_estimator, build_feature_union
@@ -59,18 +59,9 @@ def _objective_factory(
         pipe = Pipeline([("feat", feats), ("est", est)])
 
         try:
-            # Suppress sklearn 1.8 Pipeline fitted state warnings during cross-validation
-            # This prevents FutureWarning from becoming NotFittedError in sklearn 1.8+
-            with warnings.catch_warnings():
-                warnings.filterwarnings(
-                    "ignore",
-                    category=FutureWarning,
-                    message=".*Pipeline instance is not fitted yet.*",
-                    module="sklearn.pipeline",
-                )
-                scores = cross_val_score(
-                    pipe, X, y, cv=inner_cv, scoring=scoring, n_jobs=safe_n_jobs
-                )
+            scores = cross_val_score(
+                pipe, X, y, cv=inner_cv, scoring=scoring, n_jobs=safe_n_jobs
+            )
             # Store individual CV scores in trial for metadata
             trial.set_user_attr("cv_scores", scores.tolist())
             trial.set_user_attr("cv_mean", scores.mean())
@@ -199,17 +190,16 @@ def nested_optuna_cv(
 
         # ── refit best params on full outer-train split ────────
         best_params = suggest_parameters_conditional(study.best_trial, optim_dict)
-        best_pipe = Pipeline(
-            [
-                (
-                    "feat",
-                    build_feature_union(
-                        best_params["features"], pretrained_ae=pretrained_ae
-                    ),
-                ),
-                ("est", build_estimator(best_params["model"], task, safe_n_jobs)),
-            ]
-        ).fit(X_tr, y_tr)
+        
+        # Build pipeline components
+        feature_union = build_feature_union(
+            best_params["features"], pretrained_ae=pretrained_ae
+        )
+        estimator = build_estimator(best_params["model"], task, safe_n_jobs)
+        
+        # Create and fit pipeline (separate construction from fitting)
+        best_pipe = Pipeline([("feat", feature_union), ("est", estimator)])
+        best_pipe.fit(X_tr, y_tr)
 
         # ── evaluate on outer-test split ───────────────────────
         score = best_pipe.score(X_te, y_te)
@@ -239,14 +229,14 @@ def nested_optuna_cv(
                     model_name=f"best_pipeline_fold{fold}",
                     model_type="emuses_prediction_pipeline",
                     description=f"EMUSES complete prediction pipeline for {target_tag}: optimized feature engineering "
-                    f"+ {best_params['model']['name']} estimator (fold {fold}/{n_outer}, "
+                    f"+ {best_params['model']['model_type']} estimator (fold {fold}/{n_outer}, "
                     f"CV score: {study.best_value:.4f}, test score: {score:.4f})",
                     tags=["cv", "pipeline", f"fold_{fold}", target_tag, task],
                     config=best_params,
                     # Enhanced Optuna metadata
                     optuna_study=study,
                     optuna_trial=study.best_trial,
-                    optimization_time=optimization_time,
+                    optimization_time=optimization_time if 'optimization_time' in locals() else 0.0,
                     # CV metadata
                     cv_score=score,  # Outer fold score
                     cv_scores=inner_cv_scores,  # Inner CV scores

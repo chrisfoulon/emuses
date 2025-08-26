@@ -8,10 +8,15 @@ from sklearn.decomposition import PCA, KernelPCA
 
 class RawCoords(BaseEstimator, TransformerMixin):
     def fit(self, X, y=None):
+        # Mark as fitted with a dummy attribute for sklearn compatibility
+        self.fitted_ = True
         return self
 
     def transform(self, X):
         return X
+        
+    def __sklearn_is_fitted__(self):
+        return hasattr(self, 'fitted_')
 
 
 # ───────────────────────────────────────────────────────────────

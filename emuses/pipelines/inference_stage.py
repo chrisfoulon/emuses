@@ -226,7 +226,9 @@ class InferenceStage(PipelineStage):
         models = {
             'umap_model': None,
             'prediction_models': [],
-            'metadata': {}
+            'metadata': {},
+            'input_scaler': None,
+            'scores_scaler': None
         }
 
         # 1. Check context for in-memory models first (pipeline-integrated mode)
@@ -259,6 +261,9 @@ class InferenceStage(PipelineStage):
         else:
             # 3. Load prediction models from disk only if not in context
             models['prediction_models'] = self._load_prediction_models_from_disk()
+
+        # 4. Load normalization scalers (context-first, then disk)
+        self._load_normalization_scalers(models, context)
             
         return models
 
@@ -312,14 +317,15 @@ class InferenceStage(PipelineStage):
 
         prediction_models = []
         
-        # Search for prediction model files (pattern: target_*/best_pipeline_fold*_*.joblib)
+        # Search for prediction model files (patterns: target_*/best_pipeline_fold*_*.joblib or target_*/best_pipeline_target_*_fold*.joblib)
         target_dirs = list(model_dir.glob('target_*'))
         logger.info(f"Found {len(target_dirs)} target directories for model loading")
         
         for target_dir in target_dirs:
             if target_dir.is_dir():
-                # Find best pipeline models
-                model_files = list(target_dir.glob('best_pipeline_fold*_*.joblib'))
+                # Find best pipeline models (support both old and new naming patterns)
+                model_files = list(target_dir.glob('best_pipeline_fold*_*.joblib')) + \
+                             list(target_dir.glob('best_pipeline_target_*_fold*.joblib'))
                 logger.info(f"Found {len(model_files)} model files in {target_dir.name}")
                 
                 for model_file in model_files:
@@ -338,6 +344,98 @@ class InferenceStage(PipelineStage):
         
         logger.info(f"Successfully loaded {len(prediction_models)} prediction models from disk")
         return prediction_models
+
+    def _load_normalization_scalers(self, models, context):
+        """
+        Load normalization scalers from context or disk using manifest detection.
+        
+        Loads scalers in priority order:
+        1. From pipeline context (fast, pipeline-integrated mode)
+        2. From disk using manifest auto-detection (standalone mode)
+        
+        Parameters
+        ----------
+        models : dict
+            Models dictionary to update with scalers
+        context : dict
+            Pipeline context that may contain scaler info
+        """
+        logger.debug("Loading normalization scalers")
+        
+        # 1. Try loading from context first (pipeline-integrated mode)
+        input_scaler_info = context.get("input_scaler_info", {})
+        scores_scaler_info = context.get("scores_scaler_info", {})
+        
+        if input_scaler_info and "scaling_factors" in input_scaler_info:
+            models['input_scaler'] = input_scaler_info["scaling_factors"]
+            models['metadata']['input_normalization_method'] = input_scaler_info.get("method", "unknown")
+            logger.info(f"Using input scaler from pipeline context ({input_scaler_info.get('method', 'unknown')})")
+        
+        if scores_scaler_info and "scaling_factors" in scores_scaler_info:
+            models['scores_scaler'] = scores_scaler_info["scaling_factors"] 
+            models['metadata']['scores_normalization_method'] = scores_scaler_info.get("method", "unknown")
+            logger.info(f"Using scores scaler from pipeline context ({scores_scaler_info.get('method', 'unknown')})")
+        
+        # 2. If not in context, try loading from disk using manifest (standalone mode)
+        if models['input_scaler'] is None or models['scores_scaler'] is None:
+            self._load_scalers_from_disk(models)
+    
+    def _load_scalers_from_disk(self, models):
+        """
+        Load normalization scalers from disk using manifest auto-detection.
+        
+        Parameters
+        ----------
+        models : dict
+            Models dictionary to update with scalers
+        """
+        if not self.model_path:
+            logger.debug("No model_path specified - cannot load scalers from disk")
+            return
+            
+        model_dir = Path(self.model_path)
+        if not model_dir.exists():
+            logger.debug(f"Model directory not found: {model_dir}")
+            return
+        
+        try:
+            # Try to load manifest to get scaler information
+            from emuses.tools.model_io import ModelIOManager
+            model_manager = ModelIOManager(base_path=model_dir)
+            manifest = model_manager._load_or_generate_manifest(model_dir)
+            
+            normalization_info = manifest.get("normalization", {})
+            
+            # Load input scaler if present and not already loaded
+            if models['input_scaler'] is None:
+                input_scaler_path = normalization_info.get("input_scaler")
+                if input_scaler_path:
+                    scaler_file = model_dir / input_scaler_path
+                    if scaler_file.exists():
+                        try:
+                            import joblib
+                            models['input_scaler'] = joblib.load(scaler_file)
+                            models['metadata']['input_normalization_method'] = normalization_info.get("input_method", "unknown")
+                            logger.info(f"Loaded input scaler ({normalization_info.get('input_method', 'unknown')}) from {scaler_file}")
+                        except Exception as e:
+                            logger.warning(f"Failed to load input scaler from {scaler_file}: {e}")
+            
+            # Load scores scaler if present and not already loaded  
+            if models['scores_scaler'] is None:
+                scores_scaler_path = normalization_info.get("scores_scaler")
+                if scores_scaler_path:
+                    scaler_file = model_dir / scores_scaler_path
+                    if scaler_file.exists():
+                        try:
+                            import joblib
+                            models['scores_scaler'] = joblib.load(scaler_file)
+                            models['metadata']['scores_normalization_method'] = normalization_info.get("scores_method", "unknown")
+                            logger.info(f"Loaded scores scaler ({normalization_info.get('scores_method', 'unknown')}) from {scaler_file}")
+                        except Exception as e:
+                            logger.warning(f"Failed to load scores scaler from {scaler_file}: {e}")
+                            
+        except Exception as e:
+            logger.debug(f"Could not load manifest or scalers from disk: {e}")
 
     def _load_trained_models(self):
         """
@@ -390,14 +488,15 @@ class InferenceStage(PipelineStage):
         # Load prediction models from HeatmapStage outputs
         prediction_models = []
         
-        # Search for prediction model files (pattern: target_*/best_pipeline_fold*_*.joblib)
+        # Search for prediction model files (patterns: target_*/best_pipeline_fold*_*.joblib or target_*/best_pipeline_target_*_fold*.joblib)
         target_dirs = list(model_dir.glob('target_*'))
         logger.info(f"Found {len(target_dirs)} target directories for model loading")
         
         for target_dir in target_dirs:
             if target_dir.is_dir():
-                # Find best pipeline models
-                model_files = list(target_dir.glob('best_pipeline_fold*_*.joblib'))
+                # Find best pipeline models (support both old and new naming patterns)
+                model_files = list(target_dir.glob('best_pipeline_fold*_*.joblib')) + \
+                             list(target_dir.glob('best_pipeline_target_*_fold*.joblib'))
                 logger.info(f"Found {len(model_files)} model files in {target_dir.name}")
                 
                 for model_file in model_files:
@@ -532,8 +631,40 @@ class InferenceStage(PipelineStage):
 
         logger.info(f"Transforming {features.shape[0]} samples through trained UMAP")
 
+        # Apply input normalization if scaler is available
+        normalized_features = features
+        input_scaler = models.get('input_scaler')
+        if input_scaler is not None:
+            try:
+                from bcblib.tools.dataframe_filtering import normalize_dataframe
+                import pandas as pd
+                
+                # Convert to DataFrame for normalization with consistent column names
+                # Use column names from scaling factors to ensure compatibility
+                scaler_columns = list(input_scaler.keys()) if input_scaler else None
+                if scaler_columns and len(scaler_columns) == features.shape[1]:
+                    # Use scaling factor column names
+                    feature_df = pd.DataFrame(normalized_features, columns=scaler_columns)
+                else:
+                    # Fallback: use default column names and hope for the best
+                    feature_df = pd.DataFrame(normalized_features)
+                
+                # Get normalization method from metadata
+                input_method = models.get('metadata', {}).get('input_normalization_method', 'min-max')
+                
+                # Apply normalization using saved scaling factors
+                normalized_df, _ = normalize_dataframe(
+                    feature_df, method=input_method, scaling_factors=input_scaler
+                )
+                normalized_features = normalized_df.values
+                
+                logger.info(f"Applied input normalization ({input_method}) before UMAP transform")
+            except Exception as e:
+                logger.warning(f"Failed to apply input normalization: {e}, using original features")
+                normalized_features = features
+
         # Apply UMAP transformation
-        embeddings = umap_model.transform(features)
+        embeddings = umap_model.transform(normalized_features)
 
         # Rescale embeddings using saved parameters
         min_embeddings = models.get('metadata', {}).get('min_embeddings')

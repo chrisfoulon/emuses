@@ -2022,13 +2022,74 @@ def enhance_model_manifest_with_pipeline_data(output_folder: Union[str, Path]) -
         if total_size == 0:
             file_stats = "Not Found"
         
-        # 6. Add enhanced sections to manifest
+        # 6. Detect normalization scalers from saved scaler files
+        normalization_info = {}
+        
+        # Check for scores scaler
+        scores_scaler_path = output_folder / "scores_scaler.joblib"
+        if scores_scaler_path.exists():
+            try:
+                import joblib
+                scaler_data = joblib.load(scores_scaler_path)
+                normalization_info["scores_scaler"] = "scores_scaler.joblib"
+                
+                # Try to detect method from scaler structure or filename patterns
+                if isinstance(scaler_data, dict):
+                    # bcblib scaling factors format - detect method from structure
+                    sample_factors = next(iter(scaler_data.values())) if scaler_data else None
+                    if isinstance(sample_factors, tuple) and len(sample_factors) == 2:
+                        # Could be min-max (min, max) or zscore (mean, std)
+                        normalization_info["scores_method"] = "detected_from_factors"
+                    else:
+                        normalization_info["scores_method"] = "robust"  # likely sklearn scaler object
+                else:
+                    normalization_info["scores_method"] = "unknown"
+                    
+                # Add file size for statistics
+                scaler_size = scores_scaler_path.stat().st_size
+                file_stats["components"]["scores_scaler_size_mb"] = round(scaler_size / (1024 * 1024), 6)
+                logger.info(f"Detected scores scaler: {scores_scaler_path}")
+            except Exception as e:
+                logger.warning(f"Failed to analyze scores scaler {scores_scaler_path}: {e}")
+        
+        # Check for input scaler  
+        input_scaler_path = output_folder / "input_scaler.joblib"
+        if input_scaler_path.exists():
+            try:
+                import joblib
+                scaler_data = joblib.load(input_scaler_path)
+                normalization_info["input_scaler"] = "input_scaler.joblib"
+                
+                # Detect method from scaler structure
+                if isinstance(scaler_data, dict):
+                    sample_factors = next(iter(scaler_data.values())) if scaler_data else None
+                    if isinstance(sample_factors, tuple) and len(sample_factors) == 2:
+                        normalization_info["input_method"] = "detected_from_factors"
+                    else:
+                        normalization_info["input_method"] = "robust"
+                else:
+                    normalization_info["input_method"] = "unknown"
+                    
+                # Add file size for statistics
+                scaler_size = input_scaler_path.stat().st_size
+                file_stats["components"]["input_scaler_size_mb"] = round(scaler_size / (1024 * 1024), 6)
+                logger.info(f"Detected input scaler: {input_scaler_path}")
+            except Exception as e:
+                logger.warning(f"Failed to analyze input scaler {input_scaler_path}: {e}")
+        
+        # UMAP rescaling is standard in EMUSES (handled by UMAPStage)
+        if normalization_info:
+            normalization_info["embeddings_rescaling"] = True
+        
+        # 7. Add enhanced sections to manifest
         manifest["component_configuration"] = component_config
         manifest["performance_metrics"] = performance_metrics  
         manifest["training_context"] = training_context
         manifest["file_statistics"] = file_stats
+        if normalization_info:
+            manifest["normalization"] = normalization_info
         
-        # 7. Save enhanced manifest
+        # 8. Save enhanced manifest
         with open(manifest_path, 'w') as f:
             json.dump(manifest, f, indent=2)
         
