@@ -122,9 +122,18 @@ class InferenceStage(PipelineStage):
                     total=sample_count
                 )
                 transform_start = time.time()
-                transformed_features = self._transform_features_with_progress(
-                    new_features, self.trained_models, progress, transform_task
-                )
+                
+                # Check if prediction_test_coords already exists in context (internal pipeline mode)
+                if 'prediction_test_coords' in context:
+                    transformed_features = context.get('prediction_test_coords')
+                    logger.info("Using pre-computed prediction_test_coords from context (internal pipeline mode)")
+                    progress.advance(transform_task, sample_count)
+                else:
+                    # External standalone mode: do UMAP transform + rescale
+                    transformed_features = self._transform_features_with_progress(
+                        new_features, self.trained_models, progress, transform_task
+                    )
+                
                 transform_duration = time.time() - transform_start
 
                 # Task 4: Run predictions
@@ -1303,6 +1312,32 @@ class InferenceStage(PipelineStage):
             if len(target_predictions) > 0:
                 ensemble_predictions = np.mean(target_predictions, axis=0)
                 
+                # Apply prediction denormalization if scores scaler is available
+                if self.model_path:
+                    model_base_path = Path(self.model_path)
+                    scores_scaler_path = model_base_path / "scores_scaler.joblib"
+                    if scores_scaler_path.exists():
+                        try:
+                            import joblib
+                            import pandas as pd
+                            from bcblib.tools.dataframe_filtering import inverse_normalize_dataframe
+                            
+                            scores_scaler = joblib.load(scores_scaler_path)
+                            # Determine scores method (could be improved by saving method in manifest)
+                            scores_method = 'robust'  # Default - could be read from model manifest
+                            
+                            # Convert predictions to DataFrame for denormalization
+                            # Use 'score' column name to match the original training data
+                            pred_df = pd.DataFrame(ensemble_predictions, columns=['score'])
+                            denorm_df = inverse_normalize_dataframe(pred_df, scores_scaler, method=scores_method)
+                            ensemble_predictions = denorm_df['score'].values
+                            
+                            logger.info(f"Applied prediction denormalization ({scores_method}) for target {target}")
+                        except Exception as e:
+                            logger.warning(f"Failed to denormalize predictions for target {target}: {e}")
+                    else:
+                        logger.debug(f"No scores scaler found at {scores_scaler_path}, predictions remain normalized")
+                
                 # Target-specific confidence calculation
                 if len(target_predictions) > 1:
                     pred_matrix = np.array(target_predictions)
@@ -1315,6 +1350,29 @@ class InferenceStage(PipelineStage):
                 logger.warning(f"No models found for {target}")
                 ensemble_predictions = np.zeros(len(embeddings))
                 confidence_scores = np.zeros(len(embeddings))
+            
+            # Also denormalize individual predictions if scaler was applied to ensemble
+            if (self.model_path and len(target_predictions) > 0 and
+                    (Path(self.model_path) / "scores_scaler.joblib").exists()):
+                try:
+                    import joblib
+                    import pandas as pd
+                    from bcblib.tools.dataframe_filtering import inverse_normalize_dataframe
+                    
+                    scores_scaler = joblib.load(Path(self.model_path) / "scores_scaler.joblib")
+                    scores_method = 'robust'  # Default - could be read from model manifest
+                    
+                    # Denormalize each individual prediction
+                    denormalized_individual = {}
+                    for model_name, individual_pred in target_individual.items():
+                        pred_df = pd.DataFrame(individual_pred, columns=['score'])
+                        denorm_df = inverse_normalize_dataframe(pred_df, scores_scaler, method=scores_method)
+                        denormalized_individual[model_name] = denorm_df['score'].values
+                    
+                    target_individual = denormalized_individual
+                    logger.debug(f"Denormalized individual predictions for target {target}")
+                except Exception as e:
+                    logger.warning(f"Failed to denormalize individual predictions for target {target}: {e}")
             
             target_results[target] = {
                 'ensemble_predictions': ensemble_predictions,

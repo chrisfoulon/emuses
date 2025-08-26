@@ -130,18 +130,16 @@ class HeatmapStage(PipelineStage):
             optim_dict_predict_selected = optim_dict_predict
 
         # ------------------------------------------------------------------
-        # 1 ─ Assemble the design matrix (X) and targets (y) for Optuna
-        #     You can later replace `prediction_train_coords` by any feature
-        #     stack you build (e.g. RawCoords ⊕ GWD, polynomial terms, …)
+        # 1 ─ Assemble the design matrix and targets for Optuna
+        #     prediction_train_coords are the UMAP embedding coordinates used for training
+        #     prediction_train_labels are the target scores/labels for prediction
         # ------------------------------------------------------------------
-        X = prediction_train_coords  # shape (n_samples, 2)
-        y = prediction_train_labels  # shape (n_samples,) or (n_samples, p)
 
         # Store everything in context for the next step (nested CV / training)
         context.update(
             {
-                "prediction_X": X,
-                "prediction_y": y,
+                "prediction_X": prediction_train_coords,  # shape (n_samples, 2) - rescaled embedding coordinates
+                "prediction_y": prediction_train_labels,  # shape (n_samples,) or (n_samples, p) - target values
                 "prediction_task": task,
                 "optim_dict_predict": optim_dict_predict_selected,
             }
@@ -327,11 +325,13 @@ class HeatmapStage(PipelineStage):
         # ------------------------------------------------------------------
 
         # --------------  LOOP OVER TARGET COLUMNS  ------------------------
-        X = prediction_train_coords  # design matrix
-        Y = prediction_train_labels  # 1-D or 2-D
+        # Use prediction_train_coords directly (rescaled UMAP embedding coordinates)
+        # Use prediction_train_labels directly (target values for prediction)
 
-        if Y.ndim == 1:  # ensure 2-D for uniform loop
-            Y = Y[:, None]
+        if prediction_train_labels.ndim == 1:  # ensure 2-D for uniform loop
+            Y = prediction_train_labels[:, None]
+        else:
+            Y = prediction_train_labels
 
         task = "clf" if getattr(self.config, "classification", False) else "reg"
 
@@ -386,7 +386,7 @@ class HeatmapStage(PipelineStage):
         results = parallel(
             delayed(_optimise_target)(
                 col_idx,
-                X,
+                prediction_train_coords,  # rescaled UMAP embedding coordinates
                 Y,
                 task,
                 self.config,

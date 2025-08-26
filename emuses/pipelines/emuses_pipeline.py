@@ -318,21 +318,21 @@ class EMUSESPipeline:
                 filter_rows_list=None,
                 columns_are_features=args.columns_are_features,
             )
-            if args.input_normalization and args.input_normalization.lower() != "none" and not getattr(args, 'inference_mode', False):
+            if args.input_normalization and args.input_normalization.lower() != "none":
                 self.logger.info(
                     f"Normalizing dataset with method={args.input_normalization}"
                 )
                 before_shape = inputs_df.shape
 
-                # Compute scaling factors for the training dataset or apply precomputed ones
-                if not is_labelled:
-                    inputs_df, scaling_factors = normalize_dataframe(
-                        inputs_df, method=args.input_normalization
-                    )
-                    self.context["input_scaling_factors"] = scaling_factors
-                    
-                    # Save input scaler to model directory for inference reuse (ONLY during training)
-                    if not getattr(args, 'inference_mode', False):
+                if not getattr(args, 'inference_mode', False):
+                    # TRAINING MODE: Compute scaling factors for the training dataset or apply precomputed ones
+                    if not is_labelled:
+                        inputs_df, scaling_factors = normalize_dataframe(
+                            inputs_df, method=args.input_normalization
+                        )
+                        self.context["input_scaling_factors"] = scaling_factors
+                        
+                        # Save input scaler to model directory for inference reuse
                         import joblib
                         self.output_folder.mkdir(parents=True, exist_ok=True)
                         input_scaler_path = self.output_folder / "input_scaler.joblib"
@@ -345,17 +345,37 @@ class EMUSESPipeline:
                             "method": args.input_normalization,
                             "scaling_factors": scaling_factors
                         }
-                else:
-                    scaling_factors = self.context.get("input_scaling_factors", None)
-                    if scaling_factors is None:
-                        raise ValueError(
-                            "Scaling factors are missing for labelled dataset normalization."
+                    else:
+                        scaling_factors = self.context.get("input_scaling_factors", None)
+                        if scaling_factors is None:
+                            raise ValueError(
+                                "Scaling factors are missing for labelled dataset normalization."
+                            )
+                        inputs_df, _ = normalize_dataframe(
+                            inputs_df,
+                            method=args.input_normalization,
+                            scaling_factors=scaling_factors,
                         )
-                    inputs_df, _ = normalize_dataframe(
-                        inputs_df,
-                        method=args.input_normalization,
-                        scaling_factors=scaling_factors,
-                    )
+                else:
+                    # INFERENCE MODE: Load and apply saved scaler
+                    # Use model path if available, otherwise fall back to output folder
+                    if hasattr(args, 'model_path') and args.model_path:
+                        scaler_base_path = Path(args.model_path)
+                    else:
+                        scaler_base_path = self.output_folder
+                    
+                    input_scaler_path = scaler_base_path / "input_scaler.joblib"
+                    if input_scaler_path.exists():
+                        import joblib
+                        scaling_factors = joblib.load(input_scaler_path)
+                        inputs_df, _ = normalize_dataframe(
+                            inputs_df,
+                            method=args.input_normalization,
+                            scaling_factors=scaling_factors
+                        )
+                        self.logger.info(f"Applied saved input normalization ({args.input_normalization}) during inference")
+                    else:
+                        self.logger.warning("Input scaler not found, skipping normalization - this may cause inference failures")
 
                 after_shape = inputs_df.shape
                 if after_shape != before_shape:
@@ -394,18 +414,19 @@ class EMUSESPipeline:
             if (
                 args.scores_normalization
                 and args.scores_normalization.lower() != "none"
-                and not getattr(args, 'inference_mode', False)
             ):
                 self.logger.info(
                     f"Normalizing scores dataframe with method={args.scores_normalization}"
                 )
                 before_shape = scores_df.shape
-                scores_df, scores_scaling_factors = normalize_dataframe(
-                    scores_df, method=args.scores_normalization
-                )
                 
-                # Save scores scaler to model directory for inference reuse (ONLY during training)
                 if not getattr(args, 'inference_mode', False):
+                    # TRAINING MODE: Compute and save scores scaling factors
+                    scores_df, scores_scaling_factors = normalize_dataframe(
+                        scores_df, method=args.scores_normalization
+                    )
+                    
+                    # Save scores scaler to model directory for inference reuse
                     import joblib
                     self.output_folder.mkdir(parents=True, exist_ok=True)
                     scores_scaler_path = self.output_folder / "scores_scaler.joblib"
@@ -418,6 +439,26 @@ class EMUSESPipeline:
                         "method": args.scores_normalization,
                         "scaling_factors": scores_scaling_factors
                     }
+                else:
+                    # INFERENCE MODE: Load and apply saved scaler
+                    # Use model path if available, otherwise fall back to output folder
+                    if hasattr(args, 'model_path') and args.model_path:
+                        scaler_base_path = Path(args.model_path)
+                    else:
+                        scaler_base_path = self.output_folder
+                    
+                    scores_scaler_path = scaler_base_path / "scores_scaler.joblib"
+                    if scores_scaler_path.exists():
+                        import joblib
+                        scores_scaling_factors = joblib.load(scores_scaler_path)
+                        scores_df, _ = normalize_dataframe(
+                            scores_df,
+                            method=args.scores_normalization,
+                            scaling_factors=scores_scaling_factors
+                        )
+                        self.logger.info(f"Applied saved scores normalization ({args.scores_normalization}) during inference")
+                    else:
+                        self.logger.warning("Scores scaler not found, skipping normalization - this may cause inference failures")
                 
                 after_shape = scores_df.shape
                 if after_shape != before_shape:

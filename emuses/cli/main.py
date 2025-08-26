@@ -30,10 +30,14 @@ import subprocess
 import sys
 import time
 import urllib.parse
+import warnings
 from enum import Enum
 from multiprocessing import Process
 from pathlib import Path
 from typing import Annotated, List, Optional, Union
+
+# Suppress sklearn FutureWarnings about unfitted Pipeline instances
+warnings.filterwarnings("ignore", category=FutureWarning, module="sklearn.pipeline")
 
 import requests
 import typer
@@ -1587,6 +1591,9 @@ async def _execute_inference_locally(config: dict, status_renderer) -> None:
 
         # Set inference mode to skip training-specific operations
         args.inference_mode = True
+        
+        # Pass model directory path for scaler loading during inference
+        args.model_path = str(config["model"]) if config.get("model") else None
 
         # Create EMUSESPipeline for data processing (standard pattern)
         pipeline = EMUSESPipeline(args)

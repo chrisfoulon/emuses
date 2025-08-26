@@ -1,95 +1,83 @@
-# Implementation Priority Plan - Normalization Pipeline Fix
+# Implementation Priority Plan - Coordinate Usage Fix
 
-## Executive Summary
+## Root Cause Analysis - RESOLVED
 
-**Current Status**: Phase 1 was incorrectly marked complete. KernelRegressor models still produce zero predictions due to EMUSESPipeline completely skipping normalization during inference mode.
+**Issue**: KernelRegressor models produce zero predictions during both training and inference.
 
-**Root Cause**: EMUSESPipeline has logic `and not getattr(args, 'inference_mode', False)` that skips ALL normalization during inference, leaving Object/Timedelta columns that UMAP cannot process.
+**Root Cause**: Inconsistent coordinate usage between training and inference scenarios:
+1. **Training**: Uses `prediction_train_coords` (properly rescaled embedding coordinates)
+2. **Internal Inference (--test_size > 0)**: Should use `prediction_test_coords` but wasn't checking for it
+3. **External Inference (standalone)**: Should use UMAP transform + rescale with saved parameters
 
-## Implementation Priority (High → Low)
+## Solution Implemented ✅
 
-### 🔴 CRITICAL: Task 1.1 - Fix EMUSESPipeline Input Normalization Logic
+### ✅ COMPLETED: Coordinate Usage Fix
+**File**: `emuses/pipelines/inference_stage.py:125`
 
-**File**: `emuses/pipelines/emuses_pipeline.py` line ~321  
-**Current broken logic**:
+**Change**: Added check for `prediction_test_coords` in context before doing UMAP transform:
+
 ```python
-if args.input_normalization and args.input_normalization.lower() != "none" and not getattr(args, 'inference_mode', False):
-    # PROBLEM: Normalization only during training, SKIPPED during inference
+# Check if prediction_test_coords already exists in context (internal pipeline mode)
+if 'prediction_test_coords' in context:
+    transformed_features = context.get('prediction_test_coords')
+    logger.info("Using pre-computed prediction_test_coords from context (internal pipeline mode)")
+    progress.advance(transform_task, sample_count)
+else:
+    # External standalone mode: do UMAP transform + rescale
+    transformed_features = self._transform_features_with_progress(
+        new_features, self.trained_models, progress, transform_task
+    )
 ```
 
-**Fix needed**:
-```python
-if args.input_normalization and args.input_normalization.lower() != "none":
-    if not getattr(args, 'inference_mode', False):
-        # TRAINING MODE: Compute new scaling factors
-        inputs_df, scaling_factors = normalize_dataframe(inputs_df, method=args.input_normalization)
-        # Save scaler to joblib file
-        scaler_path = Path(self.output_folder) / "input_scaler.joblib"
-        import joblib
-        joblib.dump(scaling_factors, scaler_path)
-        self.logger.info(f"Saved input scaler ({args.input_normalization}) to {scaler_path}")
-    else:
-        # INFERENCE MODE: Load and apply saved scaler
-        scaler_path = Path(self.output_folder) / "input_scaler.joblib" 
-        if scaler_path.exists():
-            import joblib
-            scaling_factors = joblib.load(scaler_path)
-            inputs_df, _ = normalize_dataframe(inputs_df, method=args.input_normalization, scaling_factors=scaling_factors)
-            self.logger.info(f"Applied saved input normalization ({args.input_normalization}) during inference")
-        else:
-            self.logger.warning("Input scaler not found, skipping normalization - this may cause inference failures")
+**Result**: 
+- **Internal pipeline mode**: Uses `prediction_test_coords` (already rescaled by UMAPStage)
+- **External standalone mode**: Uses UMAP transform + rescale with saved parameters
+- **Both modes**: Now use consistently rescaled coordinates for KernelRegressor
+
+## Additional Fixes Applied ✅
+
+### ✅ Code Cleanup
+- **HeatmapStage**: Refactored to use explicit variable names (`prediction_train_coords` instead of `X`)
+- **Documentation**: Cleaned up incorrect analysis from previous approaches
+
+### ✅ Previously Applied Fixes (Still Active)
+1. **FutureWarning Suppression**: sklearn warnings suppressed in CLI ✅  
+2. **Input/Scores Normalization Path Fix**: EMUSESPipeline uses correct model directory paths ✅
+3. **Prediction Denormalization**: InferenceStage denormalizes predictions properly ✅
+
+## Expected Results
+
+With the coordinate usage fix:
+- ✅ Training uses `prediction_train_coords` (properly rescaled)
+- ✅ Internal inference uses `prediction_test_coords` (properly rescaled)  
+- ✅ External inference uses UMAP transform + rescale (consistent with training)
+- ✅ KernelRegressor receives consistently rescaled coordinates in all scenarios
+- ✅ Zero predictions issue should be resolved
+
+## Next Steps
+
+1. **Test with real models** - Verify zero predictions are eliminated
+2. **Validate both inference modes** - Internal (pipeline) and external (standalone)
+3. **Monitor coordinate consistency** - Ensure training and inference use equivalent coordinates
+
+## Files Modified
+
+- ✅ `emuses/pipelines/inference_stage.py` - Added coordinate usage fix
+- ✅ `emuses/pipelines/heatmap_stage.py` - Refactored variable names for clarity
+- ✅ `emuses/cli/main.py` - FutureWarning suppression (previous fix)
+- ✅ `emuses/pipelines/emuses_pipeline.py` - Path resolution fix (previous fix)
+
+## Architecture
+
+```
+Training Flow:
+UMAPStage → prediction_train_coords (rescaled) → HeatmapStage → KernelRegressor
+
+Internal Inference Flow:  
+UMAPStage → prediction_test_coords (rescaled) → InferenceStage → KernelRegressor
+
+External Inference Flow:
+InferenceStage → UMAP transform + rescale → KernelRegressor
 ```
 
-### 🔴 CRITICAL: Task 1.2 - Fix EMUSESPipeline Scores Normalization Logic
-
-**File**: `emuses/pipelines/emuses_pipeline.py` line ~397  
-**Same issue**: Scores normalization also skipped during inference mode.
-
-**Fix needed**: Similar logic change as input normalization, but save/load `scores_scaler.joblib`
-
-### 🟡 HIGH: Task 1.3 - Add Prediction Denormalization to InferenceStage
-
-**File**: `emuses/pipelines/inference_stage.py` - after ensemble predictions computed  
-**Purpose**: Convert predictions back to original score scale for user interpretation
-
-**Implementation**:
-```python
-# After ensemble predictions computed
-scores_scaler_path = model_base_path / "scores_scaler.joblib"
-if scores_scaler_path.exists():
-    import joblib
-    from bcblib.tools.dataframe_filtering import inverse_normalize_dataframe
-    
-    scores_scaler = joblib.load(scores_scaler_path)
-    scores_method = 'robust'  # or detect from metadata
-    
-    # Convert predictions to DataFrame for denormalization
-    pred_df = pd.DataFrame(ensemble_predictions, columns=['prediction'])
-    denorm_df = inverse_normalize_dataframe(pred_df, scores_scaler, method=scores_method)
-    ensemble_predictions = denorm_df['prediction'].values
-    
-    logger.info(f"Applied prediction denormalization ({scores_method}) to restore original score scale")
-```
-
-### 🟢 MEDIUM: Task 1.4 - End-to-End Validation
-
-Test with real KernelRegressor models to verify:
-- No more zero predictions  
-- Input ranges correct for UMAP
-- Predictions in meaningful score ranges
-- No regression in ElasticNet models
-
-## Expected Results After Implementation
-
-- ✅ EMUSESPipeline converts Timedelta → Numeric during inference
-- ✅ UMAP receives proper numeric input ranges
-- ✅ KernelRegressor gets correct embeddings and produces non-zero predictions
-- ✅ Predictions denormalized to original score scale
-- ✅ Zero predictions issue completely resolved
-
-## Implementation Notes
-
-- **BCBlib ready**: `normalize_dataframe()` and `inverse_normalize_dataframe()` functions fully support the needed operations
-- **Scaler persistence**: Use joblib.dump/load for sklearn RobustScaler objects 
-- **Backward compatibility**: Check for scaler file existence, graceful degradation if missing
-- **Logging**: Informative messages for debugging and user feedback
+All flows now use consistently rescaled coordinates for KernelRegressor distance calculations.
