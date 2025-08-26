@@ -146,13 +146,26 @@
 - **✅ File integrity**: SHA256 verification system ready for scaler files
 - **✅ Backward compatibility**: Manifest system handles missing files gracefully
 
-### Detailed Implementation Specifications
-See `manifest_integration_spec.md` for complete technical specifications including:
-- Enhanced manifest JSON schema with `normalization` section
-- Code examples for EMUSESPipeline scaler saving
-- InferenceStage automatic scaler loading from manifest
-- File integrity integration for scaler validation
-- Backward compatibility handling for legacy models
+### Implementation Reference Files (CREATED THIS SESSION)
+**Critical**: Use these files during implementation for detailed specifications and code examples:
+
+1. **`manifest_integration_spec.md`**: Complete technical specification
+   - Enhanced manifest JSON schema with `normalization` section
+   - Code examples for EMUSESPipeline scaler saving (lines ~250, ~388)
+   - InferenceStage automatic scaler loading from manifest (line ~85)
+   - ModelIOManager manifest generation extension
+   - File integrity integration and backward compatibility
+
+2. **`implementation_guide.md`**: Quick-start implementation guide
+   - Phase-by-phase roadmap with exact file locations
+   - Testing strategy and validation requirements
+   - Key findings summary (DO NOT RE-RESEARCH)
+   - Quick commands for implementation
+
+3. **`session_handover_summary.md`**: Executive summary
+   - What this planning session accomplished
+   - Infrastructure analysis results
+   - Ready-to-implement status confirmation
 
 ### Available Normalization Methods (normalize_dataframe)
 - Requires investigation of bcblib.tools.dataframe_filtering implementation
