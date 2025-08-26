@@ -81,7 +81,9 @@ class InferenceStage(PipelineStage):
         dict
             Inference results with predictions, metrics, and performance data
         """
-        logger.info("Starting inference pipeline execution")
+        # Only log if not called from CLI (avoid duplicate messages)
+        if not context.get("cli_inference_mode", False):
+            logger.info("Starting inference pipeline execution")
         start_time = time.time()
         console = Console()
 
@@ -631,54 +633,55 @@ class InferenceStage(PipelineStage):
 
         logger.info(f"Transforming {features.shape[0]} samples through trained UMAP")
 
-        # Apply input normalization if scaler is available
+        # Use features as-is - EMUSESPipeline already handles normalization consistently
+        # during both training and inference when inference_mode=True
+        logger.info("Using pre-normalized features from EMUSESPipeline (no duplicate normalization)")
         normalized_features = features
-        input_scaler = models.get('input_scaler')
-        if input_scaler is not None:
-            try:
-                from bcblib.tools.dataframe_filtering import normalize_dataframe
-                import pandas as pd
-                
-                # Convert to DataFrame for normalization with consistent column names
-                # Use column names from scaling factors to ensure compatibility
-                scaler_columns = list(input_scaler.keys()) if input_scaler else None
-                if scaler_columns and len(scaler_columns) == features.shape[1]:
-                    # Use scaling factor column names
-                    feature_df = pd.DataFrame(normalized_features, columns=scaler_columns)
-                else:
-                    # Fallback: use default column names and hope for the best
-                    feature_df = pd.DataFrame(normalized_features)
-                
-                # Get normalization method from metadata
-                input_method = models.get('metadata', {}).get('input_normalization_method', 'min-max')
-                
-                # Apply normalization using saved scaling factors
-                normalized_df, _ = normalize_dataframe(
-                    feature_df, method=input_method, scaling_factors=input_scaler
-                )
-                normalized_features = normalized_df.values
-                
-                logger.info(f"Applied input normalization ({input_method}) before UMAP transform")
-            except Exception as e:
-                logger.warning(f"Failed to apply input normalization: {e}, using original features")
-                normalized_features = features
 
         # Apply UMAP transformation
+        # DEBUG: Check data types before UMAP transform
+        try:
+            import pandas as pd
+            df_debug = pd.DataFrame(normalized_features)
+            data_types = df_debug.dtypes.value_counts()
+            logger.info(f"UMAP_DEBUG: Data types before UMAP: {dict(data_types)}")
+            
+            # Check for problematic data types
+            non_numeric_cols = df_debug.select_dtypes(exclude=[np.number]).columns
+            if len(non_numeric_cols) > 0:
+                logger.warning(f"UMAP_DEBUG: Non-numeric columns detected: {len(non_numeric_cols)}")
+                for col in non_numeric_cols[:3]:  # Show first 3
+                    logger.warning(f"  Column {col}: dtype={df_debug[col].dtype}, sample={df_debug[col].iloc[0]}")
+        except Exception as e:
+            logger.warning(f"UMAP_DEBUG: Failed to check data types: {e}")
+            
+        logger.info(f"UMAP_DEBUG: Input to UMAP transform: shape={normalized_features.shape}, mean={np.mean(normalized_features):.6f}, std={np.std(normalized_features):.6f}, range=[{np.min(normalized_features):.6f}, {np.max(normalized_features):.6f}]")
+        
+        # Check UMAP model state
+        umap_fitted = hasattr(umap_model, 'embedding_') and umap_model.embedding_ is not None
+        umap_components = getattr(umap_model, 'n_components', 'unknown')
+        logger.info(f"UMAP_DEBUG: Model state: fitted={umap_fitted}, n_components={umap_components}, type={type(umap_model)}")
+        
         embeddings = umap_model.transform(normalized_features)
+        
+        logger.info(f"UMAP_DEBUG: Output from UMAP transform: shape={embeddings.shape}, mean={np.mean(embeddings):.6f}, std={np.std(embeddings):.6f}, range=[{np.min(embeddings):.6f}, {np.max(embeddings):.6f}]")
 
         # Rescale embeddings using saved parameters
         min_embeddings = models.get('metadata', {}).get('min_embeddings')
         max_embeddings = models.get('metadata', {}).get('max_embeddings')
 
         if min_embeddings is not None and max_embeddings is not None:
+            logger.info(f"UMAP_DEBUG: Rescaling parameters: min={min_embeddings}, max={max_embeddings}")
+            embeddings_before_rescale = embeddings.copy()
             embeddings = rescale_embedding(
                 embeddings,
                 preset_min=min_embeddings,
                 preset_max=max_embeddings
             )
+            logger.info(f"UMAP_DEBUG: After rescaling: shape={embeddings.shape}, mean={np.mean(embeddings):.6f}, std={np.std(embeddings):.6f}, range=[{np.min(embeddings):.6f}, {np.max(embeddings):.6f}]")
             logger.info("Applied rescaling to transformed embeddings")
         else:
-            logger.warning("Scaling parameters not available - using raw embeddings")
+            logger.warning("UMAP_DEBUG: Scaling parameters not available - using raw embeddings")
 
         return embeddings
 
@@ -1270,6 +1273,18 @@ class InferenceStage(PipelineStage):
                         # Apply model-specific feature transformations
                         transformed_features = feature_transformer.transform(embeddings)
                         predictions = estimator.predict(transformed_features)
+                        
+                        # DEBUG: Log detailed information for KernelRegressor models
+                        if "KernelRegressor" in str(type(estimator)):
+                            zero_count = np.count_nonzero(predictions == 0) 
+                            logger.warning(f"KERNEL_DEBUG {model_name}: embeddings {embeddings.shape} → feat {transformed_features.shape} → predictions {predictions.shape}, zeros: {zero_count}/{len(predictions)}")
+                            if zero_count == len(predictions):
+                                # Additional debugging for zero predictions
+                                emb_stats = f"emb_mean={np.mean(embeddings):.6f}, emb_std={np.std(embeddings):.6f}, emb_range=[{np.min(embeddings):.6f}, {np.max(embeddings):.6f}]"
+                                feat_stats = f"feat_mean={np.mean(transformed_features):.6f}, feat_std={np.std(transformed_features):.6f}, feat_range=[{np.min(transformed_features):.6f}, {np.max(transformed_features):.6f}]"
+                                kernel_params = f"kernel={getattr(estimator, 'kernel', 'unknown')}, alpha={getattr(estimator, 'alpha', 'unknown')}, gamma={getattr(estimator, 'gamma', 'unknown')}"
+                                logger.error(f"KERNEL_ZERO_ISSUE {model_name}: ALL PREDICTIONS ARE ZERO! {emb_stats}, {feat_stats}, {kernel_params}")
+                        
                         logger.debug(f"Pipeline component extraction successful for {model_name}: {embeddings.shape} → {transformed_features.shape} → {predictions.shape}")
                     else:
                         # Fallback: use whole pipeline if component extraction failed

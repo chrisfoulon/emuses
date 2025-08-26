@@ -1521,9 +1521,7 @@ async def _inference_async(**kwargs) -> None:
     status_renderer = StatusRenderer()
     # progress_tracker = ProgressTracker()  # Currently unused
 
-    print(status_renderer.render_status("info", "Starting inference..."))
-
-    # Execute inference locally using InferenceStage
+    # Execute inference locally using InferenceStage (handles its own status messages)
     try:
         await _execute_inference_locally(kwargs, status_renderer)
         print(
@@ -1551,7 +1549,8 @@ async def _execute_inference_locally(config: dict, status_renderer) -> None:
         from emuses.pipelines.inference_stage import InferenceStage
         from emuses.pipelines.emuses_pipeline import EMUSESPipeline
 
-        print(status_renderer.render_status("info", "Initializing inference pipeline..."))
+        # InferenceStage will handle pipeline status messages
+        # Removed redundant "Initializing inference pipeline..." message
 
         # Create args object for EMUSESPipeline (required for data processing)
         args = type('Args', (), {})()
@@ -1615,7 +1614,8 @@ async def _execute_inference_locally(config: dict, status_renderer) -> None:
             "dataset_type": dataset_type,
             "output_format_info": output_format_info,
             "verify_integrity": config.get("verify", True),
-            "output_format": config.get("output_format", "csv")
+            "output_format": config.get("output_format", "csv"),
+            "cli_inference_mode": True  # Suppress duplicate logging in InferenceStage
         }
 
         # Create inference stage with proper configuration
@@ -1627,10 +1627,8 @@ async def _execute_inference_locally(config: dict, status_renderer) -> None:
         # Run inference stage with processed data in context (standard pattern)
         results = inference_stage.run(context)
 
-        # InferenceStage already provides comprehensive output, just show final completion
+        # InferenceStage already provides comprehensive output including sample count and mode
         mode = results.get("mode", "inference")
-        samples_processed = results.get("samples_processed", 0)
-        print(f"✓ Processed {samples_processed} samples in {mode} mode")
 
         # Show validation results if available
         if mode == "validation" and "validation_metrics" in results:

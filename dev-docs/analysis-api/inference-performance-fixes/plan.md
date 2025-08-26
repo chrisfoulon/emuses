@@ -2,100 +2,74 @@
 
 ## Task Complexity Assessment
 
-**Task Complexity**: HIGH
-**Implementation Approach**: Fix critical data normalization mismatch + coordinated logging architecture
+**Task Complexity**: HIGH  
+**Implementation Approach**: Fix complete normalization pipeline inconsistency between training and inference
 **Key Challenges**: 
-- **CRITICAL**: Inference embeddings not normalized to training data scale (causing zero predictions)
-- Must save and reuse training-time normalization parameters for scores and input data
-- Multiple logging systems require architectural coordination  
-- Embeddings rescaling already implemented correctly in UMAPStage
+- **CRITICAL**: EMUSESPipeline skips ALL normalization during inference mode (causing Object/Timedelta → UMAP failures)
+- **CRITICAL**: No prediction denormalization - outputs not converted back to original score scale
+- InferenceStage attempted duplicate normalization causing data type conflicts
+- Multiple logging systems require architectural coordination
 
 **Resource Requirements**: 4-6 hours implementation + comprehensive testing with user's actual model files
+
+**ROOT CAUSE IDENTIFIED (COMPREHENSIVE ANALYSIS COMPLETE)**: EMUSESPipeline has multiple normalization issues causing cascade failures:
+
+1. **Input normalization skipped**: Line ~321 logic `and not getattr(args, 'inference_mode', False)` completely skips normalization during inference
+2. **Scores normalization skipped**: Line ~397 has identical logic skipping scores normalization during inference  
+3. **No prediction denormalization**: Predictions not converted back to original score scale using scores scaler
+4. **Data type conversion failure**: Timedelta/Object columns remain unconverted → UMAP fails
+
+**RESULT**: KernelRegressor receives wrong input ranges ([7.8,11.5] instead of [0,1]) and produces zero predictions.
 
 ## Hierarchical Task Structure
 
 ### Phase 1: Critical Data Normalization Fix (Issue 2) ║ High Priority
 
-- [x] **Task 1.1: Analyze Current Normalization Implementation** ║ `tests/inference/test_normalization_analysis.py` ║ Document existing normalization status ║ S
-  - [x] 1.1.1: ✅ Embeddings normalization: UMAPStage correctly saves min/max coords to context
-  - [x] 1.1.2: ❌ Scores normalization: EMUSESPipeline does NOT save normalization parameters  
-  - [x] 1.1.3: ⚠️ Input normalization: Partially saves input_scaling_factors but not to model files
-  - [x] 1.1.4: ✅ Verified KernelRegressor requires normalized embeddings (distance-based models sensitive)
-  - [x] 1.1.5: ✅ CRITICAL FINDING: bcblib normalize_dataframe() already supports scaler reuse and reversibility
-    - **Full reversibility**: `inverse_normalize_dataframe()` function available
-    - **Scaler reuse**: Scaling factors can be saved and reused across datasets
-    - **Serializable**: Scaling factors are pickle-compatible for joblib storage
-    - **Methods available**: min-max, zscore, robust (robust uses sklearn scaler objects)
-    - **Perfect for model persistence**: No migration to sklearn needed - bcblib already sufficient
+⚠️  **PHASE 1 INCORRECTLY MARKED COMPLETE - ACTUAL IMPLEMENTATION NEEDED**
 
-- [x] **Task 1.2: Implement Scores and Input Normalization Parameter Storage** ║ `tests/inference/test_normalization_storage.py` ║ Save normalization params for inference reuse ║ L  
-  - [x] 1.2.1: ✅ Modified EMUSESPipeline.load_and_process_scores() to save scores normalization scaler object
-    - **Implementation**: Lines ~387-404 - Enhanced scores normalization to save scaler using joblib.dump()
-    - **Context storage**: Added scores_scaler_info to context with path, method, and scaling_factors
-  - [x] 1.2.2: ✅ Extended input normalization in EMUSESPipeline.process_dataset() to save scaler to model files
-    - **Implementation**: Lines ~329-348 - Enhanced input normalization to save scaler using joblib.dump()  
-    - **Context storage**: Added input_scaler_info to context with path, method, and scaling_factors
-  - [x] 1.2.3: ✅ Store scaler objects in model directory using joblib (scores_scaler.joblib, input_scaler.joblib)
-    - **File paths**: `{output_folder}/scores_scaler.joblib` and `{output_folder}/input_scaler.joblib`
-    - **Logging**: Added informative logging when scalers are saved
-  - [x] 1.2.4: ✅ **CRITICAL**: Updated model manifest JSON to include normalization scaler references for automatic detection
-    - **Implementation**: Enhanced `enhance_model_manifest_with_pipeline_data()` in model_io.py (lines ~2025-2090)
-    - **Scaler detection**: Automatically detects scores_scaler.joblib and input_scaler.joblib files
-    - **Method detection**: Analyzes scaler structure to determine normalization method used
-    - **Manifest schema**: Added `normalization` section with `scores_scaler`, `input_scaler`, `embeddings_rescaling` fields
-    - **File statistics**: Includes scaler file sizes in manifest statistics
+Previous analysis was incomplete. **Real issues requiring implementation**:
 
-- [x] **Task 1.3: Implement Inference-Time Normalization Loading and Application** ║ `tests/inference/test_inference_normalization.py` ║ Apply training normalization to inference ║ L
-  - [x] 1.3.1: ✅ **CRITICAL**: Modified InferenceStage model loading to automatically detect and load scaler objects from JSON manifest
-    - **Implementation**: Added `_load_normalization_scalers()` and `_load_scalers_from_disk()` methods (lines ~347-437)
-    - **Context-first loading**: Scalers loaded from pipeline context first, then from disk using manifest
-    - **Manifest integration**: Uses ModelIOManager to load manifest and detect normalization section
-    - **Error handling**: Graceful degradation when scalers missing or corrupt
-  - [x] 1.3.2: ✅ Applied input data normalization using loaded input_scaler BEFORE UMAP transform
-    - **Implementation**: Enhanced `_transform_features()` method (lines ~632-662) to apply normalization before UMAP
-    - **Column matching**: Fixed DataFrame column name matching with scaling factor keys
-    - **Fallback handling**: Uses original features if normalization fails
-  - [x] 1.3.3: ✅ Scores scaler loading implemented (ready for validation comparisons in separate feature)
-    - **Implementation**: Scores scaler loaded into models dict for future use
-    - **Context storage**: Available in models['scores_scaler'] for validation workflows
-  - [x] 1.3.4: ✅ Added comprehensive normalization validation and logging
-    - **Loading logs**: "Using input scaler from pipeline context", "Loaded input scaler from {path}"
-    - **Application logs**: "Applied input normalization ({method}) before UMAP transform"
-    - **Error logs**: Warnings for failed scaler loading or application with graceful fallback
+- [ ] **Task 1.1: Fix EMUSESPipeline Input Normalization Logic** ║ **CRITICAL IMPLEMENTATION** ║ L
+  - [ ] 1.1.1: Modify line ~321 in `emuses_pipeline.py` - Remove `and not getattr(args, 'inference_mode', False)` from input normalization condition
+  - [ ] 1.1.2: Add inference mode branch to load saved input_scaler.joblib and apply normalization using scaling_factors 
+  - [ ] 1.1.3: Ensure Timedelta/Object columns properly converted to numeric during inference
+  - [ ] 1.1.4: Save input scaler during training mode using joblib.dump()
 
-- [x] **Task 1.4: Validate Complete Normalization Fix** ║ `tests/inference/test_simple_validation.py` ║ Comprehensive testing with real models ║ L
-  - [x] 1.4.1: ✅ Validated KernelRegressor models produce non-zero predictions with consistent input scaling
-    - **Implementation**: `test_kernel_regressor_prediction_scenario()` demonstrates >10x prediction improvement with normalization
-    - **Result**: Distance-based models now receive properly scaled inputs, eliminating zero-prediction issue
-  - [x] 1.4.2: ✅ Verified ElasticNet models continue working (should be less sensitive to scaling)
-    - **Implementation**: `test_backward_compatibility_no_scalers()` ensures legacy models without scalers still work
-    - **Regression prevention**: No breaking changes to existing model pipelines
-  - [x] 1.4.3: ✅ Validated embedding coordinate ranges: training [0,1] vs inference [0,1] (UMAPStage handles correctly)
-    - **Implementation**: `test_normalization_application_during_transform()` verifies min-max normalization produces [0,1] ranges
-    - **UMAPStage integration**: Existing embeddings rescaling infrastructure works with input normalization
-  - [x] 1.4.4: ✅ Validated denormalization: apply inverse_transform to verify score interpretability
-    - **Implementation**: `test_denormalization_scores_capability()` demonstrates Z-score reversibility within ±2 score points
-    - **Practical validation**: Z-score -1.0 correctly denormalizes to ~73, Z-score 1.0 to ~97 for cognitive scores
+- [ ] **Task 1.2: Fix EMUSESPipeline Scores Normalization Logic** ║ **CRITICAL IMPLEMENTATION** ║ L  
+  - [ ] 1.2.1: Modify line ~397 in `load_and_process_scores()` - Same logic fix as input normalization
+  - [ ] 1.2.2: Add inference mode branch to load saved scores_scaler.joblib during inference
+  - [ ] 1.2.3: Save scores scaler during training mode using joblib.dump()
+
+- [ ] **Task 1.3: Implement Prediction Denormalization in InferenceStage** ║ **NEW REQUIREMENT** ║ M
+  - [ ] 1.3.1: Load scores scaler in InferenceStage from model files
+  - [ ] 1.3.2: Apply inverse_normalize_dataframe() to predictions using scores scaler (NOT input scaler)
+  - [ ] 1.3.3: Ensure predictions are in original raw score scale for user interpretation
+
+- [ ] **Task 1.4: Validate Complete Fix with Real KernelRegressor Models** ║ End-to-end testing ║ M
+  - [ ] 1.4.1: Test that KernelRegressor models no longer produce zero predictions
+  - [ ] 1.4.2: Verify input ranges are correct ([0,1] for embeddings, normalized for inputs)  
+  - [ ] 1.4.3: Confirm predictions are denormalized to meaningful score ranges
+  - [ ] 1.4.4: Ensure no regression in ElasticNet model performance
 
 ### Phase 2: User Experience Fix (Issue 1) ║ Medium Priority
 
-- [ ] **Task 2.1: Analyze Duplicate Logging Sources** ║ `tests/cli/test_logging_coordination.py` ║ Map all logging output sources ║ S
-  - [ ] 2.1.1: Trace EMUSESPipeline JSON logging calls
-  - [ ] 2.1.2: Trace InferenceStage Rich console outputs
-  - [ ] 2.1.3: Trace CLI status_renderer messages  
-  - [ ] 2.1.4: Identify specific duplicate message patterns
+- [x] **Task 2.1: Analyze Duplicate Logging Sources** ║ `tests/cli/test_logging_coordination.py` ║ Map all logging output sources ║ S
+  - [x] 2.1.1: ✅ Traced EMUSESPipeline JSON logging calls - extensive logger.info() usage for structured logging
+  - [x] 2.1.2: ✅ Traced InferenceStage Rich console outputs - PRIMARY DUPLICATE: logger.info("Starting inference pipeline execution") at line 84
+  - [x] 2.1.3: ✅ Traced CLI status_renderer messages - SECONDARY DUPLICATE: "Starting inference..." at main.py:1524
+  - [x] 2.1.4: ✅ Identified exact duplicate pattern: CLI and InferenceStage both announce pipeline start to different audiences
 
-- [ ] **Task 2.2: Implement Coordinated Logging Architecture** ║ `tests/cli/test_unified_inference_output.py` ║ Single source of truth for inference output ║ M
-  - [ ] 2.2.1: Suppress redundant EMUSESPipeline JSON logs during inference
-  - [ ] 2.2.2: Consolidate CLI status messages with InferenceStage Rich output
-  - [ ] 2.2.3: Ensure InferenceStage remains primary output channel
-  - [ ] 2.2.4: Preserve essential diagnostic information
+- [x] **Task 2.2: Implement Coordinated Logging Architecture** ║ `tests/cli/test_unified_inference_output.py` ║ Single source of truth for inference output ║ M
+  - [x] 2.2.1: ✅ Suppressed redundant InferenceStage logger message during CLI inference - added cli_inference_mode context flag
+  - [x] 2.2.2: ✅ Consolidated CLI status messages with InferenceStage Rich output - removed redundant "Starting inference..." and "Initializing..." messages  
+  - [x] 2.2.3: ✅ InferenceStage now serves as primary output channel - Rich progress and completion messages preserved
+  - [x] 2.2.4: ✅ Essential diagnostic information preserved - success/error messages, validation metrics, and warnings maintained
 
-- [ ] **Task 2.3: Test Clean Output Experience** ║ `tests/cli/test_inference_output_quality.py` ║ Verify no duplicate messages remain ║ S
-  - [ ] 2.3.1: Run full inference command and capture output
-  - [ ] 2.3.2: Validate no duplicate "Starting inference pipeline execution"
-  - [ ] 2.3.3: Verify no duplicate JSON structured logs
-  - [ ] 2.3.4: Confirm all essential information still displayed
+- [x] **Task 2.3: Test Clean Output Experience** ║ `tests/cli/test_inference_output_quality.py` ║ Verify no duplicate messages remain ║ S
+  - [x] 2.3.1: ✅ Ran full inference command and captured output - processed 1067 samples successfully
+  - [x] 2.3.2: ✅ Validated no duplicate "Starting inference pipeline execution" - 0 messages found (FIXED!)
+  - [x] 2.3.3: ✅ Verified minimal JSON structured logs - only 2 essential logs (pipeline init + random seeds)  
+  - [x] 2.3.4: ✅ Confirmed all essential information still displayed - model loading, normalization, results, files saved
 
 ### Phase 3: Integration & Validation ║ High Priority
 
@@ -139,18 +113,18 @@
 ## Acceptance Criteria Mapping
 
 ### Issue 2 (Zero Predictions) Success Criteria:
-- [ ] **CRITICAL**: Input data and scores normalized using saved parameters during inference
-- [ ] **CRITICAL**: UMAP embeddings use existing rescaling ([0,1] range already implemented)
+- [ ] **CRITICAL**: EMUSESPipeline applies normalization during inference using saved scaler parameters (currently skipped)
+- [ ] **CRITICAL**: Input data properly converted from Timedelta/Object → Numeric during inference  
+- [ ] **CRITICAL**: Predictions denormalized using scores scaler to original score scale
 - [ ] KernelRegressor models produce non-zero predictions with proper input normalization
-- [ ] ElasticNet models continue working without regression
-- [ ] Scores and input normalization parameters saved as scaler objects and loaded during inference
-- [ ] Denormalization capability available for interpretable output
+- [ ] ElasticNet models continue working without regression  
+- [ ] UMAP receives properly normalized numeric input ([0,1] embeddings already working)
 
 ### Issue 1 (Duplicate Output) Success Criteria:
-- [ ] Single "Starting inference pipeline execution" message
-- [ ] No duplicate JSON structured logs
-- [ ] Clean, readable terminal output
-- [ ] All essential information preserved
+- [x] ✅ Single "Starting inference pipeline execution" message (0 duplicate messages found)
+- [x] ✅ No duplicate JSON structured logs (minimal essential logs only)
+- [x] ✅ Clean, readable terminal output (Rich formatting preserved)
+- [x] ✅ All essential information preserved (model loading, normalization, results display)
 
 ## Decision Points Requiring User Input
 
@@ -159,15 +133,14 @@
 - **[RESOLVED]** Storage approach: Save scaler objects to model directory AND reference in JSON manifest for automatic detection
 - **[USER_INPUT]** Task 2.2: Logging detail level - which diagnostic messages are essential vs. redundant?
 
-## Implementation Technical Details
+## Implementation Technical Details (CORRECTED)
 
-### Key Files to Modify (Based on Codebase Analysis)
+### Key Files to Modify (Actual Implementation Needed)
 
-1. **EMUSESPipeline.load_and_process_scores()**: Line ~388 (scores normalization) - Save scaler object
-2. **EMUSESPipeline.process_dataset()**: Line ~250 (input normalization) - Save scaler object
-3. **InferenceStage._load_trained_models_with_context()**: Line ~85 - Add scaler loading from manifest
-4. **ModelIOManager._generate_manifest_from_directory()**: Extend to detect and reference scaler files
-5. **Model manifest JSON**: Automatic scaler detection and referencing
+1. **EMUSESPipeline.process_dataset()**: Line ~321 - **FIX LOGIC**: Remove `and not getattr(args, 'inference_mode', False)` and add inference branch to load saved scaler
+2. **EMUSESPipeline.load_and_process_scores()**: Line ~397 - **FIX LOGIC**: Same normalization skip issue, add inference branch to load scores scaler  
+3. **InferenceStage**: **ADD**: Prediction denormalization using scores scaler after ensemble predictions computed
+4. **BCBlib Integration**: Use existing `normalize_dataframe()` and `inverse_normalize_dataframe()` functions - no changes needed
 
 ### Existing Infrastructure Integration (PERFECT MATCH!)
 - **✅ ModelIOManager**: Full manifest system with auto-generation, integrity checking, versioning
@@ -180,23 +153,22 @@
 ### Implementation Reference Files (CREATED THIS SESSION)
 **Critical**: Use these files during implementation for detailed specifications and code examples:
 
-1. **`manifest_integration_spec.md`**: Complete technical specification
-   - Enhanced manifest JSON schema with `normalization` section
-   - Code examples for EMUSESPipeline scaler saving (lines ~250, ~388)
-   - InferenceStage automatic scaler loading from manifest (line ~85)
-   - ModelIOManager manifest generation extension
-   - File integrity integration and backward compatibility
+1. **`comprehensive_normalization_analysis.md`**: Complete root cause analysis
+   - Detailed BCBlib function analysis with capabilities
+   - Exact problem identification in EMUSESPipeline logic
+   - Complete 4-phase solution plan with implementation details
+   - Data flow analysis (training vs inference)
 
-2. **`implementation_guide.md`**: Quick-start implementation guide
-   - Phase-by-phase roadmap with exact file locations
-   - Testing strategy and validation requirements
-   - Key findings summary (DO NOT RE-RESEARCH)
-   - Quick commands for implementation
+2. **`implementation_priority_plan.md`**: Concrete implementation roadmap
+   - Priority ranking of tasks (Critical → High → Medium)
+   - Specific code examples for each fix needed
+   - Expected results after implementation
+   - Line-by-line implementation guidance
 
-3. **`session_handover_summary.md`**: Executive summary
-   - What this planning session accomplished
-   - Infrastructure analysis results
-   - Ready-to-implement status confirmation
+3. **`emuses_pipeline_fix_plan.md`**: Focused EMUSESPipeline logic fix
+   - Current vs correct logic comparison
+   - Exact code changes needed for normalization consistency
+   - Problem/solution summary for the core issue
 
 ### Available Normalization Methods (normalize_dataframe)
 - Requires investigation of bcblib.tools.dataframe_filtering implementation
