@@ -2,10 +2,10 @@
 
 ## Implementation Overview
 
-**Goal**: Complete Analysis API Enhancement with critical infrastructure fixes and comprehensive analysis capabilities  
-**Duration**: 3.5 weeks across 3 focused sub-plans  
-**Focus**: Fix ModelIOManager methods, expose analysis functions, enable inference visualization  
-**Dependencies**: ✅ FastAPI infrastructure, existing analysis functions, CLI framework established
+**Goal**: Implement statistical maps and heatmap analysis functionality in HeatmapStage with API/CLI interfaces  
+**Approach**: ENHANCE HeatmapStage with grid creation and statistical analysis after nested CV training  
+**Foundation**: Model registry, multi-user service, and inference fixes are complete and operational  
+**Core Implementation**: Extract from new_pipeline_test + complete HeatmapStage statistical analysis (lines 431-686)  
 
 ## Progress Tracking Protocol
 **CRITICAL**: After completing any task:
@@ -15,327 +15,211 @@
 4. Only mark complete after successful testing
 5. Update context files with implementation examples
 
-## Implementation Strategy: ENHANCE Existing Infrastructure
+## Task Complexity Assessment
+- **Task Complexity**: **MEDIUM-HIGH**
+- **Implementation Approach**: HeatmapStage enhancement with modular grid creation and statistical analysis functions
+- **Key Challenges**: Grid generation with simplified inference, statistical analysis implementation, confidence aggregation
+- **Resource Requirements**: 7-10 days focused development across 3 phases
 
-**Integration Decision**: **ENHANCE** existing analysis functions and infrastructure  
-**Rationale**: Production-ready analysis functions exist, comprehensive FastAPI/CLI framework ready for extension  
-**Critical Blocker**: ModelIOManager missing methods must be fixed first
+## Implementation Strategy
 
-## Sub-Plan Breakdown
+### LAD Phase 00: Existing Work Discovery Results ✅
+- **Integration Decision**: **ENHANCE** HeatmapStage pipeline with statistical analysis functionality
+- **Existing Quality**: Modern foundations in new_pipeline_test + HeatmapStage architecture
+- **Coverage**: 40% (pipeline architecture exists, statistical analysis commented/incomplete)
+- **Rationale**: Build on modern patterns, avoid legacy function approaches
 
-### Sub-Plan 0A: Critical Infrastructure Fixes ║ Foundation repair ║ CRITICAL ║ 1 week ✅ **COMPLETED**
+### LAD Phase 01: Implementation Planning ✅  
+- **Multi-level context**: Completed with corrected technical understanding
+- **Architecture understanding**: HeatmapStage enhancement after nested CV training
+- **Maintenance opportunities**: Modular function design for maintainability
+- **Testing strategy**: Component-aware (unit for functions, integration for pipeline)
 
-### Sub-Plan 0A-Extended: Complete EMUSES Model Registry Redesign ║ Foundation Enhancement ║ CRITICAL ║ 2 weeks
+## Feature Requirements (Corrected Technical Approach)
 
-**Focus**: Transform model registry from individual components to complete EMUSES models with intelligent deduplication
+### Triple-Analysis Implementation  
+1. **Prediction Grid**: 100x100 coordinate grid → simplified inference → prediction*confidence heatmaps
+2. **Correlation Grid**: 100x100 coordinate grid → GWD vectors → correlation with target scores (Pearson/Spearman/point-biserial)
+3. **Statistical Maps**: Region-based analysis → two-stage filtering → clustering within regions → effect size maps
 
-**See Detailed Planning**: `/dev-docs/analysis-api/model-registry-redesign/` for comprehensive LAD Phase 0/1 documentation
+### Critical Implementation Constraints  
+- **Pipeline Timing**: AFTER nested CV model training in HeatmapStage (models loaded in context)
+- **Grid Coordinates**: 100x100 linspace on rescaled embeddings (0-1 coordinate system)
+- **Sigma Optimization**: Kernel regression optimization for optimal sigma parameter (correlation grids)
+- **Two-Stage Filtering**: Visualization threshold (0.2) + effect size threshold (0.5) for region selection
+- **Region-Based Clustering**: HDBSCAN clusters within high-confidence regions (≥3 points per cluster)
+- **Per-target artifacts**: Grid-based organization with `prediction-grids/`, `correlation-grids/`, `statistical-maps-prediction/`, and `statistical-maps-correlation/` folders in each `target_*/` directory
+- **Multiple Correlation Methods**: Support Pearson, Spearman, point-biserial correlation analysis
+- **Effect Size Calculation**: Mann-Whitney tests via input_matrix_stat_map function
+- **Grid-Based Statistical Maps**: Different statistical maps based on filtering method (prediction-based vs correlation-based regions)
 
-**Critical Discovery**: Current registry treats UMAP/HDBSCAN/predictions as separate models, but complete EMUSES models must be managed as single cohesive units for sharing and analysis workflows.
+## Implementation Phases
 
-- [x] **Task 0A.1: Implement ModelIOManager Missing Methods** ✅ **COMPLETED** ║ `tests/model_registry/test_model_io_manager.py` ║ Core infrastructure ║ L
-  - [x] 0A.1.a: Implement `validate_model(model_path) -> Dict[str, Any]` method in `/emuses/tools/model_io.py`
-  - [x] 0A.1.b: Implement `install_model(source_path, destination_path, name) -> str` method  
-  - [x] 0A.1.c: Add manifest generation from directory structure for models without manifests
-  - [x] 0A.1.d: Add directory hash calculation for integrity verification
-  - [x] 0A.1.e: Integration with existing `_generate_manifest()` and file hash utilities
+### Phase 1: HeatmapStage Enhancement ║ Triple Grid System & Statistical Analysis ║ HIGH ║ 4-5 days
 
-- [x] **Task 0A.2: Fix CI Pipeline Dependencies** ✅ **COMPLETED** ║ `tests/model_registry/conftest.py` ║ Build infrastructure ║ S
-  - [x] 0A.2.a: Resolve `ModuleNotFoundError: No module named 'fastapi_users'` in CI
-  - [x] 0A.2.b: Add conditional imports and pytest.skip for optional dependencies
-  - [ ] 0A.2.c: Verify main branch CI passes with all model registry tests
-  - [ ] 0A.2.d: Ensure feature branch lightweight CI continues to function
+- [ ] **Task 1.1: Prediction Grid Creation System** ║ `tests/analysis_api/test_prediction_grid.py` ║ 100x100 coordinate grid with simplified inference ║ M
+  - [ ] 1.1.a: Create grid coordinate generation function (100x100 linspace on 0-1 rescaled embeddings)
+  - [ ] 1.1.b: Implement simplified inference function (skip input transformation, use context models)
+  - [ ] 1.1.c: Add confidence aggregation (5-model confidence or CV ensemble 1-std approach)
+  - [ ] 1.1.d: Implement prediction*confidence heatmap generation with denormalization
 
-- [x] **Task 0A.3: Enable HDBSCAN Model Registration** ✅ **COMPLETED** ║ `tests/cli/test_models_hdbscan.py` ║ Model type support ║ S  
-  - [x] 0A.3.a: Add HDBSCAN to registerable model types in LocalModelRegistry
-  - [x] 0A.3.b: Update CLI model installation to support HDBSCAN models
-  - [x] 0A.3.c: Test HDBSCAN model discovery and installation workflow
-  - [x] 0A.3.d: Fix ModelIOManager integration issue in LocalModelRegistry
+- [ ] **Task 1.2: Correlation Grid Creation System** ║ `tests/analysis_api/test_correlation_grid.py` ║ GWD-based correlation analysis ║ M
+  - [ ] 1.2.a: Implement GWD vector computation for grid points (compute_gwd_for_point integration)
+  - [ ] 1.2.b: Add sigma optimization via kernel regression (extract from new_pipeline_test)
+  - [ ] 1.2.c: Implement multiple correlation methods (Pearson, Spearman, point-biserial)
+  - [ ] 1.2.d: Create correlation heatmap generation with target score correlation analysis
 
-- [x] **Task 0A.4: LocalModelRegistry Integration Testing** ✅ **COMPLETED** ║ `tests/model_registry/test_local_registry_real.py` ║ Infrastructure validation ║ M
-  - [x] 0A.4.a: Create integration tests using real ModelIOManager methods (no mocks)
-  - [x] 0A.4.b: Test complete model installation workflow: validate → install → register
-  - [x] 0A.4.c: Verify model registry operations work with new ModelIOManager methods
-  - [x] 0A.4.d: Test error handling for invalid models and installation failures
+- [ ] **Task 1.3: Region-Based Statistical Analysis** ║ `tests/analysis_api/test_region_statistical_analysis.py` ║ Two-stage filtering with clustering ║ M
+  - [ ] 1.3.a: Implement two-stage threshold filtering (visualization + effect size thresholds)
+  - [ ] 1.3.b: Add region-based clustering analysis (HDBSCAN clusters within high-confidence regions)
+  - [ ] 1.3.c: Integrate input_matrix_stat_map for effect size calculation (Mann-Whitney tests)
+  - [ ] 1.3.d: Create statistical maps for clusters with ≥3 points per cluster
 
-### Sub-Plan 0B: Analysis API & CLI Implementation ║ Core features ║ HIGH ║ 1.5 weeks  
+### Phase 2: API & CLI Integration ║ FastAPI Endpoints & CLI Commands ║ HIGH ║ 2-3 days
 
-**Focus**: Expose analysis functions through FastAPI endpoints and CLI commands
+- [ ] **Task 2.1: FastAPI Analysis Endpoints** ║ `tests/analysis_api/test_analysis_endpoints.py` ║ REST API endpoints for triple analysis ║ L
+  - [ ] 2.1.a: Implement `POST /api/v1/analysis/statistical-maps` endpoint with region-based analysis
+  - [ ] 2.1.b: Implement `POST /api/v1/analysis/heatmaps` endpoint (prediction + correlation grids)
+  - [ ] 2.1.c: Add per-target processing with grid-based folder organization (prediction-grids/, correlation-grids/, statistical-maps-prediction/, statistical-maps-correlation/)
+  - [ ] 2.1.d: Implement error handling, correlation method validation, sigma optimization support
 
-Copilot Notes: ####
+- [ ] **Task 2.2: Enhanced Parameter Management** ║ `tests/analysis_api/test_parameter_management.py` ║ Triple analysis request models ║ M
+  - [ ] 2.2.a: Create enhanced request models (correlation methods, sigma optimization, threshold parameters)
+  - [ ] 2.2.b: Add two-stage filtering parameter validation (visualization + effect size thresholds)
+  - [ ] 2.2.c: Implement correlation method selection and validation (Pearson/Spearman/point-biserial)
+  - [ ] 2.2.d: Add cluster size threshold and region-based analysis parameter handling
 
-### Statistical Mapping Methods Analysis & Plan Impact
+- [ ] **Task 2.3: HeatmapStage Integration** ║ `tests/analysis_api/test_heatmap_stage_integration.py` ║ Pipeline enhancement and artifacts ║ L
+  - [ ] 2.3.a: Uncomment and enhance HeatmapStage statistical analysis code (lines 431-686)
+  - [ ] 2.3.b: Integrate triple grid system after nested CV training (models available in context)
+  - [ ] 2.3.c: Implement per-target artifact organization with grid-based statistical maps (statistical-maps-prediction/, statistical-maps-correlation/)
+  - [ ] 2.3.d: Add interactive visualization enhancement with plot_clustering_interactive_with_hover
 
-**Discovery**: After investigating `new_pipeline_test` function, we identified two distinct approaches for generating statistical/effect-size maps, each serving different analytical purposes.
+### Phase 3: CLI Commands & Documentation ║ Command-line Interface & User Experience ║ MEDIUM ║ 2-3 days
 
-#### Method 1: Kernel Regression Optimization (from new_pipeline_test)
-**What it is**: 
-- **EXCLUSIVELY for sigma optimization**: Uses Optuna to find optimal kernel sigma parameters for each target variable
-- Applies kernel regression with nested cross-validation for statistical rigor
-- Generates correlation grids and effect-size maps on **scaled embeddings** for each target variable
-- **IGNORE from new_pipeline_test**: Prediction models, summary dataframes, performance metrics (modern pipeline handles these)
+- [ ] **Task 3.1: CLI Analysis Commands (DEFERRED)** ║ `tests/analysis_api/test_cli_commands.py` ║ Independent CLI analysis execution ║ L
+  - [ ] 3.1.a: Design modular functions for future CLI independence (model loading, normalization)
+  - [ ] 3.1.b: Assess CLI implementation complexity vs value (DEFERRED unless high success/low risk)
+  - [ ] 3.1.c: Document CLI independence requirements for future implementation
+  - [ ] 3.1.d: Create foundation for standalone analysis commands
 
-**Strengths**: Statistically principled, space-descriptive, independent of prediction models, interpretable parameters
-**Limitations**: Disconnected from actual trained models, may not reflect real model behavior
+- [ ] **Task 3.2: Interactive Visualization Enhancement** ║ `tests/analysis_api/test_visualization.py` ║ HTML plots with statistical analysis metadata ║ M
+  - [ ] 3.2.a: Enhance plot_clustering_interactive_with_hover integration with statistical maps
+  - [ ] 3.2.b: Add heatmap visualization with prediction*confidence overlays
+  - [ ] 3.2.c: Create visualization artifact preservation in per-target folders
+  - [ ] 3.2.d: Implement responsive design and metadata integration
 
-#### Method 2: Model-Based Ensemble Predictions (HeatmapStage integration)
-**What it is**:
-- Uses actual trained prediction models on grid across **scaled UMAP embeddings**
-- Applies ensemble predictions for robustness with uncertainty quantification  
-- Uses HDBSCAN clustering on spatial coordinates and predictions jointly
-- Maps directly reflect what trained models predict
-- **Per-target processing**: Generates separate analysis artifacts for each target variable
-
-**Strengths**: Model-representative, ensemble robustness, practical relevance, aligns with current architecture
-**Limitations**: Model-dependent, less interpretable than pure statistical approaches
-
-#### Research Evidence & Recommendation
-**Neuroimaging Research**: Ensemble approaches provide "accuracy gains" and enable "uncertainty quantification through ensemble variability". Population-based explanation maps "substantially improve coherence and reliability."
-
-**Kernel Regression Evidence**: Comparable performance to deep neural networks with lower computational costs and enhanced interpretability.
-
-#### **STRATEGIC DECISION: Implement Both Methods with Distinct Purposes**
-
-**Primary Approach** (Method 2 - Model-Based): For model interpretation and clinical applications
-**Secondary Approach** (Method 1 - Kernel): For statistical validation and space analysis
-
-#### Impact on Implementation Plan:
-1. **Task 0B.1** now includes dual-method approach clarification with **per-target variable processing**
-2. **Task 0B.3/0B.4** should expose both analysis types with clear use-case documentation
-3. **Task 0B.2** must handle parameters for both kernel regression (sigma optimization per target) and model-based (ensemble configuration) approaches
-4. **Critical constraint**: Only adapt sigma optimization from `new_pipeline_test` - **DO NOT** modify prediction models, summary dataframes, or performance metrics
-5. **Per-target organization**: All analysis artifacts must be organized in corresponding `target_*` folders
-6. **Scaled embeddings**: All coordinate operations must use scaled UMAP embeddings, not raw coordinates
-
-#### Architecture Integration Notes:
-- **new_pipeline_test**: Extract ONLY sigma optimization logic (Optuna + kernel regression) - ignore all prediction model modifications
-- **Target-specific processing**: Each target variable gets independent sigma optimization and correlation analysis
-- **Coordinate system**: All analysis operates on scaled embeddings for consistency with modern pipeline
-- **Artifact organization**: Maps, correlations, and statistical outputs organized by target variable in `target_*` directories
-- **Modern integration**: Current HeatmapStage + features_utils.py provides foundation for Method 2 implementation
-- **Remove redundancy**: Eliminate summary dataframes and performance metrics from legacy approach (modern pipeline handles these)
-
-#### **CRITICAL IMPLEMENTATION CONSTRAINTS**:
-1. **DO NOT** modify existing prediction models based on `new_pipeline_test`
-2. **DO NOT** implement summary dataframes or duplicate performance metrics
-3. **DO** extract sigma optimization approach for kernel regression
-4. **DO** ensure per-target variable processing for both methods
-5. **DO** use scaled embeddings for all coordinate-based operations
-6. **DO** organize all outputs in target-specific directory structure
-
-#######
-
-- [ ] **Task 0B.1: Statistical Analysis Requirements Clarification** 🎯 **USER CONSULTATION REQUIRED** ║ Planning session ║ Requirements ║ Planning
-  - [ ] 0B.1.a: Review legacy statistical mapping approaches and existing EMUSES functions
-  - [ ] 0B.1.b: Clarify requirements for grid predictions, thresholding methods, effect size calculations
-  - [ ] 0B.1.c: Identify reusable functions: `input_matrix_stat_map()`, `calculate_correlation_grid()`, `plot_clustering_interactive_with_hover()`
-  - [ ] 0B.1.d: Define integration strategy for existing vs new statistical analysis capabilities
-
-- [ ] **Task 0B.2: Analysis Parameter Management System** ║ `tests/tools/test_pipeline_config_extensions.py` ║ Configuration handling ║ M
-  - [ ] 0B.2.a: Extend `PipelineConfig` dataclass with statistical analysis parameters
-  - [ ] 0B.2.b: Implement parameter validation and default value handling for new analysis fields
-  - [ ] 0B.2.c: Add configuration serialization for API request/response (reuse existing patterns)
-  - [ ] 0B.2.d: Create parameter transformation utilities for analysis function integration
-
-- [ ] **Task 0B.3: FastAPI Analysis Endpoints** ║ `tests/api/test_analysis_endpoints.py` ║ REST API ║ L
-  - [ ] 0B.3.a: Implement `POST /api/v1/analysis/kernel` endpoint with comprehensive parameter validation
-  - [ ] 0B.3.b: Implement `POST /api/v1/analysis/correlation` endpoint with request schema validation
-  - [ ] 0B.3.c: Add analysis job status tracking and progress monitoring
-  - [ ] 0B.3.d: Implement `GET /api/v1/analysis/{job_id}/artifacts/{filename}` for artifact download
-  - [ ] 0B.3.e: Add proper error handling, logging, and security validation
-
-- [ ] **Task 0B.4: CLI Analysis Commands** ║ `tests/cli/test_analysis_commands.py` ║ Command interface ║ M
-  - [ ] 0B.4.a: Create `emuses models analyze-kernel` command with Rich progress indicators
-  - [ ] 0B.4.b: Create `emuses models analyze-correlation` command with parameter validation
-  - [ ] 0B.4.c: Add common analysis options: `--output`, `--force`, `--grid-size`, `--threshold`
-  - [ ] 0B.4.d: Implement artifact summary display and success confirmation
-
-- [ ] **Task 0B.5: Analysis Artifact Integration** ║ `tests/model_registry/test_analysis_artifacts.py` ║ Artifact management ║ M
-  - [ ] 0B.5.a: Extend model registry to support analysis artifact installation
-  - [ ] 0B.5.b: Add analysis artifact metadata schema with parent model relationships
-  - [ ] 0B.5.c: Implement analysis artifact discovery and listing functionality  
-  - [ ] 0B.5.d: Add artifact cleanup and management operations
-
-- [ ] **Task 0B.6: Interactive Visualization System** ║ `tests/visualization/test_interactive_plots.py` ║ Visualization ║ M
-  - [ ] 0B.6.a: Restore commented visualization code from HeatmapStage
-  - [ ] 0B.6.b: Enhance `plot_clustering_interactive_with_hover()` integration
-  - [ ] 0B.6.c: Generate HTML interactive plots with analysis metadata
-  - [ ] 0B.6.d: Save visualization artifacts with analysis results
-
-### Sub-Plan 0C: Advanced Features & Integration ║ Enhancement capabilities ║ MEDIUM ║ 1 week
-
-**Focus**: Analysis artifact access, comprehensive testing, advanced API features
-
-**NOTE**: Inference visualization capabilities have been completed through comprehensive CLI parameter enhancement (see `/dev-docs/analysis-api/inference-cli-parameter-fix/`). Remaining tasks focus on analysis-specific API features.
-
-- [x] **Task 0C.1: Enhanced InferenceStage with Analysis Visualization** ✅ **COMPLETED** ║ `dev-docs/analysis-api/inference-cli-parameter-fix/` ║ Inference integration ║ L
-  - [x] 0C.1.a: Enhanced inference CLI with comprehensive preprocessing parameters 
-  - [x] 0C.1.b: Added all data formatting options (headers, index columns, normalization)
-  - [x] 0C.1.c: Added validation mode support with scores processing
-  - [x] 0C.1.d: Enhanced InferenceStage integration with modern pipeline architecture
-
-- [ ] **Task 0C.2: Analysis Artifact API** ║ `tests/api/test_artifact_access.py` ║ Programmatic access ║ M
-  - [ ] 0C.2.a: Create FastAPI endpoints for analysis artifact discovery
-  - [ ] 0C.2.b: Implement permission-controlled access to analysis data  
-  - [ ] 0C.2.c: Add programmatic access to embeddings, statistical maps, performance metrics
-  - [ ] 0C.2.d: Support custom analysis workflow integration patterns
-
-- [x] **Task 0C.3: Inference Visualization CLI** ✅ **COMPLETED** ║ `dev-docs/analysis-api/inference-cli-parameter-fix/` ║ Advanced CLI ║ M
-  - [x] 0C.3.a: Enhanced inference command with comprehensive parameter support
-  - [x] 0C.3.b: Added data preprocessing and validation capabilities
-  - [x] 0C.3.c: Implemented comprehensive inference workflow with artifact support
-  - [x] 0C.3.d: Added progress indicators and comprehensive error handling
-
-- [ ] **Task 0C.4: Research Workflow Integration** ║ `tests/research/test_python_api.py` ║ Python API ║ M  
-  - [ ] 0C.4.a: Create Python API for loading analysis artifacts in notebooks/scripts
-  - [ ] 0C.4.b: Provide utility functions for custom visualization creation
-  - [ ] 0C.4.c: Enable advanced users to extend analysis capabilities
-  - [ ] 0C.4.d: Create example notebooks and research workflow documentation
-
-- [ ] **Task 0C.5: Comprehensive Testing Suite** ║ Quality assurance ║ Testing coverage ║ L
-  - [ ] 0C.5.a: End-to-end integration tests for complete analysis workflows
-  - [ ] 0C.5.b: Performance testing for large-scale analysis scenarios  
-  - [ ] 0C.5.c: Security testing for artifact access and permission controls
-  - [ ] 0C.5.d: Cross-browser testing for interactive visualizations
-
-- [ ] **Task 0C.6: Documentation and User Guides** ║ User enablement ║ Documentation ║ M
-  - [ ] 0C.6.a: Update user guides with analysis API workflows and examples
-  - [ ] 0C.6.b: Create analysis visualization tutorials and best practices
-  - [ ] 0C.6.c: Document research workflow patterns and Python API usage
-  - [ ] 0C.6.d: Create troubleshooting guides for common analysis issues
-  - [ ] 0C.6.b: Create analysis visualization tutorials and best practices
-  - [ ] 0C.6.c: Document research workflow patterns and Python API usage
-  - [ ] 0C.6.d: Create troubleshooting guides for common analysis issues
+- [ ] **Task 3.3: Documentation & Testing** ║ `tests/analysis_api/test_documentation.py` ║ User guides and comprehensive testing ║ S
+  - [ ] 3.3.a: Update user guides with HeatmapStage statistical analysis workflows
+  - [ ] 3.3.b: Document grid creation and statistical maps generation approaches
+  - [ ] 3.3.c: Create troubleshooting guides for confidence aggregation and denormalization
+  - [ ] 3.3.d: Comprehensive testing across modular functions and pipeline integration
 
 ## Testing Strategy by Component Type
 
 ### **API Endpoints** (Integration Testing)
 - **Approach**: Real FastAPI app with mocked external dependencies
-- **Focus**: Request/response validation, error handling, authentication
+- **Focus**: Request/response validation, model registry integration, error handling
 - **Coverage Target**: 95% - critical for API reliability
 
 ### **CLI Commands** (Integration Testing)
-- **Approach**: CliRunner with real filesystem operations in temporary directories
-- **Focus**: Parameter validation, user feedback, progress indicators
+- **Approach**: CliRunner with real filesystem operations in temporary directories  
+- **Focus**: Parameter validation, progress indicators, registry lookup workflows
 - **Coverage Target**: 90% - essential for user experience
 
-### **Analysis Functions** (Unit Testing) 
-- **Approach**: Isolated testing with test fixtures and known datasets
-- **Focus**: Mathematical correctness, parameter handling, artifact generation
-- **Coverage Target**: 95% - critical for scientific validity
+### **Analysis Orchestration** (Unit Testing)
+- **Approach**: Isolated testing with mocked analysis functions and test fixtures
+- **Focus**: Parameter transformation, method selection, per-target processing logic
+- **Coverage Target**: 95% - critical for dual-method coordination
 
-### **Model Registry Integration** (Component Testing)
-- **Approach**: Real database with test fixtures, no external service calls
-- **Focus**: Installation workflows, artifact relationships, permission controls  
+### **Artifact Management** (Component Testing)
+- **Approach**: Real registry operations with test databases, no external service calls
+- **Focus**: Installation workflows, artifact relationships, metadata handling
 - **Coverage Target**: 90% - essential for data integrity
 
-## Resolved Issues ✅
+## Maintenance Integration Points
 
-### FIXED: Missing .metadata Files in target_* Subdirectories ✅
+### High Priority Tasks Include Maintenance
+- Task 1.2: FastAPI endpoints include logging and monitoring integration following existing patterns
+- Task 1.3: CLI commands include error handling standardization across analysis workflows
+- Task 3.3: Documentation includes analysis function documentation enhancement opportunities
 
-**Issue**: After implementing normalization fixes, retrained models were missing `.metadata/` directories in `target_*` subdirectories.
-
-**Root Cause Found**: `NameError: name 'optimization_time' is not defined` in `model_io.py:1044`
-- The `_create_metadata` method was missing the `optimization_time` parameter in its signature
-- This caused exceptions during `ModelIOManager.save_model()`, triggering fallback to simple `joblib.dump()`
-- Simple joblib dumps don't create `.metadata/` directories, only ModelIOManager does
-
-**Fix Applied** (2025-08-26):
-1. **Added `optimization_time: Optional[float] = None`** to `_create_metadata` method signature in `model_io.py:1024`
-2. **Added `optimization_time=optimization_time`** to the call from `save_model` to `_create_metadata` in `model_io.py:224`
-3. **Verified fix works**: User confirmed retraining now creates `.metadata/` directories successfully
-
-**Resolution Confirmed**: 
-- **✅ Training fixed**: `.metadata/` directories now created in each `target_*` subdirectory
-- **✅ Inference works**: Models load and predict successfully  
-- **✅ User verified**: Retraining command works correctly with metadata preservation
-- **✅ Analysis API unblocked**: Future analysis functions will have access to target metadata
+### Boy Scout Rule Applications
+- Parameter management system optimization during API implementation
+- Error handling standardization across analysis workflows during CLI development  
+- Analysis function integration pattern improvements during orchestration development
 
 ## Risk Assessment and Mitigation
 
 ### **Technical Risks**
-- **HIGH - ModelIOManager Methods**: Missing methods block all model operations
-  - *Mitigation*: Sub-plan 0A dedicated focus, comprehensive integration testing
-- **MEDIUM - Analysis Parameter Complexity**: 19-21 parameters per function
-  - *Mitigation*: Structured parameter management, validation layers, user testing
-- **LOW - Existing Analysis Functions**: Proven, production-ready functions
-  - *Mitigation*: Wrapper approach, minimal changes to core analysis logic
+- **HIGH - Triple Grid System Complexity**: Prediction + correlation + statistical maps with different methodologies
+  - *Mitigation*: Modular class design, incremental testing, reuse existing GWD/correlation patterns
+- **HIGH - Sigma Optimization Integration**: Extract kernel regression optimization for correlation grids
+  - *Mitigation*: Leverage existing compute_sigma_median and new_pipeline_test sigma optimization patterns
+- **MEDIUM - Region-Based Statistical Analysis**: Two-stage filtering + clustering within regions + effect size calculation
+  - *Mitigation*: Reuse existing input_matrix_stat_map function, incremental cluster size validation
+- **MEDIUM - Correlation Method Support**: Multiple correlation methods with proper validation
+  - *Mitigation*: Leverage existing correlation_maps_utils.py patterns, comprehensive parameter validation
 
-### **Implementation Risks**
-- **MEDIUM - API Design Complexity**: Complex parameter management for analysis functions
-  - *Mitigation*: User consultation phase (Task 0B.1), iterative refinement
-- **MEDIUM - Integration Testing**: Real methods vs mocked dependencies  
-  - *Mitigation*: Dedicated integration testing phase, gradual rollout
-- **LOW - CLI Integration**: Established Typer patterns and Rich console
-  - *Mitigation*: Follow existing model command patterns
+### **Implementation Risks** 
+- **MEDIUM - HeatmapStage Integration**: Uncomment and enhance lines 431-686 without breaking existing pipeline
+  - *Mitigation*: Careful testing, modular integration, preserve existing functionality
+- **MEDIUM - Denormalization Logic**: Ensure predictions denormalized to original value range correctly
+  - *Mitigation*: Reuse existing denormalization patterns from InferenceStage
+- **LOW - Registry Integration**: Established patterns and working model registry system
+  - *Mitigation*: Follow existing registry integration patterns from inference implementation
 
 ## Success Criteria
 
 ### **Functional Requirements**
-- [ ] ModelIOManager installation workflow fully operational (install_model, validate_model working)
-- [ ] Analysis API endpoints respond with valid analysis results and artifacts  
-- [ ] CLI analysis commands execute successfully with proper progress indicators
-- [ ] Analysis artifacts stored in model registry with proper relationships
-- [ ] Inference visualization displays analysis context for new data points
+- [ ] HeatmapStage generates triple grid system: prediction*confidence + GWD correlation + statistical maps
+- [ ] Correlation grids use sigma optimization and multiple correlation methods (Pearson/Spearman/point-biserial)
+- [ ] Region-based statistical analysis with two-stage filtering and clustering within high-confidence regions
+- [ ] Per-target processing creates grid-based folders: prediction-grids/, correlation-grids/, statistical-maps-prediction/, statistical-maps-correlation/ in target_*/ directories
+- [ ] API endpoints support triple analysis with correlation method selection and threshold parameters
+- [ ] Effect size maps generated for clusters with ≥3 points using input_matrix_stat_map (Mann-Whitney tests)
 
 ### **Quality Requirements**
 - [ ] >90% test coverage for all new functionality (LAD compliance)
-- [ ] Performance impact <20% for analysis generation (configurable)
-- [ ] Zero regressions in existing EMUSES functionality
+- [ ] Performance impact <20% for analysis generation compared to direct function calls
+- [ ] Zero regressions in existing EMUSES functionality (model registry, inference, CLI)
 - [ ] Comprehensive error handling and user feedback for all failure modes
+- [ ] Per-target processing working correctly with scaled embeddings usage
 
 ### **Integration Requirements**
 - [ ] Seamless integration with existing FastAPI service and CLI framework
-- [ ] Analysis artifacts accessible through model registry permissions system
-- [ ] Research-grade access to analysis data for advanced users
-- [ ] Complete documentation with working examples and troubleshooting guides
+- [ ] Analysis artifacts accessible through model registry permissions system  
+- [ ] Target-specific directory organization working with registry artifact management
+- [ ] Complete documentation with working examples and dual-method use case guidance
 
-## Maintenance Integration Points
+## Completed Infrastructure (Do Not Modify)
 
-**High Priority Tasks Include Maintenance**:
-- Task 0A.1: ModelIOManager implementation includes comprehensive error handling 
-- Task 0B.3: FastAPI endpoints include logging and monitoring integration
-- Task 0C.5: Testing suite includes maintenance of test coverage standards
+### ✅ Model Registry System (6 phases complete + quality fixes)
+- `ModelIOManager.validate_model()` and `install_model()` methods functional
+- CLI `--model-id` option working with registry lookup
+- LocalModelRegistry operations fully tested and operational
 
-**Boy Scout Rule Applications**:
-- Complex parameter management improvements during API implementation
-- Documentation enhancements for analysis function usage patterns
-- Code quality improvements in target files during implementation
+### ✅ Multi-User Service Implementation  
+- FastAPI-Users integration with enterprise security (HashiCorp Vault)
+- Admin CLI commands for user management, quotas, system monitoring
+- Production-ready with comprehensive documentation
 
-## Quality Gates by Sub-Plan
+### ✅ Inference Performance & Normalization Fixes
+- UMAP embedding scaling (`embedding_scaling.json` saving/loading)
+- Input scaler bug fixes in EMUSESPipeline (`is_labelled=True` branch)
+- Dual CSV output in InferenceStage (raw + normalized predictions)
+- "Zero predictions" issue resolved with proper embedding scaling
 
-**Sub-Plan 0A Gates**:
-- ✅ ModelIOManager methods implemented and tested with real integration
-- ✅ All model installation workflows operational without mocks
-- ✅ CI pipeline resolving dependencies and passing tests
-- ✅ Zero regressions in existing model registry functionality
+### ✅ Modern Analysis Foundations (Ready for Enhancement)
+- **new_pipeline_test** in `/emuses/tools/stats_utils.py:1477` - Advanced statistical analysis with Optuna optimization
+- **HeatmapStage** in `/emuses/pipelines/heatmap_stage.py:431-686` - Commented statistical analysis code to be completed
+- **plot_clustering_interactive_with_hover** - Interactive visualization function ready for integration
+- **Scaled embeddings infrastructure** - prediction_train_coords available in pipeline context
 
-**Sub-Plan 0B Gates**:
-- ✅ Analysis API endpoints functional with parameter validation
-- ✅ CLI commands working with progress indicators and error handling  
-- ✅ Analysis artifacts generated and registered with proper relationships
-- ✅ Interactive visualizations operational and integrated
+---
 
-**Sub-Plan 0C Gates**:
-- ✅ Inference visualization displaying analysis artifacts correctly
-- ✅ Advanced artifact access functional with permission controls
-- ✅ Research workflow tools available with Python API  
-- ✅ Comprehensive testing and documentation complete
+**Implementation Status**: Ready to begin Phase 1 - HeatmapStage Enhancement with Triple Grid System  
+**Next Step**: Task 1.1 - Prediction Grid Creation System implementation  
+**Key Success Factor**: Implement sophisticated correlation + region-based analysis while maintaining modular design for maintainability
 
-## Timeline and Dependencies
-
-### **Sub-Plan 0A (Week 1)**
-**Dependencies**: None - but blocks all subsequent development  
-**Critical Path**: ModelIOManager methods → LocalModelRegistry integration → CI fixes
-
-### **Sub-Plan 0B (Weeks 2-2.5)**  
-**Dependencies**: Working ModelIOManager from Sub-plan 0A  
-**Critical Path**: Parameter management → API endpoints → CLI commands → Artifact integration
-
-### **Sub-Plan 0C (Weeks 3-3.5)**
-**Dependencies**: Analysis API/CLI from Sub-plan 0B  
-**Critical Path**: Inference visualization → Advanced API → Testing → Documentation
-
-**Total Duration**: 3.5 weeks for complete implementation with quality validation
-
-This LAD-compliant plan provides systematic implementation with clear dependencies, comprehensive testing, and quality gates while addressing the critical ModelIOManager infrastructure issue that currently blocks model installation workflows.
+*This plan follows LAD Phase 00 (Existing Work Discovery) and Phase 01 (Autonomous Context Planning) methodologies for systematic implementation with proper integration assessment and architectural understanding.*

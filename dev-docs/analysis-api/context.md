@@ -2,422 +2,331 @@
 
 ## Level 1: Plain English Summary
 
-EMUSES has comprehensive neuroimaging analysis functions (`run_kernel_heatmap_analysis` and `run_heatmap_analysis`) that generate statistical maps, effect size maps, and interactive visualizations. These functions are production-ready with 19-21 parameters each, but are only accessible through pipeline execution. The enhancement will expose these functions through FastAPI endpoints and CLI commands.
+EMUSES has **modern statistical analysis capabilities** under development in HeatmapStage and advanced statistical analysis in the `new_pipeline_test` function. However, these are **NOT exposed through API/CLI interfaces**. Legacy functions (`run_kernel_heatmap_analysis`, `run_heatmap_analysis`) exist but are **outdated guides** that should NOT be used as the foundation.
 
-**Critical Infrastructure Issue**: ModelIOManager is missing `install_model()` and `validate_model()` methods that LocalModelRegistry expects, completely blocking model installation. Tests pass because they use mocks, hiding this missing implementation.
+The enhancement needs to **implement statistical maps and heatmap analysis functionality** by:
+1. **Extracting modern approaches** from `new_pipeline_test` (advanced sigma optimization, nested CV)  
+2. **Completing the statistical analysis code** in HeatmapStage (currently commented)
+3. **Creating API/CLI interfaces** for the modern statistical analysis pipeline
 
-**Existing Infrastructure**: Mature FastAPI service, Typer CLI framework, comprehensive model registry database schema, artifact serving system, and security validation - all ready for extension.
+**Critical Understanding**: This is **NOT** a simple service layer addition - it requires implementing sophisticated statistical analysis functionality based on modern patterns, not exposing existing "production-ready" functions.
+
+**Foundation Status**: Model registry system, multi-user service, and inference performance fixes are complete. HeatmapStage provides the modern pipeline architecture foundation.
 
 ## Level 2: API Integration Table
 
-| Component | Purpose | Key Methods/Endpoints | Integration Points |
-|-----------|---------|----------------------|-------------------|
-| **Analysis Functions** | Generate statistical maps and visualizations | `run_kernel_heatmap_analysis()`, `run_heatmap_analysis()` | Pipeline stages, artifact generation |
-| **FastAPI Service** | REST API endpoints | `POST /api/v1/analysis/{type}`, `GET /api/v1/analysis/{job_id}/artifacts/{filename}` | Authentication, artifact serving, job management |
-| **CLI Commands** | Command-line interface | `emuses models analyze-kernel`, `emuses models analyze-correlation` | Typer integration, Rich console output |
-| **ModelIOManager** | Model validation and installation | `validate_model()`, `install_model()` ⚠️ **MISSING** | LocalModelRegistry, artifact preservation |
-| **Model Registry** | Analysis artifact storage | `install_model()`, `list_models()`, database persistence | Multi-user permissions, workspace isolation |
-| **Artifact System** | Analysis result serving | File serving, permission control, format detection | FastAPI FileResponse, security validation |
+| Component | Purpose | Current Status | Integration Approach |
+|-----------|---------|----------------|---------------------|
+| **new_pipeline_test** | Advanced statistical analysis with Optuna optimization | ✅ Modern implementation exists | Extract sigma optimization and statistical mapping logic |
+| **HeatmapStage** | Modern prediction pipeline with statistical analysis | ⚠️ Statistical analysis commented out | Complete and expose statistical analysis functionality |
+| **Legacy Functions** | Old statistical analysis implementations | ❌ Outdated guides only | **DO NOT USE** - for reference only |
+| **FastAPI Service** | REST API endpoints | 🔧 Needs statistical analysis endpoints | Implement `/analysis/statistical-maps`, `/analysis/heatmaps` |
+| **CLI Commands** | Command-line interface | 🔧 Needs analysis commands | Implement `analyze-statistical-maps`, `analyze-heatmaps` |
+| **Interactive Visualization** | HTML interactive plots | ⚠️ Function exists, not integrated | Integrate `plot_clustering_interactive_with_hover` |
+| **Model Registry** | Model ID resolution and artifact storage | ✅ Complete and functional | Use for model lookup and artifact management |
 
 ## Level 3: Code Integration Examples
 
-### **Analysis Function Signatures and Usage**
+### Modern Statistical Analysis Function (To Be Extracted)
 
 ```python
-# Location: /emuses/tools/kernel_regression_utils.py:641
-def run_kernel_heatmap_analysis(
-    embeddings,                    # np.ndarray: 2D latent space embeddings  
-    scores_vectors_dict,           # dict: Score tags and binary vectors
-    input_matrix,                  # np.ndarray: Original input data matrix
-    output_folder,                 # str: Output directory path
-    grid_size=100,                # int: Heatmap grid resolution
-    sigma_range=None,             # List[float]: Kernel bandwidth range
-    threshold=0.5,                # float: Confidence threshold
-    uncertainty_penalty=0.5,      # float: Uncertainty weighting
-    input_type="image",           # str: "image" | "nifti" | "spreadsheet"
-    classification=False,         # bool: Regression vs classification
-    # ... 11 additional parameters
-) -> Tuple[Dict[str, Any], List[Dict]]:
-    """Returns: (heatmap_data_dict, nested_cv_results)"""
-
-# Location: /emuses/tools/correlation_maps_utils.py:205  
-def run_heatmap_analysis(
-    embeddings,                   # np.ndarray: 2D embeddings
-    scores_vectors_dict,          # dict: Score vectors
-    input_matrix,                 # np.ndarray: Original data
+# Location: /emuses/tools/stats_utils.py:1477
+def new_pipeline_test(
+    embeddings,                   # np.ndarray: UMAP embeddings 
+    combined_input_matrix,        # np.ndarray: Original input data
+    scores_vectors_dict,          # dict: Score vectors for analysis
     output_folder,                # str: Output directory
-    output_format_info,           # Various: Format specification
-    clusterer,                    # object: Trained HDBSCAN clusterer
-    cluster_labels,               # np.ndarray: Cluster assignments
-    input_type="image",           # str: Input data type
-    # ... 11 additional parameters  
-) -> None:
-    """Generates artifacts: effect_size maps, correlation grids, visualizations"""
+    grid_size=100,               # int: Heatmap grid resolution
+    dataset_type="image",        # str: Input data type
+    cluster_labels=None,         # np.ndarray: Cluster assignments
+    optuna_trials=50,            # int: Optuna optimization trials
+    model_selection=None,        # list: Model types ['gp', 'rf', 'gb', 'kr', 'xgb']
+    # ... additional parameters
+) -> dict:
+    """
+    Enhanced pipeline function with robust model selection and parallel training.
+    
+    Key Features:
+    1. Extracts VOI_vector from scores_vectors_dict
+    2. Robust nested CV with Optuna optimization for kernel sigma
+    3. Aggregates candidate sigma values for robust final_sigma
+    4. Uses final_sigma for GWD matrix and summary features
+    5. Multiple model types with hyperparameter optimization
+    6. Statistical mapping with proper cross-validation
+    """
 ```
 
-### **FastAPI Endpoint Integration Pattern**
+### HeatmapStage Statistical Analysis (To Be Completed)
 
 ```python
-# Expected implementation in /emuses/foundation_fastapi_service/app.py
-from pydantic import BaseModel, Field
-from typing import Dict, Any, Optional, List
+# Location: /emuses/pipelines/heatmap_stage.py (currently commented lines 431-686)
+# ENHANCEMENT AFTER NESTED CV TRAINING
 
-class AnalysisRequest(BaseModel):
-    model_path: str = Field(..., description="Path to trained model directory")
-    analysis_type: str = Field(..., description="kernel or correlation", regex="^(kernel|correlation)$")
-    output_folder: Optional[str] = Field(None, description="Custom output directory")
-    
-    # Analysis-specific parameters
-    grid_size: int = Field(100, description="Heatmap grid resolution", ge=10, le=500)
-    threshold: float = Field(0.5, description="Confidence threshold", ge=0.0, le=1.0)
-    generate_plots: bool = Field(True, description="Generate visualization plots")
-    
-    # Advanced parameters with defaults
-    sigma_range: Optional[List[float]] = Field(None, description="Kernel bandwidth range")
-    effect_size_threshold: float = Field(0.5, ge=0.0, le=1.0)
-    correlation_method: str = Field("pearson", regex="^(pearson|spearman)$")
+class HeatmapStage(PipelineStage):
+    def run(self, context, progress_queue=None):
+        # Modern pipeline integration - AFTER nested CV training
+        prediction_train_coords = context.get("prediction_train_coords")  # Scaled embeddings (0-1)
+        prediction_train_labels = context.get("prediction_train_labels")  # Target scores
+        trained_models = context.get("trained_models")  # Available after nested CV
+        
+        # Triple Analysis Implementation:
+        # 1. Prediction Grid: 100x100 coordinates → simplified inference → prediction*confidence heatmaps
+        # 2. Correlation Grid: 100x100 coordinates → GWD vectors → correlation with target scores
+        # 3. Statistical Maps: Two-stage filtering (vis + effect thresholds) → region clustering → effect size
+        # 4. Sigma optimization via kernel regression for correlation analysis
+        # 5. Region-based clustering: HDBSCAN within high-confidence regions (≥3 points per cluster)
+        # 6. Effect size calculation via input_matrix_stat_map (Mann-Whitney tests)
+        # 7. Per-target processing: statistical-maps/, heatmaps/, correlation-maps/ folders
+        # 8. Enhanced interactive visualization with region-based clustering metadata
+```
 
-class AnalysisResponse(BaseModel):
-    job_id: str = Field(..., description="Unique analysis job identifier")
-    status: str = Field(..., description="pending, running, completed, failed")
-    analysis_type: str = Field(..., description="Type of analysis performed")
-    created_at: str = Field(..., description="ISO timestamp of job creation")
-    artifacts: Optional[List[str]] = Field(None, description="List of generated artifact filenames")
+### Target FastAPI Implementation Pattern
 
-@app.post("/api/v1/analysis/kernel", status_code=201)
-@conditional_rate_limit("10/hour")  
-async def run_kernel_analysis(
-    request: Request, analysis_request: AnalysisRequest
-) -> AnalysisResponse:
-    """Execute kernel regression heatmap analysis."""
+```python
+# To be implemented in /emuses/foundation_fastapi_service/app.py
+from emuses.tools.statistical_analysis import GridCreator, StatisticalAnalyzer  # New modules needed
+
+class StatisticalAnalysisRequest(BaseModel):
+    model_id: str = Field(..., description="Registry model ID")
+    analysis_type: str = Field(..., description="heatmap or statistical-maps")
     
-    # Security validation
-    model_path = Path(validate_path(analysis_request.model_path))
-    if not model_path.exists():
-        raise HTTPException(status_code=404, detail="Model path not found")
+    # Grid creation parameters
+    grid_size: int = Field(100, description="Grid resolution (100x100 default)")
+    confidence_method: str = Field("cv_ensemble", description="5_model or cv_ensemble")
+    denormalize: bool = Field(True, description="Denormalize predictions to original range")
     
-    # Load model and metadata
+    # Statistical mapping parameters  
+    region_threshold: float = Field(0.1, description="Region selection threshold")
+    effect_size_method: str = Field("process_column", description="Effect size calculation method")
+
+@app.post("/api/v1/analysis/statistical-maps", status_code=201)
+async def run_statistical_maps_analysis(request: StatisticalAnalysisRequest) -> AnalysisResponse:
+    """Execute modern statistical maps analysis based on new_pipeline_test approach."""
+    
+    # Model registry integration
+    registry = get_model_registry()
+    model_path = registry.get_model_path(request.model_id)
+    
+    # Load model data with modern pipeline
     model_io = ModelIOManager(model_path.parent)
     model_data = model_io.load_model(model_path.name)
     
-    # Parameter validation and preparation
-    analysis_params = analysis_request.dict(exclude={'model_path', 'analysis_type'})
+    # Initialize modern statistical analyzer
+    analyzer = ModernStatisticalAnalyzer(
+        optuna_trials=request.optuna_trials,
+        model_types=request.model_types,
+        grid_size=request.grid_size
+    )
     
-    # Execute analysis function
-    try:
-        heatmap_results, cv_results = run_kernel_heatmap_analysis(
-            embeddings=model_data.metadata.embeddings,
-            scores_vectors_dict=model_data.metadata.scores_vectors,
-            input_matrix=model_data.metadata.input_matrix,
-            output_folder=str(output_folder),
-            **analysis_params
+    # Execute grid creation and statistical analysis
+    if request.analysis_type == "heatmaps":
+        grid_creator = GridCreator(
+            grid_size=request.grid_size,
+            confidence_method=request.confidence_method
         )
-        
-        # Register analysis artifacts in model registry
-        registry = get_model_registry()
-        analysis_model_id = registry.install_analysis_artifacts(
-            model_path=output_folder,
-            parent_model_id=model_data.metadata.model_id,
-            analysis_type="kernel_heatmap",
-            results=heatmap_results
+        results = grid_creator.create_prediction_heatmaps(
+            embeddings=model_data.metadata.scaled_embeddings,  # 0-1 coordinates
+            trained_models=model_data.metadata.trained_models,  # From context
+            target_data=model_data.metadata.target_data,
+            output_folder=output_folder,
+            denormalize=request.denormalize
         )
-        
-        return AnalysisResponse(
-            job_id=analysis_model_id,
-            status="completed",
-            analysis_type="kernel",
-            created_at=datetime.now(timezone.utc).isoformat() + "Z",
-            artifacts=list(heatmap_results.keys())
+    else:  # statistical-maps
+        stat_analyzer = StatisticalAnalyzer(
+            threshold=request.region_threshold,
+            method=request.effect_size_method
         )
-        
-    except Exception as e:
-        logger.error(f"Analysis execution failed: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Analysis failed: {str(e)}")
+        results = stat_analyzer.create_statistical_maps(
+            embeddings=model_data.metadata.scaled_embeddings,
+            input_matrix=model_data.metadata.input_matrix,  # Raw input data
+            target_data=model_data.metadata.target_data,
+            output_folder=output_folder
+        )
+    
+    # Registry artifact installation
+    analysis_id = registry.install_analysis_artifacts(
+        model_path=output_folder,
+        parent_model_id=request.model_id,
+        analysis_type="statistical_maps",
+        results=results
+    )
+    
+    return AnalysisResponse(
+        job_id=analysis_id,
+        status="completed",
+        analysis_type="statistical-maps",
+        artifacts=list(results.get('artifacts', []))
+    )
 ```
 
-### **CLI Command Integration Pattern**
+### Target CLI Implementation Pattern (DEFERRED)
 
 ```python
-# Expected implementation in /emuses/cli/models_commands.py
-from rich.progress import Progress, SpinnerColumn, TextColumn
-
-@models_app.command(help="Generate kernel regression heatmap analysis")
-def analyze_kernel(
-    model_path: Annotated[Path, typer.Argument(help="Path to trained model directory")],
-    output: Annotated[Optional[Path], typer.Option("--output", "-o", help="Output directory")] = None,
-    grid_size: Annotated[int, typer.Option("--grid-size", help="Heatmap grid resolution")] = 100,
-    threshold: Annotated[float, typer.Option("--threshold", help="Confidence threshold")] = 0.5,
-    plots: Annotated[bool, typer.Option("--plots/--no-plots", help="Generate visualization plots")] = True,
-    force: Annotated[bool, typer.Option("--force", help="Overwrite existing analysis")] = False
+# To be implemented in /emuses/cli/models_commands.py (DEFERRED - see Phase 3)
+@models_app.command(help="Generate statistical maps analysis (DEFERRED)")
+def analyze_statistical_maps(
+    model_id: Annotated[str, typer.Option("--model-id", help="Registry model ID")],
+    output: Annotated[Optional[Path], typer.Option("--output", "-o")] = None,
+    grid_size: Annotated[int, typer.Option("--grid-size")] = 100,
+    confidence_method: Annotated[str, typer.Option("--confidence")] = "cv_ensemble",
+    analysis_type: Annotated[str, typer.Option("--type")] = "statistical-maps",
 ) -> None:
-    """Generate kernel regression heatmap analysis for a trained model."""
+    """Generate statistical analysis - REQUIRES model loading, normalization handling complexity."""
     
-    # Security and path validation
-    model_path = Path(validate_path(str(model_path)))
-    if not model_path.exists():
-        console.print(f"❌ Model not found: [red]{model_path}[/red]")
-        raise typer.Exit(1)
+    # Registry integration
+    registry = get_model_registry()
+    model_path = registry.get_model_path(model_id)
+    model_data = ModelIOManager(model_path.parent).load_model(model_path.name)
     
-    # Load model metadata
-    try:
-        model_io = ModelIOManager(model_path.parent)
-        model_data = model_io.load_model(model_path.name)
-        console.print(f"📊 Loaded model: [green]{model_data.metadata.model_name}[/green]")
-    except Exception as e:
-        console.print(f"❌ Failed to load model: [red]{str(e)}[/red]")
-        raise typer.Exit(1)
+    # Parse model types
+    model_type_list = [m.strip() for m in model_types.split(",")]
     
-    # Setup output directory
+    # Setup output with per-target organization
     if output is None:
-        output = model_path / "analysis_kernel"
-    output.mkdir(parents=True, exist_ok=force)
+        output = model_path / "statistical_analysis"
     
-    # Execute analysis with progress indicator
-    with Progress(
-        SpinnerColumn(),
-        TextColumn("[progress.description]{task.description}"),
-        console=console
-    ) as progress:
-        task = progress.add_task("Generating kernel heatmap analysis...", total=None)
-        
-        try:
-            heatmap_results, cv_results = run_kernel_heatmap_analysis(
-                embeddings=model_data.metadata.embeddings,
-                scores_vectors_dict=model_data.metadata.scores_vectors,
-                input_matrix=model_data.metadata.input_matrix,
-                output_folder=str(output),
-                grid_size=grid_size,
-                threshold=threshold,
-                generate_plots=plots
-            )
-            
-            progress.update(task, description="Registering analysis artifacts...")
-            
-            # Register artifacts in model registry  
-            registry = get_model_registry()
-            analysis_id = registry.install_analysis_artifacts(
-                model_path=output,
-                parent_model_id=model_data.metadata.model_id,
-                analysis_type="kernel_heatmap"
-            )
-            
-            progress.complete_task(task)
-            
-        except Exception as e:
-            progress.stop()
-            console.print(f"❌ Analysis failed: [red]{str(e)}[/red]")
-            raise typer.Exit(1)
-    
-    # Success output
-    console.print(f"✅ Analysis completed: [green]{analysis_id}[/green]")
-    console.print(f"📁 Output directory: [blue]{output}[/blue]")
-    
-    # Display artifact summary
-    artifacts = list(output.glob("*.nii.gz")) + list(output.glob("*.png")) + list(output.glob("*.csv"))
-    if artifacts:
-        console.print(f"📄 Generated {len(artifacts)} artifact files")
-```
-
-### **ModelIOManager Missing Methods Implementation**
-
-```python
-# CRITICAL: Must implement in /emuses/tools/model_io.py
-
-def validate_model(self, model_path: Path) -> Dict[str, Any]:
-    """
-    Validate model directory structure and return manifest information.
-    
-    Args:
-        model_path: Path to model directory or file
-        
-    Returns:
-        Dict with keys: name, version, type, description, integrity_hash
-        
-    Raises:
-        ValueError: If model structure is invalid
-        FileNotFoundError: If required model files are missing
-    """
-    if not model_path.exists():
-        raise FileNotFoundError(f"Model path does not exist: {model_path}")
-    
-    if model_path.is_file():
-        model_path = model_path.parent
-    
-    # Check for existing manifest
-    manifest_path = model_path / "model_manifest.json"
-    if manifest_path.exists():
-        try:
-            with open(manifest_path, 'r') as f:
-                manifest = json.load(f)
-            
-            # Validate manifest structure
-            required_keys = ["name", "version", "model_type", "description"]
-            if not all(key in manifest for key in required_keys):
-                raise ValueError(f"Invalid manifest structure in {manifest_path}")
-            
-            # Verify file integrity if hash present
-            if "integrity_hash" in manifest:
-                current_hash = self._calculate_directory_hash(model_path)
-                if current_hash != manifest["integrity_hash"]:
-                    logger.warning(f"Integrity hash mismatch for {model_path}")
-            
-            return {
-                "name": manifest["name"],
-                "version": manifest["version"], 
-                "type": manifest["model_type"],
-                "description": manifest["description"]
-            }
-            
-        except (json.JSONDecodeError, IOError) as e:
-            raise ValueError(f"Failed to read manifest: {str(e)}")
-    
-    else:
-        # Generate manifest from model files
-        return self._generate_manifest_from_directory(model_path)
-
-def install_model(self, source_path: Path, destination_path: Path, 
-                 name: Optional[str] = None) -> str:
-    """
-    Install model from source to destination directory.
-    
-    Args:
-        source_path: Path to source model directory/file
-        destination_path: Base directory for model installation
-        name: Optional custom name for the model
-        
-    Returns:
-        Unique model_id string for the installed model
-        
-    Raises:
-        ValueError: If source model is invalid
-        PermissionError: If destination is not writable
-        FileExistsError: If model already exists and force=False
-    """
-    # Validate source model
-    manifest = self.validate_model(source_path)
-    
-    # Generate unique model ID
-    model_name = name or manifest["name"]
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    model_id = f"{model_name}_{timestamp}_{uuid.uuid4().hex[:8]}"
-    
-    # Create destination directory
-    destination_path.mkdir(parents=True, exist_ok=True)
-    target_path = destination_path / model_id
-    
-    if target_path.exists():
-        raise FileExistsError(f"Model already exists: {target_path}")
-    
-    # Copy model files
-    try:
-        if source_path.is_file():
-            # Single file model
-            target_path.mkdir()
-            shutil.copy2(source_path, target_path / source_path.name)
+    with Progress(SpinnerColumn(), TextColumn("{task.description}")) as progress:
+        if per_target:
+            # Process each target independently (from Copilot Notes)
+            for target_name in model_data.metadata.target_names:
+                task = progress.add_task(f"Analyzing target: {target_name}...", total=None)
+                target_output = output / f"target_{target_name}"
+                
+                # Extract target-specific data
+                target_scores = {target_name: model_data.metadata.scores_vectors[target_name]}
+                
+                # Run modern statistical analysis
+                analyzer = ModernStatisticalAnalyzer(optuna_trials, model_type_list, grid_size)
+                results = analyzer.run_statistical_analysis(
+                    embeddings=model_data.metadata.scaled_embeddings,
+                    scores_vectors_dict=target_scores,
+                    combined_input_matrix=model_data.metadata.input_matrix,
+                    output_folder=target_output
+                )
+                progress.complete_task(task)
         else:
-            # Directory model  
-            shutil.copytree(source_path, target_path)
-        
-        # Update manifest with installation metadata
-        manifest_path = target_path / "model_manifest.json"
-        updated_manifest = {
-            **manifest,
-            "installed_at": datetime.now(timezone.utc).isoformat() + "Z",
-            "model_id": model_id,
-            "installation_path": str(target_path),
-            "integrity_hash": self._calculate_directory_hash(target_path)
-        }
-        
-        with open(manifest_path, 'w') as f:
-            json.dump(updated_manifest, f, indent=2)
-        
-        logger.info(f"Model installed successfully: {model_id}")
-        return model_id
-        
-    except (shutil.Error, OSError, IOError) as e:
-        # Cleanup on failure
-        if target_path.exists():
-            shutil.rmtree(target_path, ignore_errors=True)
-        raise ValueError(f"Model installation failed: {str(e)}")
-
-def _generate_manifest_from_directory(self, model_path: Path) -> Dict[str, Any]:
-    """Generate manifest from model directory structure."""
+            # Combined analysis
+            task = progress.add_task("Running combined statistical analysis...", total=None)
+            analyzer = ModernStatisticalAnalyzer(optuna_trials, model_type_list, grid_size)
+            results = analyzer.run_statistical_analysis(
+                embeddings=model_data.metadata.scaled_embeddings,
+                scores_vectors_dict=model_data.metadata.scores_vectors,
+                combined_input_matrix=model_data.metadata.input_matrix,
+                output_folder=output
+            )
+            progress.complete_task(task)
     
-    # Detect model type from files
-    model_files = list(model_path.glob("*.pkl")) + list(model_path.glob("*.joblib"))
-    if not model_files:
-        raise ValueError(f"No model files found in {model_path}")
-    
-    # Basic manifest structure
-    return {
-        "name": model_path.name,
-        "version": "1.0.0",
-        "type": "unknown",  # Would need more sophisticated detection
-        "description": f"Model from {model_path.name}",
-        "created_at": datetime.now(timezone.utc).isoformat() + "Z"
-    }
-
-def _calculate_directory_hash(self, directory: Path) -> str:
-    """Calculate SHA-256 hash of directory contents."""
-    hasher = hashlib.sha256()
-    
-    for file_path in sorted(directory.rglob("*")):
-        if file_path.is_file():
-            with open(file_path, 'rb') as f:
-                for chunk in iter(lambda: f.read(4096), b""):
-                    hasher.update(chunk)
-            hasher.update(str(file_path.relative_to(directory)).encode())
-    
-    return hasher.hexdigest()
+    # Registry integration
+    analysis_id = registry.install_analysis_artifacts(output, model_id, "statistical_maps")
+    console.print(f"✅ Statistical maps analysis completed: [green]{analysis_id}[/green]")
 ```
 
-## Maintenance Opportunities in Target Files
+## Critical Implementation Requirements (Corrected Understanding)
 
-### High Priority (Address During Implementation)
-- [ ] `/emuses/tools/model_io.py` - **Missing critical methods**: `install_model()` and `validate_model()` (BLOCKING)
-- [ ] `/tests/model_registry/` - **Test gap**: Integration tests using real ModelIOManager instead of mocks
+### What Actually Exists vs What Needs To Be Built
 
-### Medium Priority (Consider for Boy Scout Rule)
-- [ ] `/emuses/tools/correlation_maps_utils.py:205` - **Complex parameters**: 19 parameters could benefit from configuration object
-- [ ] `/emuses/tools/kernel_regression_utils.py:641` - **Complex parameters**: 21 parameters could benefit from configuration object
-- [ ] `/emuses/foundation_fastapi_service/app.py` - **Documentation**: API schema documentation for analysis endpoints
+**✅ EXISTING MODERN FOUNDATIONS**:
+- **HeatmapStage pipeline architecture** with modern optimization
+- **new_pipeline_test function** with advanced statistical analysis
+- **Model registry system** with artifact management
+- **Scaled embeddings infrastructure** (prediction_train_coords)
+- **Interactive visualization function** (plot_clustering_interactive_with_hover)
 
-### Integration Architecture Notes
+**🔧 NEEDS TO BE IMPLEMENTED**:
+- **Statistical analysis module** extracting logic from new_pipeline_test
+- **HeatmapStage statistical functionality** (uncomment and complete)
+- **FastAPI endpoints** for statistical analysis
+- **CLI commands** for analysis execution
+- **Interactive visualization integration** with HTML generation
+- **Per-target processing workflows** with proper artifact organization
 
-**Request Flow Pattern**:
+### Implementation Architecture (Corrected)
+
+**NOT Service Layer Addition** - This requires:
+1. **Extract sophisticated statistical analysis** from new_pipeline_test
+2. **Complete statistical analysis in HeatmapStage** (currently commented)
+3. **Implement new ModernStatisticalAnalyzer class** 
+4. **Create API/CLI interfaces** around statistical analysis functionality
+5. **Integrate interactive visualization system**
+
+### Dual-Method Analysis Approach (From Copilot Notes)
+
+**Method 1: Kernel Regression Optimization**
+- **Source**: Extract from `new_pipeline_test` lines 1581-1650
+- **Approach**: Optuna optimization for robust sigma selection with nested CV
+- **Purpose**: Statistical validation and space analysis
+
+**Method 2: Model-Based Ensemble Predictions** 
+- **Source**: HeatmapStage commented code + new_pipeline_test model comparison
+- **Approach**: Multiple model types (GP, RF, GB, KR, XGBoost) with hyperparameter optimization
+- **Purpose**: Model interpretation and clinical applications (PRIMARY)
+
+### Critical Constraints (From Copilot Notes - Still Valid)
+
+- **Per-target processing**: Each target variable processed independently in `target_*` directories
+- **Scaled embeddings**: All operations use scaled UMAP embeddings (prediction_train_coords)
+- **DO NOT use legacy functions**: run_kernel_heatmap_analysis is outdated reference only
+- **DO build on modern architecture**: HeatmapStage + new_pipeline_test patterns
+
+## Architecture Integration Notes
+
+**Correct Implementation Flow**:
 ```
-API Request → Security Validation → Parameter Validation → Model Loading → 
-Analysis Execution → Artifact Generation → Registry Installation → Response
+API/CLI Request → Model Registry Lookup → Load Model Data → 
+ModernStatisticalAnalyzer.run_analysis() → 
+  ├── Extract from new_pipeline_test (sigma optimization)
+  └── Complete HeatmapStage statistical analysis (heatmaps, visualization)
+→ Per-Target Processing → Artifact Generation → Registry Installation → Response
 ```
 
-**Artifact Storage Pattern**:
-```
-Model Directory/
-├── model_manifest.json          # Model metadata
-├── analysis_kernel/             # Analysis artifacts directory
-│   ├── heatmap_data.json       # Analysis results
-│   ├── stat_map_cluster_0.nii.gz
-│   ├── stat_map_cluster_0.png
-│   └── performance_metrics.json
-└── analysis_correlation/        # Alternative analysis type
-    └── ...
-```
+**Implementation Complexity**: 
+- **Previous Wrong Assessment**: MEDIUM (service layer)
+- **Corrected Assessment**: MEDIUM-HIGH (HeatmapStage enhancement with grid creation)
+- **Effort**: 7-10 days (grid creation + statistical analysis + API integration + modular design)
 
-**Database Integration Pattern**:
-```python
-# Analysis artifacts as specialized model registry entries
-model_registry.install_model(
-    model_path=analysis_artifacts_path,
-    name=f"{parent_model_name}_analysis_kernel",
-    version="1.0.0",
-    model_type="analysis_artifact_kernel",
-    tags=["analysis", "heatmap", "kernel_regression"],
-    metadata={
-        "parent_model_id": parent_model_id,
-        "analysis_parameters": analysis_params,
-        "performance_metrics": cv_results
-    }
-)
-```
+## Technical Implementation Details (User Clarifications)
 
-This context provides comprehensive integration guidance for implementing the Analysis API Enhancement while addressing the critical ModelIOManager infrastructure issue that blocks current model installation workflows.
+### 1. Prediction Grid Workflow
+1. **Timing**: AFTER nested CV training in HeatmapStage (models available in context)
+2. **Grid Generation**: 100x100 linspace on rescaled embeddings (0-1 coordinate system)
+3. **Simplified Inference**: Skip input transformation, use trained models from context, denormalize predictions
+4. **Confidence**: Aggregate 5-model confidence OR CV ensemble confidence (1-std approach)
+5. **Output**: prediction*confidence heatmaps in target_*/heatmaps/ folders
+
+### 2. Correlation Grid Workflow (NEW - from legacy analysis)
+1. **GWD Computation**: For each grid point, compute Gaussian-Weighted Distance vectors to all training embeddings
+2. **Sigma Optimization**: Use kernel regression optimization for optimal sigma parameter (from new_pipeline_test)
+3. **Correlation Analysis**: Correlate GWD vectors with raw target scores (Pearson/Spearman/point-biserial methods)
+4. **Grid Creation**: Generate correlation heatmap showing regions that correlate with target scores
+5. **Output**: Correlation maps in target_*/correlation-maps/ folders
+
+### 3. Region-Based Statistical Analysis Workflow (ENHANCED)
+1. **Two-Stage Filtering**: 
+   - **Visualization threshold** (e.g., 0.2): Points for plotting/display
+   - **Effect size threshold** (e.g., 0.5): Stricter threshold for statistical analysis
+2. **Region Selection**: Use correlation values OR prediction values to identify high-confidence regions
+3. **Clustering Within Regions**: Apply HDBSCAN cluster assignments within selected regions
+4. **Effect Size Calculation**: For each cluster with ≥3 points, compute effect size via input_matrix_stat_map
+5. **Statistical Test**: Mann-Whitney tests between cluster points vs all other points
+6. **Output**: Effect size maps for each qualifying cluster in target_*/statistical-maps/ folders
+
+### 4. Grid-Based Statistical Analysis Strategy
+- **Prediction-based statistical maps**: Use prediction grid values for region filtering → cluster within regions → effect size maps in `statistical-maps-prediction/`
+- **Correlation-based statistical maps**: Use correlation grid values for region filtering → cluster within regions → effect size maps in `statistical-maps-correlation/`  
+- **Different results**: Statistical maps will differ based on which grid method is used for filtering/clustering
+- **Multiple clusters per region**: If HDBSCAN separates region into multiple clusters, create separate effect size maps for each qualifying cluster
+
+### Enhanced Modular Function Architecture
+- **PredictionGridCreator class**: 100x100 coordinate generation, simplified inference, confidence aggregation
+- **CorrelationGridCreator class**: GWD vector computation, sigma optimization, correlation analysis (multiple methods)
+- **RegionStatisticalAnalyzer class**: Two-stage filtering, region-based clustering, effect size calculation
+- **Sigma optimization integration**: Extract from new_pipeline_test for kernel regression optimization
+- **Legacy pattern reuse**: Leverage existing calculate_correlation_grid, compute_gwd_for_point, input_matrix_stat_map
+- **Per-target processing**: Independent analysis for each target variable with triple folder structure
+
+### CLI Independence Assessment (DEFERRED)
+- **Complexity**: Model loading, normalization handling, file management outside pipeline
+- **Decision**: DEFER unless very low risk and high success chance
+- **Future**: Modular design reduces future implementation effort
+
+This context provides the **corrected and clarified understanding** that the branch needs to implement HeatmapStage enhancement with **triple analysis system**: prediction grids + GWD-based correlation grids + region-based statistical maps, executed AFTER nested CV training with sophisticated two-stage filtering and clustering analysis.
