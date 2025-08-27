@@ -1992,6 +1992,10 @@ def enhance_model_manifest_with_pipeline_data(output_folder: Union[str, Path]) -
                     file_stats["components"]["umap_model_size_mb"] = round(size_bytes / (1024 * 1024), 3)
                 elif "hdbscan" in filename.lower():
                     file_stats["components"]["hdbscan_model_size_mb"] = round(size_bytes / (1024 * 1024), 3)
+                elif "input_scaler" in filename.lower():
+                    file_stats["components"]["input_scaler_size_kb"] = round(size_bytes / 1024, 3)
+                elif "scores_scaler" in filename.lower():
+                    file_stats["components"]["scores_scaler_size_kb"] = round(size_bytes / 1024, 3)
         
         # Add prediction model statistics
         prediction_size = 0

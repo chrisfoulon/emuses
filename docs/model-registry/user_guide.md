@@ -38,10 +38,10 @@ python -m emuses.cli models info <model_id>
 python -m emuses.cli models search "HCP"
 
 # Run inference using registry model ID (no file paths needed!)
-python -m emuses.cli inference --model-id <model_id> --data /path/to/data.csv
+python -m emuses.cli inference output_dir/ /path/to/data.csv --model-id <model_id>
 
 # Alternative: traditional file path approach still works
-python -m emuses.cli inference --model /path/to/emuses/folder --data /path/to/data.csv
+python -m emuses.cli inference output_dir/ /path/to/data.csv --model /path/to/emuses/folder
 ```
 
 ## Model Registry Concepts
@@ -101,9 +101,8 @@ python -m emuses.cli models info experiment_001_20250823_a1b2c3d4
 # Shows: Folder path, model components, feature models (if any)
 
 # 4. Run inference with registry
-python -m emuses.cli inference \
-  --model-id experiment_001_20250823_a1b2c3d4 \
-  --data /path/to/new_data.csv
+python -m emuses.cli inference results/ /path/to/new_data.csv \
+  --model-id experiment_001_20250823_a1b2c3d4
 ```
 
 ### Advanced Operations
@@ -169,7 +168,7 @@ python -m emuses.cli models status
 python -m emuses.cli models info <model_id>
 
 # Fall back to direct path if needed
-python -m emuses.cli inference --model /path/to/folder --data /path/to/data.csv
+python -m emuses.cli inference output_dir/ /path/to/data.csv --model /path/to/folder
 ```
 
 ## Migration from Direct Paths
@@ -178,7 +177,7 @@ If you currently use direct folder paths, the registry provides convenient short
 
 **Before** (still works):
 ```bash
-python -m emuses.cli inference --model /long/path/to/emuses/folder --data data.csv
+python -m emuses.cli inference output_dir/ data.csv --model /long/path/to/emuses/folder
 ```
 
 **After** (more convenient):
@@ -187,7 +186,7 @@ python -m emuses.cli inference --model /long/path/to/emuses/folder --data data.c
 python -m emuses.cli models install /long/path/to/emuses/folder --name "my_model"
 
 # Then use short ID
-python -m emuses.cli inference --model-id my_model_20250823_a1b2c3d4 --data data.csv
+python -m emuses.cli inference output_dir/ data.csv --model-id my_model_20250823_a1b2c3d4
 ```
 
 ## Best Practices

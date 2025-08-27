@@ -25,25 +25,125 @@ This guide provides structured learning paths for researchers at all levels, com
 
 ## 🚀 **Getting Started**
 
-### **Installation & Setup**
+### **Installation & Environment Setup**
 
 #### **Prerequisites**
 ```bash
-# Check Python version (3.11+ required)
-python --version
+# Check Python version (3.11+ required for optimal compatibility)
+python --version  # Should be 3.11 or newer
 
-# Verify you have pip
+# Verify pip is available
 pip --version
 ```
 
-#### **Installation**
+**Why Python 3.11+?** EMUSES leverages modern Python features for performance and type safety. Scientific computing libraries (PyTorch, neuroimaging tools) have better optimization in newer Python versions.
+
+#### **Virtual Environment Setup (Strongly Recommended)**
+
+**For Individual Researchers** - Use `venv` (lightweight, built-in):
+
 ```bash
-# Install EMUSES
+# Navigate to your project directory
+cd /path/to/your/research/project
+
+# Create isolated environment
+python -m venv emuses-env
+
+# Activate environment
+source emuses-env/bin/activate  # Linux/macOS
+# emuses-env\Scripts\activate   # Windows
+
+# Install EMUSES with all dependencies
 pip install git+https://github.com/chrisfoulon/emuses.git
 
 # Verify installation
 emuses --help
 ```
+
+**For Research Labs** - Use `conda` (better for complex scientific dependencies):
+
+```bash
+# Create environment with specific Python version
+conda create -n emuses-lab python=3.11
+
+# Activate environment
+conda activate emuses-lab
+
+# Install EMUSES
+pip install git+https://github.com/chrisfoulon/emuses.git
+
+# Optional: Install additional scientific computing tools
+conda install jupyter matplotlib seaborn
+
+# Verify installation
+emuses --help
+```
+
+**For System Administrators** - Shared lab environments:
+
+```bash
+# Create shared environment (adjust path as needed)
+conda create -p /shared/software/emuses python=3.11
+
+# Activate for installation
+conda activate /shared/software/emuses
+
+# Install EMUSES
+pip install git+https://github.com/chrisfoulon/emuses.git
+
+# Create activation script for users
+echo '#!/bin/bash' > /shared/software/activate-emuses.sh
+echo 'conda activate /shared/software/emuses' >> /shared/software/activate-emuses.sh
+chmod +x /shared/software/activate-emuses.sh
+```
+
+#### **Installation Verification & Troubleshooting**
+
+```bash
+# Comprehensive installation check
+python -c "import emuses; print('✅ EMUSES imported successfully')"
+
+# Check key dependencies
+python -c "import torch; print(f'✅ PyTorch {torch.__version__} available')"
+python -c "import nibabel; print('✅ Neuroimaging support available')"
+
+# Verify CLI functionality
+emuses --version
+emuses --help
+```
+
+**Common Issues & Solutions:**
+
+- **Memory Error during installation**: Use `pip install --no-cache-dir git+https://...`
+- **PyTorch CUDA issues**: Install specific PyTorch version: `pip install torch --index-url https://download.pytorch.org/whl/cu118`
+- **ImportError on neuroimaging libraries**: Ensure you're in the correct virtual environment
+- **Permission errors**: Never use `sudo pip` - always use virtual environments
+
+#### **Dependencies Overview**
+
+EMUSES includes comprehensive scientific computing dependencies:
+
+- **Core**: NumPy, pandas, scikit-learn, SciPy
+- **Neuroimaging**: nibabel, nilearn, MNE, PyBIDS  
+- **Machine Learning**: PyTorch, XGBoost, Optuna, UMAP
+- **Visualization**: Matplotlib, Seaborn, Plotly, Streamlit
+- **Web Services**: FastAPI, Uvicorn (for multi-user mode)
+
+**Installation Requirements:**
+- **Disk Space**: ~2-4GB (depending on PyTorch variants and optional dependencies)
+- **RAM**: 4GB+ recommended for typical analyses, 8GB+ for large datasets
+- **Installation Time**: 5-15 minutes (depending on internet speed and system)
+- **Python Version**: 3.11+ required for optimal performance and compatibility
+
+**Smart Dependency Management:**
+EMUSES uses intelligent dependency resolution for `bcblib` (neuroimaging utilities):
+1. **PyPI** - Uses released version if available and meets requirements
+2. **GitHub main** - Falls back to stable main branch if PyPI is outdated  
+3. **GitHub dev** - Uses latest development version for cutting-edge features
+
+This ensures you always get the most compatible version automatically.
+
+> 💡 **Tip**: Use `pip install --no-cache-dir` if you have limited disk space, though installation will be slower.
 
 #### **First Analysis (5 minutes)**
 ```bash
@@ -339,8 +439,8 @@ emuses models list --workspace connectivity_project
 
 # Download baseline model
 emuses models info baseline_connectivity_model
-emuses inference baseline_connectivity_model new_subjects.csv \
-  --output refined_predictions.csv
+emuses inference refined_predictions/ new_subjects.csv \
+  --model-id baseline_connectivity_model
 
 # Compare with improved approach
 emuses full connectivity_v2/ enhanced_features.csv \
@@ -353,7 +453,7 @@ emuses compare connectivity_v1/models/trained_model.pkl \
 
 # Lab member 3: Independent validation
 emuses models list --workspace connectivity_project
-emuses inference connectivity_v2_model validation_dataset.csv
+emuses inference validation_results/ validation_dataset.csv --model-id connectivity_v2_model
 ```
 
 #### **Workflow 2: Reproducible Research Pipeline**
@@ -686,17 +786,16 @@ emuses heatmap multi_score_analysis/ embeddings.npy \
 
 ```bash
 # Basic inference on new subjects
-emuses inference trained_model/ new_subjects.csv
+emuses inference results/ new_subjects.csv --model trained_model/
 
 # Validation mode with known labels
-emuses inference model_directory/ test_data.csv \
-  --validation_mode \
-  --output_format json
+emuses inference test_results/ test_data.csv \
+  --model model_directory/ \
+  --validate
 
 # Batch inference for large datasets
-emuses inference production_model/ large_cohort.csv \
-  --batch_size 64 \
-  --output_path batch_predictions/
+emuses inference batch_predictions/ large_cohort.csv \
+  --model production_model/
 ```
 
 ### **Quality Control Workflows**

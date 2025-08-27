@@ -7,11 +7,33 @@ EMUSES transforms scientific data into predictive insights, supporting research 
 ## 🚀 Quick Start (5 minutes)
 
 ### Prerequisites
-- Python 3.11+ 
+- Python 3.11+ (recommended for optimal performance)
 - Basic command line familiarity
 
 ### Installation & First Analysis
 
+#### Recommended: Isolated Environment Setup
+```bash
+# Option A: Using venv (lightweight, built-in)
+python -m venv emuses-env
+source emuses-env/bin/activate  # Linux/macOS
+# emuses-env\Scripts\activate   # Windows
+
+# Option B: Using conda (recommended for scientific computing)
+conda create -n emuses-env python=3.11
+conda activate emuses-env
+
+# Install EMUSES in your isolated environment
+pip install git+https://github.com/chrisfoulon/emuses.git
+
+# Verify installation
+python -m emuses.cli --help
+
+# Run your first analysis (with sample data)
+python -m emuses.cli full output_folder docs/examples/sample_data/hcp_input_data.csv --scores docs/examples/sample_data/hcp_labels.csv
+```
+
+#### Quick Installation (System-wide, not recommended for production)
 ```bash
 # 1. Install EMUSES
 pip install git+https://github.com/chrisfoulon/emuses.git

@@ -416,34 +416,32 @@ Run predictions on new data using trained EMUSES models with registry support.
 **Registry Model Inference** (Recommended)
 ```bash
 # Use registry model ID - runs complete EMUSES folder pipeline
-emuses inference --model-id brain_classifier_v2_abc123 \
-  --data new_patient_features.csv \
-  --output predictions_output/
+emuses inference predictions_output/ new_patient_features.csv \
+  --model-id brain_classifier_v2_abc123
 ```
 
 **Direct Path Inference** (Traditional)
 ```bash
 # Direct EMUSES folder path usage
-emuses inference --model /path/to/emuses/folder \
-  --data new_data.csv \
-  --output results/
+emuses inference results/ new_data.csv \
+  --model /path/to/emuses/folder
 ```
 
 **Registry Model Parameters**
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
+| `OUTPUT` | path | ✅ Required | Directory for prediction results |
+| `DATA` | path | ✅ Required | New data for predictions (CSV) |
 | `--model-id` | string | ✅ Required* | Registry model ID for EMUSES folder |
-| `--data` | path | ✅ Required | New data for predictions (CSV) |
-| `--output` | path | Optional | Directory for prediction results |
 
 **Direct Path Parameters**
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
+| `OUTPUT` | path | ✅ Required | Directory for prediction results |
+| `DATA` | path | ✅ Required | New data for predictions (CSV) |
 | `--model` | path | ✅ Required* | Path to EMUSES training folder |
-| `--data` | path | ✅ Required | New data for predictions (CSV) |
-| `--output` | path | Optional | Directory for prediction results |
 
 *Note: Exactly one of `--model-id` or `--model` must be provided.
 
@@ -452,10 +450,10 @@ emuses inference --model /path/to/emuses/folder \
 # Registry workflow - from model discovery to predictions
 emuses models list                    # Find available EMUSES models
 emuses models info model_id          # Inspect model details and components  
-emuses inference --model-id model_id --data data.csv --output results/
+emuses inference results/ data.csv --model-id model_id
 
 # Direct path workflow - using folder paths
-emuses inference --model /path/to/emuses/folder --data data.csv --output results/
+emuses inference results/ data.csv --model /path/to/emuses/folder
 ```
 
 ### Shell Integration

@@ -356,6 +356,20 @@ class EMUSESPipeline:
                             method=args.input_normalization,
                             scaling_factors=scaling_factors,
                         )
+                        
+                        # Save input scaler to model directory for cross-validation denormalization
+                        import joblib
+                        self.output_folder.mkdir(parents=True, exist_ok=True)
+                        input_scaler_path = self.output_folder / "input_scaler.joblib"
+                        joblib.dump(scaling_factors, input_scaler_path)
+                        self.logger.info(f"Saved input scaler ({args.input_normalization}) to {input_scaler_path}")
+                        
+                        # Store scaler info in context for manifest generation
+                        self.context["input_scaler_info"] = {
+                            "path": "input_scaler.joblib",
+                            "method": args.input_normalization,
+                            "scaling_factors": scaling_factors
+                        }
                 else:
                     # INFERENCE MODE: Load and apply saved scaler
                     # Use model path if available, otherwise fall back to output folder

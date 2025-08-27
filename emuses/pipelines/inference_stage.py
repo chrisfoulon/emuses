@@ -8,6 +8,7 @@ validation vs pure inference modes, leveraging the observability infrastructure
 for performance tracking and research insights.
 """
 
+import json
 import logging
 import time
 from datetime import datetime
@@ -261,8 +262,17 @@ class InferenceStage(PipelineStage):
                 logger.info("Loaded UMAP model from disk (slower)")
                 
                 # Load scaling parameters needed for rescaling
-                models['metadata']['min_embeddings'] = getattr(umap_model, 'min_embeddings_', None)
-                models['metadata']['max_embeddings'] = getattr(umap_model, 'max_embeddings_', None)
+                embedding_scaling_file = Path(self.model_path) / "embedding_scaling.json"
+                if embedding_scaling_file.exists():
+                    with open(embedding_scaling_file, 'r') as f:
+                        scaling_params = json.load(f)
+                    models['metadata']['min_embeddings'] = np.array(scaling_params['min_embeddings'])
+                    models['metadata']['max_embeddings'] = np.array(scaling_params['max_embeddings'])
+                    logger.info(f"Loaded embedding scaling parameters from {embedding_scaling_file}")
+                else:
+                    models['metadata']['min_embeddings'] = None
+                    models['metadata']['max_embeddings'] = None
+                    logger.warning("No embedding scaling parameters found - raw embeddings will be used")
             else:
                 logger.warning("UMAP model not available - inference will be limited")
             
@@ -488,8 +498,17 @@ class InferenceStage(PipelineStage):
                 logger.info(f"Successfully loaded UMAP model from {umap_path}")
 
                 # Load scaling parameters needed for rescaling
-                models['metadata']['min_embeddings'] = getattr(umap_model, 'min_embeddings_', None)
-                models['metadata']['max_embeddings'] = getattr(umap_model, 'max_embeddings_', None)
+                embedding_scaling_file = model_dir / "embedding_scaling.json"
+                if embedding_scaling_file.exists():
+                    with open(embedding_scaling_file, 'r') as f:
+                        scaling_params = json.load(f)
+                    models['metadata']['min_embeddings'] = np.array(scaling_params['min_embeddings'])
+                    models['metadata']['max_embeddings'] = np.array(scaling_params['max_embeddings'])
+                    logger.info(f"Loaded embedding scaling parameters from {embedding_scaling_file}")
+                else:
+                    models['metadata']['min_embeddings'] = None
+                    models['metadata']['max_embeddings'] = None
+                    logger.warning("No embedding scaling parameters found - raw embeddings will be used")
             else:
                 logger.warning("UMAP model not found - inference will be limited")
 
@@ -648,49 +667,33 @@ class InferenceStage(PipelineStage):
         normalized_features = features
 
         # Apply UMAP transformation
-        # DEBUG: Check data types before UMAP transform
-        try:
-            import pandas as pd
-            df_debug = pd.DataFrame(normalized_features)
-            data_types = df_debug.dtypes.value_counts()
-            logger.info(f"UMAP_DEBUG: Data types before UMAP: {dict(data_types)}")
-            
-            # Check for problematic data types
-            non_numeric_cols = df_debug.select_dtypes(exclude=[np.number]).columns
-            if len(non_numeric_cols) > 0:
-                logger.warning(f"UMAP_DEBUG: Non-numeric columns detected: {len(non_numeric_cols)}")
-                for col in non_numeric_cols[:3]:  # Show first 3
-                    logger.warning(f"  Column {col}: dtype={df_debug[col].dtype}, sample={df_debug[col].iloc[0]}")
-        except Exception as e:
-            logger.warning(f"UMAP_DEBUG: Failed to check data types: {e}")
-            
-        logger.info(f"UMAP_DEBUG: Input to UMAP transform: shape={normalized_features.shape}, mean={np.mean(normalized_features):.6f}, std={np.std(normalized_features):.6f}, range=[{np.min(normalized_features):.6f}, {np.max(normalized_features):.6f}]")
+        logger.info(f"Input to UMAP transform: shape={normalized_features.shape}")
         
         # Check UMAP model state
         umap_fitted = hasattr(umap_model, 'embedding_') and umap_model.embedding_ is not None
         umap_components = getattr(umap_model, 'n_components', 'unknown')
-        logger.info(f"UMAP_DEBUG: Model state: fitted={umap_fitted}, n_components={umap_components}, type={type(umap_model)}")
+        logger.debug(f"UMAP model state: fitted={umap_fitted}, n_components={umap_components}")
         
         embeddings = umap_model.transform(normalized_features)
         
-        logger.info(f"UMAP_DEBUG: Output from UMAP transform: shape={embeddings.shape}, mean={np.mean(embeddings):.6f}, std={np.std(embeddings):.6f}, range=[{np.min(embeddings):.6f}, {np.max(embeddings):.6f}]")
+        logger.info(f"UMAP transform completed: shape={embeddings.shape}, range=[{np.min(embeddings):.6f}, {np.max(embeddings):.6f}]")
 
         # Rescale embeddings using saved parameters
         min_embeddings = models.get('metadata', {}).get('min_embeddings')
         max_embeddings = models.get('metadata', {}).get('max_embeddings')
 
         if min_embeddings is not None and max_embeddings is not None:
-            logger.info(f"UMAP_DEBUG: Rescaling parameters: min={min_embeddings}, max={max_embeddings}")
-            embeddings_before_rescale = embeddings.copy()
+            logger.debug(f"Rescaling embeddings with parameters: min={min_embeddings}, max={max_embeddings}")
+            # embeddings_before_rescale = embeddings.copy()
             embeddings = rescale_embedding(
                 embeddings,
                 preset_min=min_embeddings,
                 preset_max=max_embeddings
             )
-            logger.info(f"UMAP_DEBUG: After rescaling: shape={embeddings.shape}, mean={np.mean(embeddings):.6f}, std={np.std(embeddings):.6f}, range=[{np.min(embeddings):.6f}, {np.max(embeddings):.6f}]")
+            logger.info(f"Embeddings rescaled: range=[{np.min(embeddings):.6f}, {np.max(embeddings):.6f}]")
             logger.info("Applied rescaling to transformed embeddings")
         else:
-            logger.warning("UMAP_DEBUG: Scaling parameters not available - using raw embeddings")
+            logger.warning("No embedding scaling parameters found - using raw embeddings")
 
         return embeddings
 
@@ -740,7 +743,7 @@ class InferenceStage(PipelineStage):
         logger.info(f"Processing {len(prediction_models)} models across {n_targets} target(s)")
 
         # Process predictions with target-specific ensembles (handles single-target as n=1 case)
-        target_results = self._predict_multi_target(embeddings, models_by_target)
+        target_results = self._predict_multi_target(embeddings, models_by_target, models)
         
         # Format results in consistent target_results structure
         return self._format_multi_target_results(target_results)
@@ -872,6 +875,13 @@ class InferenceStage(PipelineStage):
             predictions_csv = output_dir / f"{mode}_predictions_{timestamp}.csv"
             self._save_predictions_csv(results, predictions_csv)
             output_paths['predictions_csv'] = str(predictions_csv)
+            
+            # Save normalized predictions CSV if denormalization was applied
+            if self._check_denormalization_applied(results):
+                normalized_predictions_csv = output_dir / f"{mode}_predictions_normalized_{timestamp}.csv"
+                self._save_normalized_predictions_csv(results, normalized_predictions_csv)
+                output_paths['normalized_predictions_csv'] = str(normalized_predictions_csv)
+                logger.info(f"Saved normalized predictions for comparison: {normalized_predictions_csv}")
 
             # Save confidence scores in CSV format if available
             if len(results.get('confidence_scores', [])) > 0:
@@ -989,6 +999,71 @@ class InferenceStage(PipelineStage):
         df.to_csv(output_file, index=False)
         logger.info(f"Confidence scores saved to CSV: {output_file} ({len(target_results)} target(s))")
 
+    def _check_denormalization_applied(self, results):
+        """
+        Check if denormalization was applied to any target in the results.
+        
+        Parameters
+        ----------
+        results : dict
+            Formatted results containing target_results structure
+            
+        Returns
+        -------
+        bool
+            True if denormalization was applied to any target
+        """
+        target_results = results.get('target_results', {})
+        return any(
+            target_result.get('denormalization_applied', False) 
+            for target_result in target_results.values()
+        )
+    
+    def _save_normalized_predictions_csv(self, results, output_file):
+        """
+        Save normalized predictions in CSV format (before denormalization).
+        Only includes targets where denormalization was applied.
+        
+        Parameters
+        ----------
+        results : dict
+            Formatted results containing target_results structure
+        output_file : Path
+            Path to output CSV file
+        """
+        import pandas as pd
+        
+        target_results = results['target_results']
+        
+        # Filter to only targets with denormalization applied
+        denormalized_targets = {
+            target: target_result for target, target_result in target_results.items()
+            if target_result.get('denormalization_applied', False)
+        }
+        
+        if not denormalized_targets:
+            logger.warning("No denormalized targets found - skipping normalized predictions CSV")
+            return
+            
+        # Determine sample count from first denormalized target
+        first_target = list(denormalized_targets.keys())[0]
+        n_samples = len(denormalized_targets[first_target]['normalized_ensemble_predictions'])
+        
+        # Start with sample IDs
+        data = {
+            'sample_id': [f"sample_{i:04d}" for i in range(n_samples)]
+        }
+        
+        # Add normalized ensemble predictions per target
+        for target in sorted(denormalized_targets.keys()):
+            target_result = denormalized_targets[target]
+            normalized_preds = target_result.get('normalized_ensemble_predictions')
+            if normalized_preds is not None:
+                data[f'{target}_ensemble_prediction'] = normalized_preds
+        
+        df = pd.DataFrame(data)
+        df.to_csv(output_file, index=False)
+        logger.info(f"Normalized predictions saved to CSV: {output_file} ({len(denormalized_targets)} target(s))")
 
     def _transform_features_with_progress(self, features, models, progress, task_id):
         """
@@ -1246,7 +1321,7 @@ class InferenceStage(PipelineStage):
         
         return model_name if model_name != 'model' else 'unknown'
 
-    def _predict_multi_target(self, embeddings, models_by_target):
+    def _predict_multi_target(self, embeddings, models_by_target, models):
         """
         Process predictions with target-specific ensembles.
         
@@ -1256,6 +1331,8 @@ class InferenceStage(PipelineStage):
             Transformed feature embeddings
         models_by_target : dict
             Models grouped by target
+        models : dict
+            Full models dictionary including scalers and metadata
             
         Returns
         -------
@@ -1286,7 +1363,7 @@ class InferenceStage(PipelineStage):
                         # DEBUG: Log detailed information for KernelRegressor models
                         if "KernelRegressor" in str(type(estimator)):
                             zero_count = np.count_nonzero(predictions == 0) 
-                            logger.warning(f"KERNEL_DEBUG {model_name}: embeddings {embeddings.shape} → feat {transformed_features.shape} → predictions {predictions.shape}, zeros: {zero_count}/{len(predictions)}")
+                            logger.warning(f"Model {model_name}: {zero_count}/{len(predictions)} zero predictions detected")
                             if zero_count == len(predictions):
                                 # Additional debugging for zero predictions
                                 emb_stats = f"emb_mean={np.mean(embeddings):.6f}, emb_std={np.std(embeddings):.6f}, emb_range=[{np.min(embeddings):.6f}, {np.max(embeddings):.6f}]"
@@ -1294,7 +1371,7 @@ class InferenceStage(PipelineStage):
                                 kernel_params = f"kernel={getattr(estimator, 'kernel', 'unknown')}, alpha={getattr(estimator, 'alpha', 'unknown')}, gamma={getattr(estimator, 'gamma', 'unknown')}"
                                 logger.error(f"KERNEL_ZERO_ISSUE {model_name}: ALL PREDICTIONS ARE ZERO! {emb_stats}, {feat_stats}, {kernel_params}")
                         
-                        logger.debug(f"Pipeline component extraction successful for {model_name}: {embeddings.shape} → {transformed_features.shape} → {predictions.shape}")
+                        logger.debug(f"Pipeline prediction completed for {model_name}: {predictions.shape[0]} samples")
                     else:
                         # Fallback: use whole pipeline if component extraction failed
                         logger.warning(f"Pipeline component extraction failed for {model_name}, using whole pipeline")
@@ -1310,33 +1387,63 @@ class InferenceStage(PipelineStage):
             
             # Target-specific ensemble calculation
             if len(target_predictions) > 0:
-                ensemble_predictions = np.mean(target_predictions, axis=0)
+                normalized_ensemble_predictions = np.mean(target_predictions, axis=0)
+                denormalized_ensemble_predictions = None
+                denormalization_applied = False
+                actual_scaler = None
+                target_column_name = None
                 
                 # Apply prediction denormalization if scores scaler is available
-                if self.model_path:
-                    model_base_path = Path(self.model_path)
-                    scores_scaler_path = model_base_path / "scores_scaler.joblib"
-                    if scores_scaler_path.exists():
-                        try:
-                            import joblib
-                            import pandas as pd
-                            from bcblib.tools.dataframe_filtering import inverse_normalize_dataframe
-                            
-                            scores_scaler = joblib.load(scores_scaler_path)
-                            # Determine scores method (could be improved by saving method in manifest)
-                            scores_method = 'robust'  # Default - could be read from model manifest
-                            
+                scores_scaler_dict = models.get('scores_scaler')
+                if scores_scaler_dict is not None:
+                    try:
+                        import pandas as pd
+                        from bcblib.tools.dataframe_filtering import inverse_normalize_dataframe
+                        
+                        # Get the normalization method from metadata
+                        scores_method = models.get('metadata', {}).get('scores_normalization_method', 'robust')
+                        
+                        # Extract the specific scaler for this target from the dictionary
+                        # The scores_scaler is stored as {column_name: scaler_object}
+                        target_column_name = None
+                        actual_scaler = None
+                        
+                        if isinstance(scores_scaler_dict, dict):
+                            # Find the scaler for this target (usually there's only one)
+                            if len(scores_scaler_dict) == 1:
+                                target_column_name = list(scores_scaler_dict.keys())[0]
+                                actual_scaler = scores_scaler_dict[target_column_name]
+                            else:
+                                # Multiple scalers - try to match by target name
+                                actual_scaler = scores_scaler_dict.get(target)
+                                if actual_scaler is None:
+                                    # Fallback to first available scaler
+                                    target_column_name = list(scores_scaler_dict.keys())[0]
+                                    actual_scaler = scores_scaler_dict[target_column_name]
+                        else:
+                            # Single scaler object (backward compatibility)
+                            actual_scaler = scores_scaler_dict
+                            target_column_name = 'score'
+                        
+                        if actual_scaler is not None:
                             # Convert predictions to DataFrame for denormalization
-                            # Use 'score' column name to match the original training data
-                            pred_df = pd.DataFrame(ensemble_predictions, columns=['score'])
-                            denorm_df = inverse_normalize_dataframe(pred_df, scores_scaler, method=scores_method)
-                            ensemble_predictions = denorm_df['score'].values
+                            # Use original column name if available, otherwise 'score'
+                            column_name = target_column_name or 'score'
+                            pred_df = pd.DataFrame(normalized_ensemble_predictions, columns=[column_name])
+                            denorm_df = inverse_normalize_dataframe(pred_df, {column_name: actual_scaler}, method=scores_method)
+                            denormalized_ensemble_predictions = denorm_df[column_name].values
+                            denormalization_applied = True
                             
-                            logger.info(f"Applied prediction denormalization ({scores_method}) for target {target}")
-                        except Exception as e:
-                            logger.warning(f"Failed to denormalize predictions for target {target}: {e}")
-                    else:
-                        logger.debug(f"No scores scaler found at {scores_scaler_path}, predictions remain normalized")
+                            logger.info(f"Applied prediction denormalization ({scores_method}) for target {target}: range [{denormalized_ensemble_predictions.min():.3f}, {denormalized_ensemble_predictions.max():.3f}]")
+                        else:
+                            logger.warning(f"Could not extract scaler for target {target} from scores_scaler")
+                    except Exception as e:
+                        logger.warning(f"Failed to denormalize predictions for target {target}: {e}")
+                else:
+                    logger.debug("No scores scaler available, predictions remain normalized")
+                
+                # Use denormalized predictions as the primary output (original scale for user interpretation)
+                ensemble_predictions = denormalized_ensemble_predictions if denormalization_applied else normalized_ensemble_predictions
                 
                 # Target-specific confidence calculation
                 if len(target_predictions) > 1:
@@ -1352,22 +1459,20 @@ class InferenceStage(PipelineStage):
                 confidence_scores = np.zeros(len(embeddings))
             
             # Also denormalize individual predictions if scaler was applied to ensemble
-            if (self.model_path and len(target_predictions) > 0 and
-                    (Path(self.model_path) / "scores_scaler.joblib").exists()):
+            if denormalization_applied and len(target_predictions) > 0 and actual_scaler is not None:
                 try:
-                    import joblib
                     import pandas as pd
                     from bcblib.tools.dataframe_filtering import inverse_normalize_dataframe
                     
-                    scores_scaler = joblib.load(Path(self.model_path) / "scores_scaler.joblib")
-                    scores_method = 'robust'  # Default - could be read from model manifest
+                    scores_method = models.get('metadata', {}).get('scores_normalization_method', 'robust')
+                    column_name = target_column_name or 'score'
                     
                     # Denormalize each individual prediction
                     denormalized_individual = {}
                     for model_name, individual_pred in target_individual.items():
-                        pred_df = pd.DataFrame(individual_pred, columns=['score'])
-                        denorm_df = inverse_normalize_dataframe(pred_df, scores_scaler, method=scores_method)
-                        denormalized_individual[model_name] = denorm_df['score'].values
+                        pred_df = pd.DataFrame(individual_pred, columns=[column_name])
+                        denorm_df = inverse_normalize_dataframe(pred_df, {column_name: actual_scaler}, method=scores_method)
+                        denormalized_individual[model_name] = denorm_df[column_name].values
                     
                     target_individual = denormalized_individual
                     logger.debug(f"Denormalized individual predictions for target {target}")
@@ -1376,10 +1481,12 @@ class InferenceStage(PipelineStage):
             
             target_results[target] = {
                 'ensemble_predictions': ensemble_predictions,
+                'normalized_ensemble_predictions': normalized_ensemble_predictions if denormalization_applied else None,
                 'individual_predictions': target_individual,
                 'confidence_scores': confidence_scores,
                 'model_count': len(target_models),
-                'model_names': target_model_names
+                'model_names': target_model_names,
+                'denormalization_applied': denormalization_applied
             }
             
             logger.info(f"Target {target} ensemble complete: {len(embeddings)} predictions generated")

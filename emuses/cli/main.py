@@ -79,6 +79,7 @@ class ScoresNormalization(str, Enum):
     zscore = "zscore"
     min_max = "min-max"
     zero_max = "zero-max"
+    robust = "robust"
 
 
 def save_command_to_output_folder(output_folder: Path) -> None:
@@ -1777,8 +1778,8 @@ def heatmap(
 
 @app.command(help="Run inference on trained model")
 def inference(
-    data: Annotated[Path, typer.Argument(help="Path to input data for inference")],
     output: Annotated[Path, typer.Argument(help="Output path for results (REQUIRED for data privacy)")],
+    data: Annotated[Path, typer.Argument(help="Path to input data for inference")],
     model: Annotated[
         Optional[Path],
         typer.Option("--model", help="Path to trained model directory")
@@ -1917,7 +1918,7 @@ def inference(
     classification : bool
         Use classification mode instead of regression for model predictions
     scores_normalization : ScoresNormalization
-        Normalization method for scores data (none, zscore, min-max, zero-max)
+        Normalization method for scores data (none, zscore, min-max, zero-max, robust)
     scores_are_rows : bool
         Whether scores data has observations in rows (not columns)
     scores_column : Optional[List[str]]

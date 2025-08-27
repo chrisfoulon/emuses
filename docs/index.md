@@ -11,9 +11,10 @@
 - **Tests:** 2,138 passing tests
 
 **Quick Navigation:**
-- [Quick Start Guide](QUICK_START.md)
-- [User Guide](USER_GUIDE.md) 
-- [API Documentation](API_REFERENCE.md)
+- [📦 Installation Guide](INSTALLATION.md)
+- [🚀 Quick Start Guide](QUICK_START.md)
+- [📖 User Guide](USER_GUIDE.md) 
+- [🔧 API Documentation](API_REFERENCE.md)
 
 ## Overview
 

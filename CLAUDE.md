@@ -96,7 +96,22 @@
 - **Status**: Implementation complete with cosmetic fixes applied, ready for production use
 - **Location**: `dev-docs/analysis-api/model-registry-redesign/` with comprehensive documentation
 
-### **Known Issues**: Optuna Parameter Space Conflicts (low priority)
+### **COMPLETED**: Inference Performance & Normalization Fixes (2025-08-27) ✅
+- **Critical Fix**: UMAP embedding scaling for inference - resolved "all predictions identical" issue
+  - **Problem**: Inference used raw UMAP embeddings while training used rescaled embeddings → kernel weights = 0
+  - **Solution**: UMAPStage saves min/max parameters to `embedding_scaling.json`, InferenceStage loads them
+  - **Result**: Proper embedding scaling restored, predictions now vary by sample
+- **Normalization System Consolidation**: Complete overhaul of input/output scaling
+  - **Fixed**: EMUSESPipeline `is_labelled=True` not saving input scalers to joblib files 
+  - **Enhanced**: InferenceStage dual CSV output (raw + normalized predictions)
+  - **Improved**: CLI parameter order consistency (`OUTPUT DATA` instead of `DATA OUTPUT`)
+  - **Added**: `robust` scores normalization option to CLI enum
+- **Code Quality**: Cleaned debug statements, organized imports, production-ready logging
+- **Documentation**: Updated model I/O docs with embedding scaling parameters
+- **Files Modified**: `umap_stage.py`, `inference_stage.py`, `emuses_pipeline.py`, CLI components
+- **Status**: All inference and normalization issues resolved ✅
+
+### **Known Issues**: Optuna Parameter Space Conflicts (low priority)  
 - **Problem**: EMUSES crashes when changing `--prediction_optim_dict` during resume
 - **Solution**: Simple conflict detection with timestamped study creation
 - **Documentation**: Complete analysis in `dev-docs/issues/optim_dict_resume_conflict.md`
@@ -134,5 +149,5 @@
 - See `/scripts/README.md` for comprehensive testing approach
 
 ---
-*Last Updated: 2025-08-24 - Model Registry Implementation Complete + Post-Implementation Fixes Applied*
+*Last Updated: 2025-08-27 - Inference Performance & Normalization Fixes Complete*
 *Static guidelines in `.lad/CLAUDE.md` | Historical details in `dev-docs/project-history/`*

@@ -384,6 +384,66 @@ class ModelMetadata:
 - **Dependency tracking**: Records package versions for reproducibility
 - **Configuration hashing**: Detects parameter changes via hash comparison
 
+## UMAP Embedding Scaling Parameters
+
+**New in 2025-08-27**: The UMAP stage now automatically saves embedding scaling parameters to support proper inference scaling.
+
+### Automatic Parameter Saving
+
+During training, the UMAP stage saves min/max embedding values for inference:
+
+```python
+# In UMAPStage.run() - automatically generated
+embedding_scaling = {
+    'min_embeddings': self.min_embeddings.tolist(),
+    'max_embeddings': self.max_embeddings.tolist() 
+}
+
+scaling_file = self.config.output_folder / "embedding_scaling.json"
+with open(scaling_file, 'w') as f:
+    json.dump(embedding_scaling, f)
+```
+
+**Output File**: `embedding_scaling.json`
+**Location**: Same directory as UMAP model and embeddings
+**Format**: JSON with min/max arrays for each embedding dimension
+
+### Automatic Parameter Loading
+
+During inference, the InferenceStage automatically loads these parameters:
+
+```python
+# Automatically loaded during inference
+embedding_scaling_file = model_dir / "embedding_scaling.json"
+if embedding_scaling_file.exists():
+    with open(embedding_scaling_file, 'r') as f:
+        scaling_params = json.load(f)
+    min_embeddings = np.array(scaling_params['min_embeddings'])
+    max_embeddings = np.array(scaling_params['max_embeddings'])
+    
+    # Applied during rescale_embedding() call
+    scaled_embeddings = rescale_embedding(
+        raw_embeddings,
+        preset_min=min_embeddings,
+        preset_max=max_embeddings
+    )
+```
+
+**Critical for Inference**: Without these parameters, inference embeddings remain unscaled, causing kernel weights to be zero and all predictions to be identical.
+
+### File Structure Example
+
+```json
+{
+  "min_embeddings": [1.7438721, 0.8234567],
+  "max_embeddings": [13.593728, 7.1234567]
+}
+```
+
+**When Generated**: Every training run that includes UMAPStage
+**When Used**: Every inference run that loads UMAP models
+**Compatibility**: Works with all existing models - scaling parameters are only used if available
+
 ## Integration with EMUSES Pipeline
 
 The ModelIOManager integrates seamlessly with all EMUSES pipeline stages:

@@ -10,10 +10,10 @@ ISSUE_1_DESCRIPTION="Duplicated terminal output - multiple logging layers creati
 ISSUE_1_SEVERITY="Medium - affects user experience, not functionality"
 ISSUE_1_EVIDENCE="User reports 'there are still a lot of duplicate prints' after previous fixes"
 
-ISSUE_2_DESCRIPTION="CRITICAL: Data normalization mismatch - inference embeddings not normalized to training data scale, causing KernelRegressor models to fail"
-ISSUE_2_SEVERITY="Critical - affects data accuracy, KernelRegressor models completely non-functional"
-ISSUE_2_EVIDENCE="Training embeddings: [0,1] range, Inference embeddings: [1.5-13] range, Distance ~8-12 causes weight_sum=0"
-ISSUE_2_ROOT_CAUSE="Missing post-UMAP normalization in inference pipeline - embeddings must match training scale"
+ISSUE_2_DESCRIPTION="UPDATED 2025-08-27: Coordinate usage fix applied, remaining normalization enhancements needed for cross-validation denormalization"
+ISSUE_2_SEVERITY="Medium - core functionality working, enhancements needed for complete user requirements"
+ISSUE_2_EVIDENCE="Coordinate usage fix resolved zero predictions, need input scaler saving for labelled datasets and HeatmapStage raw prediction output"
+ISSUE_2_ROOT_CAUSE="EMUSESPipeline is_labelled=True case doesn't save input scaler to joblib files, missing cross-validation denormalization"
 
 # Solution Requirements
 NO_BACKWARD_COMPATIBILITY="User explicitly stated no backward compatibility requirements"
