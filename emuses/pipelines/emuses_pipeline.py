@@ -5,6 +5,7 @@ import time
 from pathlib import Path
 
 import numpy as np
+import joblib
 from bcblib.tools.dataframe_filtering import normalize_dataframe
 from bcblib.tools.general_utils import parse_file_list_argument, save_json
 from bcblib.tools.nifti_utils import load_nifti
@@ -333,7 +334,6 @@ class EMUSESPipeline:
                         self.context["input_scaling_factors"] = scaling_factors
                         
                         # Save input scaler to model directory for inference reuse
-                        import joblib
                         self.output_folder.mkdir(parents=True, exist_ok=True)
                         input_scaler_path = self.output_folder / "input_scaler.joblib"
                         joblib.dump(scaling_factors, input_scaler_path)
@@ -358,7 +358,6 @@ class EMUSESPipeline:
                         )
                         
                         # Save input scaler to model directory for cross-validation denormalization
-                        import joblib
                         self.output_folder.mkdir(parents=True, exist_ok=True)
                         input_scaler_path = self.output_folder / "input_scaler.joblib"
                         joblib.dump(scaling_factors, input_scaler_path)
@@ -380,7 +379,6 @@ class EMUSESPipeline:
                     
                     input_scaler_path = scaler_base_path / "input_scaler.joblib"
                     if input_scaler_path.exists():
-                        import joblib
                         scaling_factors = joblib.load(input_scaler_path)
                         inputs_df, _ = normalize_dataframe(
                             inputs_df,
@@ -441,7 +439,6 @@ class EMUSESPipeline:
                     )
                     
                     # Save scores scaler to model directory for inference reuse
-                    import joblib
                     self.output_folder.mkdir(parents=True, exist_ok=True)
                     scores_scaler_path = self.output_folder / "scores_scaler.joblib"
                     joblib.dump(scores_scaling_factors, scores_scaler_path)
@@ -463,7 +460,6 @@ class EMUSESPipeline:
                     
                     scores_scaler_path = scaler_base_path / "scores_scaler.joblib"
                     if scores_scaler_path.exists():
-                        import joblib
                         scores_scaling_factors = joblib.load(scores_scaler_path)
                         scores_df, _ = normalize_dataframe(
                             scores_df,
