@@ -3,7 +3,6 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import nibabel as nib
 import pandas as pd
-import plotly.express as px
 from nilearn.plotting import plot_stat_map
 
 from emuses.tools.visualisation import (plot_spreadsheet_stat_map,
@@ -163,7 +162,28 @@ def save_statistical_maps(
             # No need to close Plotly figures
 
         else:
-            raise ValueError(f"Unsupported input type: {input_type}")
+            # Fallback to .npy format for unsupported input types
+            import numpy as np
+
+            if save_output:
+                npy_filename = output_folder / f"{filename_prefix}_cluster_{cluster}.npy"
+                np.save(npy_filename, stat_map)
+                print(f"Saved .npy fallback for cluster {cluster} (unsupported input type: {input_type})")
+
+            if generate_plots:
+                # For unsupported types, create a simple visualization
+                fig, ax = plt.subplots(figsize=(10, 6))
+                ax.hist(stat_map.flatten(), bins=50, alpha=0.7)
+                ax.set_title(f"Effect Size Distribution for Cluster {cluster}")
+                ax.set_xlabel("Effect Size")
+                ax.set_ylabel("Frequency")
+
+                if save_output:
+                    plot_filename = output_folder / f"{filename_prefix}_cluster_{cluster}_histogram.png"
+                    fig.savefig(plot_filename)
+
+                plots[cluster] = fig
+                plt.close(fig)
 
     if save_output:
         print(f"Statistical maps saved in {output_folder}")

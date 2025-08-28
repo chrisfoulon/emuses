@@ -40,60 +40,63 @@
 ### Triple-Analysis Implementation  
 1. **Prediction Grid**: 100x100 coordinate grid → simplified inference → prediction*confidence heatmaps
 2. **Correlation Grid**: 100x100 coordinate grid → GWD vectors → correlation with target scores (Pearson/Spearman/point-biserial)
-3. **Statistical Maps**: Region-based analysis → two-stage filtering → clustering within regions → effect size maps
+3. **Statistical Maps**: Region-based analysis → two-stage filtering → clustering within regions → feature-space statistical maps via input_matrix_stat_map → format conversion via save_statistical_maps
 
 ### Critical Implementation Constraints  
 - **Pipeline Timing**: AFTER nested CV model training in HeatmapStage (models loaded in context)
 - **Grid Coordinates**: 100x100 linspace on rescaled embeddings (0-1 coordinate system)
-- **Sigma Optimization**: Kernel regression optimization for optimal sigma parameter (correlation grids)
+- **Sigma Optimization**: Median pairwise distance optimization for optimal sigma parameter (correlation grids)
 - **Two-Stage Filtering**: Visualization threshold (0.2) + effect size threshold (0.5) for region selection
 - **Region-Based Clustering**: HDBSCAN clusters within high-confidence regions (≥3 points per cluster)
 - **Per-target artifacts**: Grid-based organization with `prediction-grids/`, `correlation-grids/`, `statistical-maps-prediction/`, and `statistical-maps-correlation/` folders in each `target_*/` directory
 - **Multiple Correlation Methods**: Support Pearson, Spearman, point-biserial correlation analysis
-- **Effect Size Calculation**: Mann-Whitney tests via input_matrix_stat_map function
+- **Feature-Space Statistical Maps**: Statistical comparison via input_matrix_stat_map returning results in input_matrix format (features × observations)
+- **Format Conversion**: save_statistical_maps converts from input_matrix format to original data format (images, NIfTI, spreadsheets, or .npy fallback)
 - **Grid-Based Statistical Maps**: Different statistical maps based on filtering method (prediction-based vs correlation-based regions)
 
 ## Implementation Phases
 
 ### Phase 1: HeatmapStage Enhancement ║ Triple Grid System & Statistical Analysis ║ HIGH ║ 4-5 days
 
-- [ ] **Task 1.1: Prediction Grid Creation System** ║ `tests/analysis_api/test_prediction_grid.py` ║ 100x100 coordinate grid with simplified inference ║ M
-  - [ ] 1.1.a: Create grid coordinate generation function (100x100 linspace on 0-1 rescaled embeddings)
-  - [ ] 1.1.b: Implement simplified inference function (skip input transformation, use context models)
-  - [ ] 1.1.c: Add confidence aggregation (5-model confidence or CV ensemble 1-std approach)
-  - [ ] 1.1.d: Implement prediction*confidence heatmap generation with denormalization
+- [x] **Task 1.1: Prediction Grid Creation System** ║ `tests/analysis_api/test_prediction_grid.py` ║ 100x100 coordinate grid with simplified inference ║ M
+  - [x] 1.1.a: Create grid coordinate generation function (100x100 linspace on 0-1 rescaled embeddings)
+  - [x] 1.1.b: Implement simplified inference function (skip input transformation, use context models)
+  - [x] 1.1.c: Add confidence aggregation (5-model confidence or CV ensemble 1-std approach)
+  - [x] 1.1.d: Implement prediction*confidence heatmap generation with denormalization
 
-- [ ] **Task 1.2: Correlation Grid Creation System** ║ `tests/analysis_api/test_correlation_grid.py` ║ GWD-based correlation analysis ║ M
-  - [ ] 1.2.a: Implement GWD vector computation for grid points (compute_gwd_for_point integration)
-  - [ ] 1.2.b: Add sigma optimization via kernel regression (extract from new_pipeline_test)
-  - [ ] 1.2.c: Implement multiple correlation methods (Pearson, Spearman, point-biserial)
-  - [ ] 1.2.d: Create correlation heatmap generation with target score correlation analysis
+- [x] **Task 1.2: Correlation Grid Creation System** ║ `tests/analysis_api/test_correlation_grid.py` ║ GWD-based correlation analysis ║ M
+  - [x] 1.2.a: Implement GWD vector computation for grid points (compute_gwd_for_point integration)
+  - [x] 1.2.b: Add sigma optimization via median pairwise distance (extract from new_pipeline_test)
+  - [x] 1.2.c: Implement multiple correlation methods (Pearson, Spearman, point-biserial)
+  - [x] 1.2.d: Create correlation heatmap generation with target score correlation analysis
 
-- [ ] **Task 1.3: Region-Based Statistical Analysis** ║ `tests/analysis_api/test_region_statistical_analysis.py` ║ Two-stage filtering with clustering ║ M
-  - [ ] 1.3.a: Implement two-stage threshold filtering (visualization + effect size thresholds)
-  - [ ] 1.3.b: Add region-based clustering analysis (HDBSCAN clusters within high-confidence regions)
-  - [ ] 1.3.c: Integrate input_matrix_stat_map for effect size calculation (Mann-Whitney tests)
-  - [ ] 1.3.d: Create statistical maps for clusters with ≥3 points per cluster
+- [x] **Task 1.3: Region-Based Statistical Analysis** ║ `tests/analysis_api/test_region_statistical_analysis.py` ║ Two-stage filtering with clustering ║ M
+  - [x] 1.3.a: Implement two-stage threshold filtering (visualization + effect size thresholds)
+  - [x] 1.3.b: Add region-based clustering analysis (HDBSCAN clusters within high-confidence regions)
+  - [x] 1.3.c: Integrate input_matrix_stat_map for feature-space statistical analysis (returns input_matrix format)
+  - [x] 1.3.d: Create statistical maps for clusters with ≥3 points per cluster using save_statistical_maps format conversion
 
 ### Phase 2: API & CLI Integration ║ FastAPI Endpoints & CLI Commands ║ HIGH ║ 2-3 days
 
-- [ ] **Task 2.1: FastAPI Analysis Endpoints** ║ `tests/analysis_api/test_analysis_endpoints.py` ║ REST API endpoints for triple analysis ║ L
-  - [ ] 2.1.a: Implement `POST /api/v1/analysis/statistical-maps` endpoint with region-based analysis
-  - [ ] 2.1.b: Implement `POST /api/v1/analysis/heatmaps` endpoint (prediction + correlation grids)
-  - [ ] 2.1.c: Add per-target processing with grid-based folder organization (prediction-grids/, correlation-grids/, statistical-maps-prediction/, statistical-maps-correlation/)
-  - [ ] 2.1.d: Implement error handling, correlation method validation, sigma optimization support
+- [x] **Task 2.1: FastAPI Analysis Endpoints** ║ `tests/analysis_api/test_analysis_endpoints.py` ║ REST API endpoints for triple analysis ║ L
+  - [x] 2.1.a: Implement `POST /api/v1/analysis/statistical-maps` endpoint with region-based analysis and save_statistical_maps integration
+  - [x] 2.1.b: Implement `POST /api/v1/analysis/heatmaps` endpoint (prediction + correlation grids)
+  - [x] 2.1.c: Add per-target processing with grid-based folder organization (prediction-grids/, correlation-grids/, statistical-maps-prediction/, statistical-maps-correlation/)
+  - [x] 2.1.d: Implement error handling, correlation method validation, sigma optimization support
+  - [x] 2.1.e: Enhance save_statistical_maps with .npy fallback for unsupported input_types
 
-- [ ] **Task 2.2: Enhanced Parameter Management** ║ `tests/analysis_api/test_parameter_management.py` ║ Triple analysis request models ║ M
-  - [ ] 2.2.a: Create enhanced request models (correlation methods, sigma optimization, threshold parameters)
-  - [ ] 2.2.b: Add two-stage filtering parameter validation (visualization + effect size thresholds)
-  - [ ] 2.2.c: Implement correlation method selection and validation (Pearson/Spearman/point-biserial)
-  - [ ] 2.2.d: Add cluster size threshold and region-based analysis parameter handling
+- [x] **Task 2.2: Enhanced Parameter Management** ║ `tests/analysis_api/test_analysis_endpoints.py` ║ Triple analysis request models ║ M
+  - [x] 2.2.a: Create enhanced request models (correlation methods, sigma optimization, threshold parameters)
+  - [x] 2.2.b: Add two-stage filtering parameter validation (visualization + effect size thresholds)
+  - [x] 2.2.c: Implement correlation method selection and validation (Pearson/Spearman/point-biserial)
+  - [x] 2.2.d: Add cluster size threshold and region-based analysis parameter handling
+  - [x] 2.2.e: Enhanced Sigma Optimization (median pairwise distance improvement with percentile options and validation logging)
 
-- [ ] **Task 2.3: HeatmapStage Integration** ║ `tests/analysis_api/test_heatmap_stage_integration.py` ║ Pipeline enhancement and artifacts ║ L
-  - [ ] 2.3.a: Uncomment and enhance HeatmapStage statistical analysis code (lines 431-686)
-  - [ ] 2.3.b: Integrate triple grid system after nested CV training (models available in context)
-  - [ ] 2.3.c: Implement per-target artifact organization with grid-based statistical maps (statistical-maps-prediction/, statistical-maps-correlation/)
-  - [ ] 2.3.d: Add interactive visualization enhancement with plot_clustering_interactive_with_hover
+- [x] **Task 2.3: HeatmapStage Integration** ║ `tests/analysis_api/test_heatmap_stage_integration.py` ║ Pipeline enhancement and artifacts ║ L
+  - [x] 2.3.a: Uncomment and enhance HeatmapStage statistical analysis code (lines 431-686)
+  - [x] 2.3.b: Integrate triple grid system after nested CV training (models available in context)
+  - [x] 2.3.c: Implement per-target artifact organization with grid-based statistical maps (statistical-maps-prediction/, statistical-maps-correlation/)
+  - [x] 2.3.d: Add interactive visualization enhancement with plot_clustering_interactive_with_hover
 
 ### Phase 3: CLI Commands & Documentation ║ Command-line Interface & User Experience ║ MEDIUM ║ 2-3 days
 
@@ -114,6 +117,12 @@
   - [ ] 3.3.b: Document grid creation and statistical maps generation approaches
   - [ ] 3.3.c: Create troubleshooting guides for confidence aggregation and denormalization
   - [ ] 3.3.d: Comprehensive testing across modular functions and pipeline integration
+
+- [ ] **Task 3.4: save_statistical_maps Enhancement** ║ `tests/analysis_api/test_save_statistical_maps.py` ║ Add .npy fallback support ║ S
+  - [ ] 3.4.a: Add .npy fallback in save_statistical_maps for unsupported input_types
+  - [ ] 3.4.b: Update function documentation with supported formats and fallback behavior
+  - [ ] 3.4.c: Add tests for .npy fallback functionality
+  - [ ] 3.4.d: Update error handling for unknown input_types to use .npy fallback
 
 ## Testing Strategy by Component Type
 
@@ -154,7 +163,7 @@
 ### **Technical Risks**
 - **HIGH - Triple Grid System Complexity**: Prediction + correlation + statistical maps with different methodologies
   - *Mitigation*: Modular class design, incremental testing, reuse existing GWD/correlation patterns
-- **HIGH - Sigma Optimization Integration**: Extract kernel regression optimization for correlation grids
+- **HIGH - Sigma Optimization Integration**: Extract median pairwise distance optimization for correlation grids
   - *Mitigation*: Leverage existing compute_sigma_median and new_pipeline_test sigma optimization patterns
 - **MEDIUM - Region-Based Statistical Analysis**: Two-stage filtering + clustering within regions + effect size calculation
   - *Mitigation*: Reuse existing input_matrix_stat_map function, incremental cluster size validation
@@ -177,7 +186,7 @@
 - [ ] Region-based statistical analysis with two-stage filtering and clustering within high-confidence regions
 - [ ] Per-target processing creates grid-based folders: prediction-grids/, correlation-grids/, statistical-maps-prediction/, statistical-maps-correlation/ in target_*/ directories
 - [ ] API endpoints support triple analysis with correlation method selection and threshold parameters
-- [ ] Effect size maps generated for clusters with ≥3 points using input_matrix_stat_map (Mann-Whitney tests)
+- [ ] Feature-space statistical maps generated for clusters with ≥3 points using input_matrix_stat_map → save_statistical_maps conversion to original format (images/NIfTI/spreadsheets/.npy)
 
 ### **Quality Requirements**
 - [ ] >90% test coverage for all new functionality (LAD compliance)

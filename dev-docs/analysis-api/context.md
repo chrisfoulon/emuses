@@ -11,6 +11,8 @@ The enhancement needs to **implement statistical maps and heatmap analysis funct
 
 **Critical Understanding**: This is **NOT** a simple service layer addition - it requires implementing sophisticated statistical analysis functionality based on modern patterns, not exposing existing "production-ready" functions.
 
+**Statistical Maps Definition**: Feature-space statistical maps generated via `input_matrix_stat_map` (returns input_matrix format: features × observations) then converted to original data format via `save_statistical_maps` (images/NIfTI/spreadsheets/.npy). Not limited to brain regions - applies to any feature space (pixels, voxels, spreadsheet columns, etc.).
+
 **Foundation Status**: Model registry system, multi-user service, and inference performance fixes are complete. HeatmapStage provides the modern pipeline architecture foundation.
 
 ## Level 2: API Integration Table
@@ -75,9 +77,10 @@ class HeatmapStage(PipelineStage):
         # 3. Statistical Maps: Two-stage filtering (vis + effect thresholds) → region clustering → effect size
         # 4. Sigma optimization via kernel regression for correlation analysis
         # 5. Region-based clustering: HDBSCAN within high-confidence regions (≥3 points per cluster)
-        # 6. Effect size calculation via input_matrix_stat_map (Mann-Whitney tests)
-        # 7. Per-target processing: statistical-maps/, heatmaps/, correlation-maps/ folders
-        # 8. Enhanced interactive visualization with region-based clustering metadata
+        # 6. Feature-space statistical analysis via input_matrix_stat_map (returns input_matrix format)
+        # 7. Format conversion via save_statistical_maps (input_matrix → original format: images/NIfTI/spreadsheets/.npy)
+        # 8. Per-target processing: statistical-maps/, heatmaps/, correlation-maps/ folders
+        # 9. Enhanced interactive visualization with region-based clustering metadata
 ```
 
 ### Target FastAPI Implementation Pattern

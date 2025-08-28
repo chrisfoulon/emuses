@@ -427,6 +427,26 @@ class HeatmapStage(PipelineStage):
         self._generate_performance_csv_files(context, task, Y.shape[1], logger)
 
         # ------------------------------------------------------------------
+        # TRIPLE GRID STATISTICAL ANALYSIS AFTER NESTED CV TRAINING
+        # ------------------------------------------------------------------
+        logger.info("=== Starting Triple Grid Statistical Analysis ===")
+        
+        try:
+            # Execute triple grid analysis using current pipeline data
+            self._execute_triple_grid_analysis(
+                context=context,
+                embeddings=prediction_train_coords,  # Rescaled UMAP coordinates (0-1)
+                target_matrix=Y,  # Processed target matrix [n_samples, n_targets]
+                output_folder=Path(self.config.output_folder),
+                logger=logger
+            )
+            logger.info("Triple grid statistical analysis completed successfully")
+            
+        except Exception as e:
+            logger.error(f"Triple grid analysis failed: {e}")
+            logger.warning("Continuing pipeline without statistical grid analysis")
+
+        # ------------------------------------------------------------------
 
         # # Determine which data to use for the heatmap stage
         # if prediction_train_coords is not None and prediction_train_labels is not None:
@@ -934,6 +954,154 @@ class HeatmapStage(PipelineStage):
 
         except Exception as e:
             logger.error(f"Error generating performance CSV files: {e}")
+
+    def _execute_triple_grid_analysis(self, context, embeddings, target_matrix, output_folder, logger):
+        """
+        Execute triple grid statistical analysis after nested CV training.
+        
+        Integrates prediction grids, correlation grids, and statistical maps analysis
+        using the current pipeline data flow (no legacy assumptions).
+        
+        Parameters
+        ----------
+        context : dict
+            Pipeline context with trained models and data
+        embeddings : np.ndarray
+            Rescaled UMAP coordinates [n_samples, 2] from prediction_train_coords
+        target_matrix : np.ndarray  
+            Processed target matrix [n_samples, n_targets] (Y from nested CV)
+        output_folder : Path
+            Base output directory
+        logger : logging.Logger
+            Logger instance
+        """
+        try:
+            # Import triple grid analysis components
+            from emuses.tools.grid_creator import GridCreator
+            from emuses.tools.correlation_grid_creator import CorrelationGridCreator  
+            from emuses.tools.region_statistical_analyzer import RegionStatisticalAnalyzer
+            
+            logger.info(f"Executing triple grid analysis for {target_matrix.shape[1]} targets")
+            
+            # Get input matrix for statistical maps from current context
+            input_matrix = context.get("prediction_train_features")
+            if input_matrix is None:
+                logger.warning("No prediction_train_features available for statistical maps")
+                input_matrix = embeddings  # Fallback to embeddings
+                
+            dataset_type = context.get("dataset_type", "image")
+            
+            # Process each target separately (per-target organization)
+            for target_idx in range(target_matrix.shape[1]):
+                target_name = f"target_{target_idx}"
+                target_scores = target_matrix[:, target_idx]
+                
+                logger.info(f"Processing {target_name} (range: {np.min(target_scores):.3f} to {np.max(target_scores):.3f})")
+                
+                # Create target-specific output directory
+                target_output = output_folder / target_name
+                target_output.mkdir(parents=True, exist_ok=True)
+                
+                # 1. PREDICTION GRID ANALYSIS
+                try:
+                    prediction_models = context.get("prediction_models", [])
+                    target_models = [m for m in prediction_models if str(target_idx) in m.get('target', '')]
+                    
+                    if target_models:
+                        logger.info(f"  Creating prediction grids using {len(target_models)} models")
+                        grid_creator = GridCreator(grid_size=100)
+                        
+                        # Create prediction*confidence heatmaps
+                        prediction_results = grid_creator.create_prediction_heatmaps(
+                            embeddings=embeddings,
+                            trained_models=target_models,
+                            output_folder=target_output,
+                            denormalize_predictions=True
+                        )
+                        
+                        logger.info(f"  Prediction grids completed for {target_name}")
+                    else:
+                        logger.warning(f"  No trained models found for {target_name}")
+                        
+                except Exception as e:
+                    logger.error(f"  Prediction grid analysis failed for {target_name}: {e}")
+                
+                # 2. CORRELATION GRID ANALYSIS  
+                try:
+                    logger.info(f"  Creating correlation grids with multiple methods")
+                    correlation_creator = CorrelationGridCreator(
+                        grid_size=100,
+                        correlation_methods=["pearson", "spearman", "point_biserial"]
+                    )
+                    
+                    # Create target data dictionary
+                    target_data = {target_name: target_scores}
+                    
+                    # Create correlation heatmaps with sigma optimization
+                    correlation_results = correlation_creator.create_correlation_heatmaps(
+                        embeddings=embeddings,
+                        target_data=target_data,
+                        output_folder=target_output,
+                        optimize_sigma=True,
+                        sigma_method="median"
+                    )
+                    
+                    logger.info(f"  Correlation grids completed for {target_name}")
+                    
+                except Exception as e:
+                    logger.error(f"  Correlation grid analysis failed for {target_name}: {e}")
+                
+                # 3. STATISTICAL MAPS ANALYSIS (Region-based)
+                try:
+                    logger.info(f"  Creating region-based statistical maps")
+                    statistical_analyzer = RegionStatisticalAnalyzer(
+                        visualization_threshold=0.2,
+                        effect_size_threshold=0.5,
+                        min_cluster_size=3
+                    )
+                    
+                    # Create statistical maps using clustering and input_matrix_stat_map
+                    statistical_results = statistical_analyzer.create_statistical_maps(
+                        embeddings=embeddings,
+                        target_scores=target_scores,
+                        input_matrix=input_matrix,
+                        dataset_type=dataset_type,
+                        output_folder=target_output,
+                        target_name=target_name
+                    )
+                    
+                    logger.info(f"  Statistical maps completed for {target_name}")
+                    
+                except Exception as e:
+                    logger.error(f"  Statistical maps analysis failed for {target_name}: {e}")
+                
+                # 4. INTERACTIVE VISUALIZATION ENHANCEMENT
+                try:
+                    interactive_folder = target_output / "interactive_plots"
+                    interactive_folder.mkdir(exist_ok=True)
+                    
+                    interactive_path = interactive_folder / f"interactive_clustering_{target_name}.html"
+                    fig = plot_clustering_interactive_with_hover(
+                        embeddings,
+                        target_scores,
+                        output_path=interactive_path,
+                        show_plot=False,
+                        return_plot=True,
+                    )
+                    
+                    logger.info(f"  Interactive visualization saved for {target_name}")
+                    
+                except Exception as e:
+                    logger.error(f"  Interactive visualization failed for {target_name}: {e}")
+                    
+            logger.info("Triple grid analysis completed successfully for all targets")
+            
+        except ImportError as e:
+            logger.error(f"Triple grid analysis components not available: {e}")
+            raise
+        except Exception as e:
+            logger.error(f"Triple grid analysis failed: {e}")
+            raise
 
 
 # TODO check if we still need this function or if we should put it somewhere else as a reference for unittest or something

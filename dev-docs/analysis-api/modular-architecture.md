@@ -123,9 +123,10 @@ class GridCreator:
 ```python
 class StatisticalAnalyzer:
     """
-    Creates statistical maps using effect size analysis with process_column(s) integration.
+    Creates feature-space statistical maps using input_matrix_stat_map integration.
     
-    Uses raw input data for statistical comparison between embedding regions.
+    Uses raw input data (input_matrix format) for statistical comparison between embedding regions.
+    Results converted to original format via save_statistical_maps.
     """
     
     def __init__(self, region_threshold: float = 0.1, method: str = "process_column"):
@@ -154,26 +155,26 @@ class StatisticalAnalyzer:
             Selected regions with coordinates and indices
         """
     
-    def calculate_effect_size(self,
-                            region_indices: np.ndarray,
-                            input_matrix: np.ndarray,
-                            target_scores: np.ndarray) -> dict:
+    def calculate_statistical_maps(self,
+                                 region_indices: np.ndarray,
+                                 input_matrix: np.ndarray,
+                                 target_scores: np.ndarray) -> dict:
         """
-        Calculate effect size between region datapoints and others using process_column(s).
+        Calculate feature-space statistical maps using input_matrix_stat_map.
         
         Parameters
         ----------
         region_indices : np.ndarray
             Indices of datapoints in selected region
         input_matrix : np.ndarray
-            Raw input data used for UMAP training
+            Raw input data in input_matrix format (features × observations)
         target_scores : np.ndarray
             Target variable scores
             
         Returns
         -------
         dict
-            Effect size statistics and significance tests
+            Statistical maps in input_matrix format (features × observations)
         """
     
     def create_statistical_maps(self,
@@ -181,24 +182,31 @@ class StatisticalAnalyzer:
                               input_matrix: np.ndarray,
                               target_data: dict,
                               cluster_labels: np.ndarray,
-                              output_folder: Path) -> dict:
+                              output_folder: Path,
+                              input_type: str,
+                              output_format_info) -> dict:
         """
-        Main interface: Create statistical maps for all targets.
+        Main interface: Create feature-space statistical maps for all targets.
         
         Creates target_*/statistical-maps/ folder structure with artifacts.
+        Uses input_matrix_stat_map → save_statistical_maps pipeline.
         
         Parameters
         ----------
         embeddings : np.ndarray
             Rescaled embeddings for region selection
         input_matrix : np.ndarray
-            Raw input data for statistical analysis
+            Raw input data in input_matrix format (features × observations)
         target_data : dict
             Target variable data and metadata
         cluster_labels : np.ndarray
             Cluster assignments for region selection
         output_folder : Path
             Base output directory
+        input_type : str
+            Data format type for save_statistical_maps ('nifti', 'image', 'spreadsheet')
+        output_format_info : various
+            Format info for save_statistical_maps (affine, shape, columns)
             
         Returns
         -------
@@ -331,18 +339,14 @@ target_cognitive_flexibility/
 │   ├── optimized_sigma.json
 │   └── correlation_metadata.json
 ├── statistical-maps-prediction/       # Statistical maps using prediction grid for filtering
-│   ├── cluster_0_effect_size_map.csv      # Effect size maps for clusters ≥3 points
-│   ├── cluster_0_effect_size_map.png
-│   ├── cluster_1_effect_size_map.csv
-│   ├── cluster_1_effect_size_map.png
+│   ├── stat_map_cluster_0.csv/.nii.gz/.png/.npy  # Format depends on input_type (csv=spreadsheet, nii.gz=nifti, png=image, npy=fallback)
+│   ├── stat_map_cluster_1.csv/.nii.gz/.png/.npy  # Feature-space statistical maps converted to original format
 │   ├── prediction_based_filtering.csv    # Two-stage filtering results
 │   ├── cluster_assignments.npy            # High-confidence region clusters
 │   └── statistical_metadata.json
 ├── statistical-maps-correlation/      # Statistical maps using correlation grid for filtering
-│   ├── cluster_0_effect_size_map.csv      # Different clusters than prediction-based
-│   ├── cluster_0_effect_size_map.png
-│   ├── cluster_2_effect_size_map.csv      # May have different cluster IDs
-│   ├── cluster_2_effect_size_map.png
+│   ├── stat_map_cluster_0.csv/.nii.gz/.png/.npy  # Different clusters than prediction-based
+│   ├── stat_map_cluster_2.csv/.nii.gz/.png/.npy  # May have different cluster IDs
 │   ├── correlation_based_filtering.csv   # Two-stage filtering results
 │   ├── cluster_assignments.npy            # High-confidence region clusters
 │   └── statistical_metadata.json
@@ -357,7 +361,8 @@ target_cognitive_flexibility/
 - Different grid values used for region filtering (prediction vs correlation)
 - Different high-confidence regions identified  
 - Different clustering results within regions
-- Different effect size maps for different clusters
+- Different feature-space statistical maps for different clusters
+- All maps converted from input_matrix format to original data format via save_statistical_maps
 
 ## Testing Strategy
 
