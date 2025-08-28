@@ -28,9 +28,9 @@ from emuses.tools.kernel_regression_utils import (KernelLogisticRegressor,
                                                   ensemble_predict,
                                                   nested_cv_kernel_regression,
                                                   run_kernel_heatmap_analysis)
+from emuses.tools.visualisation import plot_clustering_interactive_with_hover
 from emuses.tools.optim_utils import suggest_parameters_conditional
 from emuses.tools.optuna_cv import nested_optuna_cv
-from emuses.tools.visualisation import plot_clustering_interactive_with_hover
 
 # Import new model I/O system
 from ..tools.model_io import ModelIOManager
@@ -437,7 +437,7 @@ class HeatmapStage(PipelineStage):
                 context=context,
                 embeddings=prediction_train_coords,  # Rescaled UMAP coordinates (0-1)
                 target_matrix=Y,  # Processed target matrix [n_samples, n_targets]
-                output_folder=Path(self.config.output_folder),
+                output_folder=self.config.output_folder,
                 logger=logger
             )
             logger.info("Triple grid statistical analysis completed successfully")
@@ -960,7 +960,7 @@ class HeatmapStage(PipelineStage):
         Execute triple grid statistical analysis after nested CV training.
         
         Integrates prediction grids, correlation grids, and statistical maps analysis
-        using the current pipeline data flow (no legacy assumptions).
+        using the current pipeline data flow with existing trained models.
         
         Parameters
         ----------
@@ -999,24 +999,28 @@ class HeatmapStage(PipelineStage):
                 logger.info(f"Processing {target_name} (range: {np.min(target_scores):.3f} to {np.max(target_scores):.3f})")
                 
                 # Create target-specific output directory
-                target_output = output_folder / target_name
+                target_output = Path(output_folder) / target_name
                 target_output.mkdir(parents=True, exist_ok=True)
                 
-                # 1. PREDICTION GRID ANALYSIS
+                # 1. PREDICTION GRID ANALYSIS (using existing trained models)
                 try:
                     prediction_models = context.get("prediction_models", [])
                     target_models = [m for m in prediction_models if str(target_idx) in m.get('target', '')]
                     
                     if target_models:
-                        logger.info(f"  Creating prediction grids using {len(target_models)} models")
+                        logger.info(f"  Creating prediction grids using {len(target_models)} existing models")
                         grid_creator = GridCreator(grid_size=100)
                         
-                        # Create prediction*confidence heatmaps
+                        # Create target data dictionary (required by GridCreator)
+                        target_data = {target_name: target_scores}
+                        
+                        # Create prediction*confidence heatmaps using EXISTING MODELS  
                         prediction_results = grid_creator.create_prediction_heatmaps(
                             embeddings=embeddings,
-                            trained_models=target_models,
+                            trained_models=prediction_models,  # All models (method filters by target)
+                            target_data=target_data,  # Target scores for this target
                             output_folder=target_output,
-                            denormalize_predictions=True
+                            denormalize=True
                         )
                         
                         logger.info(f"  Prediction grids completed for {target_name}")
@@ -1026,9 +1030,9 @@ class HeatmapStage(PipelineStage):
                 except Exception as e:
                     logger.error(f"  Prediction grid analysis failed for {target_name}: {e}")
                 
-                # 2. CORRELATION GRID ANALYSIS  
+                # 2. CORRELATION GRID ANALYSIS (using median sigma, no kernel regression) 
                 try:
-                    logger.info(f"  Creating correlation grids with multiple methods")
+                    logger.info(f"  Creating correlation grids with median sigma method")
                     correlation_creator = CorrelationGridCreator(
                         grid_size=100,
                         correlation_methods=["pearson", "spearman", "point_biserial"]
@@ -1037,12 +1041,12 @@ class HeatmapStage(PipelineStage):
                     # Create target data dictionary
                     target_data = {target_name: target_scores}
                     
-                    # Create correlation heatmaps with sigma optimization
+                    # Create correlation heatmaps with median sigma (NOT kernel regression)
                     correlation_results = correlation_creator.create_correlation_heatmaps(
                         embeddings=embeddings,
                         target_data=target_data,
                         output_folder=target_output,
-                        optimize_sigma=True,
+                        optimize_sigma=False,  # Use median distance, don't optimize
                         sigma_method="median"
                     )
                     
@@ -1102,6 +1106,7 @@ class HeatmapStage(PipelineStage):
         except Exception as e:
             logger.error(f"Triple grid analysis failed: {e}")
             raise
+            
 
 
 # TODO check if we still need this function or if we should put it somewhere else as a reference for unittest or something

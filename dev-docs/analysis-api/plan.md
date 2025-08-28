@@ -1,13 +1,22 @@
-# Analysis API Enhancement - LAD Implementation Plan
+# Statistical Analysis Enhancement - LAD Implementation Plan
 
-## Implementation Overview
+## Task Complexity Assessment
 
-**Goal**: Implement statistical maps and heatmap analysis functionality in HeatmapStage with API/CLI interfaces  
-**Approach**: ENHANCE HeatmapStage with grid creation and statistical analysis after nested CV training  
-**Foundation**: Model registry, multi-user service, and inference fixes are complete and operational  
-**Core Implementation**: Extract from new_pipeline_test + complete HeatmapStage statistical analysis (lines 431-686)  
+**Task Complexity**: MEDIUM  
+**Implementation Approach**: ENHANCE existing production-quality modular components  
+**Key Challenges**: Dual effect analysis integration, visualization enhancement, folder structure updates  
+**Resource Requirements**: 2-3 implementation sessions, minimal disruption to working system
+
+## Integration Impact Assessment (From LAD Phase 0)
+
+**Strategy**: ENHANCE existing components (85% requirement coverage)
+- [x] **Architecture Assessment**: Production-ready modular components identified
+- [x] **Integration Points**: HeatmapStage after nested CV training (working)
+- [x] **Compatibility**: Backwards compatible enhancements to existing APIs
+- [x] **Quality Validation**: 90%+ test coverage, 13/13 development tests passing
 
 ## Progress Tracking Protocol
+
 **CRITICAL**: After completing any task:
 1. Mark checkbox [x] in this plan.md file immediately
 2. Update TodoWrite status to "completed"  
@@ -15,220 +24,206 @@
 4. Only mark complete after successful testing
 5. Update context files with implementation examples
 
-## Task Complexity Assessment
-- **Task Complexity**: **MEDIUM-HIGH**
-- **Implementation Approach**: HeatmapStage enhancement with modular grid creation and statistical analysis functions
-- **Key Challenges**: Grid generation with simplified inference, statistical analysis implementation, confidence aggregation
-- **Resource Requirements**: 7-10 days focused development across 3 phases
+## Scientific Methodology Framework (NON-NEGOTIABLE)
 
-## Implementation Strategy
+### Two-Heatmap Approach (Validated)
+**Why This Framework Works**:
+- **Separates intrinsic manifold structure from predictive relationships**
+- **No kernel regression variability issues** 
+- **Robust and interpretation-stable**
+- **Provides three complementary explainability perspectives**
 
-### LAD Phase 00: Existing Work Discovery Results ✅
-- **Integration Decision**: **ENHANCE** HeatmapStage pipeline with statistical analysis functionality
-- **Existing Quality**: Modern foundations in new_pipeline_test + HeatmapStage architecture
-- **Coverage**: 40% (pipeline architecture exists, statistical analysis commented/incomplete)
-- **Rationale**: Build on modern patterns, avoid legacy function approaches
+#### Heatmap 1: Prediction×Confidence
+- **Purpose**: Shows actual trained model behavior across embedding space
+- **Method**: Uses existing models from `context["prediction_models"]` 
+- **Formula**: `prediction_mean * (1.0 / (1.0 + prediction_std))`
+- **Interpretation**: "How do the models we'll use for prediction behave?"
 
-### LAD Phase 01: Implementation Planning ✅  
-- **Multi-level context**: Completed with corrected technical understanding
-- **Architecture understanding**: HeatmapStage enhancement after nested CV training
-- **Maintenance opportunities**: Modular function design for maintainability
-- **Testing strategy**: Component-aware (unit for functions, integration for pipeline)
+#### Heatmap 2: Correlation 
+- **Purpose**: Shows UMAP's learned manifold structure correlation with target
+- **Method**: Uses median pairwise distance sigma (NO optimization/training)
+- **Formula**: `pearsonr(gwd_vector, target_scores)` for each grid point
+- **Interpretation**: "How does inherent data topology relate to target patterns?"
 
-## Feature Requirements (Corrected Technical Approach)
-
-### Triple-Analysis Implementation  
-1. **Prediction Grid**: 100x100 coordinate grid → simplified inference → prediction*confidence heatmaps
-2. **Correlation Grid**: 100x100 coordinate grid → GWD vectors → correlation with target scores (Pearson/Spearman/point-biserial)
-3. **Statistical Maps**: Region-based analysis → two-stage filtering → clustering within regions → feature-space statistical maps via input_matrix_stat_map → format conversion via save_statistical_maps
-
-### Critical Implementation Constraints  
-- **Pipeline Timing**: AFTER nested CV model training in HeatmapStage (models loaded in context)
-- **Grid Coordinates**: 100x100 linspace on rescaled embeddings (0-1 coordinate system)
-- **Sigma Optimization**: Median pairwise distance optimization for optimal sigma parameter (correlation grids)
-- **Two-Stage Filtering**: Visualization threshold (0.2) + effect size threshold (0.5) for region selection
-- **Region-Based Clustering**: HDBSCAN clusters within high-confidence regions (≥3 points per cluster)
-- **Per-target artifacts**: Grid-based organization with `prediction-grids/`, `correlation-grids/`, `statistical-maps-prediction/`, and `statistical-maps-correlation/` folders in each `target_*/` directory
-- **Multiple Correlation Methods**: Support Pearson, Spearman, point-biserial correlation analysis
-- **Feature-Space Statistical Maps**: Statistical comparison via input_matrix_stat_map returning results in input_matrix format (features × observations)
-- **Format Conversion**: save_statistical_maps converts from input_matrix format to original data format (images, NIfTI, spreadsheets, or .npy fallback)
-- **Grid-Based Statistical Maps**: Different statistical maps based on filtering method (prediction-based vs correlation-based regions)
+### Critical Implementation Requirements
+1. **No Model Training**: Must use `context["prediction_models"]` exclusively
+2. **Median Sigma Only**: Use `compute_sigma_median()`, no optimization
+3. **Two-Heatmap Separation**: Maintain distinction between prediction and correlation analysis
 
 ## Implementation Phases
 
-### Phase 1: HeatmapStage Enhancement ║ Triple Grid System & Statistical Analysis ║ HIGH ║ 4-5 days
+### ✅ Phase 1: HeatmapStage Enhancement (COMPLETE)
+- [x] GridCreator: Prediction heatmaps with existing models
+- [x] CorrelationGridCreator: Median sigma correlation analysis  
+- [x] RegionStatisticalAnalyzer: Effect size maps with clustering
 
-- [x] **Task 1.1: Prediction Grid Creation System** ║ `tests/analysis_api/test_prediction_grid.py` ║ 100x100 coordinate grid with simplified inference ║ M
-  - [x] 1.1.a: Create grid coordinate generation function (100x100 linspace on 0-1 rescaled embeddings)
-  - [x] 1.1.b: Implement simplified inference function (skip input transformation, use context models)
-  - [x] 1.1.c: Add confidence aggregation (5-model confidence or CV ensemble 1-std approach)
-  - [x] 1.1.d: Implement prediction*confidence heatmap generation with denormalization
+### ✅ Phase 2: API & CLI Integration (COMPLETE)
+- [x] FastAPI endpoints: `/api/v1/analysis/heatmaps`, `/api/v1/analysis/statistical-maps`
+- [x] Enhanced parameter management with correlation methods
+- [x] HeatmapStage integration after nested CV training
 
-- [x] **Task 1.2: Correlation Grid Creation System** ║ `tests/analysis_api/test_correlation_grid.py` ║ GWD-based correlation analysis ║ M
-  - [x] 1.2.a: Implement GWD vector computation for grid points (compute_gwd_for_point integration)
-  - [x] 1.2.b: Add sigma optimization via median pairwise distance (extract from new_pipeline_test)
-  - [x] 1.2.c: Implement multiple correlation methods (Pearson, Spearman, point-biserial)
-  - [x] 1.2.d: Create correlation heatmap generation with target score correlation analysis
+### Phase 3: Enhancement Implementation ║ Folder Structure & Visualization Updates ║ MEDIUM ║ 2-3 sessions
 
-- [x] **Task 1.3: Region-Based Statistical Analysis** ║ `tests/analysis_api/test_region_statistical_analysis.py` ║ Two-stage filtering with clustering ║ M
-  - [x] 1.3.a: Implement two-stage threshold filtering (visualization + effect size thresholds)
-  - [x] 1.3.b: Add region-based clustering analysis (HDBSCAN clusters within high-confidence regions)
-  - [x] 1.3.c: Integrate input_matrix_stat_map for feature-space statistical analysis (returns input_matrix format)
-  - [x] 1.3.d: Create statistical maps for clusters with ≥3 points per cluster using save_statistical_maps format conversion
+- [ ] **Task 3.1: Folder Structure Updates** ║ `tests/analysis_api/test_folder_naming.py` ║ Update "grids" → "heatmaps" in modular tools ║ S
+  - [ ] 3.1.a: Update GridCreator output folder naming
+    - [ ] 3.1.a.1: Change `prediction-grids/` → `prediction-heatmaps/` in create_prediction_heatmaps()
+    - [ ] 3.1.a.2: Update folder creation logic and path references
+    - [ ] 3.1.a.3: Verify backwards compatibility with existing artifacts
+  - [ ] 3.1.b: Update CorrelationGridCreator output folder naming  
+    - [ ] 3.1.b.1: Change `correlation-grids/` → `correlation-heatmaps/` in create_correlation_heatmaps()
+    - [ ] 3.1.b.2: Update folder creation logic and path references
+    - [ ] 3.1.b.3: Verify backwards compatibility with existing artifacts
 
-### Phase 2: API & CLI Integration ║ FastAPI Endpoints & CLI Commands ║ HIGH ║ 2-3 days
+- [ ] **Task 3.2: Dual Effect Size Maps Implementation** ║ `tests/analysis_api/test_dual_effects.py` ║ Separate prediction and correlation effect analysis ║ M
+  - [ ] 3.2.a: Enhance RegionStatisticalAnalyzer for dual analysis pattern
+    - [ ] 3.2.a.1: Add significance_source parameter to create_statistical_maps()
+    - [ ] 3.2.a.2: Update output folder naming based on significance source
+    - [ ] 3.2.a.3: Maintain consistent metadata format across both analyses
+  - [ ] 3.2.b: Update HeatmapStage integration for dual analysis calls
+    - [ ] 3.2.b.1: Run RegionStatisticalAnalyzer for prediction significance → prediction-effects/
+    - [ ] 3.2.b.2: Run RegionStatisticalAnalyzer for correlation significance → correlation-effects/
+    - [ ] 3.2.b.3: Use appropriate quantile thresholds (95th percentile for prediction, 95th percentile absolute for correlation)
 
-- [x] **Task 2.1: FastAPI Analysis Endpoints** ║ `tests/analysis_api/test_analysis_endpoints.py` ║ REST API endpoints for triple analysis ║ L
-  - [x] 2.1.a: Implement `POST /api/v1/analysis/statistical-maps` endpoint with region-based analysis and save_statistical_maps integration
-  - [x] 2.1.b: Implement `POST /api/v1/analysis/heatmaps` endpoint (prediction + correlation grids)
-  - [x] 2.1.c: Add per-target processing with grid-based folder organization (prediction-grids/, correlation-grids/, statistical-maps-prediction/, statistical-maps-correlation/)
-  - [x] 2.1.d: Implement error handling, correlation method validation, sigma optimization support
-  - [x] 2.1.e: Enhance save_statistical_maps with .npy fallback for unsupported input_types
+- [ ] **Task 3.3: Heatmap Visualization with Scatter Overlay** ║ `tests/analysis_api/test_heatmap_plotting.py` ║ Add matplotlib plotting with UMAP scatter overlay ║ M  
+  - [ ] 3.3.a: Implement heatmap plotting functionality in GridCreator
+    - [ ] 3.3.a.1: Add matplotlib heatmap generation (imshow) for combined_values
+    - [ ] 3.3.a.2: Overlay UMAP training embeddings as scatter points
+    - [ ] 3.3.a.3: Color-code scatter points by target scores for interpretability
+    - [ ] 3.3.a.4: Save as heatmap_plot.png in prediction-heatmaps/ folder
+  - [ ] 3.3.b: Implement heatmap plotting functionality in CorrelationGridCreator
+    - [ ] 3.3.b.1: Add matplotlib heatmap generation for correlation values
+    - [ ] 3.3.b.2: Overlay UMAP training embeddings as scatter points
+    - [ ] 3.3.b.3: Color-code scatter points by target scores for interpretability
+    - [ ] 3.3.b.4: Save as heatmap_plot.png in correlation-heatmaps/ folder
 
-- [x] **Task 2.2: Enhanced Parameter Management** ║ `tests/analysis_api/test_analysis_endpoints.py` ║ Triple analysis request models ║ M
-  - [x] 2.2.a: Create enhanced request models (correlation methods, sigma optimization, threshold parameters)
-  - [x] 2.2.b: Add two-stage filtering parameter validation (visualization + effect size thresholds)
-  - [x] 2.2.c: Implement correlation method selection and validation (Pearson/Spearman/point-biserial)
-  - [x] 2.2.d: Add cluster size threshold and region-based analysis parameter handling
-  - [x] 2.2.e: Enhanced Sigma Optimization (median pairwise distance improvement with percentile options and validation logging)
+- [ ] **Task 3.4: Integration Testing & Validation** ║ `tests/analysis_api/test_enhancement_integration.py` ║ End-to-end validation of enhancements ║ M
+  - [ ] 3.4.a: Validate folder structure changes
+    - [ ] 3.4.a.1: Verify prediction-heatmaps/ and correlation-heatmaps/ creation
+    - [ ] 3.4.a.2: Verify prediction-effects/ and correlation-effects/ creation  
+    - [ ] 3.4.a.3: Confirm backwards compatibility with existing model registry
+  - [ ] 3.4.b: Validate dual effect analysis
+    - [ ] 3.4.b.1: Confirm different effect maps from prediction vs correlation significance
+    - [ ] 3.4.b.2: Verify proper quantile threshold application
+    - [ ] 3.4.b.3: Validate metadata consistency across both analyses
+  - [ ] 3.4.c: Validate visualization outputs
+    - [ ] 3.4.c.1: Verify heatmap_plot.png generation in both heatmap folders
+    - [ ] 3.4.c.2: Confirm scatter overlay integration with proper color coding
+    - [ ] 3.4.c.3: Test visualization with different target value ranges
+  - [ ] 3.4.d: Methodology preservation validation
+    - [ ] 3.4.d.1: **CRITICAL**: Verify no model training occurs during analysis
+    - [ ] 3.4.d.2: Confirm median sigma usage (no kernel regression optimization)
+    - [ ] 3.4.d.3: Validate two-heatmap methodological separation maintained
 
-- [x] **Task 2.3: HeatmapStage Integration** ║ `tests/analysis_api/test_heatmap_stage_integration.py` ║ Pipeline enhancement and artifacts ║ L
-  - [x] 2.3.a: Uncomment and enhance HeatmapStage statistical analysis code (lines 431-686)
-  - [x] 2.3.b: Integrate triple grid system after nested CV training (models available in context)
-  - [x] 2.3.c: Implement per-target artifact organization with grid-based statistical maps (statistical-maps-prediction/, statistical-maps-correlation/)
-  - [x] 2.3.d: Add interactive visualization enhancement with plot_clustering_interactive_with_hover
+## Expected File Structure (After Enhancement)
 
-### Phase 3: CLI Commands & Documentation ║ Command-line Interface & User Experience ║ MEDIUM ║ 2-3 days
-
-- [ ] **Task 3.1: CLI Analysis Commands (DEFERRED)** ║ `tests/analysis_api/test_cli_commands.py` ║ Independent CLI analysis execution ║ L
-  - [ ] 3.1.a: Design modular functions for future CLI independence (model loading, normalization)
-  - [ ] 3.1.b: Assess CLI implementation complexity vs value (DEFERRED unless high success/low risk)
-  - [ ] 3.1.c: Document CLI independence requirements for future implementation
-  - [ ] 3.1.d: Create foundation for standalone analysis commands
-
-- [ ] **Task 3.2: Interactive Visualization Enhancement** ║ `tests/analysis_api/test_visualization.py` ║ HTML plots with statistical analysis metadata ║ M
-  - [ ] 3.2.a: Enhance plot_clustering_interactive_with_hover integration with statistical maps
-  - [ ] 3.2.b: Add heatmap visualization with prediction*confidence overlays
-  - [ ] 3.2.c: Create visualization artifact preservation in per-target folders
-  - [ ] 3.2.d: Implement responsive design and metadata integration
-
-- [ ] **Task 3.3: Documentation & Testing** ║ `tests/analysis_api/test_documentation.py` ║ User guides and comprehensive testing ║ S
-  - [ ] 3.3.a: Update user guides with HeatmapStage statistical analysis workflows
-  - [ ] 3.3.b: Document grid creation and statistical maps generation approaches
-  - [ ] 3.3.c: Create troubleshooting guides for confidence aggregation and denormalization
-  - [ ] 3.3.d: Comprehensive testing across modular functions and pipeline integration
-
-- [ ] **Task 3.4: save_statistical_maps Enhancement** ║ `tests/analysis_api/test_save_statistical_maps.py` ║ Add .npy fallback support ║ S
-  - [ ] 3.4.a: Add .npy fallback in save_statistical_maps for unsupported input_types
-  - [ ] 3.4.b: Update function documentation with supported formats and fallback behavior
-  - [ ] 3.4.c: Add tests for .npy fallback functionality
-  - [ ] 3.4.d: Update error handling for unknown input_types to use .npy fallback
+```
+target_0/
+├── prediction-heatmaps/           # Enhanced folder naming
+│   ├── prediction_values.npy      # Raw predictions on grid
+│   ├── confidence_values.npy      # Confidence from model variance 
+│   ├── combined_values.npy        # prediction*confidence heatmap
+│   ├── grid_coordinates.npy       # 100x100 coordinate grid
+│   ├── heatmap_plot.png          # NEW: Heatmap + UMAP scatter overlay
+│   └── metadata.json             # Analysis parameters
+├── correlation-heatmaps/          # Enhanced folder naming  
+│   ├── pearson_correlation.npy    # Pearson correlation heatmap
+│   ├── spearman_correlation.npy   # Spearman correlation heatmap
+│   ├── point_biserial_correlation.npy  # Point-biserial heatmap
+│   ├── heatmap_plot.png          # NEW: Heatmap + UMAP scatter overlay
+│   └── metadata.json             # Sigma value, analysis parameters
+├── prediction-effects/            # NEW: Effect maps from prediction significance
+│   ├── cluster_X_effect_size.nii  # Effect size maps per significant cluster
+│   ├── metadata.json             # Cluster information, thresholds
+│   └── significant_regions.npy   # 95th percentile significant regions
+├── correlation-effects/           # NEW: Effect maps from correlation significance  
+│   ├── cluster_Y_effect_size.nii  # Effect size maps per significant cluster
+│   ├── metadata.json             # Cluster information, thresholds  
+│   └── significant_regions.npy   # 95th percentile significant regions
+└── interactive_plots/
+    └── interactive_clustering_target_0.html
+```
 
 ## Testing Strategy by Component Type
 
-### **API Endpoints** (Integration Testing)
-- **Approach**: Real FastAPI app with mocked external dependencies
-- **Focus**: Request/response validation, model registry integration, error handling
-- **Coverage Target**: 95% - critical for API reliability
+### **Modular Components** (Unit Testing)
+- **GridCreator, CorrelationGridCreator**: Isolated testing with mock dependencies
+- **Focus**: Folder naming, plotting functionality, parameter handling
+- **Coverage Target**: 95% - critical for output format consistency
 
-### **CLI Commands** (Integration Testing)
-- **Approach**: CliRunner with real filesystem operations in temporary directories  
-- **Focus**: Parameter validation, progress indicators, registry lookup workflows
-- **Coverage Target**: 90% - essential for user experience
+### **Pipeline Integration** (Integration Testing)  
+- **HeatmapStage**: Real pipeline context with test fixtures
+- **Focus**: Dual analysis orchestration, artifact organization, error handling
+- **Coverage Target**: 90% - essential for pipeline reliability
 
-### **Analysis Orchestration** (Unit Testing)
-- **Approach**: Isolated testing with mocked analysis functions and test fixtures
-- **Focus**: Parameter transformation, method selection, per-target processing logic
-- **Coverage Target**: 95% - critical for dual-method coordination
-
-### **Artifact Management** (Component Testing)
-- **Approach**: Real registry operations with test databases, no external service calls
-- **Focus**: Installation workflows, artifact relationships, metadata handling
-- **Coverage Target**: 90% - essential for data integrity
-
-## Maintenance Integration Points
-
-### High Priority Tasks Include Maintenance
-- Task 1.2: FastAPI endpoints include logging and monitoring integration following existing patterns
-- Task 1.3: CLI commands include error handling standardization across analysis workflows
-- Task 3.3: Documentation includes analysis function documentation enhancement opportunities
-
-### Boy Scout Rule Applications
-- Parameter management system optimization during API implementation
-- Error handling standardization across analysis workflows during CLI development  
-- Analysis function integration pattern improvements during orchestration development
+### **Visualization Components** (Component Testing)
+- **Plotting Functions**: Real matplotlib operations with test image comparison
+- **Focus**: Scatter overlay accuracy, color coding, file generation
+- **Coverage Target**: 85% - important for user visualization experience
 
 ## Risk Assessment and Mitigation
 
 ### **Technical Risks**
-- **HIGH - Triple Grid System Complexity**: Prediction + correlation + statistical maps with different methodologies
-  - *Mitigation*: Modular class design, incremental testing, reuse existing GWD/correlation patterns
-- **HIGH - Sigma Optimization Integration**: Extract median pairwise distance optimization for correlation grids
-  - *Mitigation*: Leverage existing compute_sigma_median and new_pipeline_test sigma optimization patterns
-- **MEDIUM - Region-Based Statistical Analysis**: Two-stage filtering + clustering within regions + effect size calculation
-  - *Mitigation*: Reuse existing input_matrix_stat_map function, incremental cluster size validation
-- **MEDIUM - Correlation Method Support**: Multiple correlation methods with proper validation
-  - *Mitigation*: Leverage existing correlation_maps_utils.py patterns, comprehensive parameter validation
+- **MEDIUM - Dual Analysis Orchestration**: Running RegionStatisticalAnalyzer twice with different significance sources
+  - *Mitigation*: Leverage existing parameter patterns, incremental testing, clear significance source tracking
+- **LOW - Folder Structure Changes**: Simple path updates in established codebase
+  - *Mitigation*: Systematic testing of path references, backwards compatibility verification
+- **LOW - Visualization Integration**: Adding matplotlib plotting to existing numerical analysis
+  - *Mitigation*: Separate plotting logic, optional visualization generation, error handling for plot failures
 
-### **Implementation Risks** 
-- **MEDIUM - HeatmapStage Integration**: Uncomment and enhance lines 431-686 without breaking existing pipeline
-  - *Mitigation*: Careful testing, modular integration, preserve existing functionality
-- **MEDIUM - Denormalization Logic**: Ensure predictions denormalized to original value range correctly
-  - *Mitigation*: Reuse existing denormalization patterns from InferenceStage
-- **LOW - Registry Integration**: Established patterns and working model registry system
-  - *Mitigation*: Follow existing registry integration patterns from inference implementation
+### **Integration Risks**  
+- **LOW - Pipeline Compatibility**: Changes to working HeatmapStage integration
+  - *Mitigation*: Maintain existing interfaces, add functionality without breaking changes
+- **LOW - Performance Impact**: Additional plotting and dual analysis overhead
+  - *Mitigation*: Benchmark performance impact, optimize plotting if necessary
 
 ## Success Criteria
 
 ### **Functional Requirements**
-- [ ] HeatmapStage generates triple grid system: prediction*confidence + GWD correlation + statistical maps
-- [ ] Correlation grids use sigma optimization and multiple correlation methods (Pearson/Spearman/point-biserial)
-- [ ] Region-based statistical analysis with two-stage filtering and clustering within high-confidence regions
-- [ ] Per-target processing creates grid-based folders: prediction-grids/, correlation-grids/, statistical-maps-prediction/, statistical-maps-correlation/ in target_*/ directories
-- [ ] API endpoints support triple analysis with correlation method selection and threshold parameters
-- [ ] Feature-space statistical maps generated for clusters with ≥3 points using input_matrix_stat_map → save_statistical_maps conversion to original format (images/NIfTI/spreadsheets/.npy)
+- [ ] Folder structure: prediction-heatmaps/ and correlation-heatmaps/ created correctly
+- [ ] Dual effect maps: prediction-effects/ and correlation-effects/ with different analyses
+- [ ] Heatmap visualizations: heatmap_plot.png files with scatter overlay in both heatmap folders
+- [ ] Methodology preservation: No model training, median sigma only, two-heatmap separation
 
 ### **Quality Requirements**
-- [ ] >90% test coverage for all new functionality (LAD compliance)
-- [ ] Performance impact <20% for analysis generation compared to direct function calls
-- [ ] Zero regressions in existing EMUSES functionality (model registry, inference, CLI)
-- [ ] Comprehensive error handling and user feedback for all failure modes
-- [ ] Per-target processing working correctly with scaled embeddings usage
+- [ ] >90% test coverage maintained for enhanced functionality
+- [ ] All development tests passing (13/13)
+- [ ] Performance impact <10% for visualization generation
+- [ ] Zero regressions in existing EMUSES functionality
 
 ### **Integration Requirements**
-- [ ] Seamless integration with existing FastAPI service and CLI framework
-- [ ] Analysis artifacts accessible through model registry permissions system  
-- [ ] Target-specific directory organization working with registry artifact management
-- [ ] Complete documentation with working examples and dual-method use case guidance
+- [ ] Backwards compatible with existing model registry and API endpoints
+- [ ] Proper artifact organization in model registry system
+- [ ] Enhanced visualization accessible through existing interfaces
+- [ ] Complete documentation with working examples
+
+## Maintenance Integration Points
+
+### High Priority Tasks Include Maintenance
+- Task 3.1: Folder structure updates include path reference cleanup and consistency improvements
+- Task 3.3: Visualization implementation includes error handling standardization
+- Task 3.4: Integration testing includes performance monitoring and optimization opportunities
 
 ## Completed Infrastructure (Do Not Modify)
 
-### ✅ Model Registry System (6 phases complete + quality fixes)
-- `ModelIOManager.validate_model()` and `install_model()` methods functional
-- CLI `--model-id` option working with registry lookup
-- LocalModelRegistry operations fully tested and operational
+### ✅ Two-Heatmap Methodology (Working & Validated)
+- Prediction×confidence analysis using existing trained models
+- Correlation analysis using median sigma (no kernel regression training)
+- Scientific validation: separates manifold topology from predictive relationships
 
-### ✅ Multi-User Service Implementation  
-- FastAPI-Users integration with enterprise security (HashiCorp Vault)
-- Admin CLI commands for user management, quotas, system monitoring
-- Production-ready with comprehensive documentation
+### ✅ Modular Architecture (Production-Ready)
+- GridCreator, CorrelationGridCreator, RegionStatisticalAnalyzer
+- 90%+ test coverage with component-aware testing strategies
+- HeatmapStage integration after nested CV training
 
-### ✅ Inference Performance & Normalization Fixes
-- UMAP embedding scaling (`embedding_scaling.json` saving/loading)
-- Input scaler bug fixes in EMUSESPipeline (`is_labelled=True` branch)
-- Dual CSV output in InferenceStage (raw + normalized predictions)
-- "Zero predictions" issue resolved with proper embedding scaling
-
-### ✅ Modern Analysis Foundations (Ready for Enhancement)
-- **new_pipeline_test** in `/emuses/tools/stats_utils.py:1477` - Advanced statistical analysis with Optuna optimization
-- **HeatmapStage** in `/emuses/pipelines/heatmap_stage.py:431-686` - Commented statistical analysis code to be completed
-- **plot_clustering_interactive_with_hover** - Interactive visualization function ready for integration
-- **Scaled embeddings infrastructure** - prediction_train_coords available in pipeline context
+### ✅ API & Pipeline Integration (Complete)
+- FastAPI endpoints with model registry integration
+- Pipeline timing after nested CV when trained models available
+- Error handling and graceful component failure
 
 ---
 
-**Implementation Status**: Ready to begin Phase 1 - HeatmapStage Enhancement with Triple Grid System  
-**Next Step**: Task 1.1 - Prediction Grid Creation System implementation  
-**Key Success Factor**: Implement sophisticated correlation + region-based analysis while maintaining modular design for maintainability
+**Implementation Status**: Ready to begin Phase 3 - Enhancement Implementation  
+**Next Step**: Task 3.1 - Folder Structure Updates  
+**Key Success Factor**: Maintain scientific methodology while adding organizational and visualization enhancements to proven modular architecture
 
-*This plan follows LAD Phase 00 (Existing Work Discovery) and Phase 01 (Autonomous Context Planning) methodologies for systematic implementation with proper integration assessment and architectural understanding.*
+*This plan follows LAD Phase 00 (Existing Work Discovery) and Phase 01 (Autonomous Context Planning) methodologies for systematic enhancement of production-quality components.*
