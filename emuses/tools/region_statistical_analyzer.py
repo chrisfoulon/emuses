@@ -206,6 +206,142 @@ class RegionStatisticalAnalyzer:
         logger.info(f"Computed statistical analysis for {len(statistical_maps)} valid clusters")
         return statistical_maps
 
+    def create_statistical_maps(self,
+                                grid_coords: np.ndarray,
+                                significance_values: np.ndarray,
+                                input_matrix: np.ndarray,
+                                target_data: Dict[str, np.ndarray],
+                                output_folder: Path,
+                                input_type: str,
+                                output_format_info,
+                                significance_source: str = 'prediction',
+                                percentile_threshold: float = 5.0) -> Dict:
+        """
+        Enhanced interface: Create statistical maps with dual analysis and percentile thresholds.
+
+        Creates target_*/{significance_source}-effects/ folder structure with artifacts.
+        Supports symmetric percentile thresholds for both low and high significance regions.
+
+        Parameters
+        ----------
+        grid_coords : np.ndarray
+            Grid coordinates with shape (n_grid_points, 2)
+        significance_values : np.ndarray
+            Significance values for filtering (prediction×confidence or correlation values)
+        input_matrix : np.ndarray
+            Input matrix with shape (n_samples, n_features)
+        target_data : dict
+            Target variable data {target_name: scores, ...}
+        output_folder : Path
+            Base output directory
+        input_type : str
+            Data format type for save_statistical_maps ('nifti', 'image', 'spreadsheet')
+        output_format_info : various
+            Format info for save_statistical_maps (affine, shape, columns)
+        significance_source : str, default='prediction'
+            Source of significance values. Options: 'prediction', 'correlation'
+            Determines output folder naming: prediction-effects/ or correlation-effects/
+        percentile_threshold : float, default=5.0
+            Percentile threshold for symmetric range (N% to (100-N)%).
+            Creates low significance (< Nth percentile) and high significance (> (100-N)th percentile) regions
+
+        Returns
+        -------
+        dict
+            Results with artifact paths and metadata for all targets including dual significance regions
+        """
+        output_folder = Path(output_folder)
+
+        # Validate significance source
+        valid_sources = ['prediction', 'correlation']
+        if significance_source not in valid_sources:
+            raise ValueError(f"Invalid significance_source: {significance_source}. Valid options: {valid_sources}")
+
+        # Validate percentile threshold
+        if not (1.0 <= percentile_threshold <= 49.0):
+            raise ValueError(f"percentile_threshold must be in range [1.0, 49.0], got: {percentile_threshold}")
+
+        # Compute percentile thresholds
+        low_threshold = np.percentile(significance_values, percentile_threshold)
+        high_threshold = np.percentile(significance_values, 100 - percentile_threshold)
+
+        results = {
+            'statistical_results': {},
+            'analysis_metadata': {
+                'significance_source': significance_source,
+                'percentile_threshold': percentile_threshold,
+                'low_percentile_threshold': float(low_threshold),
+                'high_percentile_threshold': float(high_threshold),
+                'min_cluster_size': self.min_cluster_size,
+                'statistical_test': self.statistical_test
+            }
+        }
+
+        logger.info(f"Creating {significance_source} statistical maps for {len(target_data)} targets "
+                    f"with {percentile_threshold}% percentile threshold")
+        logger.info(f"Significance thresholds: low < {low_threshold:.4f}, high > {high_threshold:.4f}")
+
+        # Identify low and high significance regions
+        low_significance_mask = significance_values < low_threshold
+        high_significance_mask = significance_values > high_threshold
+
+        low_significance_indices = np.where(low_significance_mask)[0]
+        high_significance_indices = np.where(high_significance_mask)[0]
+
+        logger.info(f"Found {len(low_significance_indices)} low significance and "
+                    f"{len(high_significance_indices)} high significance regions")
+
+        # Process each target
+        for target_name in target_data.keys():
+            logger.info(f"Processing target: {target_name}")
+
+            try:
+                # Create target-specific output directory based on significance source
+                folder_name = f"{significance_source}-effects"
+                target_output = output_folder / f"target_{target_name}" / folder_name
+                target_output.mkdir(parents=True, exist_ok=True)
+
+                # Save low and high significance regions
+                low_regions_path = target_output / "low_significance_regions.npy"
+                high_regions_path = target_output / "high_significance_regions.npy"
+
+                np.save(low_regions_path, low_significance_indices)
+                np.save(high_regions_path, high_significance_indices)
+
+                # Save metadata
+                metadata = {
+                    'target_name': target_name,
+                    'significance_source': significance_source,
+                    'percentile_threshold': percentile_threshold,
+                    'low_percentile_threshold': float(low_threshold),
+                    'high_percentile_threshold': float(high_threshold),
+                    'low_significance_count': len(low_significance_indices),
+                    'high_significance_count': len(high_significance_indices),
+                    'total_regions': len(significance_values),
+                    'artifacts': {
+                        'low_significance_regions': str(low_regions_path),
+                        'high_significance_regions': str(high_regions_path)
+                    }
+                }
+
+                metadata_path = target_output / "metadata.json"
+                with open(metadata_path, 'w') as f:
+                    json.dump(metadata, f, indent=2)
+                metadata['artifacts']['metadata'] = str(metadata_path)
+
+                results['statistical_results'][target_name] = metadata
+
+                logger.info(f"Created {significance_source} effects for target {target_name}: "
+                            f"{len(low_significance_indices)} low + {len(high_significance_indices)} high regions")
+
+            except Exception as e:
+                logger.error(f"Failed to create {significance_source} effects for target {target_name}: {e}")
+                results['statistical_results'][target_name] = {'error': str(e)}
+                continue
+
+        logger.info(f"Completed {significance_source} statistical maps for {len(results['statistical_results'])} targets")
+        return results
+
     def create_region_statistical_maps(self,
                                        grid_coords: np.ndarray,
                                        prediction_values: np.ndarray,

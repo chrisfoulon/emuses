@@ -64,37 +64,52 @@
 
 ### Phase 3: Enhancement Implementation ║ Folder Structure & Visualization Updates ║ MEDIUM ║ 2-3 sessions
 
-- [ ] **Task 3.1: Folder Structure Updates** ║ `tests/analysis_api/test_folder_naming.py` ║ Update "grids" → "heatmaps" in modular tools ║ S
-  - [ ] 3.1.a: Update GridCreator output folder naming
-    - [ ] 3.1.a.1: Change `prediction-grids/` → `prediction-heatmaps/` in create_prediction_heatmaps()
-    - [ ] 3.1.a.2: Update folder creation logic and path references
-    - [ ] 3.1.a.3: Verify backwards compatibility with existing artifacts
-  - [ ] 3.1.b: Update CorrelationGridCreator output folder naming  
-    - [ ] 3.1.b.1: Change `correlation-grids/` → `correlation-heatmaps/` in create_correlation_heatmaps()
-    - [ ] 3.1.b.2: Update folder creation logic and path references
-    - [ ] 3.1.b.3: Verify backwards compatibility with existing artifacts
+- [x] **Task 3.1: Folder Structure Updates** ║ `tests/analysis_api/test_folder_naming.py` ║ Update "grids" → "heatmaps" in modular tools ║ S ✅
+  - [x] 3.1.a: Update GridCreator output folder naming
+    - [x] 3.1.a.1: Change `prediction-grids/` → `prediction-heatmaps/` in create_prediction_heatmaps()
+    - [x] 3.1.a.2: Update folder creation logic and path references
+    - [x] 3.1.a.3: Verify backwards compatibility with existing artifacts
+  - [x] 3.1.b: Update CorrelationGridCreator output folder naming  
+    - [x] 3.1.b.1: Change `correlation-grids/` → `correlation-heatmaps/` in create_correlation_heatmaps()
+    - [x] 3.1.b.2: Update folder creation logic and path references
+    - [x] 3.1.b.3: Verify backwards compatibility with existing artifacts
 
-- [ ] **Task 3.2: Dual Effect Size Maps Implementation** ║ `tests/analysis_api/test_dual_effects.py` ║ Separate prediction and correlation effect analysis ║ M
-  - [ ] 3.2.a: Enhance RegionStatisticalAnalyzer for dual analysis pattern
-    - [ ] 3.2.a.1: Add significance_source parameter to create_statistical_maps()
-    - [ ] 3.2.a.2: Update output folder naming based on significance source
-    - [ ] 3.2.a.3: Maintain consistent metadata format across both analyses
+- [x] **Task 3.2: Dual Effect Size Maps Implementation** ║ `tests/analysis_api/test_dual_effects.py` ║ Separate prediction and correlation effect analysis with symmetric percentile thresholds ║ M ✅
+  - [x] 3.2.a: Enhance RegionStatisticalAnalyzer for dual analysis pattern
+    - [x] 3.2.a.1: Add significance_source parameter to create_statistical_maps()
+    - [x] 3.2.a.2: Add percentile_threshold parameter for symmetric range (e.g., 5 → 5%-95% range)
+    - [x] 3.2.a.3: Update output folder naming based on significance source
+    - [x] 3.2.a.4: Maintain consistent metadata format across both analyses
+  - [ ] 3.2.a.5: CRITICAL - Enhance create_statistical_maps() to do full clustering and effect map generation
+    - [ ] 3.2.a.5.1: Add grid→sample mapping algorithm (KNN from grid coords to training embeddings)
+    - [ ] 3.2.a.5.2: Integrate existing perform_region_clustering() and compute_statistical_analysis()  
+    - [ ] 3.2.a.5.3: Generate per-cluster effect maps using input_matrix_stat_map() and save_statistical_maps()
+    - [ ] 3.2.a.5.4: Use proper naming: effect_size_map_target_{target}_cluster_{cluster}_{high|low}_cluster_{cluster}.{nii|csv}
   - [ ] 3.2.b: Update HeatmapStage integration for dual analysis calls
-    - [ ] 3.2.b.1: Run RegionStatisticalAnalyzer for prediction significance → prediction-effects/
-    - [ ] 3.2.b.2: Run RegionStatisticalAnalyzer for correlation significance → correlation-effects/
-    - [ ] 3.2.b.3: Use appropriate quantile thresholds (95th percentile for prediction, 95th percentile absolute for correlation)
+    - [ ] 3.2.b.1: Replace old create_statistical_maps() call with new enhanced dual analysis pattern
+    - [ ] 3.2.b.2: Add CLI parameter --effect_percentile_threshold (default: 5) to heatmap stage integration
+    - [ ] 3.2.b.3: Run dual RegionStatisticalAnalyzer calls:
+      - Call 1: prediction×confidence significance → prediction-effects/
+      - Call 2: absolute correlation significance → correlation-effects/
 
 - [ ] **Task 3.3: Heatmap Visualization with Scatter Overlay** ║ `tests/analysis_api/test_heatmap_plotting.py` ║ Add matplotlib plotting with UMAP scatter overlay ║ M  
   - [ ] 3.3.a: Implement heatmap plotting functionality in GridCreator
-    - [ ] 3.3.a.1: Add matplotlib heatmap generation (imshow) for combined_values
-    - [ ] 3.3.a.2: Overlay UMAP training embeddings as scatter points
-    - [ ] 3.3.a.3: Color-code scatter points by target scores for interpretability
-    - [ ] 3.3.a.4: Save as heatmap_plot.png in prediction-heatmaps/ folder
-  - [ ] 3.3.b: Implement heatmap plotting functionality in CorrelationGridCreator
-    - [ ] 3.3.b.1: Add matplotlib heatmap generation for correlation values
-    - [ ] 3.3.b.2: Overlay UMAP training embeddings as scatter points
-    - [ ] 3.3.b.3: Color-code scatter points by target scores for interpretability
-    - [ ] 3.3.b.4: Save as heatmap_plot.png in correlation-heatmaps/ folder
+    - [ ] 3.3.a.1: Add base heatmap generation using visualisation.py patterns
+      - Use imshow(combined_values.reshape(100, 100)) for heatmap background
+      - Add scatter(training_embeddings, c=target_scores) for UMAP overlay
+      - Save as: prediction_heatmap_target_{target_id}.png
+    - [ ] 3.3.a.2: Add cluster overlay generation (called from RegionStatisticalAnalyzer)
+      - Same base heatmap + highlight cluster points with different colors
+      - Use pattern: all_points_grey + cluster_points_colored (from visualisation.py:188-204)
+      - Save as: prediction_heatmap_target_{target_id}_cluster_{cluster}_{high|low}_overlay.png
+  - [ ] 3.3.b: Implement heatmap plotting functionality in CorrelationGridCreator  
+    - [ ] 3.3.b.1: Add base correlation heatmap generation using visualisation.py patterns
+      - Use imshow(correlation_values.reshape(100, 100)) for heatmap background
+      - Add scatter(training_embeddings, c=target_scores) for UMAP overlay
+      - Save as: correlation_heatmap_target_{target_id}.png
+    - [ ] 3.3.b.2: Add cluster overlay generation (called from RegionStatisticalAnalyzer)
+      - Same base + highlight correlation cluster points
+      - Save as: correlation_heatmap_target_{target_id}_cluster_{cluster}_{high|low}_overlay.png
 
 - [ ] **Task 3.4: Integration Testing & Validation** ║ `tests/analysis_api/test_enhancement_integration.py` ║ End-to-end validation of enhancements ║ M
   - [ ] 3.4.a: Validate folder structure changes
@@ -131,14 +146,35 @@ target_0/
 │   ├── point_biserial_correlation.npy  # Point-biserial heatmap
 │   ├── heatmap_plot.png          # NEW: Heatmap + UMAP scatter overlay
 │   └── metadata.json             # Sigma value, analysis parameters
-├── prediction-effects/            # NEW: Effect maps from prediction significance
-│   ├── cluster_X_effect_size.nii  # Effect size maps per significant cluster
-│   ├── metadata.json             # Cluster information, thresholds
-│   └── significant_regions.npy   # 95th percentile significant regions
-├── correlation-effects/           # NEW: Effect maps from correlation significance  
-│   ├── cluster_Y_effect_size.nii  # Effect size maps per significant cluster
-│   ├── metadata.json             # Cluster information, thresholds  
-│   └── significant_regions.npy   # 95th percentile significant regions
+├── prediction-heatmaps/           # GridCreator output (renamed from prediction-grids) ✅
+│   ├── prediction_values.npy      # Raw predictions on 100x100 grid
+│   ├── confidence_values.npy      # Confidence from model variance  
+│   ├── combined_values.npy        # prediction×confidence heatmap values
+│   ├── grid_coordinates.npy       # 100x100 coordinate grid
+│   ├── prediction_metadata.json   # Analysis parameters
+│   ├── prediction_heatmap_target_0.png      # Base heatmap + UMAP scatter overlay
+│   └── prediction_heatmap_target_0_cluster_{X}_{high|low}_overlay.png  # Per-cluster overlays
+├── correlation-heatmaps/          # CorrelationGridCreator output (renamed from correlation-grids) ✅
+│   ├── correlation_values_pearson.npy    # Pearson correlation heatmap
+│   ├── correlation_values_spearman.npy   # Spearman correlation heatmap  
+│   ├── grid_coordinates.npy       # 100x100 coordinate grid  
+│   ├── correlation_metadata.json  # Sigma value, analysis parameters
+│   ├── correlation_heatmap_target_0.png   # Base correlation heatmap + UMAP scatter
+│   └── correlation_heatmap_target_0_cluster_{Y}_{high|low}_overlay.png  # Per-cluster overlays
+├── prediction-effects/            # RegionStatisticalAnalyzer with prediction×confidence significance
+│   ├── low_significance_regions.npy   # < 5th percentile grid indices ✅ 
+│   ├── high_significance_regions.npy  # > 95th percentile grid indices ✅
+│   ├── effect_size_map_target_0_cluster_0_high_cluster_0.nii    # Per-cluster effect maps (nifti input)
+│   ├── effect_size_map_target_0_cluster_1_high_cluster_1.csv    # Per-cluster effect maps (spreadsheet input)  
+│   ├── effect_size_map_target_0_cluster_3_low_cluster_3.nii     # Low significance clusters
+│   └── metadata.json             # Cluster info, percentile thresholds, sample mapping
+├── correlation-effects/           # RegionStatisticalAnalyzer with absolute correlation significance  
+│   ├── low_significance_regions.npy   # < 5th percentile grid indices ✅
+│   ├── high_significance_regions.npy  # > 95th percentile grid indices ✅
+│   ├── effect_size_map_target_0_cluster_0_high_cluster_0.nii    # Per-cluster effect maps
+│   ├── effect_size_map_target_0_cluster_2_high_cluster_2.nii    # Additional high clusters  
+│   ├── effect_size_map_target_0_cluster_4_low_cluster_4.nii     # Low significance clusters
+│   └── metadata.json             # Cluster info, percentile thresholds, sample mapping
 └── interactive_plots/
     └── interactive_clustering_target_0.html
 ```

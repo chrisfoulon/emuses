@@ -1,119 +1,142 @@
-# Statistical Analysis Enhancement - Session Handoff
+# Analysis API Enhancement - Session Handoff
 
-## Current Status: Enhancement Phase Ready
+## Current Implementation Status
 
-**Date**: 2025-08-29  
-**Branch**: `feature/analysis-api-enhancement`  
-**Implementation Status**: Core functionality WORKING, targeted enhancements needed
+### ✅ COMPLETED: Foundation & Partial Enhancement (Tasks 3.1-3.2.a)
+- **Model Registry System**: Production ready with comprehensive testing (2,138 tests, 99.1% health)
+- **Triple Grid Analysis Components**: All modular components implemented and tested
+- **Phase 3 Progress**: 
+  - ✅ **Task 3.1**: Folder Structure Updates COMPLETE
+    - `prediction-grids/` → `prediction-heatmaps/` in GridCreator ✅
+    - `correlation-grids/` → `correlation-heatmaps/` in CorrelationGridCreator ✅
+    - Backwards compatibility maintained, all tests passing
+  - ✅ **Task 3.2.a**: Enhanced RegionStatisticalAnalyzer with dual analysis parameters ✅
+    - Added `significance_source` parameter ('prediction' vs 'correlation')  
+    - Added `percentile_threshold` parameter for symmetric ranges (default: 5% → 5%-95%)
+    - ⚠️ **CRITICAL ISSUE DISCOVERED**: Current implementation is simplified and incomplete!
 
-## ⚠️ CRITICAL: What NOT to Change
+### 🚨 CRITICAL PROBLEM IDENTIFIED
 
-### **Core Methodology is WORKING** ✅ (Don't Touch!)
-The two-heatmap approach is **scientifically validated and functionally complete**:
-- ✅ **No kernel regression training** (uses median sigma only)
-- ✅ **Existing model usage** (uses `context["prediction_models"]` exclusively) 
-- ✅ **Modular architecture** (GridCreator, CorrelationGridCreator, RegionStatisticalAnalyzer)
-- ✅ **Pipeline integration** (HeatmapStage after nested CV training)
+**Current RegionStatisticalAnalyzer.create_statistical_maps()** only saves raw significance region indices but **SKIPS THE ACTUAL STATISTICAL WORKFLOW** that generates the per-cluster effect size maps seen in legacy runs.
 
-### **What Caused the Recent Regression**
-I (Claude) made the mistake of replacing the working modular implementation with a basic version that only saved numpy arrays, removing:
-- Plotted heatmap visualizations  
-- Detailed folder structure
-- Statistical maps functionality
+**Missing Implementation**:
+1. **Grid→Sample Mapping**: Map 10,000 grid coordinates back to ~500 training sample indices  
+2. **Full Clustering Workflow**: Use existing `perform_region_clustering()` + `compute_statistical_analysis()`
+3. **Per-Cluster Effect Maps**: Generate `effect_size_map_target_0_cluster_X_{high|low}_cluster_X.{nii|csv}` files
+4. **Complete Visualization**: Base heatmaps + cluster overlay plots
 
-**This regression was corrected** by restoring the modular architecture, but **enhancements are still needed**.
+### 📋 IMMEDIATE NEXT STEPS (PRIORITY ORDER)
 
-## 🎯 Exact Enhancement Scope (Only These 3 Items)
+#### **Task 3.2.a.5: CRITICAL - Fix create_statistical_maps() Implementation** 
+**CURRENT ACTIVE TASK** - Must be completed before continuing
 
-### 1. Folder Structure Updates (Simple)
-**Current**: `prediction-grids/`, `correlation-grids/`  
-**Required**: `prediction-heatmaps/`, `correlation-heatmaps/`
-- Update folder names in GridCreator.create_prediction_heatmaps()
-- Update folder names in CorrelationGridCreator.create_correlation_heatmaps()
+**Problem**: Current method at `/mnt/c/Users/Tolhsadum/PycharmProjects/emuses/emuses/tools/region_statistical_analyzer.py:209` is incomplete
+**Required**: Implement full statistical workflow based on codebase analysis
 
-### 2. Dual Effect Size Maps (Moderate)
-**Current**: Single RegionStatisticalAnalyzer call  
-**Required**: Two separate effect analyses
-- `prediction-effects/` - from prediction×confidence significance (95th percentile)
-- `correlation-effects/` - from correlation significance (95th percentile absolute)
+**Implementation Steps**:
+1. **Grid→Sample Mapping Algorithm**: 
+   ```python
+   # Map grid indices to training sample indices using KNN
+   from sklearn.neighbors import NearestNeighbors
+   nbrs = NearestNeighbors(n_neighbors=1).fit(training_embeddings)
+   distances, sample_indices = nbrs.kneighbors(significant_grid_coords)
+   ```
 
-### 3. Scatter Plot Visualizations (Moderate)
-**Current**: Only .npy numerical files  
-**Required**: `heatmap_plot.png` files
-- Matplotlib heatmap (imshow) with UMAP training points scattered on top
-- Color-coded by target scores for interpretability
-- Generated in both prediction-heatmaps/ and correlation-heatmaps/
+2. **Integrate Existing Methods**: 
+   ```python
+   # Use existing clustering and statistical analysis
+   cluster_labels = self.perform_region_clustering(mapped_sample_coords)  
+   statistical_maps = self.compute_statistical_analysis(input_matrix, cluster_sample_indices)
+   ```
 
-## 📋 LAD-Compliant Documentation Ready
+3. **Generate Per-Cluster Effect Maps**:
+   ```python
+   # Use existing save_statistical_maps with proper naming
+   from emuses.tools.output_utils import save_statistical_maps
+   save_statistical_maps(statistical_maps, output_folder, input_type, output_format_info, 
+                        filename_prefix=f"effect_size_map_target_{target}_cluster")
+   ```
 
-### **Use These Files** (Recently Consolidated)
-- **Context**: `/dev-docs/analysis-api/context.md` (LAD Phase 01 multi-level context)  
-- **Plan**: `/dev-docs/analysis-api/plan.md` (LAD-compliant hierarchical plan with Phase 3 tasks)
+4. **Proper File Naming**: Follow legacy pattern: `effect_size_map_target_0_cluster_X_{high|low}_cluster_X.{nii|csv}`
 
-### **Architecture Status** (Production-Ready)
-- **Components**: GridCreator, CorrelationGridCreator, RegionStatisticalAnalyzer working
-- **Integration**: HeatmapStage._execute_triple_grid_analysis() functional
-- **APIs**: FastAPI endpoints operational  
-- **Tests**: 13/13 development tests passing, 90%+ coverage
+#### **Task 3.2.b: Update HeatmapStage Integration** 
+- **Current Issue**: `/mnt/c/Users/Tolhsadum/PycharmProjects/emuses/emuses/pipelines/heatmap_stage.py:1068` calls OLD method signature
+- **Required**: Update to use new dual analysis pattern with CLI parameter support
 
-## 🚨 Scientific Methodology Constraints (NON-NEGOTIABLE)
+#### **Task 3.3: Visualization Implementation**
+- **Base Heatmaps**: Use patterns from `/mnt/c/Users/Tolhsadum/PycharmProjects/emuses/emuses/tools/visualisation.py:164-174`
+- **Cluster Overlays**: Use patterns from `visualisation.py:188-204`
 
-### **Critical Requirements**
-1. **NEVER train models** during analysis phase - use `context["prediction_models"]` only
-2. **NEVER use kernel regression optimization** - use `compute_sigma_median()` only
-3. **MAINTAIN two-heatmap separation** - prediction analysis ≠ correlation analysis
+### 🔍 COMPLETE TARGET FILE STRUCTURE (Based on Legacy Analysis)
 
-### **Working Data Flow** (Don't Change!)
-```python
-# This integration pattern is WORKING correctly:
-Context Flow:
-├── Nested CV Training Complete → context["prediction_models"] available
-├── HeatmapStage Integration → _execute_triple_grid_analysis()  
-├── Extract Data: prediction_train_coords, Y matrix, trained_models
-├── GridCreator → prediction heatmaps using EXISTING models (no training)
-├── CorrelationGridCreator → correlation analysis using MEDIAN sigma (no optimization)
-└── RegionStatisticalAnalyzer → statistical effects (needs enhancement for dual analysis)
+```
+target_0/
+├── prediction-heatmaps/           # ✅ COMPLETE - Updated folder naming
+│   ├── prediction_values.npy, confidence_values.npy, combined_values.npy
+│   ├── prediction_heatmap_target_0.png      # 🔄 TODO: Base heatmap + UMAP scatter
+│   ├── prediction_heatmap_target_0_cluster_X_{high|low}_overlay.png  # 🔄 TODO: Cluster overlays
+│   └── prediction_metadata.json
+├── correlation-heatmaps/          # ✅ COMPLETE - Updated folder naming
+│   ├── correlation_values_pearson.npy, correlation_values_spearman.npy
+│   ├── correlation_heatmap_target_0.png     # 🔄 TODO: Base correlation heatmap + UMAP scatter
+│   ├── correlation_heatmap_target_0_cluster_Y_{high|low}_overlay.png  # 🔄 TODO: Cluster overlays
+│   └── correlation_metadata.json
+├── prediction-effects/            # ✅ PARTIAL - Folder creation works, content generation broken
+│   ├── low_significance_regions.npy   # ✅ Grid indices (< 5th percentile)
+│   ├── high_significance_regions.npy  # ✅ Grid indices (> 95th percentile)  
+│   ├── effect_size_map_target_0_cluster_0_high_cluster_0.nii    # 🚨 MISSING - Per-cluster effect maps
+│   ├── effect_size_map_target_0_cluster_1_high_cluster_1.nii    # 🚨 MISSING - Need full workflow
+│   ├── effect_size_map_target_0_cluster_3_low_cluster_3.nii     # 🚨 MISSING - Current method incomplete
+│   └── metadata.json             # ✅ Basic metadata works
+├── correlation-effects/           # ✅ PARTIAL - Same issue as prediction-effects
+│   ├── low_significance_regions.npy, high_significance_regions.npy  # ✅ Grid indices work
+│   ├── effect_size_map_target_0_cluster_X_{high|low}_cluster_X.nii  # 🚨 MISSING - Need full workflow
+│   └── metadata.json
+└── interactive_plots/             # ✅ EXISTING - No changes needed
+    └── interactive_clustering_target_0.html
 ```
 
-## 🎯 Implementation Guidance
+## Development Context
 
-### **Start Here** 
-```bash
-# Use LAD Phase 02b Milestone Checkpoint for ongoing implementation
-# File: .lad/claude_prompts/02b_milestone_checkpoint.md
+### **Key Codebase Analysis Results**:
+- **Visualization Patterns** ✅: `visualisation.py:plot_clustering()` has exact patterns needed
+- **Statistical Workflow** ✅: `stats_utils.py:input_matrix_stat_map()` + `output_utils.py:save_statistical_maps()`  
+- **HeatmapStage Integration** ⚠️: Line 1068 needs update to dual analysis pattern
+- **Missing Grid→Sample Mapping** 🔍: Key algorithmic gap identified
 
-# Begin with Phase 3, Task 3.1: Folder Structure Updates  
-# All task details in: /dev-docs/analysis-api/plan.md
-```
+### **Testing Strategy**:
+- **Current Baseline**: `python scripts/dev_test_runner.py` shows 13/13 tests passing
+- **New Tests**: `/mnt/c/Users/Tolhsadum/PycharmProjects/emuses/tests/analysis_api/test_dual_effects.py` (3 tests passing)
+- **Folder Tests**: `/mnt/c/Users/Tolhsadum/PycharmProjects/emuses/tests/analysis_api/test_folder_naming.py` (4 tests passing)
 
-### **Quick Validation** (Before Making Changes)
-```python
-# Verify the modular components are working:
-from emuses.tools.grid_creator import GridCreator
-from emuses.tools.correlation_grid_creator import CorrelationGridCreator  
-from emuses.tools.region_statistical_analyzer import RegionStatisticalAnalyzer
-print("✅ All modular components importable")
+### **Current Session State**:
+- **Working Directory**: `/mnt/c/Users/Tolhsadum/PycharmProjects/emuses/`
+- **Branch**: `feature/analysis-api-enhancement` (clean status)
+- **Analysis Notes**: `/tmp/codebase_analysis_notes.md` (comprehensive codebase analysis completed)
 
-# Check recent results exist (should see both heatmap files):
-ls "/mnt/s/GIN Dropbox/Chris Foulon/EMUSE/HCP_psy/model_registry_final_one_target/target_0/"
-# Should show: correlation_heatmap.npy, prediction_confidence_heatmap.npy
-```
+## CRITICAL NEXT SESSION INSTRUCTIONS
 
-## 📈 Expected Progress Pattern
+### **Immediate Action Required**:
+1. **Start with Task 3.2.a.5**: Fix the incomplete `create_statistical_maps()` method
+2. **Follow 02_iterative_implementation.md**: Use TDD approach with failing tests first
+3. **Reference Legacy Run**: `/mnt/s/GIN Dropbox/Chris Foulon/EMUSE/HCP_psy/testatoto/` for file naming patterns
+4. **Use Existing Codebase Patterns**: Don't rebuild from scratch, enhance existing modular architecture
 
-### **Session Success Metrics**
-- [ ] Enhanced folder naming without breaking existing functionality
-- [ ] Dual effect analysis producing different results for prediction vs correlation
-- [ ] Scatter plot visualizations showing heatmap + UMAP overlay  
-- [ ] All 13/13 development tests still passing
-- [ ] **CRITICAL**: No model training during analysis (methodology preserved)
+### **Key Implementation Insight**:
+The **RegionStatisticalAnalyzer already has all the methods needed** (`perform_region_clustering`, `compute_statistical_analysis`, integration with `save_statistical_maps`). The current `create_statistical_maps()` method was implemented as a simplified version but needs to be enhanced to use the **full sophisticated workflow**.
 
-### **Avoid These Mistakes** (From Previous Session)
-- ❌ Don't replace modular components with basic implementations
-- ❌ Don't try to "improve" the core methodology (it's already correct)
-- ❌ Don't add kernel regression training (explicitly prohibited)
-- ❌ Don't rebuild what's working (enhance only)
+### **Architecture Strategy**:
+- **Keep modular design**: Separate components for grid creation, correlation, statistical analysis
+- **Enhance existing methods**: Don't rebuild, just connect the existing sophisticated pipeline
+- **Use visualization.py patterns**: For consistent plotting style matching existing codebase
 
----
+## Success Criteria
 
-**Resume Point**: Use LAD 02b_milestone_checkpoint.md to begin Phase 3 implementation with the consolidated plan.md and context.md files as your guide.
+**Phase 3 Complete When**:
+- ✅ Folder structure updated (DONE)  
+- 🔄 **create_statistical_maps() generates actual per-cluster effect size maps** (CRITICAL)
+- 🔄 Base heatmap visualizations with UMAP scatter overlay  
+- 🔄 HeatmapStage integration updated for dual analysis with CLI parameters
+- ✅ All tests pass (current: 17/17 analysis tests passing)
+
+The foundation is solid, but the **core statistical workflow needs completion** before moving to visualization and integration tasks.

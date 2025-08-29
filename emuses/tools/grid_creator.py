@@ -276,7 +276,7 @@ class GridCreator:
         """
         Main interface: Create prediction*confidence heatmaps for all targets.
 
-        Creates target_*/prediction-grids/ folder structure with artifacts.
+        Creates target_*/prediction-heatmaps/ folder structure with artifacts.
 
         Parameters
         ----------
@@ -317,7 +317,7 @@ class GridCreator:
 
             try:
                 # Create target-specific output directory
-                target_output = output_folder / f"target_{target_name}" / "prediction-grids"
+                target_output = output_folder / f"target_{target_name}" / "prediction-heatmaps"
                 target_output.mkdir(parents=True, exist_ok=True)
 
                 # Run simplified inference for this target

@@ -109,15 +109,39 @@ Context Flow:
 **Current**: `prediction-grids/`, `correlation-grids/`
 **Required**: `prediction-heatmaps/`, `correlation-heatmaps/`
 
-### 2. Dual Effect Size Maps  
-**Current**: Single statistical analysis call
-**Required**: 
-- `prediction-effects/` - Effect maps from prediction*confidence significance  
-- `correlation-effects/` - Effect maps from correlation significance
+### 2. Dual Effect Size Maps with Complete Statistical Workflow
+**Current**: Simplified create_statistical_maps() that only saves region indices ❌  
+**Required**: Full statistical pipeline with per-cluster effect maps ✅
+- **Grid→Sample Mapping**: Map 10,000 grid coordinates to ~500 training sample indices using KNN
+- **HDBSCAN Clustering**: Cluster the mapped samples (existing perform_region_clustering)
+- **Statistical Analysis**: Run input_matrix_stat_map() per cluster (existing compute_statistical_analysis)
+- **Effect Map Generation**: Use save_statistical_maps() with proper naming
 
-### 3. Scatter Plot Visualizations
-**Current**: Only .npy numerical data
-**Required**: `heatmap_plot.png` files with heatmap + UMAP training points overlay
+**Output Structure**:
+- `prediction-effects/` - Effect maps from prediction×confidence significance
+  - `low/high_significance_regions.npy` - Grid indices for percentile filtering ✅
+  - `effect_size_map_target_0_cluster_X_{high|low}_cluster_X.{nii|csv}` - Per-cluster effect maps 
+  - Naming follows legacy pattern: `effect_size_map_score_0_cluster_0_high_cluster_0.csv`
+- `correlation-effects/` - Effect maps from absolute correlation significance  
+  - Same structure but from correlation values instead of prediction×confidence
+
+### 3. Heatmap Visualizations with Scatter Overlay
+**Current**: Only .npy numerical data  
+**Required**: Base heatmaps + cluster overlay visualizations
+- **Base Heatmaps**: `{prediction|correlation}_heatmap_target_X.png`
+  - `imshow(heatmap_values.reshape(100, 100))` for heatmap background
+  - `scatter(training_embeddings, c=target_scores)` for UMAP overlay
+  - Pattern from visualisation.py plot_clustering() function
+- **Cluster Overlays**: `..._cluster_Y_{high|low}_overlay.png`  
+  - Same base + highlight significant cluster points with different colors
+  - All training points grey + cluster points colored (visualisation.py:188-204)
+
+### 4. HeatmapStage Integration Updates  
+**Current**: Calls old create_statistical_maps() method signature ❌
+**Required**: Update to new dual analysis pattern ✅
+- Replace single statistical call with dual calls (prediction + correlation)
+- Add CLI parameter --effect_percentile_threshold integration  
+- Use enhanced create_statistical_maps() with full clustering workflow
 
 ## Scientific Methodology Framework (NON-NEGOTIABLE)
 

@@ -270,7 +270,7 @@ class CorrelationGridCreator:
         """
         Main interface: Create correlation heatmaps for all targets.
 
-        Creates target_*/correlation-grids/ folder structure with artifacts.
+        Creates target_*/correlation-heatmaps/ folder structure with artifacts.
 
         Parameters
         ----------
@@ -307,9 +307,9 @@ class CorrelationGridCreator:
 
         # Optimize sigma if requested and not set
         if optimize_sigma and self.sigma is None:
-            self.sigma = self.optimize_sigma(embeddings, method=sigma_method, 
-                                           percentile=sigma_percentile, 
-                                           scaling_factor=sigma_scaling_factor)
+            self.sigma = self.optimize_sigma(embeddings, method=sigma_method,
+                                             percentile=sigma_percentile,
+                                             scaling_factor=sigma_scaling_factor)
             results['grid_metadata']['sigma'] = self.sigma
             results['grid_metadata']['sigma_optimized'] = True
             results['grid_metadata']['sigma_method'] = sigma_method
@@ -330,7 +330,7 @@ class CorrelationGridCreator:
 
             try:
                 # Create target-specific output directory
-                target_output = output_folder / f"target_{target_name}" / "correlation-grids"
+                target_output = output_folder / f"target_{target_name}" / "correlation-heatmaps"
                 target_output.mkdir(parents=True, exist_ok=True)
 
                 # Compute correlations for all methods
