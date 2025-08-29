@@ -95,6 +95,36 @@ class GridCreator:
 
         return grid_coords
 
+    def _adapt_models_for_target(self, models, target_name):
+        """
+        Adapter method to handle both dict and sklearn Pipeline models.
+        
+        This method provides compatibility between:
+        - Dictionary interface (existing tests): models with .get('target') method
+        - sklearn Pipeline interface (production): Pipeline objects without .get()
+        
+        Parameters
+        ----------
+        models : list
+            List of models, either dict objects or sklearn Pipeline objects
+        target_name : str
+            Target variable name for model selection
+            
+        Returns
+        -------
+        list
+            Filtered models for the specified target
+        """
+        adapted_models = []
+        for model in models:
+            if hasattr(model, 'get'):  # Dictionary interface (existing tests)
+                if str(target_name) in model.get('target', ''):
+                    adapted_models.append(model)
+            else:  # sklearn Pipeline interface (production case)
+                # All models from HeatmapStage are already target-specific
+                adapted_models.append(model)
+        return adapted_models
+
     def simplified_inference(self,
                              grid_coords: np.ndarray,
                              trained_models: Dict,
@@ -131,13 +161,19 @@ class GridCreator:
         if not prediction_models:
             raise ValueError("No prediction models found in trained_models")
 
-        # Group models by target
-        target_models = [model for model in prediction_models
-                         if model.get('target', 'target_0') == target_name]
+        # Group models by target using adapter pattern
+        target_models = self._adapt_models_for_target(prediction_models, target_name)
 
         if not target_models:
+            # For error message, safely extract target info based on model type
+            available_targets = set()
+            for m in prediction_models:
+                if hasattr(m, 'get'):
+                    available_targets.add(m.get('target', 'target_0'))
+                else:
+                    available_targets.add('target_specific_pipeline')
             raise ValueError(f"No models found for target '{target_name}'. "
-                             f"Available targets: {set(m.get('target', 'target_0') for m in prediction_models)}")
+                             f"Available targets: {available_targets}")
 
         logger.info(f"Running simplified inference on {len(grid_coords)} grid points "
                     f"using {len(target_models)} models for target '{target_name}'")
@@ -317,7 +353,13 @@ class GridCreator:
 
             try:
                 # Create target-specific output directory
-                target_output = output_folder / f"target_{target_name}" / "prediction-heatmaps"
+                # Check if output_folder already contains target structure (e.g., .../target_0/)
+                if output_folder.name.startswith(f"target_"):
+                    # HeatmapStage already created target-specific folder
+                    target_output = output_folder / "prediction-heatmaps"
+                else:
+                    # Create target structure ourselves
+                    target_output = output_folder / f"target_{target_name}" / "prediction-heatmaps"
                 target_output.mkdir(parents=True, exist_ok=True)
 
                 # Run simplified inference for this target

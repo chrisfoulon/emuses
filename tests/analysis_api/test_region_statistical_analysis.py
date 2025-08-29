@@ -292,6 +292,138 @@ class TestStatisticalAnalysis(unittest.TestCase):
         self.assertEqual(len(statistical_maps), 0)
 
 
+class TestGridToSampleMappingContourDetection(unittest.TestCase):
+    """Test contour detection grid→sample mapping functionality."""
+    
+    def setUp(self):
+        """Set up test fixtures for contour detection testing."""
+        self.analyzer = RegionStatisticalAnalyzer()
+        
+        # Create synthetic 20×20 grid with known geometric shapes for testing
+        self.grid_size = 20
+        self.significance_values = np.zeros(self.grid_size * self.grid_size)
+        
+        # Create training embeddings in rescaled space (0-1 range)
+        np.random.seed(42)
+        self.training_embeddings = np.random.uniform(0, 1, (100, 2))
+        
+    def test_map_grid_to_training_samples_high_significance_rectangular_region(self):
+        """Test contour detection for high significance rectangular region."""
+        # Create rectangular high significance region in grid indices 5-10, 8-12
+        for i in range(5, 11):  # rows 5-10
+            for j in range(8, 13):  # cols 8-12
+                grid_idx = i * self.grid_size + j
+                self.significance_values[grid_idx] = 0.9  # High significance
+        
+        # Place some training points inside the rectangle (rescaled coordinates)
+        # Rectangle spans grid indices 5-10, 8-12 → rescaled coords 0.25-0.5, 0.4-0.6
+        expected_inside_points = np.array([
+            [0.3, 0.45],   # Inside rectangle
+            [0.4, 0.55],   # Inside rectangle  
+            [0.35, 0.5],   # Inside rectangle
+        ])
+        
+        # Add points outside the rectangle for contrast
+        expected_outside_points = np.array([
+            [0.1, 0.1],    # Outside rectangle (top-left)
+            [0.9, 0.9],    # Outside rectangle (bottom-right)
+        ])
+        
+        # Combine all embeddings
+        extended_embeddings = np.vstack([
+            self.training_embeddings, 
+            expected_inside_points, 
+            expected_outside_points
+        ])
+        
+        result = self.analyzer.map_grid_to_training_samples(
+            significance_values=self.significance_values,
+            training_embeddings=extended_embeddings,
+            percentile_threshold=5.0,
+            significance_source='prediction'
+        )
+        
+        # Should return high and low significance sample indices
+        self.assertIn('high', result)
+        self.assertIn('low', result)
+        self.assertIsInstance(result['high'], np.ndarray)
+        self.assertIsInstance(result['low'], np.ndarray)
+        
+        # High significance indices should include points inside rectangle
+        # (Last 3 points in extended_embeddings are the inside points)
+        expected_inside_indices = np.arange(len(self.training_embeddings), 
+                                          len(self.training_embeddings) + 3)
+        
+        # Should find some points in the high significance region
+        self.assertTrue(len(result['high']) > 0)
+        
+        # The expected inside points should be in high significance results
+        for expected_idx in expected_inside_indices:
+            self.assertIn(expected_idx, result['high'])
+            
+    def test_map_grid_to_training_samples_circular_region(self):
+        """Test contour detection for circular high significance region."""
+        # Create circular region centered at grid position (10, 10) with radius 3
+        center_x, center_y = 10, 10
+        radius = 3
+        
+        for i in range(self.grid_size):
+            for j in range(self.grid_size):
+                distance = np.sqrt((i - center_x)**2 + (j - center_y)**2)
+                if distance <= radius:
+                    grid_idx = i * self.grid_size + j
+                    self.significance_values[grid_idx] = 0.95  # High significance
+                    
+        result = self.analyzer.map_grid_to_training_samples(
+            significance_values=self.significance_values,
+            training_embeddings=self.training_embeddings,
+            percentile_threshold=5.0,
+            significance_source='correlation'
+        )
+        
+        # Should return result dict with high and low keys
+        self.assertIn('high', result)
+        self.assertIn('low', result)
+        
+        # For correlation analysis, low should be empty (correlation uses high only)
+        self.assertEqual(len(result['low']), 0)
+        
+        # Should find some high significance samples (circular region contains some points)
+        # Note: Exact number depends on training embeddings distribution
+        self.assertIsInstance(result['high'], np.ndarray)
+            
+    def test_map_grid_to_training_samples_disconnected_regions(self):
+        """Test contour detection for multiple disconnected significant regions."""
+        # Create two separate rectangular regions
+        # Region 1: grid indices 2-4, 2-4 (top-left)
+        for i in range(2, 5):
+            for j in range(2, 5):
+                grid_idx = i * self.grid_size + j
+                self.significance_values[grid_idx] = 0.9
+                
+        # Region 2: grid indices 15-17, 15-17 (bottom-right)  
+        for i in range(15, 18):
+            for j in range(15, 18):
+                grid_idx = i * self.grid_size + j
+                self.significance_values[grid_idx] = 0.85
+                
+        result = self.analyzer.map_grid_to_training_samples(
+            significance_values=self.significance_values,
+            training_embeddings=self.training_embeddings,
+            percentile_threshold=10.0,
+            significance_source='prediction'
+        )
+        
+        # Should handle disconnected regions correctly
+        self.assertIn('high', result)
+        self.assertIn('low', result)
+        self.assertIsInstance(result['high'], np.ndarray)
+        self.assertIsInstance(result['low'], np.ndarray)
+        
+        # Should process both high and low regions for prediction source
+        # (actual counts depend on training embeddings distribution)
+
+
 class TestRegionStatisticalAnalysisIntegration(unittest.TestCase):
     """Test integrated region-based statistical analysis workflow."""
     

@@ -474,7 +474,7 @@ class TestGridCreatorHeatmaps:
             )
             
             # Check directory structure
-            target_dir = Path(temp_dir) / "target_cognitive_flexibility" / "prediction-grids"
+            target_dir = Path(temp_dir) / "target_cognitive_flexibility" / "prediction-heatmaps"
             assert target_dir.exists()
             
             # Check expected files

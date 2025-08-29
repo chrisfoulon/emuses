@@ -330,7 +330,13 @@ class CorrelationGridCreator:
 
             try:
                 # Create target-specific output directory
-                target_output = output_folder / f"target_{target_name}" / "correlation-heatmaps"
+                # Check if output_folder already contains target structure (e.g., .../target_0/)
+                if output_folder.name.startswith(f"target_"):
+                    # HeatmapStage already created target-specific folder
+                    target_output = output_folder / "correlation-heatmaps"
+                else:
+                    # Create target structure ourselves
+                    target_output = output_folder / f"target_{target_name}" / "correlation-heatmaps"
                 target_output.mkdir(parents=True, exist_ok=True)
 
                 # Compute correlations for all methods

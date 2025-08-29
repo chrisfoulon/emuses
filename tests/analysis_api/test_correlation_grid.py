@@ -241,7 +241,7 @@ class TestCorrelationHeatmapGeneration(unittest.TestCase):
                 
                 # Check directory structure
                 for target_name in ["target_0", "target_1"]:
-                    target_dir = output_folder / f"target_{target_name}" / "correlation-grids"
+                    target_dir = output_folder / f"target_{target_name}" / "correlation-heatmaps"
                     self.assertTrue(target_dir.exists())
                     
                     # Check for correlation files  
