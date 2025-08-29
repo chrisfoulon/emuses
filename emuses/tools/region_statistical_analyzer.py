@@ -12,6 +12,7 @@ from typing import Dict, List
 
 import hdbscan
 import numpy as np
+from scipy.ndimage import label, binary_erosion
 
 from emuses.tools.stats_utils import input_matrix_stat_map
 from emuses.tools.output_utils import save_statistical_maps
@@ -184,10 +185,12 @@ class RegionStatisticalAnalyzer:
 
             try:
                 # Compute statistical analysis using input_matrix_stat_map
+                # Use n_cores=1 to avoid daemonic processes conflict in pipeline context
                 stat_map, pval_map, effect_size_map = input_matrix_stat_map(
                     input_matrix,
                     indices,
-                    test_name=self.statistical_test
+                    test_name=self.statistical_test,
+                    n_cores=1
                 )
 
                 statistical_maps[f"cluster_{i}"] = {
@@ -206,6 +209,228 @@ class RegionStatisticalAnalyzer:
         logger.info(f"Computed statistical analysis for {len(statistical_maps)} valid clusters")
         return statistical_maps
 
+    def _extract_region_boundary_points(self, mask: np.ndarray) -> np.ndarray:
+        """
+        Extract boundary points from a binary mask using erosion-based approach.
+
+        Parameters
+        ----------
+        mask : np.ndarray
+            Binary mask of significant region
+
+        Returns
+        -------
+        np.ndarray
+            Array of boundary points with shape (n_points, 2)
+        """
+        if not np.any(mask):
+            return np.array([]).reshape(0, 2)
+
+        # Find boundary by eroding mask and taking difference
+        eroded = binary_erosion(mask)
+        boundary = mask & ~eroded
+
+        # Get boundary coordinates
+        boundary_points = np.column_stack(np.where(boundary))
+        return boundary_points
+
+    def map_grid_to_training_samples(self,
+                                     significance_values: np.ndarray,
+                                     training_embeddings: np.ndarray,
+                                     percentile_threshold: float,
+                                     significance_source: str) -> Dict[str, np.ndarray]:
+        """
+        Map significant grid regions to training samples using region-based approach.
+
+        COORDINATE SPACE: All operations in rescaled embedding space (0-1 range).
+        Grid indices (0-grid_size) map directly to coordinates via simple linear scaling: coord = index/grid_size.
+
+        DISCONNECTED REGIONS: Uses connected components to handle multiple disconnected regions,
+        processing each region separately for point inclusion.
+
+        Parameters
+        ----------
+        significance_values : np.ndarray
+            Flat array of significance values with shape (grid_size²,)
+        training_embeddings : np.ndarray
+            Training sample coordinates in rescaled space (0-1 range) with shape (n_samples, 2)
+        percentile_threshold : float
+            Percentile threshold for significance filtering (e.g., 5.0 for 5%-95% range)
+        significance_source : str
+            Source type: 'prediction' (uses both high+low regions) or 'correlation' (high only)
+
+        Returns
+        -------
+        dict
+            Dictionary with 'high' and 'low' sample indices arrays
+            (correlation only uses 'high', prediction uses both)
+        """
+        # Determine grid size from significance values
+        grid_size = int(np.sqrt(len(significance_values)))
+        if grid_size * grid_size != len(significance_values):
+            raise ValueError(f"significance_values length {len(significance_values)} is not a perfect square")
+
+        # Step 1: Create grid from flat values
+        significance_grid = significance_values.reshape(grid_size, grid_size)
+
+        # Step 2: Compute percentile thresholds
+        high_threshold = np.percentile(significance_values, 100 - percentile_threshold)
+
+        significant_sample_indices = {'high': [], 'low': []}
+
+        # Step 3: Process high significance regions (both prediction & correlation)
+        high_mask = significance_grid >= high_threshold
+        if np.any(high_mask):
+            # Find connected components in high significance regions
+            labeled_regions, num_regions = label(high_mask)
+
+            for region_id in range(1, num_regions + 1):  # Skip background (0)
+                region_mask = (labeled_regions == region_id)
+                region_coords = np.column_stack(np.where(region_mask))
+
+                if len(region_coords) > 0:
+                    # Convert grid indices to rescaled embedding coordinates (0-1 range)
+                    # Simple linear mapping: coordinate = grid_index / grid_size
+                    region_coords_scaled = region_coords / grid_size
+
+                    # Create bounding box for efficiency
+                    min_coords = region_coords_scaled.min(axis=0)
+                    max_coords = region_coords_scaled.max(axis=0)
+
+                    # Find training samples within bounding box
+                    in_bounds = ((training_embeddings >= min_coords) &
+                                 (training_embeddings <= max_coords)).all(axis=1)
+                    candidate_indices = np.where(in_bounds)[0]
+
+                    # For simple regions, use all candidates in bounding box
+                    # (More sophisticated point-in-polygon could be added later)
+                    significant_sample_indices['high'].extend(candidate_indices)
+
+        # Step 4: Process low significance regions (prediction analysis only)
+        if significance_source == 'prediction':
+            low_threshold = np.percentile(significance_values, percentile_threshold)
+            low_mask = significance_grid <= low_threshold
+            if np.any(low_mask):
+                # Find connected components in low significance regions
+                labeled_regions, num_regions = label(low_mask)
+
+                for region_id in range(1, num_regions + 1):  # Skip background (0)
+                    region_mask = (labeled_regions == region_id)
+                    region_coords = np.column_stack(np.where(region_mask))
+
+                    if len(region_coords) > 0:
+                        # Convert grid indices to rescaled embedding coordinates
+                        region_coords_scaled = region_coords / grid_size
+
+                        # Create bounding box
+                        min_coords = region_coords_scaled.min(axis=0)
+                        max_coords = region_coords_scaled.max(axis=0)
+
+                        # Find training samples within bounding box
+                        in_bounds = ((training_embeddings >= min_coords) &
+                                     (training_embeddings <= max_coords)).all(axis=1)
+                        candidate_indices = np.where(in_bounds)[0]
+
+                        significant_sample_indices['low'].extend(candidate_indices)
+
+        # Step 5: Remove duplicates and convert to numpy arrays
+        for region_type in significant_sample_indices:
+            significant_sample_indices[region_type] = np.unique(significant_sample_indices[region_type])
+
+        logger.debug(f"Region mapping: {len(significant_sample_indices['high'])} high significance, "
+                     f"{len(significant_sample_indices['low'])} low significance samples")
+
+        return significant_sample_indices
+
+    def _process_significance_region(self, region_type: str, sample_indices: np.ndarray,
+                                     training_embeddings: np.ndarray, input_matrix: np.ndarray,
+                                     target_name: str, target_output: Path, input_type: str,
+                                     output_format_info) -> int:
+        """
+        Process a single significance region (high or low) for statistical analysis.
+
+        Parameters
+        ----------
+        region_type : str
+            Type of region ('high' or 'low')
+        sample_indices : np.ndarray
+            Training sample indices within this significance region
+        training_embeddings : np.ndarray
+            Training sample coordinates
+        input_matrix : np.ndarray
+            Input matrix for statistical analysis
+        target_name : str
+            Target name for file naming
+        target_output : Path
+            Output directory path
+        input_type : str
+            Data format type
+        output_format_info : various
+            Format info for save_statistical_maps
+
+        Returns
+        -------
+        int
+            Number of clusters processed
+        """
+        if len(sample_indices) == 0:
+            logger.warning(f"No {region_type} significance samples found for target {target_name}")
+            return 0
+
+        # Step 2: Apply HDBSCAN clustering to mapped samples
+        if len(sample_indices) < self.min_cluster_size:
+            logger.warning(f"Insufficient samples for clustering in {region_type} region: "
+                           f"{len(sample_indices)} < {self.min_cluster_size}")
+            return 0
+
+        sample_coords = training_embeddings[sample_indices]
+        cluster_labels = self.perform_region_clustering(sample_coords)
+
+        # Extract cluster indices (map back to original sample space)
+        unique_clusters = set(cluster_labels)
+        unique_clusters.discard(-1)  # Remove noise label
+        cluster_sample_indices = []
+
+        for cluster_id in sorted(unique_clusters):
+            cluster_mask = cluster_labels == cluster_id
+            cluster_points = sample_indices[cluster_mask]
+            if len(cluster_points) >= self.min_cluster_size:
+                cluster_sample_indices.append(cluster_points)
+
+        logger.info(f"Found {len(cluster_sample_indices)} valid clusters in {region_type} significance region")
+
+        if not cluster_sample_indices:
+            logger.warning(f"No clusters met minimum size requirements for {region_type} region")
+            return 0
+
+        # Step 3: Compute statistical analysis for each cluster
+        statistical_maps = self.compute_statistical_analysis(input_matrix, cluster_sample_indices)
+
+        if not statistical_maps:
+            logger.warning(f"No valid clusters produced statistical maps for {region_type} region")
+            return 0
+
+        # Extract effect size maps for save_statistical_maps
+        effect_size_maps = {}
+        for cluster_name, data in statistical_maps.items():
+            # Use legacy naming pattern: effect_size_map_target_X_cluster_Y_{region_type}_cluster_Y
+            cluster_id = cluster_name.split('_')[1]  # Extract cluster number
+            effect_map_name = f"effect_size_map_{target_name}_cluster_{cluster_id}_{region_type}_cluster_{cluster_id}"
+            effect_size_maps[effect_map_name] = data["effect_size_map"]
+
+        # Step 4: Save statistical maps using existing utility
+        save_statistical_maps(
+            effect_size_maps,
+            target_output,
+            input_type,
+            output_format_info,
+            filename_prefix="",  # Empty prefix since effect_map_name includes full name
+            save_output=True,
+            generate_plots=False
+        )
+
+        return len(statistical_maps)
+
     def create_statistical_maps(self,
                                 grid_coords: np.ndarray,
                                 significance_values: np.ndarray,
@@ -214,13 +439,14 @@ class RegionStatisticalAnalyzer:
                                 output_folder: Path,
                                 input_type: str,
                                 output_format_info,
+                                training_embeddings: np.ndarray,
                                 significance_source: str = 'prediction',
                                 percentile_threshold: float = 5.0) -> Dict:
         """
-        Enhanced interface: Create statistical maps with dual analysis and percentile thresholds.
+        Enhanced interface: Create statistical maps with complete contour detection workflow.
 
-        Creates target_*/{significance_source}-effects/ folder structure with artifacts.
-        Supports symmetric percentile thresholds for both low and high significance regions.
+        Creates target_*/{significance_source}-effects/ folder structure with effect size maps.
+        Implements full pipeline: grid→sample mapping, clustering, statistical analysis.
 
         Parameters
         ----------
@@ -238,6 +464,8 @@ class RegionStatisticalAnalyzer:
             Data format type for save_statistical_maps ('nifti', 'image', 'spreadsheet')
         output_format_info : various
             Format info for save_statistical_maps (affine, shape, columns)
+        training_embeddings : np.ndarray
+            Training sample coordinates in rescaled space (0-1 range) with shape (n_samples, 2)
         significance_source : str, default='prediction'
             Source of significance values. Options: 'prediction', 'correlation'
             Determines output folder naming: prediction-effects/ or correlation-effects/
@@ -248,7 +476,7 @@ class RegionStatisticalAnalyzer:
         Returns
         -------
         dict
-            Results with artifact paths and metadata for all targets including dual significance regions
+            Results with artifact paths, effect size maps, and metadata for all targets
         """
         output_folder = Path(output_folder)
 
@@ -261,17 +489,11 @@ class RegionStatisticalAnalyzer:
         if not (1.0 <= percentile_threshold <= 49.0):
             raise ValueError(f"percentile_threshold must be in range [1.0, 49.0], got: {percentile_threshold}")
 
-        # Compute percentile thresholds
-        low_threshold = np.percentile(significance_values, percentile_threshold)
-        high_threshold = np.percentile(significance_values, 100 - percentile_threshold)
-
         results = {
             'statistical_results': {},
             'analysis_metadata': {
                 'significance_source': significance_source,
                 'percentile_threshold': percentile_threshold,
-                'low_percentile_threshold': float(low_threshold),
-                'high_percentile_threshold': float(high_threshold),
                 'min_cluster_size': self.min_cluster_size,
                 'statistical_test': self.statistical_test
             }
@@ -279,17 +501,17 @@ class RegionStatisticalAnalyzer:
 
         logger.info(f"Creating {significance_source} statistical maps for {len(target_data)} targets "
                     f"with {percentile_threshold}% percentile threshold")
-        logger.info(f"Significance thresholds: low < {low_threshold:.4f}, high > {high_threshold:.4f}")
 
-        # Identify low and high significance regions
-        low_significance_mask = significance_values < low_threshold
-        high_significance_mask = significance_values > high_threshold
+        # Step 1: Map grid regions to training sample indices using contour detection
+        significant_sample_indices = self.map_grid_to_training_samples(
+            significance_values=significance_values,
+            training_embeddings=training_embeddings,
+            percentile_threshold=percentile_threshold,
+            significance_source=significance_source
+        )
 
-        low_significance_indices = np.where(low_significance_mask)[0]
-        high_significance_indices = np.where(high_significance_mask)[0]
-
-        logger.info(f"Found {len(low_significance_indices)} low significance and "
-                    f"{len(high_significance_indices)} high significance regions")
+        logger.info(f"Mapped to training samples: {len(significant_sample_indices['high'])} high significance, "
+                    f"{len(significant_sample_indices['low'])} low significance samples")
 
         # Process each target
         for target_name in target_data.keys():
@@ -298,41 +520,56 @@ class RegionStatisticalAnalyzer:
             try:
                 # Create target-specific output directory based on significance source
                 folder_name = f"{significance_source}-effects"
-                target_output = output_folder / f"target_{target_name}" / folder_name
+                # Check if output_folder already contains target structure (e.g., .../target_0/)
+                if output_folder.name.startswith(f"target_"):
+                    # HeatmapStage already created target-specific folder
+                    target_output = output_folder / folder_name
+                else:
+                    # Create target structure ourselves
+                    target_output = output_folder / f"target_{target_name}" / folder_name
                 target_output.mkdir(parents=True, exist_ok=True)
 
-                # Save low and high significance regions
-                low_regions_path = target_output / "low_significance_regions.npy"
-                high_regions_path = target_output / "high_significance_regions.npy"
-
-                np.save(low_regions_path, low_significance_indices)
-                np.save(high_regions_path, high_significance_indices)
-
-                # Save metadata
-                metadata = {
+                target_results = {
                     'target_name': target_name,
                     'significance_source': significance_source,
                     'percentile_threshold': percentile_threshold,
-                    'low_percentile_threshold': float(low_threshold),
-                    'high_percentile_threshold': float(high_threshold),
-                    'low_significance_count': len(low_significance_indices),
-                    'high_significance_count': len(high_significance_indices),
-                    'total_regions': len(significance_values),
-                    'artifacts': {
-                        'low_significance_regions': str(low_regions_path),
-                        'high_significance_regions': str(high_regions_path)
-                    }
+                    'artifacts': {},
+                    'clusters_processed': {}
                 }
 
+                # Process high and low significance regions
+                region_types = ['high']
+                if significance_source == 'prediction':
+                    region_types.append('low')
+
+                for region_type in region_types:
+                    sample_indices = significant_sample_indices[region_type]
+                    clusters_processed = self._process_significance_region(
+                        region_type, sample_indices, training_embeddings, input_matrix,
+                        target_name, target_output, input_type, output_format_info
+                    )
+                    target_results['clusters_processed'][region_type] = clusters_processed
+
+                # Save significance region indices for reference
+                high_regions_path = target_output / "high_significance_regions.npy"
+                np.save(high_regions_path, significant_sample_indices['high'])
+                target_results['artifacts']['high_significance_regions'] = str(high_regions_path)
+
+                if significance_source == 'prediction':
+                    low_regions_path = target_output / "low_significance_regions.npy"
+                    np.save(low_regions_path, significant_sample_indices['low'])
+                    target_results['artifacts']['low_significance_regions'] = str(low_regions_path)
+
+                # Save metadata
                 metadata_path = target_output / "metadata.json"
                 with open(metadata_path, 'w') as f:
-                    json.dump(metadata, f, indent=2)
-                metadata['artifacts']['metadata'] = str(metadata_path)
+                    json.dump(target_results, f, indent=2)
+                target_results['artifacts']['metadata'] = str(metadata_path)
 
-                results['statistical_results'][target_name] = metadata
+                results['statistical_results'][target_name] = target_results
 
-                logger.info(f"Created {significance_source} effects for target {target_name}: "
-                            f"{len(low_significance_indices)} low + {len(high_significance_indices)} high regions")
+                total_clusters = sum(target_results['clusters_processed'].values())
+                logger.info(f"Completed statistical analysis for target {target_name}: {total_clusters} total clusters processed")
 
             except Exception as e:
                 logger.error(f"Failed to create {significance_source} effects for target {target_name}: {e}")
@@ -429,7 +666,13 @@ class RegionStatisticalAnalyzer:
 
             try:
                 # Create target-specific output directory
-                target_output = output_folder / f"target_{target_name}" / "statistical-maps-prediction"
+                # Check if output_folder already contains target structure (e.g., .../target_0/)
+                if output_folder.name.startswith(f"target_"):
+                    # HeatmapStage already created target-specific folder
+                    target_output = output_folder / "statistical-maps-prediction"
+                else:
+                    # Create target structure ourselves
+                    target_output = output_folder / f"target_{target_name}" / "statistical-maps-prediction"
                 target_output.mkdir(parents=True, exist_ok=True)
 
                 # Compute statistical analysis
