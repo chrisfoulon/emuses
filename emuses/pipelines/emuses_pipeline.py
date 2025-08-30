@@ -23,10 +23,27 @@ from emuses.tools.inputs_utils import (detect_dataset_type,
 
 
 class EMUSESPipeline:
-    def __init__(self, args):
+    def __init__(self, args, inference_data=None):
+        """
+        Initialize EMUSESPipeline with optional inference data injection.
+
+        Parameters
+        ----------
+        args : Namespace
+            Pipeline configuration arguments
+        inference_data : dict, optional
+            Inference-specific data for lightweight initialization.
+            If provided, should contain:
+            - input_path: str, path to inference input data
+            - scores_path: str or None, path to scores for validation
+            - model_path: str, path to trained model directory
+        """
         self.config = PipelineConfig(args)
         self.args = self.config  # For backward compatibility
         self.output_folder = self.config.output_path  # Use Path object, not string
+
+        # Store inference data for later processing
+        self._inference_data = inference_data
 
         # In classic mode, these come from the main dataset;
         # in label_dataset mode, the labelled dataset is processed separately.
@@ -54,7 +71,10 @@ class EMUSESPipeline:
         }
 
         self.validate_args()
-        self.format_args()  # Initialize random state management
+        
+        # Always call format_args - it handles both training and inference modes properly
+        self.format_args()
+        
         master_seed = getattr(self.config, "random_state", 42)
         self.logger.info(
             f"Initializing pipeline with master random seed: {master_seed}"
@@ -104,6 +124,7 @@ class EMUSESPipeline:
         # Add any necessary validation here.
         pass
 
+
     def format_args(self):
         """
         Process the dataset based on the mode and update context.
@@ -112,6 +133,9 @@ class EMUSESPipeline:
         For classic mode:
           - Process the main (fully labelled) dataset.
         Then, call split_dataset() to perform the splitting, save the files, and update the context.
+          
+        Note: Handles both training and inference modes. In inference mode,
+        uses simplified processing paths and loads saved scalers.
         """
         if getattr(self.config, "label_dataset", None):
             self.logger.info("Labelled dataset mode activated.")
@@ -151,6 +175,15 @@ class EMUSESPipeline:
         # Skip dataset splitting in inference mode
         if not getattr(self.config, 'inference_mode', False):
             self.split_dataset()
+        else:
+            # In inference mode, set up context that InferenceStage expects
+            self.logger.info(f"DEBUG: Setting inference context - input_matrix type: {type(self.input_matrix)}, shape: {self.input_matrix.shape if hasattr(self.input_matrix, 'shape') else 'no shape'}")
+            self.logger.info(f"DEBUG: Setting inference context - scores type: {type(self.scores)}, shape: {getattr(self.scores, 'shape', 'no shape')}")
+            self.context.update({
+                "inference_features": self.input_matrix,
+                "inference_labels": self.scores
+            })
+            self.logger.info(f"Inference mode data processing complete: {self.input_matrix.shape[0]} samples")
 
     def process_dataset(self, dataset_identifier, is_labelled=False):
         """

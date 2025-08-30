@@ -1559,34 +1559,32 @@ async def _execute_inference_locally(config: dict, status_renderer) -> None:
         # InferenceStage will handle pipeline status messages
         # Removed redundant "Initializing inference pipeline..." message
 
-        # Create args object for EMUSESPipeline (required for data processing)
+        # Create args object for EMUSESPipeline (consolidated approach)
         args = type('Args', (), {})()
-        args.input_dataset = str(config["data"])
+        args.input_dataset = str(config["data"])  # Still needed for PipelineConfig
         args.output_folder = str(config["output"])
         args.random_state = 42
         args.load_embeddings = None
         args.bids_filters = None
 
-        # Phase 1: Add critical preprocessing parameters
+        # Critical preprocessing parameters for data processing
         args.input_header = config.get("input_header")
         args.input_index_column = config.get("input_index_column")
         args.scores_header = config.get("scores_header")
         args.scores_index_column = config.get("scores_index_column")
         args.scores = str(config["scores"]) if config.get("scores") else None
 
-        # Additional critical preprocessing parameters
+        # Additional preprocessing parameters
         args.columns_are_features = config.get("columns_are_features", False)
         args.input_normalization = config.get("input_normalization", "none")
         args.inputs_columns = config.get("inputs_columns")
         args.classification = config.get("classification", False)
-
-        # Phase 3: Advanced scores processing parameters
+        
+        # Advanced processing parameters
         args.scores_normalization = config.get("scores_normalization", "none")
         args.scores_are_rows = config.get("scores_are_rows", False)
         args.scores_column = config.get("scores_column")
         args.filter_labelled_by_scores = config.get("filter_labelled_by_scores", False)
-
-        # Phase 3: Advanced input processing parameters
         args.recursive_search = config.get("recursive_search", False)
         args.input_file_types = config.get("input_file_types")
         args.arg_separator = config.get("arg_separator", ",")
@@ -1595,38 +1593,21 @@ async def _execute_inference_locally(config: dict, status_renderer) -> None:
         # Set inference mode to skip training-specific operations
         args.inference_mode = True
         
-        # Pass model directory path for scaler loading during inference
-        args.model_path = str(config["model"]) if config.get("model") else None
+        # Set model path for scaler loading in inference mode
+        if config.get("model"):
+            args.model_path = str(config["model"])
 
-        # Create EMUSESPipeline for data processing (standard pattern)
+        # Create EMUSESPipeline - format_args will handle inference mode properly
         pipeline = EMUSESPipeline(args)
-
-        # Process dataset to get features and labels in context format
-        input_matrix, dataset_type, output_format_info, scores = pipeline.process_dataset(config["data"])
-
-        # Load scores separately if provided (required for validation mode)
-        if args.scores:
-            try:
-                pipeline.load_and_process_scores(expected_length=input_matrix.shape[0])
-                scores = getattr(pipeline, 'scores', None)
-                if scores is not None:
-                    print(status_renderer.render_status("info", f"Loaded scores for validation: {scores.shape}"))
-                else:
-                    print(status_renderer.render_status("warning", "Scores file provided but failed to load"))
-            except Exception as e:
-                print(status_renderer.render_status("warning", f"Failed to load scores: {e}"))
-                scores = None
-
-        # Prepare context with processed data (standard stage pattern)
-        context = {
-            "inference_features": input_matrix,
-            "inference_labels": scores,
-            "dataset_type": dataset_type,
-            "output_format_info": output_format_info,
+        
+        # Use pipeline context directly - no duplicate processing
+        context = pipeline.context.copy()  # Copy to avoid modifying pipeline context
+        context.update({
             "verify_integrity": config.get("verify", True),
             "output_format": config.get("output_format", "csv"),
-            "cli_inference_mode": True  # Suppress duplicate logging in InferenceStage
-        }
+            "model_path": str(config["model"]) if config.get("model") else None,
+            "cli_inference_mode": True
+        })
 
         # Create inference stage with proper configuration
         inference_stage = InferenceStage(pipeline.config)
