@@ -1360,16 +1360,18 @@ class InferenceStage(PipelineStage):
                         transformed_features = feature_transformer.transform(embeddings)
                         predictions = estimator.predict(transformed_features)
                         
-                        # DEBUG: Log detailed information for KernelRegressor models
+                        # Check for zero predictions (diagnostic for model health)
                         if "KernelRegressor" in str(type(estimator)):
-                            zero_count = np.count_nonzero(predictions == 0) 
-                            logger.warning(f"Model {model_name}: {zero_count}/{len(predictions)} zero predictions detected")
+                            zero_count = np.count_nonzero(predictions == 0)
                             if zero_count == len(predictions):
-                                # Additional debugging for zero predictions
+                                # All predictions are zero - this indicates a problem
                                 emb_stats = f"emb_mean={np.mean(embeddings):.6f}, emb_std={np.std(embeddings):.6f}, emb_range=[{np.min(embeddings):.6f}, {np.max(embeddings):.6f}]"
                                 feat_stats = f"feat_mean={np.mean(transformed_features):.6f}, feat_std={np.std(transformed_features):.6f}, feat_range=[{np.min(transformed_features):.6f}, {np.max(transformed_features):.6f}]"
                                 kernel_params = f"kernel={getattr(estimator, 'kernel', 'unknown')}, alpha={getattr(estimator, 'alpha', 'unknown')}, gamma={getattr(estimator, 'gamma', 'unknown')}"
                                 logger.error(f"KERNEL_ZERO_ISSUE {model_name}: ALL PREDICTIONS ARE ZERO! {emb_stats}, {feat_stats}, {kernel_params}")
+                            elif zero_count > 0:
+                                logger.debug(f"Model {model_name}: {zero_count}/{len(predictions)} zero predictions detected")
+                            # No message when zero_count == 0 (this is the healthy, expected case)
                         
                         logger.debug(f"Pipeline prediction completed for {model_name}: {predictions.shape[0]} samples")
                     else:

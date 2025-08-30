@@ -177,8 +177,6 @@ class EMUSESPipeline:
             self.split_dataset()
         else:
             # In inference mode, set up context that InferenceStage expects
-            self.logger.info(f"DEBUG: Setting inference context - input_matrix type: {type(self.input_matrix)}, shape: {self.input_matrix.shape if hasattr(self.input_matrix, 'shape') else 'no shape'}")
-            self.logger.info(f"DEBUG: Setting inference context - scores type: {type(self.scores)}, shape: {getattr(self.scores, 'shape', 'no shape')}")
             self.context.update({
                 "inference_features": self.input_matrix,
                 "inference_labels": self.scores
