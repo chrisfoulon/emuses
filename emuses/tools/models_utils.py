@@ -229,7 +229,8 @@ def build_estimator(model_cfg: dict, task: str, n_jobs: int = -1):
             return ElasticNet(
                 alpha=model_cfg["alpha"],
                 l1_ratio=model_cfg["l1_ratio"],
-                max_iter=10000,
+                max_iter=model_cfg.get("max_iter", 1000),  # Default 1000, configurable via optim_dict
+                tol=model_cfg.get("tol", 1e-4),            # Default sklearn tol, configurable via optim_dict
             )
         # classification path
         return LogisticRegression(

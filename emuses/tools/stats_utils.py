@@ -161,13 +161,20 @@ def input_matrix_stat_map(input_matrix, indices, test_name="mann-whitney", n_cor
     # Other matrix with remaining rows
     other_matrix = input_matrix[mask, :]
 
-    # Create a pool of workers
-    with Pool(processes=n_cores) as pool:
-        tasks = [
+    # Use EMUSES safe parallel processing pattern
+    from joblib import delayed
+    from emuses.tools.parallelism_utils import create_safe_parallel
+    
+    # Create safe parallel processor (auto-detects subprocess context)
+    parallel = create_safe_parallel(n_cores)
+    
+    # Process columns using EMUSES safe pattern
+    results = parallel(
+        delayed(process_column)(
             (filtered_matrix[:, i], other_matrix[:, i], test_name, i)
-            for i in range(input_matrix.shape[1])
-        ]
-        results = list(tqdm(pool.imap(process_column, tasks), total=len(tasks)))
+        )
+        for i in tqdm(range(input_matrix.shape[1]), desc="Processing columns")
+    )
 
     for i, stat, pval, effect_size in results:
         stat_map[i] = stat

@@ -131,6 +131,10 @@ class EMUSESPipeline:
                     expected_length=self.labelled_input_matrix.shape[0]
                 )
             self.logger.info(f"Main dataset type: {self.dataset_type}")
+            
+            # Add dataset metadata to context for stages to access
+            self.context["dataset_type"] = self.dataset_type
+            self.context["output_format_info"] = self.output_format_info
         else:
             self.input_matrix, self.dataset_type, self.output_format_info, scores = (
                 self.process_dataset(self.config.input_dataset, is_labelled=False)
@@ -139,6 +143,10 @@ class EMUSESPipeline:
                 self.scores = scores
             else:
                 self.load_and_process_scores(expected_length=self.input_matrix.shape[0])
+                
+            # Add dataset metadata to context for stages to access
+            self.context["dataset_type"] = self.dataset_type
+            self.context["output_format_info"] = self.output_format_info
         # After processing the datasets, perform the splitting:
         # Skip dataset splitting in inference mode
         if not getattr(self.config, 'inference_mode', False):

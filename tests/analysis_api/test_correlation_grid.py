@@ -80,7 +80,7 @@ class TestSigmaOptimization(unittest.TestCase):
         sigma = self.creator.optimize_sigma(self.embeddings, method="median")
         
         self.assertEqual(sigma, 0.3)
-        mock_compute_sigma.assert_called_once_with(self.embeddings, sample_size=0)
+        mock_compute_sigma.assert_called_once_with(self.embeddings, sample_size=None)
         
     def test_optimize_sigma_invalid_method(self):
         """Test sigma optimization with invalid method raises ValueError."""
@@ -273,7 +273,7 @@ class TestCorrelationHeatmapGeneration(unittest.TestCase):
                     
                     # Should have optimized sigma
                     self.assertEqual(creator.sigma, 0.25)
-                    mock_sigma.assert_called_once_with(self.embeddings, sample_size=0)
+                    mock_sigma.assert_called_once_with(self.embeddings, sample_size=None)
 
 
 if __name__ == "__main__":

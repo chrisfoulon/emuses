@@ -196,7 +196,8 @@ class RegionStatisticalAnalyzer:
                 statistical_maps[f"cluster_{i}"] = {
                     "stat_map": stat_map,
                     "pval_map": pval_map,
-                    "effect_size_map": effect_size_map
+                    "effect_size_map": effect_size_map,
+                    "cluster_indices": indices  # Store cluster indices for visualization
                 }
 
                 logger.debug(f"Cluster {i} effect size range: "
@@ -345,7 +346,7 @@ class RegionStatisticalAnalyzer:
     def _process_significance_region(self, region_type: str, sample_indices: np.ndarray,
                                      training_embeddings: np.ndarray, input_matrix: np.ndarray,
                                      target_name: str, target_output: Path, input_type: str,
-                                     output_format_info) -> int:
+                                     output_format_info, target_data: dict) -> int:
         """
         Process a single significance region (high or low) for statistical analysis.
 
@@ -413,18 +414,31 @@ class RegionStatisticalAnalyzer:
         # Extract effect size maps for save_statistical_maps
         effect_size_maps = {}
         for cluster_name, data in statistical_maps.items():
-            # Use legacy naming pattern: effect_size_map_target_X_cluster_Y_{region_type}_cluster_Y
+            # Use simple cluster identifier and let save_statistical_maps handle the naming
             cluster_id = cluster_name.split('_')[1]  # Extract cluster number
-            effect_map_name = f"effect_size_map_{target_name}_cluster_{cluster_id}_{region_type}_cluster_{cluster_id}"
-            effect_size_maps[effect_map_name] = data["effect_size_map"]
+            simple_cluster_id = f"{cluster_id}_{region_type}_{cluster_id}"
+            effect_size_maps[simple_cluster_id] = data["effect_size_map"]
 
-        # Step 4: Save statistical maps using existing utility
+        # Step 4: Generate cluster overlay visualizations before saving maps
+        try:
+            self._generate_cluster_overlay_visualizations(
+                statistical_maps, 
+                target_name, 
+                region_type,
+                target_output,
+                target_data,
+                training_embeddings
+            )
+        except Exception as e:
+            logger.error(f"Failed to generate cluster overlay visualizations: {e}")
+
+        # Step 5: Save statistical maps using existing utility with proper prefix
         save_statistical_maps(
             effect_size_maps,
             target_output,
             input_type,
             output_format_info,
-            filename_prefix="",  # Empty prefix since effect_map_name includes full name
+            filename_prefix=f"effect_size_map_{target_name}",
             save_output=True,
             generate_plots=False
         )
@@ -546,7 +560,7 @@ class RegionStatisticalAnalyzer:
                     sample_indices = significant_sample_indices[region_type]
                     clusters_processed = self._process_significance_region(
                         region_type, sample_indices, training_embeddings, input_matrix,
-                        target_name, target_output, input_type, output_format_info
+                        target_name, target_output, input_type, output_format_info, target_data
                     )
                     target_results['clusters_processed'][region_type] = clusters_processed
 
@@ -745,3 +759,110 @@ class RegionStatisticalAnalyzer:
 
         logger.info(f"Completed region-based statistical analysis for {len(results['statistical_results'])} targets")
         return results
+
+    def _generate_cluster_overlay_visualizations(self, 
+                                               statistical_maps: dict, 
+                                               target_name: str, 
+                                               region_type: str,
+                                               target_output: Path,
+                                               target_data: dict,
+                                               training_embeddings: np.ndarray):
+        """
+        Generate cluster overlay visualizations for processed statistical maps.
+        
+        Creates overlay visualizations showing heatmap + highlighted cluster points,
+        following the pattern from Task 3.3 in the analysis API plan.
+        """
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        try:
+            # Import visualization functions
+            from emuses.tools.heatmap_visualization import (
+                plot_prediction_cluster_overlay,
+                plot_correlation_cluster_overlay
+            )
+            
+            # Get target scores for scatter overlay
+            target_scores = target_data[target_name]
+            
+            # Determine analysis type from method call context 
+            # This is passed from the HeatmapStage based on which analysis is running
+            if hasattr(self, '_current_analysis_type'):
+                analysis_type = self._current_analysis_type
+            else:
+                # Fallback: infer from available data
+                if hasattr(self, '_prediction_heatmap_data'):
+                    analysis_type = "prediction"
+                elif hasattr(self, '_correlation_heatmap_data'):
+                    analysis_type = "correlation"
+                else:
+                    logger.warning("No heatmap data available for visualization")
+                    return
+            
+            # Select appropriate data and plot function
+            if analysis_type == "prediction" and hasattr(self, '_prediction_heatmap_data'):
+                heatmap_values = self._prediction_heatmap_data
+                plot_function = plot_prediction_cluster_overlay
+            elif analysis_type == "correlation" and hasattr(self, '_correlation_heatmap_data'):
+                heatmap_values = self._correlation_heatmap_data  
+                plot_function = plot_correlation_cluster_overlay
+            else:
+                logger.warning(f"No {analysis_type} heatmap data available for visualization")
+                return
+                
+            # Create visualizations folder
+            viz_folder = target_output / "cluster_visualizations"
+            viz_folder.mkdir(exist_ok=True)
+            
+            # Generate overlay for each processed cluster
+            for cluster_name, cluster_data in statistical_maps.items():
+                try:
+                    cluster_indices = cluster_data["cluster_indices"]
+                    cluster_id = cluster_name.split('_')[1]
+                    
+                    # Determine significance type and output filename based on analysis type
+                    if analysis_type == "prediction":
+                        significance_type = region_type  # high or low
+                        filename = f"prediction_heatmap_{target_name}_cluster_{cluster_id}_{significance_type}_overlay.png"
+                    else:  # correlation
+                        significance_type = "high"  # Correlation only has high regions
+                        filename = f"correlation_heatmap_{target_name}_cluster_{cluster_id}_high_overlay.png"
+                    
+                    output_path = viz_folder / filename
+                    
+                    # Generate cluster overlay visualization with function-specific parameters
+                    if analysis_type == "prediction":
+                        plot_function(
+                            heatmap_values=heatmap_values,
+                            training_embeddings=training_embeddings,
+                            target_scores=target_scores,
+                            cluster_sample_indices=cluster_indices,
+                            cluster_name=f"Cluster {cluster_id}",
+                            target_name=target_name,
+                            significance_type=significance_type,
+                            output_path=output_path,
+                            show_plot=False
+                        )
+                    else:  # correlation
+                        plot_function(
+                            correlation_values=heatmap_values,
+                            training_embeddings=training_embeddings,
+                            target_scores=target_scores,
+                            cluster_sample_indices=cluster_indices,
+                            cluster_name=f"Cluster {cluster_id}",
+                            target_name=target_name,
+                            output_path=output_path,
+                            show_plot=False
+                        )
+                    
+                    logger.info(f"Generated cluster overlay: {filename}")
+                    
+                except Exception as e:
+                    logger.error(f"Failed to generate overlay for {cluster_name}: {e}")
+                    continue
+                    
+        except ImportError as e:
+            logger.error(f"Failed to import visualization functions: {e}")
+        except Exception as e:
+            logger.error(f"Failed to generate cluster overlay visualizations: {e}")

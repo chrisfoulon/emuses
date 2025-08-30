@@ -1084,13 +1084,16 @@ class HeatmapStage(PipelineStage):
                     # Create target data dictionary
                     target_data = {target_name: target_scores}
                     
-                    # Create correlation heatmaps with median sigma (NOT kernel regression)
+                    # Create correlation heatmaps with optimized sigma (NOT kernel regression)
+                    # Using 25th percentile for sigma to create sharper, more localized correlation patterns
+                    # instead of broad smooth gradients from median (50th percentile)
                     correlation_results = correlation_creator.create_correlation_heatmaps(
                         embeddings=embeddings,
                         target_data=target_data,
                         output_folder=target_output,
                         optimize_sigma=True,  # Enable sigma optimization to set sigma value
-                        sigma_method="median"  # Use median distance method (fast, no optimization)
+                        sigma_method="percentile",  # Use percentile method for better local correlation patterns
+                        sigma_percentile=25.0  # Use 25th percentile for more localized kernels (sharper patterns)
                     )
                     
                     # Load actual correlation data for statistical analysis
@@ -1131,8 +1134,11 @@ class HeatmapStage(PipelineStage):
                         min_cluster_size=3
                     )
                     
-                    # Determine input type and output format info
+                    # Get dataset type and output format info from context (computed by EMUSESPipeline)
                     input_type = context.get("dataset_type", "image")
+                    output_format_info = context.get("output_format_info", self.output_format_info)
+                    
+                    logger.debug(f"Using dataset type: {input_type}, output format info: {type(output_format_info)}")
                     
                     # Create target data dictionary for this target
                     target_data = {target_name: target_scores}
@@ -1144,6 +1150,10 @@ class HeatmapStage(PipelineStage):
                         'grid_coordinates' in prediction_results and 
                         'combined_values' in prediction_results):
                         logger.info("    Running prediction significance analysis")
+                        # Store heatmap data for cluster visualizations
+                        statistical_analyzer._prediction_heatmap_data = prediction_results['combined_values']
+                        statistical_analyzer._current_analysis_type = "prediction"
+                        
                         statistical_analyzer.create_statistical_maps(
                             grid_coords=prediction_results['grid_coordinates'],
                             significance_values=prediction_results['combined_values'],  # prediction×confidence
@@ -1151,7 +1161,7 @@ class HeatmapStage(PipelineStage):
                             target_data=target_data,
                             output_folder=target_output,
                             input_type=input_type,
-                            output_format_info=self.output_format_info,
+                            output_format_info=output_format_info,
                             training_embeddings=embeddings,
                             significance_source='prediction',
                             percentile_threshold=5.0  # Creates 5%-95% range
@@ -1164,6 +1174,10 @@ class HeatmapStage(PipelineStage):
                         'grid_coordinates' in correlation_results and 
                         'pearson_correlation' in correlation_results):
                         logger.info("    Running correlation significance analysis")
+                        # Store correlation heatmap data for cluster visualizations
+                        statistical_analyzer._correlation_heatmap_data = correlation_results['pearson_correlation']
+                        statistical_analyzer._current_analysis_type = "correlation"
+                        
                         statistical_analyzer.create_statistical_maps(
                             grid_coords=correlation_results['grid_coordinates'],
                             significance_values=np.abs(correlation_results['pearson_correlation']),  # absolute correlation
@@ -1171,7 +1185,7 @@ class HeatmapStage(PipelineStage):
                             target_data=target_data,
                             output_folder=target_output,
                             input_type=input_type,
-                            output_format_info=self.output_format_info,
+                            output_format_info=output_format_info,
                             training_embeddings=embeddings,
                             significance_source='correlation',
                             percentile_threshold=5.0  # Only high regions meaningful

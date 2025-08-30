@@ -92,7 +92,7 @@ class CorrelationGridCreator:
             If unknown optimization method is specified or invalid parameters
         """
         if method == "median":
-            sigma = compute_sigma_median(embeddings, sample_size=0)
+            sigma = compute_sigma_median(embeddings, sample_size=None)
             sigma *= scaling_factor
             logger.info(f"Optimized sigma using median pairwise distance: {sigma:.4f}")
             

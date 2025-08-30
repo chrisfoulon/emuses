@@ -372,6 +372,11 @@ def train_and_save_umap_optim_with_nested_clustering(
             Number of parallel jobs for inner optimization
       random_state : int, default=42
             Random seed for UMAP for reproducibility.
+            
+            Note: Setting random_state will override any n_jobs > 1 within UMAP to n_jobs=1
+            to ensure reproducible results. This is expected behavior. To enable parallel 
+            processing in UMAP (faster training), set random_state=None, but results 
+            will not be reproducible across runs.
       clusterer_random_state : int, optional
             Random seed for HDBSCAN clustering. If None, uses the same as random_state.
       approx_min_span_tree : bool, default=True

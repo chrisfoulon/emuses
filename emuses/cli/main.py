@@ -36,8 +36,10 @@ from multiprocessing import Process
 from pathlib import Path
 from typing import Annotated, List, Optional, Union
 
-# Suppress sklearn FutureWarnings about unfitted Pipeline instances
+# Suppress sklearn warnings
 warnings.filterwarnings("ignore", category=FutureWarning, module="sklearn.pipeline")
+# Suppress sklearn deprecation warnings from dependencies (UMAP, HDBSCAN) until they update
+warnings.filterwarnings("ignore", message="'force_all_finite' was renamed to 'ensure_all_finite'")
 
 import requests
 import typer
@@ -731,7 +733,7 @@ def full(
     ] = "optim_dict_predict",
     random_state: Annotated[
         int,
-        typer.Option("--random_state", help="Master random seed for reproducibility"),
+        typer.Option("--random_state", help="Master random seed for reproducibility. Note: Setting this will disable UMAP parallel processing (n_jobs=1) to ensure reproducible results. For faster UMAP training at the cost of reproducibility, consider using different seeds for different runs."),
     ] = 42,
     umap_jobs: Annotated[
         Optional[int],
