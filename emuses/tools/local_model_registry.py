@@ -753,8 +753,15 @@ class LocalModelRegistry(BaseModelRegistry):
                     "description": validation_result.description
                 }
 
-                # Use provided name or fall back to validation result name
-                final_name = effective_name if effective_name is not None else validation_result.name
+                # Use provided name, or fall back to folder name, or validation result name
+                if effective_name is not None:
+                    # User explicitly provided a name
+                    final_name = effective_name
+                else:
+                    # No explicit name provided - prefer folder name over manifest name
+                    # This gives more descriptive names like "model_registry_final_one_target"
+                    # instead of generic names like "hdbscan_model"
+                    final_name = model_path.name
 
                 # Install model using ModelIOManager with shared storage optimization
                 logger.info(f"Installing model '{final_name}'")
