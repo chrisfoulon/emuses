@@ -98,7 +98,10 @@ class TestResearchCLI:
         
         # Should be valid JSON
         output_data = json.loads(result.stdout)
-        assert "model_info" in output_data
+        # Verify essential model information is present at root level
+        assert "name" in output_data
+        assert "version" in output_data
+        assert "description" in output_data
         assert "file_integrity" in output_data
 
     def test_cite_command_bibtex(self, model_with_manifest):

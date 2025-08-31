@@ -282,8 +282,8 @@ class TestManifestUtilities:
         manifest_info = model_manager.get_manifest_info("info_test")
         
         assert manifest_info is not None
-        assert manifest_info["model_info"]["name"] == "info_test"
-        assert manifest_info["model_info"]["description"] == "Test model for info retrieval"
+        assert manifest_info["name"] == "info_test"
+        assert manifest_info["description"] == "Test model for info retrieval"
 
     def test_verify_model_integrity_standalone(self, model_manager, temp_dir):
         """Test standalone integrity verification function."""
