@@ -525,12 +525,15 @@ class ModelIOManager:
         if not model_files:
             raise ValueError(f"No model files found in {model_path}")
 
+        # Use the folder name as the model name (more descriptive than hardcoded defaults)
+        folder_name = model_path.name
+        
         # Basic manifest structure
         return {
-            "name": model_path.name,
+            "name": folder_name,
             "version": "1.0.0",
             "type": "unknown",  # Would need more sophisticated detection
-            "description": f"Model from {model_path.name}",
+            "description": f"Model from {folder_name}",
             "created_at": datetime.now(timezone.utc).isoformat() + "Z"
         }
 

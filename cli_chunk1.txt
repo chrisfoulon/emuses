@@ -1,0 +1,29 @@
+============================= test session starts ==============================
+platform linux -- Python 3.11.13, pytest-8.4.1, pluggy-1.6.0 -- /home/tolhsadum/miniforge3/envs/emuses/bin/python3.11
+cachedir: .pytest_cache
+rootdir: /mnt/c/Users/Tolhsadum/PycharmProjects/emuses
+configfile: pytest.ini
+plugins: servers-0.5.12, anyio-4.9.0, asyncio-1.1.0, cov-6.2.1
+asyncio: mode=Mode.STRICT, asyncio_default_fixture_loop_scope=function, asyncio_default_test_loop_scope=function
+collecting ... collected 18 items
+
+tests/enhanced-cli-typer/test_cli_integration.py::TestCompletePipelineExecution::test_basic_pipeline_execution PASSED [  5%]
+tests/enhanced-cli-typer/test_cli_integration.py::TestCompletePipelineExecution::test_pipeline_with_optional_parameters PASSED [ 11%]
+tests/enhanced-cli-typer/test_cli_integration.py::TestCompletePipelineExecution::test_help_command_execution PASSED [ 16%]
+tests/enhanced-cli-typer/test_cli_integration.py::TestCompletePipelineExecution::test_invalid_command_handling PASSED [ 22%]
+tests/enhanced-cli-typer/test_cli_integration.py::TestByteLevelCompatibility::test_output_structure_compatibility PASSED [ 27%]
+tests/enhanced-cli-typer/test_cli_integration.py::TestByteLevelCompatibility::test_error_message_compatibility PASSED [ 33%]
+tests/enhanced-cli-typer/test_cli_integration.py::TestByteLevelCompatibility::test_command_argument_compatibility PASSED [ 38%]
+tests/enhanced-cli-typer/test_cli_integration.py::TestServiceFailureScenarios::test_service_connection_failure PASSED [ 44%]
+tests/enhanced-cli-typer/test_cli_integration.py::TestServiceFailureScenarios::test_service_timeout_handling PASSED [ 50%]
+tests/enhanced-cli-typer/test_cli_integration.py::TestServiceFailureScenarios::test_service_invalid_response_handling PASSED [ 55%]
+tests/enhanced-cli-typer/test_cli_integration.py::TestServiceFailureScenarios::test_fallback_mode_activation PASSED [ 61%]
+tests/enhanced-cli-typer/test_cli_integration.py::TestUnreachableEndpoints::test_unreachable_service_endpoint PASSED [ 66%]
+tests/enhanced-cli-typer/test_cli_integration.py::TestUnreachableEndpoints::test_malformed_response_handling PASSED [ 72%]
+tests/enhanced-cli-typer/test_cli_integration.py::TestUnreachableEndpoints::test_partial_response_handling PASSED [ 77%]
+tests/enhanced-cli-typer/test_cli_integration.py::TestCrossPlatformCompatibility::test_current_platform_compatibility PASSED [ 83%]
+tests/enhanced-cli-typer/test_cli_integration.py::TestCrossPlatformCompatibility::test_path_handling_compatibility PASSED [ 88%]
+tests/enhanced-cli-typer/test_cli_integration.py::TestCrossPlatformCompatibility::test_environment_variable_compatibility PASSED [ 94%]
+tests/enhanced-cli-typer/test_cli_integration.py::TestCrossPlatformCompatibility::test_unicode_path_handling PASSED [100%]
+
+======================== 18 passed in 71.82s (0:01:11) =========================
