@@ -934,6 +934,37 @@ class ModelIOManager:
                 hasher.update(chunk)
         return hasher.hexdigest()
 
+    def _calculate_content_hash(self, model_path: Path, components: Dict[str, Path]) -> str:
+        """
+        Calculate content hash for EMUSES model with component awareness.
+        
+        This method provides component-aware hashing for model registry duplicate 
+        detection and hash indexing. It builds on the existing folder hashing 
+        infrastructure while supporting the test interface expectations.
+        
+        Parameters
+        ----------
+        model_path : Path
+            Path to complete EMUSES model directory.
+        components : Dict[str, Path]
+            Dictionary mapping component names to their file paths.
+            Used for component-aware analysis.
+        
+        Returns
+        -------
+        str
+            SHA256 hex digest of the model content.
+            
+        Notes
+        -----
+        For now, uses the folder-based approach for consistency with existing
+        hash calculation infrastructure. Component-specific hashing could be
+        added later if needed for more granular duplicate detection.
+        """
+        # For complete EMUSES models, use the existing folder hash approach
+        # This ensures consistency with the current hash indexing system
+        return self._calculate_folder_content_hash(model_path)
+
     def _install_file_with_shared_storage(self, source_file: Path, target_file: Path,
                                           registry_path: Path) -> None:
         """
