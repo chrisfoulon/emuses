@@ -4,7 +4,9 @@ Test multi-target validation functionality.
 Tests the multi-target validation metrics calculation system.
 """
 import numpy as np
+import pandas as pd
 import pytest
+from pathlib import Path
 from unittest.mock import Mock
 
 from emuses.pipelines.inference_stage import InferenceStage
@@ -12,6 +14,17 @@ from emuses.pipelines.inference_stage import InferenceStage
 
 class TestMultiTargetValidation:
     """Test multi-target validation metrics calculation."""
+    
+    @classmethod
+    def setup_class(cls):
+        """Load real test data for validation metrics testing."""
+        project_root = Path(__file__).parent.parent.parent
+        cls.features = pd.read_csv(project_root / 'test_data/features.csv', header=None).values
+        cls.targets = pd.read_csv(project_root / 'test_data/regression_scores_multitarget.csv', header=None).values
+        cls.train_coords = cls.features[:30, :2]  # First 2 features as coordinates
+        cls.test_coords = cls.features[30:, :2]   # Last 20 samples for testing
+        cls.train_targets = cls.targets[:30]       # Training targets
+        cls.test_targets = cls.targets[30:]        # Test targets
 
     def test_single_target_validation(self):
         """Test validation with single-target results."""
@@ -19,19 +32,31 @@ class TestMultiTargetValidation:
         config = Mock()
         stage = InferenceStage(config)
         
-        # Single-target results
+        # Create realistic single-target predictions using real data
+        from sklearn.ensemble import RandomForestRegressor
+        model1 = RandomForestRegressor(n_estimators=3, random_state=42)
+        model2 = RandomForestRegressor(n_estimators=3, random_state=43)
+        
+        model1.fit(self.train_coords, self.train_targets[:, 0])
+        model2.fit(self.train_coords, self.train_targets[:, 0])
+        
+        pred1 = model1.predict(self.test_coords)
+        pred2 = model2.predict(self.test_coords)
+        ensemble_pred = (pred1 + pred2) / 2
+        
+        # Single-target results with real predictions
         target_results = {
             'target_0': {
-                'ensemble_predictions': np.array([1.0, 2.0, 3.0, 4.0, 5.0]),
+                'ensemble_predictions': ensemble_pred,
                 'individual_predictions': {},
-                'confidence_scores': np.array([0.8, 0.8, 0.8, 0.8, 0.8]),
+                'confidence_scores': np.ones(len(ensemble_pred)) * 0.8,
                 'model_count': 2,
                 'model_names': ['model_1', 'model_2']
             }
         }
         
-        # Single-target ground truth
-        ground_truth = np.array([1.1, 2.1, 2.9, 4.1, 4.9])
+        # Use real ground truth for validation
+        ground_truth = self.test_targets[:, 0]
         
         # Act
         validation_metrics = stage._calculate_multi_target_validation_metrics(target_results, ground_truth)
@@ -56,37 +81,66 @@ class TestMultiTargetValidation:
         config = Mock()
         stage = InferenceStage(config)
         
-        # Multi-target results
+        # Create realistic multi-target predictions using real data
+        from sklearn.ensemble import RandomForestRegressor
+        
+        # Train models for both targets
+        model_t0_1 = RandomForestRegressor(n_estimators=3, random_state=42)
+        model_t0_2 = RandomForestRegressor(n_estimators=3, random_state=43)
+        model_t1_1 = RandomForestRegressor(n_estimators=3, random_state=44)
+        model_t1_2 = RandomForestRegressor(n_estimators=3, random_state=45)
+        model_t1_3 = RandomForestRegressor(n_estimators=3, random_state=46)
+        model_t2 = RandomForestRegressor(n_estimators=3, random_state=47)
+        
+        model_t0_1.fit(self.train_coords, self.train_targets[:, 0])
+        model_t0_2.fit(self.train_coords, self.train_targets[:, 0])
+        model_t1_1.fit(self.train_coords, self.train_targets[:, 1])
+        model_t1_2.fit(self.train_coords, self.train_targets[:, 1])
+        model_t1_3.fit(self.train_coords, self.train_targets[:, 1])
+        model_t2.fit(self.train_coords, self.train_targets[:, 0])  # Reuse target 0 for third
+        
+        # Generate predictions
+        pred_t0_1 = model_t0_1.predict(self.test_coords)
+        pred_t0_2 = model_t0_2.predict(self.test_coords)
+        pred_t1_1 = model_t1_1.predict(self.test_coords)
+        pred_t1_2 = model_t1_2.predict(self.test_coords)
+        pred_t1_3 = model_t1_3.predict(self.test_coords)
+        pred_t2 = model_t2.predict(self.test_coords)
+        
+        ensemble_t0 = (pred_t0_1 + pred_t0_2) / 2
+        ensemble_t1 = (pred_t1_1 + pred_t1_2 + pred_t1_3) / 3
+        ensemble_t2 = pred_t2
+        
+        # Multi-target results with real predictions
         target_results = {
             'target_0': {
-                'ensemble_predictions': np.array([1.0, 2.0, 3.0, 4.0]),
+                'ensemble_predictions': ensemble_t0,
                 'individual_predictions': {},
-                'confidence_scores': np.array([0.8, 0.8, 0.8, 0.8]),
+                'confidence_scores': np.ones(len(ensemble_t0)) * 0.8,
                 'model_count': 2,
                 'model_names': ['t0_model_1', 't0_model_2']
             },
             'target_1': {
-                'ensemble_predictions': np.array([10.0, 20.0, 30.0, 40.0]),
+                'ensemble_predictions': ensemble_t1,
                 'individual_predictions': {},
-                'confidence_scores': np.array([0.9, 0.9, 0.9, 0.9]),
+                'confidence_scores': np.ones(len(ensemble_t1)) * 0.9,
                 'model_count': 3,
                 'model_names': ['t1_model_1', 't1_model_2', 't1_model_3']
             },
             'target_2': {
-                'ensemble_predictions': np.array([0.1, 0.2, 0.3, 0.4]),
+                'ensemble_predictions': ensemble_t2,
                 'individual_predictions': {},
-                'confidence_scores': np.array([0.7, 0.7, 0.7, 0.7]),
+                'confidence_scores': np.ones(len(ensemble_t2)) * 0.7,
                 'model_count': 1,
                 'model_names': ['t2_model_1']
             }
         }
         
-        # Multi-target ground truth (3 targets)
-        ground_truth = np.array([
-            [1.1, 10.1, 0.11],  # Sample 0
-            [2.1, 19.9, 0.19],  # Sample 1
-            [2.9, 30.1, 0.31],  # Sample 2
-            [4.1, 39.8, 0.39]   # Sample 3
+        # Multi-target ground truth (3 targets) - create synthetic third target from real data
+        ground_truth = np.column_stack([
+            self.test_targets[:, 0],  # Target 0: real data
+            self.test_targets[:, 1],  # Target 1: real data  
+            self.test_targets[:, 0] * 0.1  # Target 2: scaled version for testing
         ])
         
         # Act

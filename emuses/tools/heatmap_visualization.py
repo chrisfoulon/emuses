@@ -106,6 +106,9 @@ def plot_prediction_heatmap(
     if show_plot:
         plt.show()
     
+    # Close figure to free memory
+    plt.close(fig)
+    
     return fig
 
 
@@ -225,6 +228,9 @@ def plot_prediction_cluster_overlay(
     if show_plot:
         plt.show()
     
+    # Close figure to free memory
+    plt.close(fig)
+    
     return fig
 
 
@@ -328,6 +334,9 @@ def plot_correlation_heatmap(
     # Show if requested
     if show_plot:
         plt.show()
+    
+    # Close figure to free memory
+    plt.close(fig)
     
     return fig
 
@@ -453,5 +462,8 @@ def plot_correlation_cluster_overlay(
     # Show if requested
     if show_plot:
         plt.show()
+    
+    # Close figure to free memory
+    plt.close(fig)
     
     return fig

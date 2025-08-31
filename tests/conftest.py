@@ -12,6 +12,9 @@ import shutil
 from pathlib import Path
 from unittest.mock import patch
 import logging
+import time
+import numpy as np
+from emuses.pipelines.emuses_pipeline import EMUSESPipeline
 
 
 @pytest.fixture(autouse=True)
@@ -121,3 +124,111 @@ def mock_atexit_register():
     """
     with patch('atexit.register') as mock_register:
         yield mock_register
+
+
+@pytest.fixture(scope="session")
+def emuses_pipeline_results():
+    """
+    Run EMUSES pipeline with all test_data modes once per session using Python API.
+    
+    This fixture runs the complete EMUSES pipeline for each test data mode:
+    - Single-target regression
+    - Multi-target regression  
+    - Binary classification
+    - Multi-class classification
+    
+    Results are cached and reused across all tests in the session to avoid
+    redundant pipeline execution while enabling realistic integration testing.
+    
+    Returns:
+        dict: Pipeline results with structure:
+            {
+                'regression': Path,
+                'multi_target_regression': Path, 
+                'binary_classification': Path,
+                'multi_class_classification': Path,
+                'session_temp_dir': Path
+            }
+    """
+    # Create session-wide temporary directory
+    session_temp_dir = Path(tempfile.mkdtemp(prefix="emuses_session_test_"))
+    print(f"📁 Session temp directory: {session_temp_dir}")
+    
+    # Define test data configurations with absolute paths
+    project_root = Path('/mnt/c/Users/Tolhsadum/PycharmProjects/emuses')
+    test_configs = {
+        'regression': {
+            'features': str(project_root / 'test_data/features.csv'),
+            'scores': str(project_root / 'test_data/regression_scores.csv'),
+            'output': session_temp_dir / 'regression_output'
+        },
+        'multi_target_regression': {
+            'features': str(project_root / 'test_data/features.csv'), 
+            'scores': str(project_root / 'test_data/regression_scores_multitarget.csv'),
+            'output': session_temp_dir / 'multi_target_regression_output'
+        }
+    }
+    
+    results = {'session_temp_dir': session_temp_dir}
+    
+    # Run pipeline for each configuration using Python API
+    for mode, config in test_configs.items():
+        print(f"\n🔧 Setting up session fixture: Running EMUSES pipeline for {mode}...")
+        start_time = time.time()
+        
+        try:
+            # Create pipeline args object
+            args = type('Args', (), {})()
+            args.input_dataset = config['features']
+            args.output_folder = str(config['output'])
+            args.scores_dataset = config['scores']
+            args.columns_are_features = True
+            args.input_normalization = 'robust'
+            args.scores_header = None
+            args.scores_index_column = None
+            args.input_header = None 
+            args.input_index_column = None
+            args.umap_trials = 1
+            args.hdbscan_trials = 1
+            args.optim_dict = 'optim_dict_hcp'
+            args.prediction_optim_dict = 'quick_train_dict'
+            args.optuna_trials = 2  # Minimal for speed
+            args.n_jobs = 4
+            args.random_state = 42
+            args.inference_mode = False
+            args.prefix = f"SessionTest_{mode}"
+            
+            # Additional required attributes based on PipelineConfig
+            args.interactive_plot = False
+            args.load_embeddings = False
+            args.hdbscan_jobs = 4
+            args.umap_jobs = 4
+            args.test_size = 0.2  # Required for dataset splitting
+            args.outer_folds = 5   # Required for cross-validation
+            
+            # Create and run pipeline
+            pipeline = EMUSESPipeline(args)
+            
+            # Run the full pipeline - this is the key method
+            pipeline.run()
+            
+            duration = time.time() - start_time
+            print(f"✅ Pipeline completed for {mode} in {duration:.1f}s")
+            results[mode] = config['output']
+                
+        except Exception as e:
+            print(f"💥 Pipeline error for {mode}: {e}")
+            import traceback
+            print(f"Full traceback:\n{traceback.format_exc()}")
+            results[mode] = None
+    
+    print(f"🎯 Session fixture setup complete. Results: {list(results.keys())}")
+    
+    yield results
+    
+    # Cleanup session temporary directory
+    try:
+        shutil.rmtree(session_temp_dir, ignore_errors=True)
+        print("🧹 Session fixture cleanup completed")
+    except Exception as e:
+        print(f"⚠️ Session cleanup warning: {e}")

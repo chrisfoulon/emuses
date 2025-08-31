@@ -4,7 +4,9 @@ Test multi-target prediction engine functionality.
 Tests the core multi-target prediction processing with target-specific ensembles.
 """
 import numpy as np
+import pandas as pd
 import pytest
+from pathlib import Path
 from unittest.mock import Mock
 from sklearn.pipeline import Pipeline, FeatureUnion
 from sklearn.ensemble import RandomForestRegressor
@@ -15,6 +17,17 @@ from emuses.tools.features_utils import RawCoords, GWD
 
 class TestMultiTargetPrediction:
     """Test multi-target prediction engine functionality."""
+    
+    @classmethod
+    def setup_class(cls):
+        """Load real test data for prediction engine testing."""
+        project_root = Path(__file__).parent.parent.parent
+        cls.features = pd.read_csv(project_root / 'test_data/features.csv', header=None).values
+        cls.targets = pd.read_csv(project_root / 'test_data/regression_scores_multitarget.csv', header=None).values
+        cls.train_coords = cls.features[:30, :2]  # First 2 features as coordinates
+        cls.test_coords = cls.features[30:, :2]   # Last 20 samples for testing
+        cls.train_targets = cls.targets[:30]       # Training targets
+        cls.test_targets = cls.targets[30:]        # Test targets
 
     def test_enhanced_model_name_generation(self):
         """Test enhanced model name generation for multi-target scenarios."""
@@ -45,11 +58,9 @@ class TestMultiTargetPrediction:
         config = Mock()
         stage = InferenceStage(config)
         
-        # Create training data
-        n_samples = 20
-        train_coords = np.random.rand(n_samples, 2)
-        train_labels_t0 = np.random.rand(n_samples)
-        train_labels_t1 = np.random.rand(n_samples)
+        # Create training data using real test data
+        train_labels_t0 = self.train_targets[:, 0]
+        train_labels_t1 = self.train_targets[:, 1]
         
         # Create models for different targets
         models_by_target = {
@@ -58,7 +69,7 @@ class TestMultiTargetPrediction:
                     'model': Pipeline([
                         ("feat", FeatureUnion([("raw", RawCoords())])),
                         ("est", RandomForestRegressor(n_estimators=3, random_state=42))
-                    ]).fit(train_coords, train_labels_t0),
+                    ]).fit(self.train_coords, train_labels_t0),
                     'target': 'target_0',
                     'fold_info': 'fold_0'
                 },
@@ -66,7 +77,7 @@ class TestMultiTargetPrediction:
                     'model': Pipeline([
                         ("feat", FeatureUnion([("raw", RawCoords())])),
                         ("est", RandomForestRegressor(n_estimators=3, random_state=43))
-                    ]).fit(train_coords, train_labels_t0),
+                    ]).fit(self.train_coords, train_labels_t0),
                     'target': 'target_0', 
                     'fold_info': 'fold_1'
                 }
@@ -79,7 +90,7 @@ class TestMultiTargetPrediction:
                             ("gwd", GWD(sigma=0.1))
                         ])),
                         ("est", RandomForestRegressor(n_estimators=3, random_state=44))
-                    ]).fit(train_coords, train_labels_t1),
+                    ]).fit(self.train_coords, train_labels_t1),
                     'target': 'target_1',
                     'fold_info': 'fold_0'
                 }
@@ -87,7 +98,7 @@ class TestMultiTargetPrediction:
         }
         
         # Test data
-        test_coords = np.random.rand(10, 2)
+        test_coords = self.test_coords[:10]  # First 10 test samples
         
         # Act
         target_results = stage._predict_multi_target(test_coords, models_by_target)
@@ -120,17 +131,16 @@ class TestMultiTargetPrediction:
         stage = InferenceStage(config)
         
         # Create training data
-        train_coords = np.random.rand(15, 2)
-        train_labels = np.random.rand(15)
+        train_labels = self.train_targets[:, 0]  # Use first target
         
         # Create mixed models
         pipeline_model = Pipeline([
             ("feat", FeatureUnion([("raw", RawCoords())])),
             ("est", RandomForestRegressor(n_estimators=3, random_state=42))
-        ]).fit(train_coords, train_labels)
+        ]).fit(self.train_coords, train_labels)
         
         non_pipeline_model = RandomForestRegressor(n_estimators=3, random_state=43)
-        non_pipeline_model.fit(train_coords, train_labels)
+        non_pipeline_model.fit(self.train_coords, train_labels)
         
         models_by_target = {
             'target_0': [
@@ -140,7 +150,7 @@ class TestMultiTargetPrediction:
         }
         
         # Test data
-        test_coords = np.random.rand(8, 2)
+        test_coords = self.test_coords[:8]  # First 8 test samples
         
         # Act
         target_results = stage._predict_multi_target(test_coords, models_by_target)
@@ -166,8 +176,7 @@ class TestMultiTargetPrediction:
         stage = InferenceStage(config)
         
         # Single target scenario
-        train_coords = np.random.rand(12, 2)
-        train_labels = np.random.rand(12)
+        train_labels = self.train_targets[:, 0]  # Use first target
         
         models_by_target = {
             'target_0': [
@@ -175,7 +184,7 @@ class TestMultiTargetPrediction:
                     'model': Pipeline([
                         ("feat", FeatureUnion([("raw", RawCoords())])),
                         ("est", RandomForestRegressor(n_estimators=3, random_state=42))
-                    ]).fit(train_coords, train_labels),
+                    ]).fit(self.train_coords, train_labels),
                     'target': 'target_0',
                     'fold_info': 'fold_0'
                 }
@@ -183,7 +192,7 @@ class TestMultiTargetPrediction:
         }
         
         # Test data
-        test_coords = np.random.rand(5, 2)
+        test_coords = self.test_coords[:5]  # First 5 test samples
         
         # Act
         target_results = stage._predict_multi_target(test_coords, models_by_target)
@@ -209,7 +218,7 @@ class TestMultiTargetPrediction:
         }
         
         # Test data
-        test_coords = np.random.rand(5, 2)
+        test_coords = self.test_coords[:5]  # First 5 test samples
         
         # Act
         target_results = stage._predict_multi_target(test_coords, models_by_target)
@@ -231,19 +240,18 @@ class TestMultiTargetPrediction:
         stage = InferenceStage(config)
         
         # Create models with different prediction patterns for confidence testing
-        train_coords = np.random.rand(10, 2)
-        train_labels = np.random.rand(10)
+        train_labels = self.train_targets[:, 0]  # Use first target
         
         models_by_target = {
             'target_multi': [
                 # Multiple models - should have varied confidence based on std
                 {
-                    'model': RandomForestRegressor(n_estimators=3, random_state=42).fit(train_coords, train_labels),
+                    'model': RandomForestRegressor(n_estimators=3, random_state=42).fit(self.train_coords, train_labels),
                     'target': 'target_multi',
                     'fold_info': 'fold_0'
                 },
                 {
-                    'model': RandomForestRegressor(n_estimators=3, random_state=43).fit(train_coords, train_labels),
+                    'model': RandomForestRegressor(n_estimators=3, random_state=43).fit(self.train_coords, train_labels),
                     'target': 'target_multi', 
                     'fold_info': 'fold_1'
                 }
@@ -251,7 +259,7 @@ class TestMultiTargetPrediction:
             'target_single': [
                 # Single model - should have uniform confidence of 0.8
                 {
-                    'model': RandomForestRegressor(n_estimators=3, random_state=44).fit(train_coords, train_labels),
+                    'model': RandomForestRegressor(n_estimators=3, random_state=44).fit(self.train_coords, train_labels),
                     'target': 'target_single',
                     'fold_info': 'fold_0'
                 }
@@ -259,7 +267,7 @@ class TestMultiTargetPrediction:
         }
         
         # Test data
-        test_coords = np.random.rand(6, 2)
+        test_coords = self.test_coords[:6]  # First 6 test samples
         
         # Act
         target_results = stage._predict_multi_target(test_coords, models_by_target)

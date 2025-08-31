@@ -108,15 +108,23 @@ class TestLocalModelRegistryInstallation:
                 version="1.0.0",
                 type="classification", 
                 description="Test model for unit testing",
-                is_complete_model=False,
-                components_found={},
-                missing_components=["umap", "hdbscan", "prediction"],
+                is_complete_model=True,
+                components_found={"umap": "umap_model.pkl", "hdbscan": "hdbscan_model.pkl", "prediction": "prediction_models.pkl"},
+                missing_components=[],
                 validation_errors=[],
                 configuration_hash="test_config_hash",
                 content_hash="test_content_hash"
             )
             # Mock install_model to simulate successful installation
             mock_instance.install_model.return_value = "model_12345"
+            
+            # Mock get_manifest_info to return model info for name extraction
+            mock_instance.get_manifest_info.return_value = {
+                "name": "test_model",
+                "version": "1.0.0",
+                "description": "Test model for unit testing"
+            }
+            
             yield mock_instance
 
     def test_install_model_success(self, temp_registry, mock_model_io):

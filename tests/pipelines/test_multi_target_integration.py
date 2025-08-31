@@ -4,7 +4,9 @@ Test multi-target integration functionality.
 Tests the complete multi-target prediction integration with main _predict method.
 """
 import numpy as np
+import pandas as pd
 import pytest
+from pathlib import Path
 from unittest.mock import Mock
 from sklearn.pipeline import Pipeline, FeatureUnion
 from sklearn.ensemble import RandomForestRegressor
@@ -15,6 +17,17 @@ from emuses.tools.features_utils import RawCoords, GWD, PCAGWD
 
 class TestMultiTargetIntegration:
     """Test complete multi-target prediction integration."""
+    
+    @classmethod
+    def setup_class(cls):
+        """Load real test data for integration testing."""
+        project_root = Path(__file__).parent.parent.parent
+        cls.features = pd.read_csv(project_root / 'test_data/features.csv', header=None).values
+        cls.targets = pd.read_csv(project_root / 'test_data/regression_scores_multitarget.csv', header=None).values
+        cls.train_coords = cls.features[:30, :2]  # First 2 features as coordinates
+        cls.test_coords = cls.features[30:, :2]   # Last 20 samples for testing
+        cls.train_targets = cls.targets[:30]       # Training targets  
+        cls.test_targets = cls.targets[30:]        # Test targets
 
     def test_single_target_integration_compatibility(self):
         """Test that single-target scenarios work unchanged with new integration."""
@@ -22,16 +35,15 @@ class TestMultiTargetIntegration:
         config = Mock()
         stage = InferenceStage(config)
         
-        # Create single-target models
-        train_coords = np.random.rand(10, 2)
-        train_labels = np.random.rand(10)
+        # Create single-target models using real data
+        train_labels = self.train_targets[:, 0]  # Use first target
         
         prediction_models = [
             {
                 'model': Pipeline([
                     ("feat", FeatureUnion([("raw", RawCoords())])),
                     ("est", RandomForestRegressor(n_estimators=3, random_state=42))
-                ]).fit(train_coords, train_labels),
+                ]).fit(self.train_coords, train_labels),
                 'target': 'target_0',
                 'fold_info': 'fold_0'
             },
@@ -39,14 +51,14 @@ class TestMultiTargetIntegration:
                 'model': Pipeline([
                     ("feat", FeatureUnion([("raw", RawCoords())])),
                     ("est", RandomForestRegressor(n_estimators=3, random_state=43))
-                ]).fit(train_coords, train_labels),
+                ]).fit(self.train_coords, train_labels),
                 'target': 'target_0',
                 'fold_info': 'fold_1'
             }
         ]
         
         models_dict = {"prediction_models": prediction_models}
-        test_coords = np.random.rand(8, 2)
+        test_coords = self.test_coords  # 20 test samples
         
         # Act
         results = stage._predict(test_coords, models_dict)
@@ -58,9 +70,9 @@ class TestMultiTargetIntegration:
         
         # Check target_0 results
         target_0_result = results['target_results']['target_0']
-        assert target_0_result['ensemble_predictions'].shape == (8,)
+        assert target_0_result['ensemble_predictions'].shape == (20,)
         assert len(target_0_result['individual_predictions']) == 2
-        assert target_0_result['confidence_scores'].shape == (8,)
+        assert target_0_result['confidence_scores'].shape == (20,)
         assert target_0_result['model_count'] == 2
         assert len(target_0_result['model_names']) == 2
         
@@ -75,11 +87,10 @@ class TestMultiTargetIntegration:
         config = Mock()
         stage = InferenceStage(config)
         
-        # Create multi-target models with different feat_types
-        train_coords = np.random.rand(15, 2)
-        train_labels_t0 = np.random.rand(15)
-        train_labels_t1 = np.random.rand(15)
-        train_labels_t2 = np.random.rand(15)
+        # Create multi-target models with different feat_types using real data
+        train_labels_t0 = self.train_targets[:, 0]  # Use first target
+        train_labels_t1 = self.train_targets[:, 1]  # Use second target
+        train_labels_t2 = self.train_targets[:, 0]  # Reuse first target for third
         
         prediction_models = [
             # Target 0: raw_only feat_type
@@ -87,7 +98,7 @@ class TestMultiTargetIntegration:
                 'model': Pipeline([
                     ("feat", FeatureUnion([("raw", RawCoords())])),
                     ("est", RandomForestRegressor(n_estimators=3, random_state=40))
-                ]).fit(train_coords, train_labels_t0),
+                ]).fit(self.train_coords, train_labels_t0),
                 'target': 'target_0',
                 'fold_info': 'fold_0'
             },
@@ -95,7 +106,7 @@ class TestMultiTargetIntegration:
                 'model': Pipeline([
                     ("feat", FeatureUnion([("raw", RawCoords())])),
                     ("est", RandomForestRegressor(n_estimators=3, random_state=41))
-                ]).fit(train_coords, train_labels_t0),
+                ]).fit(self.train_coords, train_labels_t0),
                 'target': 'target_0',
                 'fold_info': 'fold_1'
             },
@@ -108,7 +119,7 @@ class TestMultiTargetIntegration:
                         ("gwd", GWD(sigma=0.1))
                     ])),
                     ("est", RandomForestRegressor(n_estimators=3, random_state=42))
-                ]).fit(train_coords, train_labels_t1),
+                ]).fit(self.train_coords, train_labels_t1),
                 'target': 'target_1',
                 'fold_info': 'fold_0'
             },
@@ -119,7 +130,7 @@ class TestMultiTargetIntegration:
                         ("gwd", GWD(sigma=0.1))
                     ])),
                     ("est", RandomForestRegressor(n_estimators=3, random_state=43))
-                ]).fit(train_coords, train_labels_t1),
+                ]).fit(self.train_coords, train_labels_t1),
                 'target': 'target_1',
                 'fold_info': 'fold_1'
             },
@@ -132,14 +143,14 @@ class TestMultiTargetIntegration:
                         ("pca", PCAGWD(sigma=0.1, n_comp=5))
                     ])),
                     ("est", RandomForestRegressor(n_estimators=3, random_state=44))
-                ]).fit(train_coords, train_labels_t2),
+                ]).fit(self.train_coords, train_labels_t2),
                 'target': 'target_2',
                 'fold_info': 'fold_0'
             }
         ]
         
         models_dict = {"prediction_models": prediction_models}
-        test_coords = np.random.rand(12, 2)
+        test_coords = self.test_coords  # 20 test samples
         
         # Act
         results = stage._predict(test_coords, models_dict)
@@ -156,10 +167,10 @@ class TestMultiTargetIntegration:
             target_result = results['target_results'][target]
             
             assert 'ensemble_predictions' in target_result
-            assert target_result['ensemble_predictions'].shape == (12,)
+            assert target_result['ensemble_predictions'].shape == (20,)
             assert 'individual_predictions' in target_result
             assert 'confidence_scores' in target_result
-            assert target_result['confidence_scores'].shape == (12,)
+            assert target_result['confidence_scores'].shape == (20,)
         
         # Check target-specific model counts
         assert results['target_results']['target_0']['model_count'] == 2
@@ -177,13 +188,12 @@ class TestMultiTargetIntegration:
         config = Mock()
         stage = InferenceStage(config)
         
-        # Create mixed models across targets
-        train_coords = np.random.rand(10, 2) 
-        train_labels = np.random.rand(10)
+        # Create mixed models across targets using real data
+        train_labels = self.train_targets[:, 0]  # Use first target
         
         # Create non-pipeline model
         non_pipeline_model = RandomForestRegressor(n_estimators=3, random_state=45)
-        non_pipeline_model.fit(train_coords, train_labels)
+        non_pipeline_model.fit(self.train_coords, train_labels)
         
         prediction_models = [
             # Target 0: Pipeline model
@@ -191,7 +201,7 @@ class TestMultiTargetIntegration:
                 'model': Pipeline([
                     ("feat", FeatureUnion([("raw", RawCoords())])),
                     ("est", RandomForestRegressor(n_estimators=3, random_state=46))
-                ]).fit(train_coords, train_labels),
+                ]).fit(self.train_coords, train_labels),
                 'target': 'target_0',
                 'fold_info': 'fold_0'
             },
@@ -205,7 +215,7 @@ class TestMultiTargetIntegration:
         ]
         
         models_dict = {"prediction_models": prediction_models}
-        test_coords = np.random.rand(6, 2)
+        test_coords = self.test_coords  # 20 test samples
         
         # Act
         results = stage._predict(test_coords, models_dict)
@@ -217,7 +227,7 @@ class TestMultiTargetIntegration:
         # Both targets should have predictions
         for target in ['target_0', 'target_1']:
             target_result = results['target_results'][target]
-            assert target_result['ensemble_predictions'].shape == (6,)
+            assert target_result['ensemble_predictions'].shape == (20,)
             assert target_result['model_count'] == 1
 
     def test_empty_models_integration(self):
@@ -227,7 +237,7 @@ class TestMultiTargetIntegration:
         stage = InferenceStage(config)
         
         models_dict = {"prediction_models": []}
-        test_coords = np.random.rand(5, 2)
+        test_coords = self.test_coords[:5]  # First 5 test samples
         
         # Act
         results = stage._predict(test_coords, models_dict)
@@ -244,26 +254,25 @@ class TestMultiTargetIntegration:
         config = Mock()
         stage = InferenceStage(config)
         
-        # Create models without target information (legacy)
-        train_coords = np.random.rand(8, 2)
-        train_labels = np.random.rand(8)
+        # Create models without target information (legacy) using real data
+        train_labels = self.train_targets[:, 0]  # Use first target
         
         prediction_models = [
             {
                 'model': Pipeline([
                     ("feat", FeatureUnion([("raw", RawCoords())])),
                     ("est", RandomForestRegressor(n_estimators=3, random_state=47))
-                ]).fit(train_coords, train_labels),
+                ]).fit(self.train_coords, train_labels),
                 'fold_info': 'fold_0'  # No target field
             },
             {
-                'model': RandomForestRegressor(n_estimators=3, random_state=48).fit(train_coords, train_labels),
+                'model': RandomForestRegressor(n_estimators=3, random_state=48).fit(self.train_coords, train_labels),
                 'fold_info': 'fold_1'  # No target field
             }
         ]
         
         models_dict = {"prediction_models": prediction_models}
-        test_coords = np.random.rand(4, 2)
+        test_coords = self.test_coords[:4]  # First 4 test samples
         
         # Act
         results = stage._predict(test_coords, models_dict)
@@ -282,25 +291,24 @@ class TestMultiTargetIntegration:
         config = Mock()
         stage = InferenceStage(config)
         
-        # Multi-target scenario for logging test
-        train_coords = np.random.rand(8, 2)
-        train_labels = np.random.rand(8)
+        # Multi-target scenario for logging test using real data
+        train_labels = self.train_targets[:, 0]  # Use first target
         
         prediction_models = [
             {
-                'model': RandomForestRegressor(n_estimators=3, random_state=49).fit(train_coords, train_labels),
+                'model': RandomForestRegressor(n_estimators=3, random_state=49).fit(self.train_coords, train_labels),
                 'target': 'target_0',
                 'fold_info': 'fold_0'
             },
             {
-                'model': RandomForestRegressor(n_estimators=3, random_state=50).fit(train_coords, train_labels),
+                'model': RandomForestRegressor(n_estimators=3, random_state=50).fit(self.train_coords, train_labels),
                 'target': 'target_1',
                 'fold_info': 'fold_0'  
             }
         ]
         
         models_dict = {"prediction_models": prediction_models}
-        test_coords = np.random.rand(3, 2)
+        test_coords = self.test_coords[:3]  # First 3 test samples
         
         # Act - this should generate appropriate log messages
         results = stage._predict(test_coords, models_dict)
