@@ -47,6 +47,8 @@ python -m emuses.cli full output_folder docs/examples/sample_data/hcp_input_data
 
 **✅ Success**: Your first scientific prediction model is ready in `output_folder/`!
 
+**📊 Understanding Your Results**: Your analysis includes prediction models, statistical heatmaps, correlation analysis, and effect size maps. [See results guide →](docs/RESULTS_GUIDE.md)
+
 ## 🔬 Research Use Cases
 
 ### 🏠 Individual Researchers

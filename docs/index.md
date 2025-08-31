@@ -13,6 +13,7 @@
 **Quick Navigation:**
 - [📦 Installation Guide](INSTALLATION.md)
 - [🚀 Quick Start Guide](QUICK_START.md)
+- [📊 Results Guide](RESULTS_GUIDE.md)
 - [📖 User Guide](USER_GUIDE.md) 
 - [🔧 API Documentation](API_REFERENCE.md)
 
@@ -27,10 +28,10 @@ Designed for scientific researchers with support for multiple data formats, prep
 
 **[Learn more →](USER_GUIDE.md#individual-researchers)**
 
-### 📊 Machine Learning Pipeline
-Integrated ML workflows including dimensionality reduction (UMAP), clustering (HDBSCAN), and predictive modeling with automated optimization.
+### 📊 Machine Learning Pipeline & Statistical Analysis
+Integrated ML workflows including dimensionality reduction (UMAP), clustering (HDBSCAN), predictive modeling with automated optimization, plus comprehensive statistical analysis with heatmaps, correlation analysis, and effect size mapping.
 
-**[Explore ML features →](USER_GUIDE.md#core-analysis-workflows)**
+**[Explore ML features →](USER_GUIDE.md#core-analysis-workflows)** | **[Analysis outputs →](emuses/output_formats.md)**
 
 ### 🔗 Flexible Interfaces
 Choose between command-line interface for automation, Python API for integration, or REST API for web-based applications.
@@ -122,8 +123,9 @@ EMUSES implements state-of-the-art methods from computational science and machin
 - **[CLI Reference](CLI_REFERENCE.md)** - Command-line interface guide
 - **[Migration Guide](MIGRATION_GUIDE.md)** - Upgrading between versions
 
-### Development
+### Development  
 - **[Architecture](emuses/architecture.md)** - Technical design overview
+- **[Pipeline Stages](emuses/heatmap_stage.md)** - Technical implementation details
 - **[Testing](testing-commands.md)** - Test coverage and quality
 
 ## Getting Started

@@ -10,7 +10,7 @@
 
 ## Quick Status for New Sessions
 
-**Current Status**: Model Registry Implementation Complete - All 6 Phases Finished + Post-Implementation Fixes Applied ✅
+**Current Status**: Analysis API Enhancement Foundation Complete - Statistical Analysis + Model Registry + Pipeline Consolidation ✅
 
 **Key Status Files**:
 - **PROJECT_STATUS.md** - Central project status
@@ -23,7 +23,7 @@
 - **Research Labs**: Collaborative sharing with workspaces
 - **Scientific Community**: Public registry with peer review
 
-**Current Phase**: Analysis API Enhancement - Sub-Plan 0A-Extended (Model Registry Redesign)
+**Current Phase**: Analysis API Enhancement - Foundation Complete, Ready for Core Features
 
 ## Recent Achievements
 
@@ -54,6 +54,14 @@
   - **Phase 5**: Comprehensive testing and performance validation (3.45ms average lookup)
   - **Phase 6**: Documentation updates and final code cleanup
   - All architectural violations removed, system ready for production use
+- **Statistical Analysis Production Ready**: Complete effect size map generation working ✅
+  - Fixed cluster overlay visualization, ElasticNet performance, correlation sigma optimization
+  - 10x faster training, 35% sharper correlation patterns, warning-free execution
+  - Validated with 25 effect size maps generated in production workflow
+- **Pipeline Inference Consolidation**: Eliminated architectural duplication ✅
+  - Removed double dataset processing between CLI and EMUSESPipeline
+  - Single pathway through format_args() handles both training and inference
+  - All inference features preserved with improved efficiency
 
 ## Active Development Context
 
@@ -95,6 +103,19 @@
   - **Result**: Complete models now show proper descriptions like "Complete EMUSES analysis model: HCP_cognitive_analysis. Contains: UMAP, HDBSCAN, 2 prediction targets"
 - **Status**: Implementation complete with cosmetic fixes applied, ready for production use
 - **Location**: `dev-docs/analysis-api/model-registry-redesign/` with comprehensive documentation
+
+### **COMPLETED**: Pipeline Inference Consolidation (2025-08-31) ✅
+- **Architectural Consolidation**: Eliminated double dataset processing in CLI inference
+  - **Issue**: CLI `_execute_inference_locally` duplicated EMUSESPipeline initialization logic
+  - **Solution**: Enhanced `format_args()` to handle inference mode properly, removed duplication
+  - **Phases**: A) Pipeline foundation, B) CLI integration, C) Validation, D) Timedelta compatibility
+  - **Result**: Single pathway handles both training and inference with proper context consistency
+- **Integration Benefits**: Preserved all inference-specific features while improving efficiency
+  - **CLI integration**: Simplified args object creation with inference_mode flag
+  - **Context consistency**: InferenceStage receives proper inference_features/inference_labels
+  - **Validation**: No duplicate processing confirmed, all existing tests pass
+- **Location**: `dev-docs/analysis-api/pipeline-inference-consolidation/` with complete documentation
+- **Status**: End-to-end consolidation working correctly ✅
 
 ### **COMPLETED**: Inference Performance & Normalization Fixes (2025-08-27) ✅
 - **Critical Fix**: UMAP embedding scaling for inference - resolved "all predictions identical" issue
@@ -149,5 +170,5 @@
 - See `/scripts/README.md` for comprehensive testing approach
 
 ---
-*Last Updated: 2025-08-27 - Inference Performance & Normalization Fixes Complete*
+*Last Updated: 2025-08-31 - Analysis API Enhancement Foundation Complete: Statistical Analysis + Model Registry + Pipeline Consolidation*
 *Static guidelines in `.lad/CLAUDE.md` | Historical details in `dev-docs/project-history/`*

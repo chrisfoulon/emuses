@@ -16,6 +16,9 @@ Essential output information for getting started with EMUSES results.
 | **Confidence CSV** | Model confidence scores | `validation_confidence_20250824_143022.csv` | When available |
 | **Performance JSON** | Model validation metrics | `performance_metrics.json` | Validation mode |
 | **Model Files** | Trained pipeline components | `best_pipeline_fold0.joblib` | Training runs |
+| **Heatmap Arrays** | Spatial analysis grids | `prediction_values.npy`, `correlation_values_pearson.npy` | Analysis enabled |
+| **Effect Size Maps** | Statistical effect maps | `effect_size_map_target_0_cluster_1_high_1.csv` | Analysis enabled |
+| **Heatmap Visualizations** | Base analysis plots | `prediction_heatmap_target_0.png` | Analysis enabled |
 
 ### **Basic CSV Structure**
 
@@ -182,70 +185,107 @@ Model files now include complete optimization timing:
 </details>
 
 <details markdown="1">
-<summary>🚧 **Future Enhancements - Statistical Maps Implementation**</summary>
+<summary>📊 **Statistical Analysis Outputs - Advanced Analysis Features**</summary>
 
-## **Statistical Maps Integration (Planned)**
+## **Statistical Analysis Integration** ✅
 
-**Status**: Ready for implementation - placeholders prepared
+**Status**: Implemented and Production Ready
 
-### **Planned Output Structure**
+### **Complete Analysis Output Structure**
 ```
-analysis_results/
-├── predictions.csv                    # Current implementation ✅
-├── confidence.csv                     # Current implementation ✅
-├── validation_metrics.json            # Current implementation ✅
-└── statistical_maps/                  # 🚧 PLANNED
-    ├── stat_map_target_0.nii.gz      # NIfTI format statistical map
-    ├── stat_map_target_0.png         # Visualization 
-    ├── effect_size_map.nii.gz        # Effect size calculations
-    └── thresholded_map.nii.gz        # Statistical significance thresholding
+target_0/
+├── prediction-heatmaps/               # ✅ Prediction analysis on embedding space
+│   ├── prediction_values.npy          # Raw predictions on 100×100 grid
+│   ├── confidence_values.npy          # Model confidence scores 
+│   ├── combined_values.npy            # Prediction×confidence combined values
+│   ├── grid_coordinates.npy           # Spatial grid coordinates
+│   └── prediction_metadata.json       # Analysis parameters and settings
+├── correlation-heatmaps/              # ✅ UMAP embedding correlation analysis
+│   ├── correlation_values_pearson.npy     # Pearson correlation with targets
+│   ├── correlation_values_spearman.npy    # Spearman correlation with targets  
+│   ├── correlation_values_point_biserial.npy # Point-biserial correlation
+│   ├── grid_coordinates.npy           # Shared spatial grid coordinates
+│   └── correlation_metadata.json      # Sigma values and correlation methods
+├── prediction-effects/                # ✅ Statistical effect size maps from predictions
+│   ├── effect_size_map_target_0_cluster_{N}_{high|low}_{N}.csv # Per-cluster effects
+│   ├── effect_size_map_target_0_cluster_{N}_{high|low}_{N}.png.html # Interactive visualizations
+│   ├── high_significance_regions.npy  # Grid indices of high-significance regions
+│   ├── low_significance_regions.npy   # Grid indices of low-significance regions
+│   ├── cluster_visualizations/         # Cluster overlay visualizations
+│   └── metadata.json                  # Clustering parameters and thresholds
+├── correlation-effects/               # ✅ Statistical effect size maps from correlations  
+│   ├── effect_size_map_target_0_cluster_{N}_high_{N}.csv # High-correlation clusters only
+│   ├── effect_size_map_target_0_cluster_{N}_high_{N}.png.html # Interactive visualizations
+│   ├── high_significance_regions.npy  # Grid indices of significant correlations
+│   ├── cluster_visualizations/         # Correlation cluster overlays
+│   └── metadata.json                  # Analysis parameters and methods
+└── heatmap_visualizations/            # ✅ Base heatmap visualizations
+    ├── prediction_heatmap_target_0.png # Prediction heatmap with UMAP scatter overlay
+    └── correlation_heatmap_target_0.png # Correlation heatmap with UMAP scatter overlay
 ```
 
-### **Implementation Roadmap**
+### **Analysis Methodology**
 
-**TODO - Phase 1: Core Statistical Mapping**
-- [ ] **Grid Predictions**: Dense spatial prediction grids over brain space
-- [ ] **Effect Size Calculations**: Cohen's d, Mann-Whitney U, t-test statistics
-- [ ] **Statistical Thresholding**: Multiple correction methods (FDR, Bonferroni)
+**Two-Heatmap Scientific Approach**:
+- **Prediction Analysis**: Uses trained models to analyze predictive patterns across embedding space
+- **Correlation Analysis**: Analyzes UMAP manifold structure correlation with target variables
+- **Separation Rationale**: Distinguishes intrinsic data topology from learned predictive relationships
 
-**TODO - Phase 2: Format Support**  
-- [ ] **NIfTI Export**: Neuroimaging-compatible statistical maps
-- [ ] **PNG Visualizations**: Interactive and static map visualizations
-- [ ] **Grid Metadata**: Spatial coordinate mappings and reference frames
+**Effect Size Map Generation**:
+- **Significance Detection**: Identifies high/low significance regions using percentile thresholds (default: 5th/95th percentiles)
+- **Clustering**: HDBSCAN clustering on significant regions for spatial grouping
+- **Statistical Analysis**: Per-cluster effect size calculations with Cohen's d and statistical tests
+- **Format Matching**: Output format matches input format (CSV→CSV, NIfTI→NIfTI)
 
-**TODO - Phase 3: API Integration**
-- [ ] **REST Endpoints**: `GET /api/v1/analysis/{job_id}/statistical_maps`
-- [ ] **CLI Access**: `emuses analysis generate-maps model.pkl data.csv`
-- [ ] **Format Options**: Support multiple export formats
+### **Implemented Features** ✅
 
-### **Integration Points Ready**
+**Grid Analysis**:
+- ✅ **Dense Spatial Grids**: 100×100 coordinate grids over UMAP embedding space
+- ✅ **Prediction Mapping**: Trained model predictions across entire embedding space  
+- ✅ **Correlation Mapping**: Multiple correlation methods (Pearson, Spearman, Point-biserial)
 
-**Existing Functions to Leverage**:
-- `input_matrix_stat_map()` - Effect size calculations with multiple test types
-- `calculate_correlation_grid()` - Correlation analysis for embeddings  
-- `plot_clustering_interactive_with_hover()` - Interactive visualization
-- `run_kernel_heatmap_analysis()` - Complete statistical analysis pipeline
-- `run_heatmap_analysis()` - Alternative statistical analysis approach
+**Statistical Processing**:
+- ✅ **Effect Size Calculations**: Cohen's d, statistical significance testing per cluster
+- ✅ **Significance Thresholding**: Configurable percentile-based thresholds
+- ✅ **Cluster Detection**: HDBSCAN-based spatial clustering of significant regions
 
-**Configuration Structure (Prepared)**:
+**Visualization Integration**:
+- ✅ **Base Heatmaps**: Static PNG visualizations with UMAP scatter overlays
+- ✅ **Interactive Maps**: HTML visualizations for per-cluster exploration  
+- ✅ **Cluster Overlays**: Highlighted cluster regions on heatmap backgrounds
+
+### **Analysis Configuration**
+
+**Default Settings**:
 ```python
-statistical_maps_config = {
-    "enable_statistical_maps": True,      # Feature flag
-    "grid_resolution": 64,                # Spatial resolution 
-    "effect_size_method": "cohens_d",     # Statistical test type
-    "threshold_method": "fdr",            # Multiple comparisons correction
-    "output_formats": ["nifti", "png"],   # Export formats
-    "visualization_options": {
-        "colormap": "viridis",
-        "threshold": 0.05
+analysis_config = {
+    "grid_size": 100,                   # 100×100 spatial resolution
+    "effect_percentile_threshold": 5.0, # 5th/95th percentile significance
+    "correlation_methods": ["pearson", "spearman", "point_biserial"],
+    "sigma_method": "percentile",        # Correlation sigma calculation
+    "sigma_percentile": 25.0,           # 25th percentile for sharp patterns
+    "significance_sources": {
+        "prediction": ["high", "low"],   # Both high and low prediction regions
+        "correlation": ["high"]          # Only high correlation regions
     }
 }
 ```
 
-**Related Documentation**:
-- Implementation planning: `dev-docs/analysis-api/plan.md` (Task 0B.1)
-- Function specifications: `dev-docs/analysis-api/existing_work_assessment.md`
-- Architecture context: `dev-docs/analysis-api/context.md`
+**Customization Options**:
+- **Grid Resolution**: Configurable grid size (default 100×100)
+- **Significance Thresholds**: Adjustable percentile cutoffs  
+- **Correlation Methods**: Selectable correlation approaches
+- **Effect Size Methods**: Multiple statistical test options
+
+### **Integration with Analysis API**
+
+**REST Endpoints** (FastAPI):
+- `POST /api/v1/analysis/heatmaps` - Generate prediction and correlation heatmaps
+- `POST /api/v1/analysis/statistical-maps` - Create statistical effect size maps
+
+**CLI Integration**:
+- Analysis runs automatically during standard pipeline execution
+- Outputs integrated into model registry system for sharing and reproducibility
 
 </details>
 
@@ -281,6 +321,6 @@ for target_name, target_data in results['target_results'].items():
 
 ---
 
-**Last Updated**: 2025-08-24  
-**Version**: Unified Multi-Target Architecture  
-**Related**: [InferenceStage Documentation](inference_stage.md), [Model I/O Guide](utils/model_io.md)
+**Last Updated**: 2025-08-31  
+**Version**: Complete Statistical Analysis Integration  
+**Related**: [HeatmapStage Documentation](heatmap_stage.md), [InferenceStage Documentation](inference_stage.md), [Model I/O Guide](utils/model_io.md)

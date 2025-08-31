@@ -1,13 +1,13 @@
 # Heatmap Stage
 
-The HeatmapStage implements advanced predictive modeling using nested cross-validation with Optuna optimization. It performs conditional feature engineering and model selection to build robust prediction models from UMAP embeddings, with optional autoencoder pretraining for enhanced feature extraction. The stage supports both regression and classification tasks with comprehensive performance evaluation.
+The HeatmapStage implements advanced predictive modeling using nested cross-validation with Optuna optimization, combined with comprehensive statistical analysis and visualization. It performs conditional feature engineering and model selection to build robust prediction models from UMAP embeddings, with optional autoencoder pretraining for enhanced feature extraction. The stage supports both regression and classification tasks with comprehensive performance evaluation and generates spatial analysis outputs including heatmaps, correlation analysis, and statistical effect size maps.
 
 <details><summary>🛠️ Level 2 · Key API table</summary>
 
 | Function/Class | Purpose | Inputs | Outputs | Side-effects |
 |---|---|---|---|---|
 | `HeatmapStage.__init__(config, output_format_info)` | Initialize heatmap stage | `config: PipelineConfig, output_format_info: tuple` | `HeatmapStage` | None |
-| `HeatmapStage.run(context, progress_queue)` | Execute nested CV and model training | `context: dict, progress_queue: Queue` | `None` | Saves trained models, performance metrics, heatmaps |
+| `HeatmapStage.run(context, progress_queue)` | Execute nested CV and model training with statistical analysis | `context: dict, progress_queue: Queue` | `None` | Saves trained models, performance metrics, heatmaps, correlation analysis, effect size maps |
 | `nested_optuna_cv(X, y, task, optim_dict, **kwargs)` | Nested cross-validation with hyperparameter optimization | `X: ndarray, y: ndarray, task: str, optim_dict: dict` | `(cv_scores: ndarray, best_pipelines: List[Pipeline])` | Saves models per fold |
 | `optimize_ae_pretraining(X, n_trials, **kwargs)` | Autoencoder pretraining optimization | `X: ndarray, n_trials: int` | `dict` | Saves pretrained autoencoder models |
 | `suggest_parameters_conditional(trial, optim_dict)` | Conditional hyperparameter sampling | `trial: optuna.Trial, optim_dict: dict` | `dict` | None |
@@ -290,6 +290,78 @@ def _generate_performance_csv_files(self, context, task, n_targets, logger):
     fold_df = pd.DataFrame(individual_fold_data)
     fold_file = output_folder / "performance_summary" / "fold_details.csv"
     fold_df.to_csv(fold_file, index=False)
+```
+
+## Statistical Analysis Output Generation
+After model training, HeatmapStage generates comprehensive spatial analysis:
+
+```python
+def _execute_triple_grid_analysis(self, context, embeddings, target_matrix, output_folder, logger):
+    """
+    Generate spatial analysis outputs including heatmaps and statistical maps.
+    
+    Creates comprehensive analysis structure:
+    - prediction-heatmaps/: Trained model predictions across embedding space
+    - correlation-heatmaps/: UMAP correlation analysis with targets  
+    - prediction-effects/: Statistical effect size maps from prediction regions
+    - correlation-effects/: Statistical effect size maps from correlation regions
+    - heatmap_visualizations/: Base heatmap visualizations with scatter overlays
+    
+    Analysis methodology:
+    - Two-heatmap approach: Separates predictive patterns from manifold structure
+    - Effect size mapping: Per-cluster statistical analysis of significant regions
+    - Visualization integration: Static and interactive visualizations
+    """
+    # Import analysis tools
+    from emuses.tools.grid_creator import GridCreator
+    from emuses.tools.correlation_grid_creator import CorrelationGridCreator
+    from emuses.tools.region_statistical_analyzer import RegionStatisticalAnalyzer
+    
+    # 1. Prediction analysis using trained models
+    prediction_models = context.get("prediction_models", [])
+    grid_creator = GridCreator(grid_size=100)
+    prediction_results = grid_creator.create_prediction_heatmaps(
+        embeddings=embeddings,
+        trained_models=prediction_models,
+        target_data={target_name: target_scores},
+        output_folder=target_output,
+        denormalize=True
+    )
+    
+    # 2. Correlation analysis of UMAP manifold
+    correlation_creator = CorrelationGridCreator(grid_size=100)
+    correlation_results = correlation_creator.create_correlation_heatmaps(
+        embeddings=embeddings,
+        target_data={target_name: target_scores},
+        output_folder=target_output,
+        sigma_method="percentile",
+        sigma_percentile=25.0  # Sharp, localized patterns
+    )
+    
+    # 3. Statistical effect size map generation  
+    analyzer = RegionStatisticalAnalyzer()
+    
+    # Prediction effects (both high and low significance)
+    analyzer.create_statistical_maps(
+        grid_coords=prediction_results["grid_coordinates"],
+        heatmap_values=prediction_results["combined_values"],
+        training_embeddings=embeddings,
+        input_matrix=context["input_matrix"],
+        output_folder=target_output,
+        significance_source="prediction",
+        percentile_threshold=5.0
+    )
+    
+    # Correlation effects (high significance only)  
+    analyzer.create_statistical_maps(
+        grid_coords=correlation_results["grid_coordinates"],
+        heatmap_values=correlation_results["correlation_values_pearson"],
+        training_embeddings=embeddings,
+        input_matrix=context["input_matrix"],
+        output_folder=target_output,
+        significance_source="correlation", 
+        percentile_threshold=5.0
+    )
 ```
 
 </details>
