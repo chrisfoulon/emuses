@@ -414,8 +414,19 @@ class TestInferenceStageResultFormatting(unittest.TestCase):
 class TestInferenceStageCSVOutput(unittest.TestCase):
     """Test CSV output format functionality."""
 
+    @classmethod
+    def setup_class(cls):
+        """Load real test data for validation."""
+        project_root = Path(__file__).parent.parent.parent
+        cls.features = pd.read_csv(project_root / 'test_data/features.csv', header=None).values
+        cls.targets = pd.read_csv(project_root / 'test_data/regression_scores_multitarget.csv', header=None).values
+        cls.train_coords = cls.features[:30, :2]  # First 2 features as coordinates
+        cls.test_coords = cls.features[30:, :2]   # Last 20 samples for testing
+        cls.train_targets = cls.targets[:30]       # Training targets
+        cls.test_targets = cls.targets[30:]        # Test targets
+
     def setUp(self):
-        """Set up test environment with mock complete pipeline."""
+        """Set up test environment with real test setup."""
         self.temp_dir = tempfile.TemporaryDirectory()
         self.model_path = Path(self.temp_dir.name) / "trained_models"
         self.model_path.mkdir(exist_ok=True)
@@ -439,14 +450,19 @@ class TestInferenceStageCSVOutput(unittest.TestCase):
         """Test that result saving creates CSV files by default."""
         stage = InferenceStage(self.config)
         
-        # Mock formatted results with sample data
+        # Create properly formatted results with target_results structure
         results = {
-            'predictions': np.array([0.5, 0.7, 0.3]),
-            'confidence_scores': np.array([0.9, 0.8, 0.7]),
-            'individual_predictions': {
-                'model_1': np.array([0.4, 0.8, 0.2]),
-                'model_2': np.array([0.6, 0.6, 0.4])
+            'target_results': {
+                'target_0': {
+                    'ensemble_predictions': np.array([0.5, 0.7, 0.3]),
+                    'confidence_scores': np.array([0.9, 0.8, 0.7]),
+                    'individual_predictions': {
+                        'model_1': np.array([0.4, 0.8, 0.2]),
+                        'model_2': np.array([0.6, 0.6, 0.4])
+                    }
+                }
             },
+            'predictions': np.array([0.5, 0.7, 0.3]),  # Still needed for _save_results
             'performance_breakdown': {'total_ms': 200.0},
             'metadata': {'mode': 'inference', 'samples_processed': 3}
         }
@@ -456,29 +472,33 @@ class TestInferenceStageCSVOutput(unittest.TestCase):
         
         # Verify CSV files were created
         self.assertIn('predictions_csv', output_paths)
-        self.assertIn('confidence_csv', output_paths)
+        self.assertIn('metadata_file', output_paths)
         
         # Verify CSV files exist and have correct extension
         predictions_csv = Path(output_paths['predictions_csv'])
-        confidence_csv = Path(output_paths['confidence_csv'])
+        metadata_file = Path(output_paths['metadata_file'])
         
         self.assertTrue(predictions_csv.exists())
-        self.assertTrue(confidence_csv.exists())
+        self.assertTrue(metadata_file.exists())
         self.assertEqual(predictions_csv.suffix, '.csv')
-        self.assertEqual(confidence_csv.suffix, '.csv')
 
     def test_save_results_csv_format_matches_training_scores(self):
         """Test that CSV format is consistent with training scores format."""
         stage = InferenceStage(self.config)
         
-        # Mock results with multiple samples and models
+        # Create results with proper target_results structure  
         results = {
-            'predictions': np.array([0.5, 0.7, 0.3, 0.8]),
-            'confidence_scores': np.array([0.9, 0.8, 0.7, 0.85]),
-            'individual_predictions': {
-                'model_rf': np.array([0.4, 0.8, 0.2, 0.9]),
-                'model_gb': np.array([0.6, 0.6, 0.4, 0.7])
+            'target_results': {
+                'target_0': {
+                    'ensemble_predictions': np.array([0.5, 0.7, 0.3, 0.8]),
+                    'confidence_scores': np.array([0.9, 0.8, 0.7, 0.85]),
+                    'individual_predictions': {
+                        'model_rf': np.array([0.4, 0.8, 0.2, 0.9]),
+                        'model_gb': np.array([0.6, 0.6, 0.4, 0.7])
+                    }
+                }
             },
+            'predictions': np.array([0.5, 0.7, 0.3, 0.8]),  # Still needed for _save_results
             'performance_breakdown': {'total_ms': 150.0},
             'metadata': {
                 'mode': 'inference', 
@@ -494,14 +514,14 @@ class TestInferenceStageCSVOutput(unittest.TestCase):
         import pandas as pd
         predictions_df = pd.read_csv(output_paths['predictions_csv'])
         
-        # Verify CSV has proper structure similar to training scores
+        # Verify CSV has proper structure (target-prefixed columns)
         self.assertIn('sample_id', predictions_df.columns)
-        self.assertIn('ensemble_prediction', predictions_df.columns)
-        self.assertIn('confidence_score', predictions_df.columns)
+        self.assertIn('target_0_ensemble_prediction', predictions_df.columns)
+        self.assertIn('target_0_confidence_score', predictions_df.columns)
         
-        # Verify individual model columns are present
+        # Verify individual model columns are present (with target prefix)
         for model_name in results['metadata']['model_names']:
-            self.assertIn(model_name, predictions_df.columns)
+            self.assertIn(f'target_0_{model_name}', predictions_df.columns)
         
         # Verify correct number of rows
         self.assertEqual(len(predictions_df), 4)
