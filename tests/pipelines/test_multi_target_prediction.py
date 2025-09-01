@@ -101,7 +101,8 @@ class TestMultiTargetPrediction:
         test_coords = self.test_coords[:10]  # First 10 test samples
         
         # Act
-        target_results = stage._predict_multi_target(test_coords, models_by_target)
+        models = {}  # No denormalization needed for tests
+        target_results = stage._predict_multi_target(test_coords, models_by_target, models)
         
         # Assert
         assert len(target_results) == 2
@@ -153,7 +154,8 @@ class TestMultiTargetPrediction:
         test_coords = self.test_coords[:8]  # First 8 test samples
         
         # Act
-        target_results = stage._predict_multi_target(test_coords, models_by_target)
+        models = {}  # No denormalization needed for tests
+        target_results = stage._predict_multi_target(test_coords, models_by_target, models)
         
         # Assert
         assert len(target_results) == 1
@@ -195,7 +197,8 @@ class TestMultiTargetPrediction:
         test_coords = self.test_coords[:5]  # First 5 test samples
         
         # Act
-        target_results = stage._predict_multi_target(test_coords, models_by_target)
+        models = {}  # No denormalization needed for tests
+        target_results = stage._predict_multi_target(test_coords, models_by_target, models)
         
         # Assert
         assert len(target_results) == 1
@@ -221,7 +224,8 @@ class TestMultiTargetPrediction:
         test_coords = self.test_coords[:5]  # First 5 test samples
         
         # Act
-        target_results = stage._predict_multi_target(test_coords, models_by_target)
+        models = {}  # No denormalization needed for tests
+        target_results = stage._predict_multi_target(test_coords, models_by_target, models)
         
         # Assert
         assert len(target_results) == 2
@@ -270,7 +274,8 @@ class TestMultiTargetPrediction:
         test_coords = self.test_coords[:6]  # First 6 test samples
         
         # Act
-        target_results = stage._predict_multi_target(test_coords, models_by_target)
+        models = {}  # No denormalization needed for tests
+        target_results = stage._predict_multi_target(test_coords, models_by_target, models)
         
         # Assert
         multi_confidence = target_results['target_multi']['confidence_scores']

@@ -1388,12 +1388,14 @@ class InferenceStage(PipelineStage):
                 target_model_names.append(model_name)
             
             # Target-specific ensemble calculation
+            # Initialize denormalization variables for all code paths
+            denormalized_ensemble_predictions = None
+            denormalization_applied = False
+            actual_scaler = None
+            target_column_name = None
+            
             if len(target_predictions) > 0:
                 normalized_ensemble_predictions = np.mean(target_predictions, axis=0)
-                denormalized_ensemble_predictions = None
-                denormalization_applied = False
-                actual_scaler = None
-                target_column_name = None
                 
                 # Apply prediction denormalization if scores scaler is available
                 scores_scaler_dict = models.get('scores_scaler')
