@@ -5,12 +5,15 @@
 ### **Completed Phases**
 - ✅ **Phase 1**: Setup & Basic Functionality Testing - COMPLETE
 - ✅ **Phase 2**: Integration Testing - COMPLETE  
-- 🎯 **Next**: Phase 3 (Advanced Commands) or Error Handling
+- ✅ **Phase 3**: Advanced Commands Analysis - COMPLETE
+- 🎯 **Next**: Phase 4 (Error Handling) or Documentation Fix
 
-### **Key Achievements**
+### **Key Achievements**  
 - ✅ Battle-tested full pipeline works perfectly (2-minute execution)
 - ✅ Model registry integration fully functional (install, list, info, search)
 - ✅ End-to-end ML workflow validated (train → install → inference)  
+- ✅ **6 ADVANCED COMMANDS DISCOVERED** - All undocumented in CLI_REFERENCE.md
+- ✅ **CLI HANG ISSUE IDENTIFIED** - Commands block during execution
 - ✅ **CRITICAL BUG FOUND**: Documentation says `prediction`, actual command is `inference`
 
 ## 🚀 **How to Resume Testing**
@@ -45,11 +48,40 @@ The previous testing created these ready-to-use assets:
 
 ## 🎯 **Recommended Next Steps**
 
-### **Option A: Advanced Commands Testing (Recommended)**
-Test the newly discovered advanced commands:
+### **Option A: Documentation Fix (URGENT - Recommended)**  
+Fix critical documentation gaps discovered in Phase 3:
 
 ```bash
-# Test model provenance and citation
+# 1. Update CLI_REFERENCE.md with missing advanced commands
+# Add these 6 commands that exist but are undocumented:
+# - trace: Export model provenance for supplementary materials  
+# - cite: Generate publication citations (bibtex, apa, nature)
+# - reproduce: Create comprehensive reproduction guides
+# - diff: Check for model modifications since creation  
+# - compare: Side-by-side model version comparison
+# - rerun: Re-execute previous commands from output folder
+
+# 2. Fix prediction → inference command name error
+# Update all documentation references from "prediction" to "inference"
+```
+
+### **Option B: CLI Debug Session**
+Investigate CLI hang issue discovered in Phase 3:
+
+```bash
+# Commands that hang during execution (needs debugging):
+python -m emuses.cli --help 2>&1    # Hangs indefinitely
+python -m emuses.cli trace --help 2>&1  # Hangs indefinitely  
+
+# Source code analysis shows commands exist and are complete
+# Issue appears to be in CLI initialization/import sequence
+```
+
+### **Option C: Advanced Commands Testing (Original)**
+Test the newly discovered advanced commands (BLOCKED by CLI hang):
+
+```bash
+# Test model provenance and citation (when CLI hang is fixed)
 python -m emuses.cli trace --help 2>&1
 python -m emuses.cli trace hcp_test_model_20250831_230750_845fa8ca 2>&1 > /tmp/trace_test.txt
 
@@ -68,7 +100,7 @@ python -m emuses.cli rerun --help 2>&1
 python -m emuses.cli rerun /tmp/emuses_cli_test_outputs/model_registry_test 2>&1 > /tmp/rerun_test.txt
 ```
 
-### **Option B: Error Handling Testing**
+### **Option D: Error Handling Testing**
 Test how commands handle invalid inputs:
 
 ```bash

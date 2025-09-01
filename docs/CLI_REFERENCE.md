@@ -24,6 +24,7 @@ graph TD
     D --> D1[📊 Optimization Configs]
     D --> D2[📚 Model Registry]
     D --> D3[🔬 Research Tools]
+    D --> D4[🧬 Scientific Reproducibility]
     
     E --> E1[⚡ Performance Tuning]
     E --> E2[🔌 Service Integration]
@@ -245,7 +246,7 @@ emuses heatmap heatmap_output/ embeddings.npy --scores cognitive_scores.csv
 
 ### Complete Model Registry Commands
 
-The Model Registry now supports **Complete EMUSES Models** - unified models containing UMAP, HDBSCAN, and prediction components for streamlined workflows.
+The Model Registry now supports **Complete EMUSES Models** - unified models containing UMAP, HDBSCAN, and inference components for streamlined workflows.
 
 #### `emuses models install` - Register New Models
 ```bash
@@ -268,7 +269,7 @@ emuses models components brain_classifier_v2_abc123
 # Output:
 # UMAP Model: /path/to/umap_model.joblib (2.3 MB)
 # HDBSCAN Model: /path/to/hdbscan_model.joblib (0.8 MB) 
-# Prediction Model: /path/to/prediction_model.joblib (1.5 MB)
+# Inference Model: /path/to/inference_model.joblib (1.5 MB)
 ```
 
 #### `emuses models info` - Get Model Details
@@ -411,12 +412,12 @@ emuses full large_study_analysis/ \
 
 ### `emuses inference` - Run Predictions
 
-Run predictions on new data using trained EMUSES models with registry support.
+Run inference on new data using trained EMUSES models with registry support.
 
 **Registry Model Inference** (Recommended)
 ```bash
 # Use registry model ID - runs complete EMUSES folder pipeline
-emuses inference predictions_output/ new_patient_features.csv \
+emuses inference inference_output/ new_patient_features.csv \
   --model-id brain_classifier_v2_abc123
 ```
 
@@ -431,23 +432,23 @@ emuses inference results/ new_data.csv \
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `OUTPUT` | path | ✅ Required | Directory for prediction results |
-| `DATA` | path | ✅ Required | New data for predictions (CSV) |
+| `OUTPUT` | path | ✅ Required | Directory for inference results |
+| `DATA` | path | ✅ Required | New data for inference (CSV) |
 | `--model-id` | string | ✅ Required* | Registry model ID for EMUSES folder |
 
 **Direct Path Parameters**
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `OUTPUT` | path | ✅ Required | Directory for prediction results |
-| `DATA` | path | ✅ Required | New data for predictions (CSV) |
+| `OUTPUT` | path | ✅ Required | Directory for inference results |
+| `DATA` | path | ✅ Required | New data for inference (CSV) |
 | `--model` | path | ✅ Required* | Path to EMUSES training folder |
 
 *Note: Exactly one of `--model-id` or `--model` must be provided.
 
 **Example Workflows**
 ```bash
-# Registry workflow - from model discovery to predictions
+# Registry workflow - from model discovery to inference
 emuses models list                    # Find available EMUSES models
 emuses models info model_id          # Inspect model details and components  
 emuses inference results/ data.csv --model-id model_id
@@ -600,6 +601,133 @@ emuses models api-info
 ```
 
 **📚 For detailed usage examples and troubleshooting:** [Admin Guide →](multi-user-service/admin-guide.md)
+
+---
+
+## 🔬 **Scientific Reproducibility Commands**
+
+<details>
+<summary>🧬 **Advanced Research Tools** - Model Provenance & Citation</summary>
+
+### `emuses trace` - Export Model Provenance
+
+Export complete model provenance for supplementary materials and scientific reproducibility.
+
+```bash
+# Export provenance for a specific model
+emuses trace trained_model_dir
+
+# Export to custom location
+emuses trace trained_model_dir --output model_provenance.json
+```
+
+**Parameters:**
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `MODEL` | path/name | ✅ Required | Path to model directory or model name |
+| `--output` | path | ⚪ Optional | Output file path (default: {model_name}_trace.json) |
+
+**Output:** JSON file containing complete model provenance including training context, random seeds, environment details, and reproducibility metadata.
+
+### `emuses cite` - Generate Publication Citations
+
+Generate publication-ready citations for models in multiple academic formats.
+
+```bash
+# Generate BibTeX citation (default)
+emuses cite trained_model_dir
+
+# Generate APA format citation
+emuses cite trained_model_dir --format apa
+
+# Generate Nature journal format
+emuses cite trained_model_dir --format nature
+```
+
+**Parameters:**
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `MODEL` | path/name | ✅ Required | Path to model directory or model name |
+| `--format` | choice | ⚪ Optional | Citation format: `bibtex`, `apa`, `nature` (default: bibtex) |
+
+**Output:** Formatted citation text ready for academic publications.
+
+### `emuses reproduce` - Generate Reproduction Guides
+
+Create comprehensive markdown guides for exact model reproduction.
+
+```bash
+# Generate reproduction guide in model directory
+emuses reproduce trained_model_dir
+
+# Generate guide to custom location
+emuses reproduce trained_model_dir --output reproduction_manual.md
+```
+
+**Parameters:**
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `MODEL` | path/name | ✅ Required | Path to model directory or model name |
+| `--output` | path | ⚪ Optional | Output file path (default: {model_dir}/reproduction_guide.md) |
+
+**Output:** Complete markdown reproduction guide with environment setup, exact commands, and verification steps.
+
+### `emuses diff` - Check Model Modifications
+
+Detect modifications to model files since creation using manifest checksums.
+
+```bash
+# Quick change detection
+emuses diff trained_model_dir
+
+# Detailed change information with file sizes and checksums
+emuses diff trained_model_dir --detailed
+```
+
+**Parameters:**
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `MODEL` | path/name | ✅ Required | Path to model directory or model name |
+| `--detailed` | flag | ⚪ Optional | Show detailed change information including checksums |
+
+**Output:** Report of modified, added, or deleted files compared to original manifest.
+
+### `emuses compare` - Compare Model Versions
+
+Side-by-side comparison of two model versions including configuration and dependencies.
+
+```bash
+# Compare two model directories
+emuses compare model_v1/ model_v2/
+```
+
+**Parameters:**
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `MODEL1` | path | ✅ Required | Path to first model directory |
+| `MODEL2` | path | ✅ Required | Path to second model directory |
+
+**Output:** Comprehensive comparison report showing manifest differences, configuration changes, and dependency updates.
+
+### `emuses rerun` - Re-execute Previous Commands
+
+Re-execute previously saved commands from their output folders for exact reproduction.
+
+```bash
+# Rerun command from output folder
+emuses rerun /path/to/previous/output/
+```
+
+**Parameters:**
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `OUTPUT_FOLDER` | path | ✅ Required | Path to output folder containing saved command |
+
+**Output:** Re-executes the exact command that was previously run, maintaining reproducibility.
+
+</details>
+
+---
 
 ### Advanced System Configuration
 
