@@ -553,8 +553,19 @@ class TestInferenceStageCSVOutput(unittest.TestCase):
 class TestInferenceStageIntegration(unittest.TestCase):
     """Integration tests for InferenceStage with realistic model artifacts."""
 
+    @classmethod
+    def setup_class(cls):
+        """Load real test data for validation."""
+        project_root = Path(__file__).parent.parent.parent
+        cls.features = pd.read_csv(project_root / 'test_data/features.csv', header=None).values
+        cls.targets = pd.read_csv(project_root / 'test_data/regression_scores_multitarget.csv', header=None).values
+        cls.train_coords = cls.features[:30, :2]  # First 2 features as coordinates
+        cls.test_coords = cls.features[30:, :2]   # Last 20 samples for testing
+        cls.train_targets = cls.targets[:30]       # Training targets
+        cls.test_targets = cls.targets[30:]        # Test targets
+
     def setUp(self):
-        """Set up test environment with mock model artifacts."""
+        """Set up test environment with real test setup."""
         self.temp_dir = tempfile.TemporaryDirectory()
         self.model_path = Path(self.temp_dir.name) / "trained_models"
         self.model_path.mkdir(exist_ok=True)
@@ -785,8 +796,8 @@ class TestInferenceStageIntegration(unittest.TestCase):
                 'metadata': {}
             }
         
-        # Create test features and provide through context
-        test_features = np.random.rand(5, 20)
+        # Create test features using real test data
+        test_features = self.test_coords[:5]  # Use first 5 test samples (real coordinates)
         stage._load_trained_models_with_context = lambda ctx: mock_load_models()
         
         context = {
@@ -795,9 +806,9 @@ class TestInferenceStageIntegration(unittest.TestCase):
         }
         results = stage.run(context)
         
-        # Verify confidence scores are computed
-        prediction_details = results['prediction_details']
-        confidence_scores = prediction_details['confidence_scores']
+        # Verify confidence scores are computed (in target_results structure)
+        target_results = results['target_results']['target_0']
+        confidence_scores = target_results['confidence_scores']
         
         self.assertEqual(len(confidence_scores), 5)
         
