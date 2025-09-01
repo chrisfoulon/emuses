@@ -1,0 +1,6 @@
+# EMUSES Pipeline Command
+# Generated on: 2025-09-01 21:48:56
+# To rerun: /home/tolhsadum/miniforge3/envs/emuses/lib/python3.11/site-packages/pytest/__main__.py --tb=no -q --maxfail=50 tests/enhanced-cli-typer/test_security_validation.py tests/enhanced-cli-typer/test_service_client.py tests/enhanced-cli-typer/test_shell_completion.py
+# Or use: emuses rerun ""$(cat /etc/passwd)""
+
+/home/tolhsadum/miniforge3/envs/emuses/lib/python3.11/site-packages/pytest/__main__.py --tb=no -q --maxfail=50 tests/enhanced-cli-typer/test_security_validation.py tests/enhanced-cli-typer/test_service_client.py tests/enhanced-cli-typer/test_shell_completion.py
