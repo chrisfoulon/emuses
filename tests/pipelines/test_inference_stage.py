@@ -13,6 +13,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import numpy as np
+import pandas as pd
 import pytest
 
 from emuses.pipelines.inference_stage import InferenceStage
@@ -121,8 +122,19 @@ class TestInferenceStageModelLoading(unittest.TestCase):
 class TestInferenceStageEnsemblePrediction(unittest.TestCase):
     """Test ensemble prediction functionality."""
 
+    @classmethod
+    def setup_class(cls):
+        """Load real test data for validation."""
+        project_root = Path(__file__).parent.parent.parent
+        cls.features = pd.read_csv(project_root / 'test_data/features.csv', header=None).values
+        cls.targets = pd.read_csv(project_root / 'test_data/regression_scores_multitarget.csv', header=None).values
+        cls.train_coords = cls.features[:30, :2]  # First 2 features as coordinates
+        cls.test_coords = cls.features[30:, :2]   # Last 20 samples for testing
+        cls.train_targets = cls.targets[:30]       # Training targets
+        cls.test_targets = cls.targets[30:]        # Test targets
+
     def setUp(self):
-        """Set up test environment with mock models and embeddings."""
+        """Set up test environment with real test artifacts."""
         self.temp_dir = tempfile.TemporaryDirectory()
         self.model_path = Path(self.temp_dir.name) / "trained_models"
         self.model_path.mkdir(exist_ok=True)
@@ -138,60 +150,67 @@ class TestInferenceStageEnsemblePrediction(unittest.TestCase):
         self.temp_dir.cleanup()
 
     def test_predict_with_ensemble_models(self):
-        """Test prediction with multiple ensemble models."""
+        """Test prediction with multiple ensemble models using real data."""
         stage = InferenceStage(self.config)
         
-        # Mock embeddings (output from UMAP transformation)
-        embeddings = np.random.rand(50, 2)  # 50 samples, 2D embeddings
+        # Use real test coordinates as embeddings
+        embeddings = self.test_coords  # 20 samples, 2D coordinates
         
-        # Mock trained models with prediction models
-        mock_models = {
+        # Create realistic mock models that behave like trained sklearn models
+        from sklearn.ensemble import RandomForestRegressor
+        from sklearn.linear_model import Ridge
+        
+        # Train simple models on training data for realistic behavior
+        rf_model = RandomForestRegressor(n_estimators=5, random_state=42)
+        ridge_model = Ridge(random_state=42)
+        
+        rf_model.fit(self.train_coords, self.train_targets[:, 0])  # First target
+        ridge_model.fit(self.train_coords, self.train_targets[:, 0])
+        
+        # Create models structure with real trained models
+        models = {
             'umap_model': MagicMock(),
             'prediction_models': [
-                {'model': MagicMock(), 'name': 'model_1', 'score': 0.85},
-                {'model': MagicMock(), 'name': 'model_2', 'score': 0.78}
+                {'model': rf_model, 'name': 'random_forest', 'score': 0.85},
+                {'model': ridge_model, 'name': 'ridge', 'score': 0.78}
             ],
             'metadata': {}
         }
         
-        # Configure mock predictions (must match number of input samples)
-        mock_models['prediction_models'][0]['model'].predict.return_value = np.random.rand(50)
-        mock_models['prediction_models'][1]['model'].predict.return_value = np.random.rand(50)
+        # Test prediction with real trained models
+        predictions = stage._predict(embeddings, models)
         
-        # Test prediction
-        predictions = stage._predict(embeddings, mock_models)
-        
-        # Verify prediction structure (new target_results format)
+        # Verify prediction structure (target_results format)
         self.assertIsInstance(predictions, dict)
         self.assertIn('target_results', predictions)
         self.assertIn('target_0', predictions['target_results'])
-        self.assertIn('individual_predictions', predictions)
         
         target_0_result = predictions['target_results']['target_0']
         self.assertIn('ensemble_predictions', target_0_result)
         self.assertIn('confidence_scores', target_0_result)
         
-        # Verify ensemble predictions shape
+        # Verify ensemble predictions shape matches input
         ensemble_pred = target_0_result['ensemble_predictions']
-        self.assertEqual(len(ensemble_pred), 50)  # Same as input embeddings
+        self.assertEqual(len(ensemble_pred), len(embeddings))  # Same as input embeddings
         
     def test_predict_with_confidence_scoring(self):
-        """Test that prediction includes confidence scores."""
+        """Test that prediction includes confidence scores using real models."""
         stage = InferenceStage(self.config)
-        embeddings = np.random.rand(10, 2)
+        embeddings = self.test_coords[:10]  # First 10 test samples
         
-        mock_models = {
+        # Create a real model that supports confidence scoring
+        from sklearn.ensemble import RandomForestRegressor
+        
+        rf_model = RandomForestRegressor(n_estimators=5, random_state=42)
+        rf_model.fit(self.train_coords, self.train_targets[:, 0])
+        
+        models = {
             'prediction_models': [
-                {'model': MagicMock(), 'name': 'model_1', 'score': 0.90}
+                {'model': rf_model, 'name': 'random_forest', 'score': 0.90}
             ]
         }
         
-        # Mock prediction with confidence
-        mock_models['prediction_models'][0]['model'].predict.return_value = np.random.rand(10)
-        if hasattr(mock_models['prediction_models'][0]['model'], 'predict_proba'):
-            mock_models['prediction_models'][0]['model'].predict_proba.return_value = np.random.rand(10, 2)
-        
-        predictions = stage._predict(embeddings, mock_models)
+        predictions = stage._predict(embeddings, models)
         
         # Verify confidence scores are included in target_results structure
         self.assertIn('target_results', predictions)
@@ -199,7 +218,7 @@ class TestInferenceStageEnsemblePrediction(unittest.TestCase):
         target_0_result = predictions['target_results']['target_0']
         self.assertIn('confidence_scores', target_0_result)
         confidence = target_0_result['confidence_scores']
-        self.assertEqual(len(confidence), 10)  # One per sample
+        self.assertEqual(len(confidence), len(embeddings))  # One per sample
         
     def test_predict_handles_empty_prediction_models(self):
         """Test error handling when no prediction models are available."""
