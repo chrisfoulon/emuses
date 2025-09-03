@@ -2,6 +2,7 @@ import numpy as np
 import nibabel as nib
 import pandas as pd
 import pytest
+from pathlib import Path
 from unittest.mock import patch
 from PIL import Image
 
@@ -21,8 +22,12 @@ def sample_image_files(tmp_path):
 
 @pytest.fixture
 def sample_nifti_file(tmp_path):
-    # Creating a dummy NIfTI image for testing
-    data = np.random.rand(5, 5, 5)
+    # Creating a dummy NIfTI image using real test data
+    project_root = Path(__file__).parent.parent.parent
+    features = pd.read_csv(project_root / 'test_data/features.csv', header=None).values
+    # Use real data reshaped to 5x5x5 (125 total values needed)
+    flat_data = features.flatten()  # Flatten all real data
+    data = np.tile(flat_data, (125 // len(flat_data) + 1))[:125].reshape(5, 5, 5)
     nifti_img = nib.Nifti1Image(data, affine=np.eye(4))
     nifti_path = tmp_path / "sample.nii"
     nib.save(nifti_img, nifti_path)
@@ -40,9 +45,25 @@ def sample_csv_file(tmp_path):
 
 @pytest.fixture
 def sample_mnist_data():
-    # Generating synthetic MNIST-like data for testing
-    features = np.random.rand(100, 28 * 28)  # 100 samples of flattened 28x28 images
-    labels = np.random.randint(0, 10, 100)  # 100 labels between 0 and 9
+    # Use real test data for MNIST-like testing
+    project_root = Path(__file__).parent.parent.parent
+    real_features = pd.read_csv(project_root / 'test_data/features.csv', header=None).values
+    real_targets = pd.read_csv(project_root / 'test_data/regression_scores_multitarget.csv', header=None).values
+    
+    # Create MNIST-like data by tiling and reshaping real data
+    n_samples = 100
+    mnist_size = 28 * 28  # 784 features
+    
+    # Tile real features to create enough data
+    real_flat = real_features.flatten()
+    tiles_needed = (n_samples * mnist_size) // len(real_flat) + 1
+    features = np.tile(real_flat, tiles_needed)[:n_samples * mnist_size]
+    features = features.reshape(n_samples, mnist_size)
+    
+    # Create labels from real targets (scaled to 0-9 range)
+    labels = np.tile(real_targets[:, 0], (n_samples // len(real_targets) + 1))[:n_samples]
+    labels = ((labels - labels.min()) / (labels.max() - labels.min()) * 9).astype(int)
+    
     return features, labels
 
 
@@ -73,7 +94,19 @@ def test_mnist_features_to_input_matrix(sample_mnist_data):
 def test_load_and_preprocess_digits_dataset():
     # Mock the dataset download to avoid repeated downloads
     with patch("emuses.tools.inputs_utils.fetch_openml") as mock_fetch_openml:
-        mock_fetch_openml.return_value = (np.random.rand(100, 784), np.random.randint(0, 10, 100))
+        # Use real test data for mock return
+        project_root = Path(__file__).parent.parent.parent
+        real_features = pd.read_csv(project_root / 'test_data/features.csv', header=None).values
+        real_targets = pd.read_csv(project_root / 'test_data/regression_scores_multitarget.csv', header=None).values
+        
+        # Create realistic mock data
+        real_flat = real_features.flatten()
+        tiles_needed = (100 * 784) // len(real_flat) + 1
+        mock_features = np.tile(real_flat, tiles_needed)[:100 * 784].reshape(100, 784)
+        mock_labels = np.tile(real_targets[:, 0], (100 // len(real_targets) + 1))[:100]
+        mock_labels = ((mock_labels - mock_labels.min()) / (mock_labels.max() - mock_labels.min()) * 9).astype(int)
+        
+        mock_fetch_openml.return_value = (mock_features, mock_labels)
         features, labels = load_and_preprocess_digits_dataset()
 
     assert features.shape[0] == labels.shape[0], "Number of features does not match number of labels."

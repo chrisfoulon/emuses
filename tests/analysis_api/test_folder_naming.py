@@ -10,6 +10,7 @@ from pathlib import Path
 from unittest.mock import MagicMock
 
 import numpy as np
+import pandas as pd
 import pytest
 
 from emuses.tools.grid_creator import GridCreator
@@ -18,6 +19,13 @@ from emuses.tools.correlation_grid_creator import CorrelationGridCreator
 
 class TestGridCreatorFolderNaming:
     """Test folder naming changes in GridCreator from prediction-grids to prediction-heatmaps."""
+    
+    @classmethod
+    def setup_class(cls):
+        """Load real test data for validation."""
+        project_root = Path(__file__).parent.parent.parent
+        cls.features = pd.read_csv(project_root / 'test_data/features.csv', header=None).values
+        cls.targets = pd.read_csv(project_root / 'test_data/regression_scores_multitarget.csv', header=None).values
 
     def test_prediction_heatmaps_folder_creation(self):
         """
@@ -26,12 +34,14 @@ class TestGridCreatorFolderNaming:
         This test verifies Task 3.1.a.1: Change prediction-grids/ → prediction-heatmaps/ in GridCreator.
         """
         # Setup test data
-        embeddings = np.random.rand(50, 2)  # 50 samples, 2D embeddings in 0-1 range
-        target_data = {'0': np.random.rand(50)}
+        embeddings = self.features[:50, :2]  # 50 samples, first 2 dimensions
+        target_data = {'0': self.targets[:50, 0]}  # First target column
         
         # Mock trained models with required structure
         mock_model = MagicMock()
-        mock_model.predict.return_value = np.random.rand(10000)  # Grid predictions
+        # Use real data tiled for grid predictions
+        grid_predictions = np.tile(self.features[:30, 0], (10000 // 30 + 1))[:10000]
+        mock_model.predict.return_value = grid_predictions  # Grid predictions
         del mock_model.predict_proba  # Remove predict_proba to simulate regression model
         
         trained_models = {
@@ -90,12 +100,14 @@ class TestGridCreatorFolderNaming:
         # This test ensures that existing analysis results are not broken by the naming change.
         # For now, we'll test that the new naming convention doesn't conflict with old structure.
         
-        embeddings = np.random.rand(30, 2)
-        target_data = {'0': np.random.rand(30)}
+        embeddings = self.features[:30, :2]  # 30 samples, first 2 dimensions
+        target_data = {'0': self.targets[:30, 0]}  # First target column
         
         # Mock trained models
         mock_model = MagicMock()
-        mock_model.predict.return_value = np.random.rand(10000)
+        # Use real data tiled for grid predictions
+        grid_predictions = np.tile(self.features[:30, 0], (10000 // 30 + 1))[:10000]
+        mock_model.predict.return_value = grid_predictions
         del mock_model.predict_proba  # Simulate regression model
         
         trained_models = {
@@ -135,6 +147,13 @@ class TestGridCreatorFolderNaming:
 
 class TestCorrelationGridCreatorFolderNaming:
     """Test folder naming changes in CorrelationGridCreator from correlation-grids to correlation-heatmaps."""
+    
+    @classmethod
+    def setup_class(cls):
+        """Load real test data for validation."""
+        project_root = Path(__file__).parent.parent.parent
+        cls.features = pd.read_csv(project_root / 'test_data/features.csv', header=None).values
+        cls.targets = pd.read_csv(project_root / 'test_data/regression_scores_multitarget.csv', header=None).values
 
     def test_correlation_heatmaps_folder_creation(self):
         """
@@ -143,8 +162,8 @@ class TestCorrelationGridCreatorFolderNaming:
         This test verifies Task 3.1.b.1: Change correlation-grids/ → correlation-heatmaps/ in CorrelationGridCreator.
         """
         # Setup test data
-        embeddings = np.random.rand(50, 2)  # 50 samples, 2D embeddings in 0-1 range
-        target_data = {'0': np.random.rand(50)}
+        embeddings = self.features[:50, :2]  # 50 samples, first 2 dimensions
+        target_data = {'0': self.targets[:50, 0]}  # First target column
         
         with tempfile.TemporaryDirectory() as temp_dir:
             output_folder = Path(temp_dir)
@@ -194,8 +213,8 @@ class TestCorrelationGridCreatorFolderNaming:
         
         This test verifies Task 3.1.b.3: Verify backwards compatibility with existing artifacts.
         """
-        embeddings = np.random.rand(30, 2)
-        target_data = {'0': np.random.rand(30)}
+        embeddings = self.features[:30, :2]  # 30 samples, first 2 dimensions
+        target_data = {'0': self.targets[:30, 0]}  # First target column
         
         with tempfile.TemporaryDirectory() as temp_dir:
             output_folder = Path(temp_dir)

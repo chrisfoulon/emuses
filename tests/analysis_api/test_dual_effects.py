@@ -10,6 +10,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import numpy as np
+import pandas as pd
 import pytest
 
 from emuses.tools.region_statistical_analyzer import RegionStatisticalAnalyzer
@@ -17,6 +18,13 @@ from emuses.tools.region_statistical_analyzer import RegionStatisticalAnalyzer
 
 class TestDualEffectAnalysis:
     """Test enhanced RegionStatisticalAnalyzer for dual analysis with percentile thresholds."""
+    
+    @classmethod
+    def setup_class(cls):
+        """Load real test data for validation."""
+        project_root = Path(__file__).parent.parent.parent
+        cls.features = pd.read_csv(project_root / 'test_data/features.csv', header=None).values
+        cls.targets = pd.read_csv(project_root / 'test_data/regression_scores_multitarget.csv', header=None).values
 
     def test_significance_source_parameter(self):
         """
@@ -26,25 +34,30 @@ class TestDualEffectAnalysis:
         """
         analyzer = RegionStatisticalAnalyzer()
         
-        # Setup test data
-        grid_coords = np.random.rand(100, 2)
-        embeddings = np.random.rand(50, 2)  # Training embeddings
-        prediction_values = np.random.rand(100)
-        confidence_values = np.random.rand(100)
-        correlation_values = np.random.rand(100)
-        input_matrix = np.random.rand(50, 1000)
-        target_data = {'0': np.random.rand(50)}
+        # Setup test data using real test data with perfect square grid (49 = 7x7)
+        n_grid = 49  # Perfect square
+        grid_coords = np.tile(self.features[:25, :2], (2, 1))[:n_grid]  # Tile to get 49 samples
+        embeddings = self.features[:50, :2]  # Training embeddings from real data
+        prediction_values = np.tile(self.features[:25, 2], 2)[:n_grid]  # Third feature column
+        confidence_values = np.tile(self.features[:25, 3], 2)[:n_grid]  # Fourth feature column
+        # Ensure correlation_values has correct dimensions
+        correlation_values = np.tile(self.targets[:25, 0], 2)[:n_grid]
+        # Create input matrix by tiling real features
+        base_features = self.features[:50]  # 50 samples
+        n_features_needed = 1000
+        input_matrix = np.tile(base_features, (1, n_features_needed // base_features.shape[1] + 1))[:, :n_features_needed]
+        target_data = {'0': self.targets[:50, 0]}
         
         with tempfile.TemporaryDirectory() as temp_dir:
             output_folder = Path(temp_dir)
             
             # Mock the input_matrix_stat_map function to avoid real computation
             with patch('emuses.tools.region_statistical_analyzer.input_matrix_stat_map') as mock_stat_map:
-                mock_stat_map.return_value = (
-                    np.random.rand(1000),  # stat_map
-                    np.random.rand(1000),  # pval_map  
-                    np.random.rand(1000)   # effect_size_map
-                )
+                # Use real data for mock return values
+                stat_map = np.tile(self.features[:50, 0], (1000 // 50 + 1))[:1000]
+                pval_map = np.tile(self.features[:50, 1], (1000 // 50 + 1))[:1000]
+                effect_size_map = np.tile(self.targets[:50, 0], (1000 // 50 + 1))[:1000]
+                mock_stat_map.return_value = (stat_map, pval_map, effect_size_map)
                 
                 # Test prediction significance source
                 results_prediction = analyzer.create_statistical_maps(
@@ -95,18 +108,27 @@ class TestDualEffectAnalysis:
         """
         analyzer = RegionStatisticalAnalyzer()
         
-        # Setup test data with known distribution
-        significance_values = np.array([0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0] * 10)  # 100 values
-        grid_coords = np.random.rand(100, 2)
-        embeddings = np.random.rand(50, 2)  # Training embeddings
-        input_matrix = np.random.rand(50, 1000)
-        target_data = {'0': np.random.rand(50)}
+        # Setup test data with known distribution using real data (perfect square: 49)
+        n_grid = 49  # Perfect square (7x7)
+        base_significance = self.features[:25, 0]  # Take first 25 values from real data
+        significance_values = np.tile(base_significance, 2)[:n_grid]  # Tile to get 49 values
+        grid_coords = np.tile(self.features[:25, :2], (2, 1))[:n_grid]
+        embeddings = self.features[:50, :2]  # Training embeddings from real data
+        # Create input matrix by tiling real features
+        base_features = self.features[:50]
+        n_features_needed = 1000
+        input_matrix = np.tile(base_features, (1, n_features_needed // base_features.shape[1] + 1))[:, :n_features_needed]
+        target_data = {'0': self.targets[:50, 0]}
         
         with tempfile.TemporaryDirectory() as temp_dir:
             output_folder = Path(temp_dir)
             
             with patch('emuses.tools.region_statistical_analyzer.input_matrix_stat_map') as mock_stat_map:
-                mock_stat_map.return_value = (np.random.rand(1000), np.random.rand(1000), np.random.rand(1000))
+                # Use real data for mock return values
+                stat_map = np.tile(self.features[:50, 0], (1000 // 50 + 1))[:1000]
+                pval_map = np.tile(self.features[:50, 1], (1000 // 50 + 1))[:1000]
+                effect_size_map = np.tile(self.targets[:50, 0], (1000 // 50 + 1))[:1000]
+                mock_stat_map.return_value = (stat_map, pval_map, effect_size_map)
                 
                 # Test with 5% threshold
                 results = analyzer.create_statistical_maps(
@@ -135,18 +157,26 @@ class TestDualEffectAnalysis:
         """
         analyzer = RegionStatisticalAnalyzer()
         
-        # Setup test data
-        grid_coords = np.random.rand(100, 2) 
-        embeddings = np.random.rand(50, 2)  # Training embeddings
-        significance_values = np.random.rand(100)
-        input_matrix = np.random.rand(50, 1000)
-        target_data = {'0': np.random.rand(50)}
+        # Setup test data using real test data (perfect square: 49)
+        n_grid = 49  # Perfect square (7x7)
+        grid_coords = np.tile(self.features[:25, :2], (2, 1))[:n_grid]
+        embeddings = self.features[:50, :2]  # Training embeddings from real data
+        significance_values = np.tile(self.features[:25, 2], 2)[:n_grid]  # Third feature column
+        # Create input matrix by tiling real features
+        base_features = self.features[:50]
+        n_features_needed = 1000
+        input_matrix = np.tile(base_features, (1, n_features_needed // base_features.shape[1] + 1))[:, :n_features_needed]
+        target_data = {'0': self.targets[:50, 0]}
         
         with tempfile.TemporaryDirectory() as temp_dir:
             output_folder = Path(temp_dir)
             
             with patch('emuses.tools.region_statistical_analyzer.input_matrix_stat_map') as mock_stat_map:
-                mock_stat_map.return_value = (np.random.rand(1000), np.random.rand(1000), np.random.rand(1000))
+                # Use real data for mock return values
+                stat_map = np.tile(self.features[:50, 0], (1000 // 50 + 1))[:1000]
+                pval_map = np.tile(self.features[:50, 1], (1000 // 50 + 1))[:1000]
+                effect_size_map = np.tile(self.targets[:50, 0], (1000 // 50 + 1))[:1000]
+                mock_stat_map.return_value = (stat_map, pval_map, effect_size_map)
                 
                 # Run dual analysis
                 results = analyzer.create_statistical_maps(

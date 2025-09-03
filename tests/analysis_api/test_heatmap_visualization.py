@@ -11,6 +11,7 @@ from unittest.mock import patch, MagicMock
 
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
 import pytest
 
 from emuses.tools.heatmap_visualization import (
@@ -24,16 +25,23 @@ from emuses.tools.heatmap_visualization import (
 class TestPredictionHeatmapVisualization:
     """Test prediction heatmap visualization functions."""
     
+    @classmethod
+    def setup_class(cls):
+        """Load real test data for validation."""
+        project_root = Path(__file__).parent.parent.parent
+        cls.features = pd.read_csv(project_root / 'test_data/features.csv', header=None).values
+        cls.targets = pd.read_csv(project_root / 'test_data/regression_scores_multitarget.csv', header=None).values
+    
     def setup_method(self):
         """Set up test fixtures."""
-        np.random.seed(42)
         self.grid_size = 10  # Small grid for testing
         self.n_samples = 50
         
-        # Test data
-        self.heatmap_values = np.random.rand(self.grid_size * self.grid_size)
-        self.training_embeddings = np.random.rand(self.n_samples, 2)
-        self.target_scores = np.random.randn(self.n_samples)
+        # Use real test data - repeat values to match grid size
+        base_values = self.features[:self.n_samples, 0]  # First feature column
+        self.heatmap_values = np.tile(base_values, (self.grid_size * self.grid_size + len(base_values) - 1) // len(base_values))[:self.grid_size * self.grid_size]
+        self.training_embeddings = self.features[:self.n_samples, :2]  # First two dimensions
+        self.target_scores = self.targets[:self.n_samples, 0]  # First target column
         self.target_name = "test_target"
         self.cluster_sample_indices = np.array([0, 5, 10, 15, 20])  # Some sample indices
         self.cluster_name = "cluster_0"
@@ -89,7 +97,7 @@ class TestPredictionHeatmapVisualization:
     def test_plot_prediction_heatmap_invalid_grid_size(self):
         """Test prediction heatmap with invalid grid size raises error."""
         # Wrong number of heatmap values
-        wrong_values = np.random.rand(50)  # Should be 100 for grid_size=10
+        wrong_values = self.features[:50, 0]  # Should be 100 for grid_size=10
         
         with pytest.raises(ValueError, match="Expected 100 heatmap values, got 50"):
             plot_prediction_heatmap(
@@ -156,16 +164,24 @@ class TestPredictionHeatmapVisualization:
 class TestCorrelationHeatmapVisualization:
     """Test correlation heatmap visualization functions."""
     
+    @classmethod
+    def setup_class(cls):
+        """Load real test data for validation."""
+        project_root = Path(__file__).parent.parent.parent
+        cls.features = pd.read_csv(project_root / 'test_data/features.csv', header=None).values
+        cls.targets = pd.read_csv(project_root / 'test_data/regression_scores_multitarget.csv', header=None).values
+    
     def setup_method(self):
         """Set up test fixtures."""
-        np.random.seed(42)
         self.grid_size = 10
         self.n_samples = 50
         
-        # Test data - correlations range from -1 to 1
-        self.correlation_values = np.random.uniform(-1, 1, self.grid_size * self.grid_size)
-        self.training_embeddings = np.random.rand(self.n_samples, 2)
-        self.target_scores = np.random.randn(self.n_samples)
+        # Use real test data - normalize to correlation range [-1, 1]
+        base_corr_values = self.features[:self.n_samples, 1]  # Second feature column
+        raw_values = np.tile(base_corr_values, (self.grid_size * self.grid_size + len(base_corr_values) - 1) // len(base_corr_values))[:self.grid_size * self.grid_size]
+        self.correlation_values = 2 * (raw_values - raw_values.min()) / (raw_values.max() - raw_values.min()) - 1
+        self.training_embeddings = self.features[:self.n_samples, :2]  # First two dimensions
+        self.target_scores = self.targets[:self.n_samples, 0]  # First target column
         self.target_name = "test_target"
         self.cluster_sample_indices = np.array([1, 6, 11, 16, 21])
         self.cluster_name = "cluster_1"
@@ -286,19 +302,31 @@ class TestCorrelationHeatmapVisualization:
 class TestVisualizationParameterValidation:
     """Test parameter validation across visualization functions."""
     
+    @classmethod
+    def setup_class(cls):
+        """Load real test data for validation."""
+        project_root = Path(__file__).parent.parent.parent
+        cls.features = pd.read_csv(project_root / 'test_data/features.csv', header=None).values
+        cls.targets = pd.read_csv(project_root / 'test_data/regression_scores_multitarget.csv', header=None).values
+    
     def setup_method(self):
         """Set up minimal test fixtures."""
         self.grid_size = 5
         self.n_samples = 10
-        self.heatmap_values = np.random.rand(self.grid_size * self.grid_size)
-        self.correlation_values = np.random.uniform(-1, 1, self.grid_size * self.grid_size)
-        self.training_embeddings = np.random.rand(self.n_samples, 2)
-        self.target_scores = np.random.randn(self.n_samples)
+        # Use real test data - repeat values to match grid size
+        base_heat_values = self.features[:self.n_samples, 0]  # First feature column
+        self.heatmap_values = np.tile(base_heat_values, (self.grid_size * self.grid_size + len(base_heat_values) - 1) // len(base_heat_values))[:self.grid_size * self.grid_size]
+        # Normalize to correlation range [-1, 1]
+        base_corr_values = self.features[:self.n_samples, 1]  # Second feature column
+        raw_corr_values = np.tile(base_corr_values, (self.grid_size * self.grid_size + len(base_corr_values) - 1) // len(base_corr_values))[:self.grid_size * self.grid_size]
+        self.correlation_values = 2 * (raw_corr_values - raw_corr_values.min()) / (raw_corr_values.max() - raw_corr_values.min()) - 1
+        self.training_embeddings = self.features[:self.n_samples, :2]  # First two dimensions
+        self.target_scores = self.targets[:self.n_samples, 0]  # First target column
         self.target_name = "test"
     
     def test_invalid_heatmap_values_length(self):
         """Test all functions validate heatmap values length correctly."""
-        wrong_values = np.random.rand(10)  # Should be 25 for grid_size=5
+        wrong_values = self.features[:10, 0]  # Should be 25 for grid_size=5
         
         # Test prediction functions
         with pytest.raises(ValueError, match="Expected 25 heatmap values, got 10"):
@@ -324,7 +352,7 @@ class TestVisualizationParameterValidation:
     
     def test_invalid_correlation_values_length(self):
         """Test correlation functions validate correlation values length correctly."""
-        wrong_values = np.random.rand(10)  # Should be 25 for grid_size=5
+        wrong_values = self.features[:10, 1]  # Should be 25 for grid_size=5
         
         # Test correlation functions
         with pytest.raises(ValueError, match="Expected 25 correlation values, got 10"):
