@@ -10,6 +10,7 @@ from pathlib import Path
 from unittest.mock import Mock, MagicMock, patch
 
 import numpy as np
+import pandas as pd
 import pytest
 
 from emuses.pipelines.heatmap_stage import HeatmapStage
@@ -17,6 +18,13 @@ from emuses.pipelines.heatmap_stage import HeatmapStage
 
 class TestHeatmapVisualizationIntegration:
     """Test heatmap visualization integration in HeatmapStage."""
+    
+    @classmethod
+    def setup_class(cls):
+        """Load real test data for validation."""
+        project_root = Path(__file__).parent.parent.parent
+        cls.features = pd.read_csv(project_root / 'test_data/features.csv', header=None).values
+        cls.targets = pd.read_csv(project_root / 'test_data/regression_scores_multitarget.csv', header=None).values
     
     def setup_method(self):
         """Set up test fixtures."""
@@ -32,21 +40,35 @@ class TestHeatmapVisualizationIntegration:
         
         self.heatmap_stage = HeatmapStage(mock_config, mock_output_format_info)
         
-        # Test data
-        np.random.seed(42)
+        # Test data using real data patterns
         self.n_samples = 50
         self.grid_size = 10  # Small grid for testing
         
-        self.embeddings = np.random.rand(self.n_samples, 2)
-        self.target_matrix = np.random.randn(self.n_samples, 2)  # 2 targets
-        self.input_matrix = np.random.randn(self.n_samples, 100)
+        # Use real data for embeddings (rescaled to 0-1 range as required for heatmaps)
+        raw_embeddings = self.features[:self.n_samples, :2]
+        self.embeddings = (raw_embeddings - raw_embeddings.min(axis=0)) / (raw_embeddings.max(axis=0) - raw_embeddings.min(axis=0))
+        
+        # Use real data for target matrix (2 targets)
+        target_col_1 = self.targets[:self.n_samples, 0] if self.targets.shape[1] > 0 else self.features[:self.n_samples, 0]
+        target_col_2 = self.targets[:self.n_samples, 1] if self.targets.shape[1] > 1 else self.features[:self.n_samples, 1]
+        # Scale to standard normal distribution (mean=0, std=1)
+        target_col_1 = (target_col_1 - target_col_1.mean()) / target_col_1.std()
+        target_col_2 = (target_col_2 - target_col_2.mean()) / target_col_2.std()
+        self.target_matrix = np.column_stack([target_col_1, target_col_2])
+        
+        # Use real data for input matrix (scaled to standard normal)
+        base_input = self.features[:self.n_samples, :100]  # First 100 features
+        self.input_matrix = (base_input - base_input.mean()) / base_input.std()
         
         # Create proper mock trained models with target information
         mock_models = []
         for target_idx in range(2):  # 2 targets
             for fold in range(2):  # 2 models per target (CV folds)
                 mock_model = Mock()
-                mock_model.predict.return_value = np.random.randn(100)  # Grid predictions
+                # Use real data for grid predictions (scaled to standard normal)
+                base_pred = self.features[:100, target_idx % self.features.shape[1]]
+                grid_predictions = (base_pred - base_pred.mean()) / base_pred.std()
+                mock_model.predict.return_value = grid_predictions
                 mock_model.get = Mock(return_value=str(target_idx))  # Target "0" or "1"
                 mock_models.append(mock_model)
         
@@ -68,18 +90,33 @@ class TestHeatmapVisualizationIntegration:
     ):
         """Test that HeatmapStage calls heatmap visualization functions correctly."""
         
-        # Mock grid creators to return test data
+        # Mock grid creators to return test data using real data patterns
         mock_grid_instance = mock_grid_creator.return_value
+        
+        # Use real data for grid coordinates (rescaled to 0-1 range)
+        grid_points = self.grid_size * self.grid_size
+        base_coords = np.tile(self.features[:50, :2], (2, 1))[:grid_points]  # Get required points
+        grid_coords = (base_coords - base_coords.min(axis=0)) / (base_coords.max(axis=0) - base_coords.min(axis=0))
+        
+        # Use real data for combined values (scaled to [0, 1])
+        base_values = self.features[:grid_points, 0]
+        combined_values = (base_values - base_values.min()) / (base_values.max() - base_values.min())
+        
         mock_grid_instance.create_prediction_heatmaps.return_value = {
-            'grid_coordinates': np.random.rand(self.grid_size * self.grid_size, 2),
-            'combined_values': np.random.rand(self.grid_size * self.grid_size),  # prediction×confidence
+            'grid_coordinates': grid_coords,
+            'combined_values': combined_values,
             'artifacts': {}
         }
         
         mock_correlation_instance = mock_correlation_creator.return_value
+        
+        # Use real data for correlation values (scaled to [-1, 1])
+        base_corr = self.targets[:grid_points, 0] if self.targets.shape[1] > 0 else self.features[:grid_points, 0]
+        correlation_values = 2 * (base_corr - base_corr.min()) / (base_corr.max() - base_corr.min()) - 1
+        
         mock_correlation_instance.create_correlation_heatmaps.return_value = {
-            'grid_coordinates': np.random.rand(self.grid_size * self.grid_size, 2),
-            'pearson_correlation': np.random.uniform(-1, 1, self.grid_size * self.grid_size),
+            'grid_coordinates': grid_coords,
+            'pearson_correlation': correlation_values,
             'artifacts': {}
         }
         
@@ -158,18 +195,32 @@ class TestHeatmapVisualizationIntegration:
     ):
         """Test that heatmap visualizations create proper output file paths."""
         
-        # Mock grid creators
+        # Mock grid creators using real data patterns
         mock_grid_instance = mock_grid_creator.return_value
+        
+        # Use real data for grid coordinates (rescaled to 0-1 range)
+        base_coords = self.features[:100, :2]
+        grid_coords = (base_coords - base_coords.min(axis=0)) / (base_coords.max(axis=0) - base_coords.min(axis=0))
+        
+        # Use real data for combined values (scaled to [0, 1])
+        base_values = self.features[:100, 0]
+        combined_values = (base_values - base_values.min()) / (base_values.max() - base_values.min())
+        
         mock_grid_instance.create_prediction_heatmaps.return_value = {
-            'grid_coordinates': np.random.rand(100, 2),
-            'combined_values': np.random.rand(100),
+            'grid_coordinates': grid_coords,
+            'combined_values': combined_values,
             'artifacts': {}
         }
         
         mock_correlation_instance = mock_correlation_creator.return_value
+        
+        # Use real data for correlation values (scaled to [-1, 1])
+        base_corr = self.targets[:100, 0] if self.targets.shape[1] > 0 else self.features[:100, 0]
+        correlation_values = 2 * (base_corr - base_corr.min()) / (base_corr.max() - base_corr.min()) - 1
+        
         mock_correlation_instance.create_correlation_heatmaps.return_value = {
-            'grid_coordinates': np.random.rand(100, 2),
-            'pearson_correlation': np.random.uniform(-1, 1, 100),
+            'grid_coordinates': grid_coords,
+            'pearson_correlation': correlation_values,
             'artifacts': {}
         }
         
@@ -233,18 +284,32 @@ class TestHeatmapVisualizationIntegration:
     ):
         """Test that heatmap visualization errors are handled gracefully."""
         
-        # Mock grid creators
+        # Mock grid creators using real data patterns
         mock_grid_instance = mock_grid_creator.return_value
+        
+        # Use real data for grid coordinates (rescaled to 0-1 range)
+        base_coords = self.features[:100, :2]
+        grid_coords = (base_coords - base_coords.min(axis=0)) / (base_coords.max(axis=0) - base_coords.min(axis=0))
+        
+        # Use real data for combined values (scaled to [0, 1])
+        base_values = self.features[:100, 0]
+        combined_values = (base_values - base_values.min()) / (base_values.max() - base_values.min())
+        
         mock_grid_instance.create_prediction_heatmaps.return_value = {
-            'grid_coordinates': np.random.rand(100, 2),
-            'combined_values': np.random.rand(100),
+            'grid_coordinates': grid_coords,
+            'combined_values': combined_values,
             'artifacts': {}
         }
         
         mock_correlation_instance = mock_correlation_creator.return_value
+        
+        # Use real data for correlation values (scaled to [-1, 1])
+        base_corr = self.targets[:100, 0] if self.targets.shape[1] > 0 else self.features[:100, 0]
+        correlation_values = 2 * (base_corr - base_corr.min()) / (base_corr.max() - base_corr.min()) - 1
+        
         mock_correlation_instance.create_correlation_heatmaps.return_value = {
-            'grid_coordinates': np.random.rand(100, 2),
-            'pearson_correlation': np.random.uniform(-1, 1, 100),
+            'grid_coordinates': grid_coords,
+            'pearson_correlation': correlation_values,
             'artifacts': {}
         }
         

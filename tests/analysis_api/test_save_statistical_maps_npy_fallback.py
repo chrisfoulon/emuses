@@ -10,6 +10,7 @@ import unittest
 from pathlib import Path
 
 import numpy as np
+import pandas as pd
 
 from emuses.tools.output_utils import save_statistical_maps
 
@@ -17,12 +18,28 @@ from emuses.tools.output_utils import save_statistical_maps
 class TestSaveStatisticalMapsNpyFallback(unittest.TestCase):
     """Test .npy fallback functionality in save_statistical_maps."""
     
+    @classmethod
+    def setUpClass(cls):
+        """Load real test data for validation."""
+        project_root = Path(__file__).parent.parent.parent
+        cls.features = pd.read_csv(project_root / 'test_data/features.csv', header=None).values
+        cls.targets = pd.read_csv(project_root / 'test_data/regression_scores_multitarget.csv', header=None).values
+    
     def setUp(self):
         """Set up test fixtures."""
-        # Create test statistical maps
+        # Create test statistical maps using real data patterns
+        # Scale real data to statistical value ranges
+        # Tile real data to get 100 values
+        base_data_1 = np.tile(self.features[:50, 0], 2)  # 100 values from first feature
+        base_data_2 = np.tile(self.features[:50, 1], 2)  # 100 values from second feature
+        
+        # Scale to statistical map ranges
+        cluster_0_data = 2 * (base_data_1 - base_data_1.min()) / (base_data_1.max() - base_data_1.min()) - 1  # Scale to [-1, 1]
+        cluster_1_data = (base_data_2 - base_data_2.min()) / (base_data_2.max() - base_data_2.min()) - 0.5  # Scale to [-0.5, 0.5]
+        
         self.stat_maps = {
-            "cluster_0": np.random.uniform(-1, 1, 100),
-            "cluster_1": np.random.uniform(-0.5, 0.5, 100)
+            "cluster_0": cluster_0_data,
+            "cluster_1": cluster_1_data
         }
     
     def test_npy_fallback_for_unsupported_input_type(self):

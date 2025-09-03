@@ -6,6 +6,7 @@ Tests the dual RegionStatisticalAnalyzer calls with enhanced create_statistical_
 
 import unittest
 import numpy as np
+import pandas as pd
 from pathlib import Path
 from unittest.mock import Mock, patch, MagicMock, call
 import tempfile
@@ -17,16 +18,35 @@ from emuses.pipelines.heatmap_stage import HeatmapStage
 class TestHeatmapStageTripleGridIntegration(unittest.TestCase):
     """Test the updated _execute_triple_grid_analysis method with dual analysis pattern."""
 
+    @classmethod
+    def setUpClass(cls):
+        """Load real test data for validation."""
+        project_root = Path(__file__).parent.parent.parent
+        cls.features = pd.read_csv(project_root / 'test_data/features.csv', header=None).values
+        cls.targets = pd.read_csv(project_root / 'test_data/regression_scores_multitarget.csv', header=None).values
+
     def setUp(self):
         """Set up test data."""
         # Create temporary directory for outputs
         self.temp_dir = tempfile.mkdtemp()
         self.output_folder = Path(self.temp_dir)
         
-        # Mock data
-        self.embeddings = np.random.rand(100, 2)
-        self.target_matrix = np.random.rand(100, 2)
-        self.input_matrix = np.random.rand(100, 500)
+        # Use real data patterns
+        # Embeddings (rescaled to 0-1 range as required for heatmaps)
+        raw_embeddings = self.features[:100, :2]
+        self.embeddings = (raw_embeddings - raw_embeddings.min(axis=0)) / (raw_embeddings.max(axis=0) - raw_embeddings.min(axis=0))
+        
+        # Target matrix (2 targets, scaled to [0, 1])
+        target_col_1 = self.targets[:100, 0] if self.targets.shape[1] > 0 else self.features[:100, 0]
+        target_col_2 = self.targets[:100, 1] if self.targets.shape[1] > 1 else self.features[:100, 1]
+        # Scale to [0, 1] range
+        target_col_1 = (target_col_1 - target_col_1.min()) / (target_col_1.max() - target_col_1.min())
+        target_col_2 = (target_col_2 - target_col_2.min()) / (target_col_2.max() - target_col_2.min())
+        self.target_matrix = np.column_stack([target_col_1, target_col_2])
+        
+        # Input matrix (scaled to [0, 1])
+        base_input = np.tile(self.features[:100, :], (1, 5))[:, :500]  # Tile to get 500 features
+        self.input_matrix = (base_input - base_input.min()) / (base_input.max() - base_input.min())
         
         # Mock context with trained models
         self.context = {
@@ -64,14 +84,28 @@ class TestHeatmapStageTripleGridIntegration(unittest.TestCase):
         mock_correlation_creator.return_value = mock_correlation_instance
         mock_statistical_analyzer.return_value = mock_statistical_instance
         
-        # Mock return values for prediction and correlation results
+        # Mock return values for prediction and correlation results using real data patterns
+        grid_points = 10000
+        
+        # Use real data for grid coordinates (rescaled to 0-1 range)
+        base_coords = np.tile(self.features[:5000, :2], (2, 1))  # Tile to get 10000 points
+        grid_coords = (base_coords - base_coords.min(axis=0)) / (base_coords.max(axis=0) - base_coords.min(axis=0))
+        
+        # Use real data for combined values (scaled to [0, 1])
+        base_combined = np.tile(self.features[:5000, 0], 2)  # 10000 values
+        combined_values = (base_combined - base_combined.min()) / (base_combined.max() - base_combined.min())
+        
+        # Use real data for correlation values (scaled to [-1, 1] with mix of positive/negative)
+        base_corr = np.tile(self.targets[:5000, 0], 2) if self.targets.shape[1] > 0 else np.tile(self.features[:5000, 0], 2)
+        correlation_values = 2 * (base_corr - base_corr.min()) / (base_corr.max() - base_corr.min()) - 1
+        
         prediction_results = {
-            'grid_coordinates': np.random.rand(10000, 2),
-            'combined_values': np.random.rand(10000)
+            'grid_coordinates': grid_coords,
+            'combined_values': combined_values
         }
         correlation_results = {
-            'grid_coordinates': np.random.rand(10000, 2), 
-            'pearson_correlation': np.random.rand(10000) - 0.5  # Mix of positive/negative
+            'grid_coordinates': grid_coords, 
+            'pearson_correlation': correlation_values
         }
         
         mock_grid_instance.create_prediction_heatmaps.return_value = prediction_results
@@ -127,14 +161,28 @@ class TestHeatmapStageTripleGridIntegration(unittest.TestCase):
         mock_correlation_creator.return_value = mock_correlation_instance
         mock_statistical_analyzer.return_value = mock_statistical_instance
         
-        # Mock return values
+        # Mock return values using real data patterns
+        grid_points = 10000
+        
+        # Use real data for grid coordinates (rescaled to 0-1 range)
+        base_coords = np.tile(self.features[:5000, :2], (2, 1))  # Tile to get 10000 points
+        grid_coords = (base_coords - base_coords.min(axis=0)) / (base_coords.max(axis=0) - base_coords.min(axis=0))
+        
+        # Use real data for combined values (scaled to [0, 1])
+        base_combined = np.tile(self.features[:5000, 0], 2)  # 10000 values
+        combined_values = (base_combined - base_combined.min()) / (base_combined.max() - base_combined.min())
+        
+        # Use real data for correlation values (scaled to [-1, 1])
+        base_corr = np.tile(self.targets[:5000, 0], 2) if self.targets.shape[1] > 0 else np.tile(self.features[:5000, 0], 2)
+        correlation_values = 2 * (base_corr - base_corr.min()) / (base_corr.max() - base_corr.min()) - 1
+        
         prediction_results = {
-            'grid_coordinates': np.random.rand(10000, 2),
-            'combined_values': np.random.rand(10000)  # prediction×confidence values
+            'grid_coordinates': grid_coords,
+            'combined_values': combined_values  # prediction×confidence values
         }
         correlation_results = {
-            'grid_coordinates': np.random.rand(10000, 2),
-            'pearson_correlation': np.random.rand(10000) - 0.5
+            'grid_coordinates': grid_coords,
+            'pearson_correlation': correlation_values
         }
         
         mock_grid_instance.create_prediction_heatmaps.return_value = prediction_results
@@ -176,14 +224,23 @@ class TestHeatmapStageTripleGridIntegration(unittest.TestCase):
         mock_correlation_creator.return_value = mock_correlation_instance
         mock_statistical_analyzer.return_value = mock_statistical_instance
         
-        # Mock return values with negative correlations to test absolute value processing
+        # Create specific correlation values with negative values to test absolute value processing
         correlation_values = np.array([-0.8, -0.3, 0.1, 0.6, -0.9])
+        
+        # Use real data for grid coordinates (rescaled to 0-1 range)
+        base_coords = self.features[:5, :2]
+        grid_coords = (base_coords - base_coords.min(axis=0)) / (base_coords.max(axis=0) - base_coords.min(axis=0))
+        
+        # Use real data for combined values (scaled to [0, 1])
+        base_combined = self.features[:5, 0]
+        combined_values = (base_combined - base_combined.min()) / (base_combined.max() - base_combined.min())
+        
         prediction_results = {
-            'grid_coordinates': np.random.rand(5, 2),
-            'combined_values': np.random.rand(5)
+            'grid_coordinates': grid_coords,
+            'combined_values': combined_values
         }
         correlation_results = {
-            'grid_coordinates': np.random.rand(5, 2),
+            'grid_coordinates': grid_coords,
             'pearson_correlation': correlation_values
         }
         
