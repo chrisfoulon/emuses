@@ -503,7 +503,7 @@ def full(
         typer.Option(help="Path to scores file associated with the dataset"),
     ] = None,
     label_dataset: Annotated[
-        Optional[Path], typer.Option(help="Path to a separate labelled dataset")
+        Optional[Path], typer.Option("--label_dataset", help="Path to a separate labelled dataset")
     ] = None,
     recursive_search: Annotated[
         bool,
