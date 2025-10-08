@@ -3,6 +3,9 @@ import subprocess
 import sys
 from packaging import version
 
+# Import version from package
+from emuses import __version__
+
 
 def get_bcblib_requirement():
     """
@@ -69,7 +72,7 @@ def get_bcblib_requirement():
 
 setup(
     name="emuses",
-    version="0.9.0-dev",
+    version=__version__,
     packages=find_packages(),
     entry_points={
         "console_scripts": [

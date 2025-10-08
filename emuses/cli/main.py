@@ -45,6 +45,7 @@ import requests
 import typer
 import uvicorn
 
+from emuses import __version__
 from .interactive_mode import InteractiveWorkflowManager
 from .rich_features import ProgressTracker, StatusRenderer
 # Import security functions
@@ -432,6 +433,34 @@ def create_typer_app() -> typer.Typer:
 
 # Create the main application instance
 app = create_typer_app()
+
+
+def _version_callback(value: bool):
+    """Callback to show version and exit."""
+    if value:
+        typer.echo(f"emuses {__version__}")
+        raise typer.Exit()
+
+
+@app.callback()
+def main_callback(
+    version: Annotated[
+        Optional[bool],
+        typer.Option(
+            "--version", "-V",
+            callback=_version_callback,
+            is_eager=True,
+            help="Show version and exit"
+        )
+    ] = None,
+):
+    """
+    EMUSES - Enhanced Multimodal Unified Statistical Embedding System
+
+    A comprehensive neuroimaging analysis pipeline for dimensionality reduction,
+    clustering, and predictive modeling.
+    """
+    pass
 
 
 @app.command()
@@ -1075,10 +1104,10 @@ def _convert_typer_args_to_service_config(**kwargs) -> dict:
             config[key] = str(value)
         elif isinstance(value, list) and value:
             config[key] = [str(item) for item in value]
+        elif hasattr(value, "value"):  # Enum types - check before str types since str enums are also str
+            config[key] = value.value
         elif isinstance(value, (str, int, float, bool)):
             config[key] = value
-        elif hasattr(value, "value"):  # Enum types
-            config[key] = value.value
         else:
             config[key] = str(value)
 
