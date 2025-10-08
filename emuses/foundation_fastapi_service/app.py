@@ -475,6 +475,33 @@ def validate_file_path(file_path: str) -> Path:
     return path
 
 
+def validate_path_exists(file_path: str) -> Path:
+    """Validate path exists and is accessible (can be file or directory).
+
+    Parameters
+    ----------
+    file_path : str
+        Path to validate
+
+    Returns
+    -------
+    Path
+        Validated Path object
+
+    Raises
+    ------
+    ValueError
+        If path does not exist or is not accessible
+    """
+    # Convert Windows paths to WSL paths if necessary
+    converted_path = _convert_windows_path_to_wsl(file_path)
+    path = Path(converted_path)
+
+    if not path.exists():
+        raise ValueError(f"Path not found: {file_path} (tried: {converted_path})")
+    return path
+
+
 def _convert_windows_path_to_wsl(file_path: str) -> str:
     """Convert Windows path to WSL path if needed.
 
@@ -952,11 +979,13 @@ async def submit_full_pipeline_job(
         if "output_folder" not in config:
             raise ValueError("output_folder is required")
 
-        # Validate file paths exist
-        validate_file_path(config["input_dataset"])
+        # Validate paths exist
+        # input_dataset and label_dataset can be files or directories
+        validate_path_exists(config["input_dataset"])
+        # scores must be a file
         validate_file_path(config["scores"])
         if config.get("label_dataset"):
-            validate_file_path(config["label_dataset"])
+            validate_path_exists(config["label_dataset"])
 
         # Create job with original config (for logging/tracking)
         job_id = get_job_manager().create_job(
