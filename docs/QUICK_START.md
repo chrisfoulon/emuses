@@ -4,13 +4,27 @@
 
 ## Prerequisites (30 seconds)
 
-- **Python 3.11+** installed
+- **Python 3.11+** installed ([why 3.11+?](INSTALLATION.md#prerequisites))
 - **Basic command line** familiarity  
 - **Your data** (or use our sample HCP dataset)
 
-## Installation (1 minute)
+> 💡 **Need detailed installation help?** See our **[Complete Installation Guide](INSTALLATION.md)** for virtual environments, troubleshooting, and advanced setups.
 
+## Installation (2 minutes)
+
+### Recommended: Virtual Environment Setup
+
+**Why use virtual environments?** EMUSES has extensive scientific dependencies (PyTorch, neuroimaging libraries, ML packages). Virtual environments prevent conflicts with other projects and ensure reproducible installations.
+
+#### Option A: Using venv (Built-in, Lightweight)
 ```bash
+# Create virtual environment
+python -m venv emuses-env
+
+# Activate environment
+source emuses-env/bin/activate  # Linux/macOS
+# emuses-env\Scripts\activate   # Windows
+
 # Install EMUSES
 pip install git+https://github.com/chrisfoulon/emuses.git
 
@@ -18,7 +32,29 @@ pip install git+https://github.com/chrisfoulon/emuses.git
 python -m emuses.cli --help
 ```
 
-✅ **Success indicator**: You should see EMUSES command help
+#### Option B: Using conda (Recommended for Scientific Computing)
+```bash
+# Create conda environment with Python 3.11
+conda create -n emuses-env python=3.11
+
+# Activate environment
+conda activate emuses-env
+
+# Install EMUSES
+pip install git+https://github.com/chrisfoulon/emuses.git
+
+# Verify installation
+python -m emuses.cli --help
+```
+
+### Quick Installation (System-wide)
+```bash
+# Direct installation (not recommended for production)
+pip install git+https://github.com/chrisfoulon/emuses.git
+python -m emuses.cli --help
+```
+
+✅ **Success indicator**: You should see EMUSES command help with no import errors
 
 ## First Analysis (3 minutes)
 

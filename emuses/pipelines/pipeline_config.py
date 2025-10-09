@@ -81,10 +81,12 @@ class PipelineConfig:
     model_selection: list = None  # List of models to try
     prediction_optim_dict: str = "optim_dict_predict"  # Prediction optim_dict name
     random_state: int = 42  # Master random seed
-    run_old_prediction: bool = False  # Run old prediction pipeline
 
     # Additional required fields
     input_dataset: str = None  # Input dataset path
+
+    # Pipeline mode control
+    inference_mode: bool = False  # Whether this is an inference-only pipeline
 
     # Computed fields
     output_path: Path = field(init=False)

@@ -55,12 +55,12 @@ def build_feature_union(feat_cfg: dict, pretrained_ae=None):
     # Handle raw_only case - only raw coordinates, no other features
     if feat_type == "raw_only":
         logger.info("Building feature union with raw coordinates only")
-        steps.append(("raw", RawCoords()))
+        raw_transformer = RawCoords()
+        steps.append(("raw", raw_transformer))
         # Skip all other feature processing for raw_only
         if feat_cfg.get("poly_deg", 1) > 1:
-            steps.append(
-                ("poly", PolynomialFeatures(feat_cfg["poly_deg"], include_bias=False))
-            )
+            poly_transformer = PolynomialFeatures(feat_cfg["poly_deg"], include_bias=False)
+            steps.append(("poly", poly_transformer))
         return FeatureUnion(steps)
 
     # For all other feature types, optionally include raw coordinates first
@@ -147,7 +147,6 @@ def build_feature_union(feat_cfg: dict, pretrained_ae=None):
         f"Built feature union with {len(steps)} steps: {[step[0] for step in steps]}"
     )
     return FeatureUnion(steps)
-    return FeatureUnion(steps)
 
 
 def build_estimator(model_cfg: dict, task: str, n_jobs: int = -1):
@@ -230,7 +229,8 @@ def build_estimator(model_cfg: dict, task: str, n_jobs: int = -1):
             return ElasticNet(
                 alpha=model_cfg["alpha"],
                 l1_ratio=model_cfg["l1_ratio"],
-                max_iter=10000,
+                max_iter=model_cfg.get("max_iter", 1000),  # Default 1000, configurable via optim_dict
+                tol=model_cfg.get("tol", 1e-4),            # Default sklearn tol, configurable via optim_dict
             )
         # classification path
         return LogisticRegression(

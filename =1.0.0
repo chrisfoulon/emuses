@@ -1,0 +1,10 @@
+Collecting hvac
+  Downloading hvac-2.3.0-py3-none-any.whl.metadata (3.3 kB)
+Requirement already satisfied: requests<3.0.0,>=2.27.1 in /home/tolhsadum/miniforge3/envs/emuses/lib/python3.11/site-packages (from hvac) (2.32.4)
+Requirement already satisfied: charset_normalizer<4,>=2 in /home/tolhsadum/miniforge3/envs/emuses/lib/python3.11/site-packages (from requests<3.0.0,>=2.27.1->hvac) (3.4.2)
+Requirement already satisfied: idna<4,>=2.5 in /home/tolhsadum/miniforge3/envs/emuses/lib/python3.11/site-packages (from requests<3.0.0,>=2.27.1->hvac) (3.10)
+Requirement already satisfied: urllib3<3,>=1.21.1 in /home/tolhsadum/miniforge3/envs/emuses/lib/python3.11/site-packages (from requests<3.0.0,>=2.27.1->hvac) (2.5.0)
+Requirement already satisfied: certifi>=2017.4.17 in /home/tolhsadum/miniforge3/envs/emuses/lib/python3.11/site-packages (from requests<3.0.0,>=2.27.1->hvac) (2025.8.3)
+Downloading hvac-2.3.0-py3-none-any.whl (155 kB)
+Installing collected packages: hvac
+Successfully installed hvac-2.3.0

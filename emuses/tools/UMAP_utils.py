@@ -372,6 +372,11 @@ def train_and_save_umap_optim_with_nested_clustering(
             Number of parallel jobs for inner optimization
       random_state : int, default=42
             Random seed for UMAP for reproducibility.
+            
+            Note: Setting random_state will override any n_jobs > 1 within UMAP to n_jobs=1
+            to ensure reproducible results. This is expected behavior. To enable parallel 
+            processing in UMAP (faster training), set random_state=None, but results 
+            will not be reproducible across runs.
       clusterer_random_state : int, optional
             Random seed for HDBSCAN clustering. If None, uses the same as random_state.
       approx_min_span_tree : bool, default=True
@@ -454,9 +459,10 @@ def train_and_save_umap_optim_with_nested_clustering(
             manager.save_model(
                 model=best_model,
                 model_name="best_umap_model",
-                model_type="umap",
+                model_type="emuses_umap_component",
                 config=best_umap_params,
-                description=f"Best UMAP model from trial {trial.number} with score {trial.value}",
+                description=f"EMUSES dimensionality reduction component: UMAP embedding optimized "
+                f"for neuroimaging analysis (trial {trial.number}, score: {trial.value:.4f})",
                 tags=["optimization", "best_model", f"trial_{trial.number}"],
             )
             print(

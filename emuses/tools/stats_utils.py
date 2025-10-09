@@ -161,13 +161,20 @@ def input_matrix_stat_map(input_matrix, indices, test_name="mann-whitney", n_cor
     # Other matrix with remaining rows
     other_matrix = input_matrix[mask, :]
 
-    # Create a pool of workers
-    with Pool(processes=n_cores) as pool:
-        tasks = [
+    # Use EMUSES safe parallel processing pattern
+    from joblib import delayed
+    from emuses.tools.parallelism_utils import create_safe_parallel
+    
+    # Create safe parallel processor (auto-detects subprocess context)
+    parallel = create_safe_parallel(n_cores)
+    
+    # Process columns using EMUSES safe pattern
+    results = parallel(
+        delayed(process_column)(
             (filtered_matrix[:, i], other_matrix[:, i], test_name, i)
-            for i in range(input_matrix.shape[1])
-        ]
-        results = list(tqdm(pool.imap(process_column, tasks), total=len(tasks)))
+        )
+        for i in tqdm(range(input_matrix.shape[1]), desc="Processing columns")
+    )
 
     for i, stat, pval, effect_size in results:
         stat_map[i] = stat
@@ -594,94 +601,6 @@ def train_model(
                 if show_plot:
                     plt.show()
                 plt.close()
-
-
-def train_and_test_model_per_label(
-    train_embeddings,
-    train_labels,
-    test_embeddings,
-    test_labels,
-    output_folder,
-    categorical=True,
-    show_plot=False,
-):
-    """
-    Train and test a model for each unique label in the training dataset.
-
-    Uses NumPy arrays directly for calculations (models receive NumPy arrays) and uses DataFrames only for saving outputs.
-
-    Parameters:
-      - train_embeddings: ndarray of shape (n_samples, n_features)
-      - train_labels: ndarray of shape (n_samples,)
-      - test_embeddings: ndarray of shape (n_test, n_features)
-      - test_labels: ndarray of shape (n_test,)
-      - output_folder: str or Path, where outputs will be saved.
-      - categorical: bool, whether the target is categorical.
-      - show_plot: bool, whether to display plots interactively.
-
-    Returns:
-      None
-    """
-    print(f"Shape of train embeddings: {train_embeddings.shape}")
-
-    # For model training, we work directly with the NumPy arrays.
-    # For saving outputs (e.g., metrics), we can convert to DataFrames.
-    # For one-vs-rest, we operate on the NumPy arrays directly.
-    if categorical:
-        unique_labels = np.unique(train_labels)
-        for label in unique_labels:
-            print(f"Training model for label {label} (One-vs-Rest)...")
-            train_labels_bin = (train_labels == label).astype(int)
-            test_labels_bin = (test_labels == label).astype(int)
-            model_output_folder = Path(output_folder) / f"label_{label}"
-            model_output_folder.mkdir(parents=True, exist_ok=True)
-            train_model(
-                train_embeddings,
-                train_labels_bin,
-                test_embeddings,
-                test_labels_bin,
-                score_name=f"label_{label}",
-                output_folder=model_output_folder,
-                categorical=True,
-                num_permutations=100,
-                nb_fold=5,
-                show_plot=show_plot,
-            )
-            print(f"Model for label {label} trained and saved.")
-
-        print("Training multi-class classifier on all labels...")
-        multi_output_folder = Path(output_folder) / "multi_class_classifier"
-        multi_output_folder.mkdir(parents=True, exist_ok=True)
-        train_model(
-            train_embeddings,
-            train_labels,
-            test_embeddings,
-            test_labels,
-            score_name="all_labels",
-            output_folder=multi_output_folder,
-            categorical=True,
-            num_permutations=100,
-            nb_fold=5,
-            show_plot=show_plot,
-        )
-        print("Multi-class classification completed and results saved.")
-    else:
-        print("Training regression model on continuous target variable...")
-        regression_output_folder = Path(output_folder) / "regression_model"
-        regression_output_folder.mkdir(parents=True, exist_ok=True)
-        train_model(
-            train_embeddings,
-            train_labels,
-            test_embeddings,
-            test_labels,
-            score_name="continuous_target",
-            output_folder=regression_output_folder,
-            categorical=False,
-            num_permutations=100,
-            nb_fold=5,
-            show_plot=show_plot,
-        )
-        print("Regression model trained and results saved.")
 
 
 # TODO UNUSED FOR NOW (except for the Kriging model)

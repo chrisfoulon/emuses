@@ -205,6 +205,29 @@ class PipelineRunner:
 
         return args
 
+    def _cleanup_temp_scores_file(self, context: Dict[str, Any]) -> None:
+        """
+        Clean up temporary scores file created for special datasets.
+
+        Parameters
+        ----------
+        context : Dict[str, Any]
+            Pipeline context that may contain _temp_scores_file marker
+        """
+        from pathlib import Path
+
+        config = context.get("config", {})
+        temp_scores_file = config.get("_temp_scores_file")
+
+        if temp_scores_file:
+            try:
+                temp_file_path = Path(temp_scores_file)
+                if temp_file_path.exists():
+                    temp_file_path.unlink()
+                    self.logger.info(f"Cleaned up temporary scores file: {temp_scores_file}")
+            except Exception as e:
+                self.logger.warning(f"Failed to cleanup temporary scores file {temp_scores_file}: {e}")
+
     async def execute_pipeline(
         self,
         job_id: str,
@@ -269,6 +292,9 @@ class PipelineRunner:
                 job_id, "failed", message=f"Pipeline execution error: {error_msg}"
             )
             raise
+        finally:
+            # Cleanup temporary scores file if it was created for special datasets
+            self._cleanup_temp_scores_file(context)
 
     async def _execute_pipeline_stages(
         self, context: Dict[str, Any], progress_callback: Callable

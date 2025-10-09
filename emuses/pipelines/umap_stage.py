@@ -1,3 +1,4 @@
+import json
 import logging
 from pathlib import Path
 
@@ -195,6 +196,17 @@ class UMAPStage(PipelineStage):
         # Rescale embeddings.
         self.min_embeddings = self.embeddings.min(axis=0)
         self.max_embeddings = self.embeddings.max(axis=0)
+        
+        # Save embedding scaling parameters for inference
+        embedding_scaling = {
+            'min_embeddings': self.min_embeddings.tolist(),
+            'max_embeddings': self.max_embeddings.tolist() 
+        }
+        scaling_file = self.config.output_folder / "embedding_scaling.json"
+        with open(scaling_file, 'w') as f:
+            json.dump(embedding_scaling, f)
+        logger.info(f"Saved embedding scaling parameters to {scaling_file}")
+        
         self.embeddings = rescale_embedding(
             self.embeddings,
             preset_min=self.min_embeddings,

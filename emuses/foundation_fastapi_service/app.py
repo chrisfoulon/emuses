@@ -28,11 +28,15 @@ from slowapi.util import get_remote_address
 from emuses.foundation_fastapi_service.models import (ErrorResponse,
                                                       FileUploadModel,
                                                       FileUploadResponse,
+                                                      HeatmapsRequest,
+                                                      HeatmapsResponse,
                                                       InferenceRequest,
                                                       InferenceResponse,
                                                       JobStatusResponse,
                                                       JobSubmissionRequest,
-                                                      PipelineConfigRequest)
+                                                      PipelineConfigRequest,
+                                                      StatisticalMapsRequest,
+                                                      StatisticalMapsResponse)
 # Observability imports
 from emuses.observability import (get_logger, get_metrics_registry,
                                   setup_structured_logging, track_http_request)
@@ -116,7 +120,7 @@ app = FastAPI(
 Comprehensive REST API for neuroimaging research workflows, supporting:
 
 - **🔬 Pipeline Execution**: UMAP dimensionality reduction, heatmap analysis, and predictive modeling
-- **📊 Model Registry**: Share, discover, and reproduce predictive models across research teams  
+- **📊 Model Registry**: Share, discover, and reproduce predictive models across research teams
 - **🤝 Multi-User Collaboration**: Workspace-based model sharing and team management
 - **📈 Background Processing**: Asynchronous job execution with real-time progress tracking
 - **🔍 Health Monitoring**: System health checks and performance metrics
@@ -129,7 +133,7 @@ Perfect for individual researchers, research labs, and scientific communities wo
     """,
     version="0.9.0",
     docs_url="/api/docs",
-    redoc_url="/api/redoc", 
+    redoc_url="/api/redoc",
     openapi_url="/api/openapi.json",
     contact={
         "name": "EMUSES Development Team",
@@ -145,7 +149,7 @@ Perfect for individual researchers, research labs, and scientific communities wo
             "description": "Submit and manage neuroimaging analysis pipelines (UMAP, Heatmap, Prediction)",
         },
         {
-            "name": "📋 Job Management", 
+            "name": "📋 Job Management",
             "description": "Track job status, view logs, and manage running analyses",
         },
         {
@@ -169,7 +173,7 @@ Perfect for individual researchers, research labs, and scientific communities wo
             "description": "Authentication and user account management",
         },
         {
-            "name": "🏛️ Workspace Management", 
+            "name": "🏛️ Workspace Management",
             "description": "Collaborative workspace and team management features",
         },
         {
@@ -283,6 +287,7 @@ except ImportError as e:
     logger.warning(f"Registry health check components not available: {e}")
 except Exception as e:
     logger.error(f"Failed to set up registry health endpoints: {e}")
+
 
 # Initialize core components lazily to avoid import issues
 job_manager = None
@@ -470,6 +475,110 @@ def validate_file_path(file_path: str) -> Path:
     return path
 
 
+def validate_path_exists(file_path: str) -> Path:
+    """Validate path exists and is accessible (can be file or directory).
+
+    Parameters
+    ----------
+    file_path : str
+        Path to validate
+
+    Returns
+    -------
+    Path
+        Validated Path object
+
+    Raises
+    ------
+    ValueError
+        If path does not exist or is not accessible
+    """
+    # Convert Windows paths to WSL paths if necessary
+    converted_path = _convert_windows_path_to_wsl(file_path)
+    path = Path(converted_path)
+
+    if not path.exists():
+        raise ValueError(f"Path not found: {file_path} (tried: {converted_path})")
+    return path
+
+
+def _handle_special_dataset_scores(config: dict, output_folder: str) -> Optional[str]:
+    """
+    Extract labels from special datasets and save to temporary scores file.
+
+    Special datasets like MNIST provide their own labels internally, so they don't
+    require a separate scores file. This function detects such datasets, loads them,
+    extracts the labels, and saves them to a CSV file in the output folder.
+
+    Parameters
+    ----------
+    config : dict
+        Pipeline configuration dictionary
+    output_folder : str
+        Output folder path where temp scores file will be created
+
+    Returns
+    -------
+    Optional[str]
+        Path to temporary scores file if special dataset detected, None otherwise
+
+    Raises
+    ------
+    ValueError
+        If special dataset is recognized but loading fails
+    """
+    # Special datasets that provide their own labels
+    SPECIAL_DATASETS_WITH_LABELS = {"mnist", "digits_label_dataset"}
+
+    input_dataset = config.get("input_dataset", "").lower()
+
+    if input_dataset not in SPECIAL_DATASETS_WITH_LABELS:
+        return None
+
+    try:
+        from emuses.tools.inputs_utils import load_and_preprocess_digits_dataset
+        import pandas as pd
+
+        # Load dataset and extract labels
+        # Note: "mnist" keyword loads sklearn digits dataset (1797 samples, 8x8 images)
+        # The full 70000 MNIST will be handled separately in future work
+        if input_dataset == "mnist":
+            features, labels = load_and_preprocess_digits_dataset("digits")
+            logger.info(f"Loaded sklearn digits dataset: {features.shape[0]} samples")
+        elif input_dataset == "digits_label_dataset":
+            # For digits_label_dataset, use full labels (will be filtered later by pipeline)
+            features, labels, labeled_indices = load_and_preprocess_digits_dataset("digits_label_dataset")
+            logger.info(f"Loaded digits_label_dataset: {features.shape[0]} samples, {len(labeled_indices)} labeled")
+        else:
+            raise ValueError(f"Unsupported special dataset: {input_dataset}")
+
+        # Create output folder if it doesn't exist
+        output_path = Path(output_folder)
+        output_path.mkdir(parents=True, exist_ok=True)
+
+        # Create temporary scores file in output folder (cross-platform compatible)
+        scores_temp_file = output_path / "_emuses_temp_scores.csv"
+
+        # Convert labels to DataFrame (handle both Series and arrays)
+        # labels might be a pandas Series or numpy array, ensure it's array-like
+        import numpy as np
+        if hasattr(labels, 'values'):
+            labels_array = labels.values
+        else:
+            labels_array = np.asarray(labels)
+
+        # Save labels as CSV (matching expected scores format)
+        pd.DataFrame({"label": labels_array}).to_csv(scores_temp_file, index=False)
+
+        logger.info(f"Extracted {len(labels)} labels from {input_dataset} to {scores_temp_file}")
+
+        return str(scores_temp_file)
+
+    except Exception as e:
+        logger.error(f"Failed to extract labels from special dataset {input_dataset}: {e}")
+        raise ValueError(f"Failed to load special dataset {input_dataset}: {str(e)}")
+
+
 def _convert_windows_path_to_wsl(file_path: str) -> str:
     """Convert Windows path to WSL path if needed.
 
@@ -543,15 +652,15 @@ def conditional_rate_limit(rate_limit_str: str):
 class BackgroundTaskManager:
     """
     Simple in-memory background task manager for handling async inference operations.
-    
+
     In a production environment, this would be replaced with a proper task queue
     like Celery, RQ, or similar distributed task system.
     """
-    
+
     def __init__(self):
         self.tasks = {}  # task_id -> task_info
         self.lock = threading.Lock()
-    
+
     def create_task(self, inference_request: dict, request_id: str = None) -> str:
         """
         Create a new background task for inference.
@@ -569,7 +678,7 @@ class BackgroundTaskManager:
             Task ID for tracking
         """
         task_id = str(uuid4())
-        
+
         with self.lock:
             self.tasks[task_id] = {
                 "task_id": task_id,
@@ -581,19 +690,19 @@ class BackgroundTaskManager:
                 "result": None,
                 "error": None
             }
-        
+
         # Start background thread to process the task
         thread = threading.Thread(target=self._process_task, args=(task_id,))
         thread.daemon = True
         thread.start()
-        
+
         return task_id
-    
+
     def get_task_status(self, task_id: str) -> Optional[Dict[str, Any]]:
         """Get current task status and progress."""
         with self.lock:
             return self.tasks.get(task_id)
-    
+
     def get_task_result(self, task_id: str) -> Optional[Dict[str, Any]]:
         """Get task result if completed."""
         with self.lock:
@@ -601,11 +710,11 @@ class BackgroundTaskManager:
             if task and task["status"] == "completed":
                 return {
                     "task_id": task_id,
-                    "status": "completed", 
+                    "status": "completed",
                     "result": task["result"]
                 }
             return None
-    
+
     def cancel_task(self, task_id: str) -> bool:
         """Cancel a running or queued task."""
         with self.lock:
@@ -615,7 +724,7 @@ class BackgroundTaskManager:
                     task["status"] = "cancelled"
                     return True
         return False
-    
+
     def _process_task(self, task_id: str):
         """Process inference task in background thread."""
         try:
@@ -624,30 +733,111 @@ class BackgroundTaskManager:
                     return
                 self.tasks[task_id]["status"] = "running"
                 self.tasks[task_id]["started_at"] = datetime.now(timezone.utc).isoformat()
-            
-            # Simulate inference processing with progress updates
-            for i in range(0, 101, 20):
-                with self.lock:
-                    if self.tasks[task_id]["status"] == "cancelled":
-                        return
-                    self.tasks[task_id]["progress"] = i
-                
-                time.sleep(0.1)  # Simulate work
-            
-            # Mock inference result (in real implementation, would call InferenceStage)
-            mock_result = {
-                "predictions": [0.7, 0.8, 0.6],
-                "confidence_scores": [0.9, 0.85, 0.75],
-                "processing_time_ms": 500,
-                "samples_processed": 3
+
+                # Get the inference request
+                inference_data = self.tasks[task_id]["request"]
+
+            # Reconstruct the inference request object
+            from emuses.foundation_fastapi_service.models import InferenceRequest
+            inference_request = InferenceRequest(**inference_data)
+
+            # Update progress
+            with self.lock:
+                if self.tasks[task_id]["status"] == "cancelled":
+                    return
+                self.tasks[task_id]["progress"] = 20
+
+            # Import inference components
+            from emuses.pipelines.inference_stage import InferenceStage
+            from emuses.pipelines.pipeline_config import PipelineConfig
+            from emuses.tools.local_model_registry import LocalModelRegistry
+
+            # Handle model resolution (registry lookup if needed)
+            resolved_model_path = inference_request.model_path
+            if inference_request.model_id:
+                registry = LocalModelRegistry()
+                resolved_model_path = registry.get_model_path(inference_request.model_id)
+                if not resolved_model_path:
+                    raise Exception(f"Registry lookup failed: Model ID '{inference_request.model_id}' not found")
+
+            # Update progress
+            with self.lock:
+                if self.tasks[task_id]["status"] == "cancelled":
+                    return
+                self.tasks[task_id]["progress"] = 40
+
+            # Determine output folder
+            if inference_request.output_path:
+                output_folder = inference_request.output_path
+            elif resolved_model_path:
+                output_folder = resolved_model_path + "/inference_results"
+            else:
+                output_folder = "inference_results"
+
+            # Create pipeline configuration (InferenceStage works with resolved paths only)
+            inference_config = PipelineConfig(
+                model_path=resolved_model_path,
+                data_path=inference_request.data_path,
+                output_path=inference_request.output_path,
+                validate_mode=inference_request.validation_mode,
+                output_folder=output_folder
+            )
+
+            # Update progress
+            with self.lock:
+                if self.tasks[task_id]["status"] == "cancelled":
+                    return
+                self.tasks[task_id]["progress"] = 60
+
+            # Create and run inference stage
+            stage = InferenceStage(inference_config)
+
+            # Prepare execution context
+            context = {
+                "verify_integrity": inference_request.verify_integrity,
+                "output_format": inference_request.output_format
             }
-            
+
+            # Update progress
+            with self.lock:
+                if self.tasks[task_id]["status"] == "cancelled":
+                    return
+                self.tasks[task_id]["progress"] = 80
+
+            # Execute inference
+            results = stage.run(context)
+
+            # Extract results for response
+            predictions = results.get("predictions", [])
+            if hasattr(predictions, 'tolist'):
+                predictions = predictions.tolist()
+
+            confidence_scores = None
+            if "prediction_details" in results:
+                confidence_scores = results["prediction_details"].get("confidence_scores", [])
+                if hasattr(confidence_scores, 'tolist'):
+                    confidence_scores = confidence_scores.tolist()
+
+            performance = results.get("performance_breakdown", {})
+
+            # Prepare final result
+            result = {
+                "status": results.get("status", "completed"),
+                "predictions": predictions,
+                "confidence_scores": confidence_scores,
+                "processing_time_ms": performance.get("total_time_ms", 0),
+                "samples_processed": len(predictions) if predictions else 0,
+                "model_info": results.get("model_info", {}),
+                "output_files": results.get("output_files", {}),
+                "validation_metrics": results.get("validation_metrics")
+            }
+
             with self.lock:
                 self.tasks[task_id]["status"] = "completed"
                 self.tasks[task_id]["completed_at"] = datetime.now(timezone.utc).isoformat()
                 self.tasks[task_id]["progress"] = 100
-                self.tasks[task_id]["result"] = mock_result
-                
+                self.tasks[task_id]["result"] = result
+
         except Exception as e:
             with self.lock:
                 self.tasks[task_id]["status"] = "failed"
@@ -667,20 +857,20 @@ async def run_inference_async(
 ) -> Dict[str, Any]:
     """
     Run inference asynchronously in the background.
-    
+
     This endpoint queues an inference task for background processing,
     allowing clients to handle long-running operations without blocking.
-    
+
     Parameters
     ----------
     inference_request : InferenceRequest
         Inference request containing model path, data path, and configuration options
-        
+
     Returns
     -------
     Dict[str, Any]
         Task information including task_id for status tracking
-    
+
     Raises
     ------
     HTTPException
@@ -689,16 +879,16 @@ async def run_inference_async(
     """
     request_id = str(uuid4())
     set_request_context(request_id=request_id, user_id="inference_user")
-    
+
     try:
         # Create background task
         task_id = background_tasks.create_task(
             inference_request.model_dump(),
             request_id=request_id
         )
-        
+
         logger.info(f"Created async inference task: {task_id}")
-        
+
         return {
             "task_id": task_id,
             "status": "queued",
@@ -706,7 +896,7 @@ async def run_inference_async(
             "status_url": f"/api/v1/tasks/{task_id}",
             "result_url": f"/api/v1/tasks/{task_id}/result"
         }
-        
+
     except Exception as e:
         logger.error(f"Failed to create async inference task: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to queue inference task: {str(e)}")
@@ -716,27 +906,27 @@ async def run_inference_async(
 async def get_task_status(task_id: str) -> Dict[str, Any]:
     """
     Get the status of a background task.
-    
+
     Parameters
     ----------
     task_id : str
         Task identifier
-        
+
     Returns
     -------
     Dict[str, Any]
         Task status information
-    
+
     Raises
     ------
     HTTPException
         404: Task not found
     """
     task_info = background_tasks.get_task_status(task_id)
-    
+
     if not task_info:
         raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
-    
+
     return {
         "task_id": task_id,
         "status": task_info["status"],
@@ -753,34 +943,34 @@ async def get_task_status(task_id: str) -> Dict[str, Any]:
 async def get_task_result(task_id: str) -> Dict[str, Any]:
     """
     Get the result of a completed background task.
-    
+
     Parameters
     ----------
     task_id : str
         Task identifier
-        
+
     Returns
     -------
     Dict[str, Any]
         Task result if completed
-    
+
     Raises
     ------
     HTTPException
         404: Task not found or not completed
     """
     result = background_tasks.get_task_result(task_id)
-    
+
     if not result:
         task_info = background_tasks.get_task_status(task_id)
         if not task_info:
             raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
         else:
             raise HTTPException(
-                status_code=404, 
+                status_code=404,
                 detail=f"Task {task_id} result not available (status: {task_info['status']})"
             )
-    
+
     return result
 
 
@@ -788,17 +978,17 @@ async def get_task_result(task_id: str) -> Dict[str, Any]:
 async def cancel_task(task_id: str) -> Dict[str, Any]:
     """
     Cancel a running or queued background task.
-    
+
     Parameters
     ----------
     task_id : str
         Task identifier
-        
+
     Returns
     -------
     Dict[str, Any]
         Cancellation confirmation
-    
+
     Raises
     ------
     HTTPException
@@ -806,17 +996,17 @@ async def cancel_task(task_id: str) -> Dict[str, Any]:
         400: Task cannot be cancelled
     """
     success = background_tasks.cancel_task(task_id)
-    
+
     if not success:
         task_info = background_tasks.get_task_status(task_id)
         if not task_info:
             raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
         else:
             raise HTTPException(
-                status_code=400, 
+                status_code=400,
                 detail=f"Task {task_id} cannot be cancelled (status: {task_info['status']})"
             )
-    
+
     return {
         "task_id": task_id,
         "status": "cancelled",
@@ -861,16 +1051,38 @@ async def submit_full_pipeline_job(
         # Validate required fields
         if "input_dataset" not in config:
             raise ValueError("input_dataset is required")
-        if "scores" not in config:
-            raise ValueError("scores is required")
         if "output_folder" not in config:
             raise ValueError("output_folder is required")
 
-        # Validate file paths exist
-        validate_file_path(config["input_dataset"])
-        validate_file_path(config["scores"])
-        if config.get("label_dataset"):
-            validate_file_path(config["label_dataset"])
+        # Handle special datasets that provide their own labels (e.g., MNIST)
+        # This must be done BEFORE validation so we can inject the scores path
+        temp_scores_file = _handle_special_dataset_scores(config, config["output_folder"])
+
+        if temp_scores_file:
+            # Special dataset detected: inject scores path into config
+            config["scores"] = temp_scores_file
+            config["scores_header"] = 0
+            config["scores_index_column"] = None
+            config["_temp_scores_file"] = temp_scores_file  # Mark for cleanup
+
+            # For MNIST, default to classification mode if not specified
+            if config.get("input_dataset", "").lower() == "mnist" and "classification" not in config:
+                config["classification"] = True
+                logger.info("Auto-enabled classification mode for MNIST dataset")
+
+            # Skip path validation for input_dataset (it's a keyword, not a filesystem path)
+            # Only validate label_dataset if provided
+            if config.get("label_dataset"):
+                validate_path_exists(config["label_dataset"])
+        else:
+            # Normal dataset: validate all paths
+            if "scores" not in config:
+                raise ValueError("scores is required (unless using special datasets like 'mnist')")
+
+            validate_path_exists(config["input_dataset"])
+            validate_file_path(config["scores"])
+            if config.get("label_dataset"):
+                validate_path_exists(config["label_dataset"])
 
         # Create job with original config (for logging/tracking)
         job_id = get_job_manager().create_job(
@@ -1656,20 +1868,20 @@ async def run_inference(
 ) -> InferenceResponse:
     """
     Run inference on trained EMUSES model.
-    
+
     This endpoint executes inference using the InferenceStage pipeline component,
     supporting both inference and validation modes with comprehensive error handling.
-    
+
     Parameters
     ----------
     inference_request : InferenceRequest
         Inference request containing model path, data path, and configuration options
-        
+
     Returns
     -------
     InferenceResponse
         Inference results including predictions, performance metrics, and output files
-    
+
     Raises
     ------
     HTTPException
@@ -1678,10 +1890,10 @@ async def run_inference(
     """
     request_id = str(uuid4())
     set_request_context(request_id=request_id, user_id="inference_user")
-    
+
     try:
         with track_http_request(
-            method="POST", 
+            method="POST",
             endpoint="/api/v1/inference"
         ):
             logger.info(
@@ -1689,50 +1901,72 @@ async def run_inference(
                 extra={
                     "request_id": request_id,
                     "model_path": inference_request.model_path,
+                    "model_id": inference_request.model_id,
                     "data_path": inference_request.data_path,
                     "output_format": inference_request.output_format,
                     "validation_mode": inference_request.validation_mode
                 }
             )
-            
+
             # Import inference components
             from emuses.pipelines.inference_stage import InferenceStage
             from emuses.pipelines.pipeline_config import PipelineConfig
-            
-            # Create pipeline configuration
+            from emuses.tools.local_model_registry import LocalModelRegistry
+
+            # Handle model resolution (registry lookup if needed)
+            resolved_model_path = inference_request.model_path
+            if inference_request.model_id:
+                registry = LocalModelRegistry()
+                resolved_model_path = registry.get_model_path(inference_request.model_id)
+                if not resolved_model_path:
+                    raise HTTPException(
+                        status_code=422,
+                        detail=f"Registry lookup failed: Model ID '{inference_request.model_id}' not found"
+                    )
+                logger.info(f"Registry lookup: {inference_request.model_id} -> {resolved_model_path}")
+
+            # Determine output folder
+            if inference_request.output_path:
+                output_folder = inference_request.output_path
+            elif resolved_model_path:
+                output_folder = resolved_model_path + "/inference_results"
+            else:
+                output_folder = "inference_results"
+
+            # Create pipeline configuration (InferenceStage works with resolved paths only)
             inference_config = PipelineConfig(
-                model_path=inference_request.model_path,
+                model_path=resolved_model_path,
                 data_path=inference_request.data_path,
                 output_path=inference_request.output_path,
                 validate_mode=inference_request.validation_mode,
-                output_folder=inference_request.output_path or (inference_request.model_path + "/inference_results")
+                output_folder=output_folder
             )
-            
+
             # Create and run inference stage
             stage = InferenceStage(inference_config)
-            
+
             # Prepare execution context
             context = {
                 "verify_integrity": inference_request.verify_integrity,
                 "output_format": inference_request.output_format
             }
-            
+
             # Execute inference
             results = stage.run(context)
-            
+
             # Extract results for response
             predictions = results.get("predictions", [])
             if hasattr(predictions, 'tolist'):
                 predictions = predictions.tolist()
-                
+
             confidence_scores = None
             if "prediction_details" in results:
                 confidence_scores = results["prediction_details"].get("confidence_scores", [])
                 if hasattr(confidence_scores, 'tolist'):
                     confidence_scores = confidence_scores.tolist()
-            
+
             performance = results.get("performance_breakdown", {})
-            
+
             # Create response
             response = {
                 "status": results.get("status", "completed"),
@@ -1746,7 +1980,7 @@ async def run_inference(
                 "output_files": results.get("output_files", {}),
                 "validation_metrics": results.get("validation_metrics")
             }
-            
+
             logger.info(
                 "Inference request completed successfully",
                 extra={
@@ -1756,9 +1990,9 @@ async def run_inference(
                     "mode": response["mode"]
                 }
             )
-            
+
             return response
-            
+
     except FileNotFoundError as e:
         logger.error(
             "Model or data file not found",
@@ -1781,7 +2015,7 @@ async def run_inference(
         raise HTTPException(
             status_code=422,
             detail={
-                "error_code": "INFERENCE_VALIDATION_ERROR", 
+                "error_code": "INFERENCE_VALIDATION_ERROR",
                 "message": f"Inference validation failed: {str(e)}",
                 "request_id": request_id,
                 "timestamp": datetime.now(timezone.utc).isoformat() + "Z"
@@ -1801,6 +2035,359 @@ async def run_inference(
                 "timestamp": datetime.now(timezone.utc).isoformat() + "Z"
             }
         )
+    finally:
+        clear_context()
+
+
+# Analysis API endpoints
+@app.post("/api/v1/analysis/statistical-maps", status_code=200)
+@conditional_rate_limit("20/hour")
+async def create_statistical_maps(
+    request: Request, analysis_request: StatisticalMapsRequest
+) -> StatisticalMapsResponse:
+    """
+    Create region-based statistical maps using two-stage filtering and clustering.
+
+    This endpoint performs sophisticated statistical analysis by generating prediction grids,
+    applying two-stage filtering (visualization + effect size thresholds), performing
+    HDBSCAN clustering within high-confidence regions, and creating statistical maps
+    for each target using input_matrix_stat_map and save_statistical_maps.
+
+    Parameters
+    ----------
+    analysis_request : StatisticalMapsRequest
+        Statistical analysis request containing model path, input data, output folder,
+        targets, and analysis parameters (thresholds, statistical test, etc.)
+
+    Returns
+    -------
+    StatisticalMapsResponse
+        Statistical analysis results including per-target statistical results,
+        analysis metadata, and processing information
+
+    Raises
+    ------
+    HTTPException
+        422: Validation error in request parameters
+        500: Internal server error during statistical analysis
+    """
+    request_id = str(uuid4())
+    start_time = time.time()
+
+    # Set request context for observability
+    set_request_context(request_id=request_id)
+    logger.info(
+        "Starting statistical maps analysis",
+        extra={
+            "request_id": request_id,
+            "targets": analysis_request.targets,
+            "statistical_test": analysis_request.statistical_test
+        }
+    )
+
+    try:
+        # Import required components
+        from emuses.tools.grid_creator import GridCreator
+        from emuses.tools.region_statistical_analyzer import RegionStatisticalAnalyzer
+        import numpy as np
+        import pandas as pd
+        from pathlib import Path
+
+        # Load input data
+        input_data_path = Path(analysis_request.input_data_path)
+        if not input_data_path.exists():
+            raise HTTPException(
+                status_code=404,
+                detail=f"Input data file not found: {analysis_request.input_data_path}"
+            )
+
+        # Load target data - placeholder for now, needs integration with model loading
+        # In a real implementation, this would load from the trained model
+        target_data = {}
+        for target in analysis_request.targets:
+            # Mock target data - replace with actual target loading
+            target_data[target] = np.random.uniform(-2, 2, 20)
+
+        # Create output folder
+        output_folder = Path(analysis_request.output_folder)
+        output_folder.mkdir(parents=True, exist_ok=True)
+
+        # Step 1: Create prediction grid
+        grid_creator = GridCreator(
+            grid_size=(100, 100),
+            denormalize_predictions=True
+        )
+
+        # Mock input matrix and model data - replace with actual loading
+        input_matrix = np.random.uniform(-1, 1, (20, 50))
+
+        grid_results = grid_creator.create_prediction_grid(
+            input_matrix=input_matrix,
+            target_data=target_data,
+            models={},  # Mock models - replace with actual model loading
+            output_folder=output_folder / "prediction_grid"
+        )
+
+        # Step 2: Create region-based statistical analyzer
+        analyzer = RegionStatisticalAnalyzer(
+            visualization_threshold=analysis_request.visualization_threshold,
+            effect_size_threshold=analysis_request.effect_size_threshold,
+            min_cluster_size=analysis_request.min_cluster_size,
+            statistical_test=analysis_request.statistical_test
+        )
+
+        # Step 3: Create statistical maps
+        statistical_results = analyzer.create_region_statistical_maps(
+            grid_coords=grid_results['grid_coords'],
+            prediction_values=grid_results['prediction_values'],
+            confidence_values=grid_results['confidence_values'],
+            input_matrix=input_matrix,
+            target_data=target_data,
+            output_folder=output_folder,
+            input_type=analysis_request.input_type,
+            output_format_info=None  # Will be determined based on input_type
+        )
+
+        # Calculate processing metrics
+        processing_time = (time.time() - start_time) * 1000  # Convert to ms
+
+        # Create response
+        processing_info = {
+            "processing_time_ms": processing_time,
+            "grid_points_generated": len(grid_results['grid_coords']),
+            "targets_processed": len(analysis_request.targets),
+            "request_id": request_id
+        }
+
+        logger.info(
+            "Statistical maps analysis completed",
+            extra={
+                "request_id": request_id,
+                "processing_time_ms": processing_time,
+                "targets_processed": len(analysis_request.targets)
+            }
+        )
+
+        return StatisticalMapsResponse(
+            statistical_results=statistical_results['statistical_results'],
+            analysis_metadata=statistical_results['analysis_metadata'],
+            processing_info=processing_info
+        )
+
+    except Exception as e:
+        logger.error(
+            "Statistical maps analysis failed",
+            extra={
+                "request_id": request_id,
+                "error": str(e),
+                "error_type": type(e).__name__
+            }
+        )
+        raise HTTPException(status_code=500, detail=f"Statistical analysis failed: {str(e)}")
+
+    finally:
+        clear_context()
+
+
+@app.post("/api/v1/analysis/heatmaps", status_code=200)
+@conditional_rate_limit("20/hour")
+async def create_heatmaps(
+    request: Request, analysis_request: HeatmapsRequest
+) -> HeatmapsResponse:
+    """
+    Create prediction and correlation grids for heatmap visualization.
+    
+    This endpoint generates prediction grids using GridCreator and correlation grids
+    using CorrelationGridCreator with optional sigma optimization. Supports multiple
+    correlation methods and creates per-target grid-based folder organization.
+    
+    Parameters
+    ----------
+    analysis_request : HeatmapsRequest
+        Heatmaps analysis request containing model path, input data, output folder,
+        targets, grid parameters, and correlation analysis settings
+        
+    Returns
+    -------
+    HeatmapsResponse
+        Analysis results including prediction grids, correlation grids, metadata,
+        and processing information for all targets
+    
+    Raises
+    ------
+    HTTPException
+        422: Validation error in request parameters
+        500: Internal server error during heatmap generation
+    """
+    request_id = str(uuid4())
+    start_time = time.time()
+    
+    # Set request context for observability
+    set_request_context(request_id=request_id)
+    logger.info(
+        "Starting heatmaps analysis",
+        extra={
+            "request_id": request_id,
+            "targets": analysis_request.targets,
+            "correlation_methods": analysis_request.correlation_methods,
+            "sigma_optimization": analysis_request.sigma_optimization
+        }
+    )
+    
+    try:
+        # Import required components
+        from emuses.tools.grid_creator import GridCreator
+        from emuses.tools.correlation_grid_creator import CorrelationGridCreator
+        import numpy as np
+        from pathlib import Path
+        
+        # Load input data
+        input_data_path = Path(analysis_request.input_data_path)
+        if not input_data_path.exists():
+            raise HTTPException(
+                status_code=404,
+                detail=f"Input data file not found: {analysis_request.input_data_path}"
+            )
+        
+        # Create output folder structure
+        output_folder = Path(analysis_request.output_folder)
+        output_folder.mkdir(parents=True, exist_ok=True)
+        
+        # Mock input matrix and target data for now - replace with actual loading
+        input_matrix = np.random.uniform(-1, 1, (20, 50))
+        target_data = {}
+        for target in analysis_request.targets:
+            target_data[target] = np.random.uniform(-2, 2, 20)
+        
+        # Create GridCreator for prediction grids
+        grid_creator = GridCreator(
+            grid_size=analysis_request.grid_size,
+            denormalize_predictions=analysis_request.denormalize_predictions
+        )
+        
+        # Create CorrelationGridCreator for correlation grids
+        correlation_creator = CorrelationGridCreator(
+            grid_size=analysis_request.grid_size,
+            sigma_optimization=analysis_request.sigma_optimization,
+            max_trials=analysis_request.max_sigma_trials
+        )
+        
+        prediction_results = {}
+        correlation_results = {}
+        
+        # Process each target
+        for target_name in analysis_request.targets:
+            logger.info(f"Processing target: {target_name}")
+            
+            # Create target-specific output directories
+            target_output = output_folder / f"target_{target_name}"
+            target_output.mkdir(parents=True, exist_ok=True)
+            
+            prediction_output = target_output / "prediction-grids"
+            correlation_output = target_output / "correlation-grids"
+            
+            # Step 1: Create prediction grid
+            prediction_grid_result = grid_creator.create_prediction_grid(
+                input_matrix=input_matrix,
+                target_data={target_name: target_data[target_name]},
+                models={},  # Mock models - replace with actual model loading
+                output_folder=prediction_output
+            )
+            
+            prediction_results[target_name] = {
+                "grid_points_generated": len(prediction_grid_result['grid_coords']),
+                "prediction_range": [
+                    float(np.min(prediction_grid_result['prediction_values'])),
+                    float(np.max(prediction_grid_result['prediction_values']))
+                ],
+                "confidence_range": [
+                    float(np.min(prediction_grid_result['confidence_values'])),
+                    float(np.max(prediction_grid_result['confidence_values']))
+                ],
+                "output_files": [str(prediction_output / f"{target_name}_prediction_grid.csv")]
+            }
+            
+            # Step 2: Create correlation grids for each method
+            target_correlation_results = {
+                "correlation_methods": analysis_request.correlation_methods,
+                "output_files": [],
+                "correlation_ranges": {}
+            }
+            
+            for method in analysis_request.correlation_methods:
+                correlation_result = correlation_creator.create_correlation_grid(
+                    input_matrix=input_matrix,
+                    target_scores=target_data[target_name],
+                    target_name=target_name,
+                    correlation_method=method,
+                    output_folder=correlation_output
+                )
+                
+                # Add correlation range for this method
+                correlation_values = correlation_result['correlation_values']
+                target_correlation_results["correlation_ranges"][method] = [
+                    float(np.min(correlation_values)),
+                    float(np.max(correlation_values))
+                ]
+                
+                # Add output file
+                output_file = str(correlation_output / f"{target_name}_{method}_correlation.csv")
+                target_correlation_results["output_files"].append(output_file)
+            
+            # Add optimal sigma if optimization was performed
+            if analysis_request.sigma_optimization and 'optimal_sigma' in correlation_result:
+                target_correlation_results["optimal_sigma"] = float(correlation_result['optimal_sigma'])
+            
+            correlation_results[target_name] = target_correlation_results
+        
+        # Calculate processing metrics
+        processing_time = (time.time() - start_time) * 1000  # Convert to ms
+        total_grid_points = sum(result["grid_points_generated"] for result in prediction_results.values())
+        
+        # Create response
+        analysis_metadata = {
+            "grid_size": list(analysis_request.grid_size),
+            "denormalize_predictions": analysis_request.denormalize_predictions,
+            "correlation_methods": analysis_request.correlation_methods,
+            "sigma_optimization": analysis_request.sigma_optimization,
+            "max_sigma_trials": analysis_request.max_sigma_trials
+        }
+        
+        processing_info = {
+            "processing_time_ms": processing_time,
+            "targets_processed": len(analysis_request.targets),
+            "total_grid_points": total_grid_points,
+            "request_id": request_id
+        }
+        
+        logger.info(
+            "Heatmaps analysis completed",
+            extra={
+                "request_id": request_id,
+                "processing_time_ms": processing_time,
+                "targets_processed": len(analysis_request.targets),
+                "total_grid_points": total_grid_points
+            }
+        )
+        
+        return HeatmapsResponse(
+            prediction_results=prediction_results,
+            correlation_results=correlation_results,
+            analysis_metadata=analysis_metadata,
+            processing_info=processing_info
+        )
+        
+    except Exception as e:
+        logger.error(
+            "Heatmaps analysis failed",
+            extra={
+                "request_id": request_id,
+                "error": str(e),
+                "error_type": type(e).__name__
+            }
+        )
+        raise HTTPException(status_code=500, detail=f"Heatmaps analysis failed: {str(e)}")
+    
     finally:
         clear_context()
 

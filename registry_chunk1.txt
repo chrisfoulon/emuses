@@ -1,0 +1,118 @@
+============================= test session starts ==============================
+platform linux -- Python 3.11.13, pytest-8.4.1, pluggy-1.6.0 -- /home/tolhsadum/miniforge3/envs/emuses/bin/python3.11
+cachedir: .pytest_cache
+rootdir: /mnt/c/Users/Tolhsadum/PycharmProjects/emuses
+configfile: pytest.ini
+plugins: servers-0.5.12, anyio-4.9.0, asyncio-1.1.0, cov-6.2.1
+asyncio: mode=Mode.STRICT, asyncio_default_fixture_loop_scope=function, asyncio_default_test_loop_scope=function
+collecting ... collected 74 items
+
+tests/model_registry/test_local_registry.py::TestLocalModelRegistryInitialization::test_init_creates_directory_structure PASSED [  1%]
+tests/model_registry/test_local_registry.py::TestLocalModelRegistryInitialization::test_init_with_existing_directory PASSED [  2%]
+tests/model_registry/test_local_registry.py::TestLocalModelRegistryInitialization::test_default_registry_path PASSED [  4%]
+tests/model_registry/test_local_registry.py::TestLocalModelRegistryInitialization::test_registry_json_initialization PASSED [  5%]
+tests/model_registry/test_local_registry.py::TestLocalModelRegistryBasicOperations::test_registry_is_empty_initially PASSED [  6%]
+tests/model_registry/test_local_registry.py::TestLocalModelRegistryBasicOperations::test_get_registry_info PASSED [  8%]
+tests/model_registry/test_local_registry.py::TestLocalModelRegistryInstallation::test_install_model_success FAILED [  9%]
+tests/model_registry/test_local_registry.py::TestLocalModelRegistryInstallation::test_install_model_without_name FAILED [ 10%]
+tests/model_registry/test_local_registry.py::TestLocalModelRegistryInstallation::test_install_model_validation_failure PASSED [ 12%]
+tests/model_registry/test_local_registry.py::TestLocalModelRegistryInstallation::test_install_model_updates_index FAILED [ 13%]
+tests/model_registry/test_local_registry.py::TestLocalModelRegistryIndexManagement::test_index_corruption_recovery PASSED [ 14%]
+tests/model_registry/test_local_registry.py::TestLocalModelRegistryIndexManagement::test_index_backup_and_restore PASSED [ 16%]
+tests/model_registry/test_local_registry.py::TestLocalModelRegistryIndexManagement::test_index_validation PASSED [ 17%]
+tests/model_registry/test_local_registry.py::TestLocalModelRegistryIndexManagement::test_index_repair PASSED [ 18%]
+tests/model_registry/test_local_registry.py::TestLocalModelRegistryDiscovery::test_list_models_no_filters PASSED [ 20%]
+tests/model_registry/test_local_registry.py::TestLocalModelRegistryDiscovery::test_list_models_with_type_filter PASSED [ 21%]
+tests/model_registry/test_local_registry.py::TestLocalModelRegistryDiscovery::test_list_models_with_tag_filter PASSED [ 22%]
+tests/model_registry/test_local_registry.py::TestLocalModelRegistryDiscovery::test_list_models_with_multiple_filters PASSED [ 24%]
+tests/model_registry/test_local_registry.py::TestLocalModelRegistryDiscovery::test_get_model_info_success PASSED [ 25%]
+tests/model_registry/test_local_registry.py::TestLocalModelRegistryDiscovery::test_get_model_info_not_found PASSED [ 27%]
+tests/model_registry/test_local_registry.py::TestLocalModelRegistryDiscovery::test_search_models_by_name PASSED [ 28%]
+tests/model_registry/test_local_registry.py::TestLocalModelRegistryDiscovery::test_search_models_by_description PASSED [ 29%]
+tests/model_registry/test_local_registry.py::TestLocalModelRegistryDiscovery::test_search_models_case_insensitive PASSED [ 31%]
+tests/model_registry/test_local_registry.py::TestLocalModelRegistryManagement::test_remove_model_success PASSED [ 32%]
+tests/model_registry/test_local_registry.py::TestLocalModelRegistryManagement::test_remove_model_not_found PASSED [ 33%]
+tests/model_registry/test_local_registry.py::TestLocalModelRegistryManagement::test_remove_model_filesystem_cleanup PASSED [ 35%]
+tests/model_registry/test_local_registry.py::TestLocalModelRegistryManagement::test_cleanup_orphaned_models PASSED [ 36%]
+tests/model_registry/test_local_registry.py::TestLocalModelRegistryManagement::test_cleanup_orphaned_models_preserves_valid PASSED [ 37%]
+tests/model_registry/test_local_registry.py::TestLocalModelRegistryManagement::test_get_registry_stats PASSED [ 39%]
+tests/model_registry/test_api_endpoints.py::TestModelRegistryEndpointsAuthentication::test_list_models_requires_authentication PASSED [ 40%]
+tests/model_registry/test_api_endpoints.py::TestModelRegistryEndpointsAuthentication::test_search_models_requires_authentication PASSED [ 41%]
+tests/model_registry/test_api_endpoints.py::TestModelRegistryEndpointsAuthentication::test_get_model_info_requires_authentication PASSED [ 43%]
+tests/model_registry/test_api_endpoints.py::TestModelListingEndpoints::test_list_models_empty PASSED [ 44%]
+tests/model_registry/test_api_endpoints.py::TestModelListingEndpoints::test_list_models_with_data PASSED [ 45%]
+tests/model_registry/test_api_endpoints.py::TestModelListingEndpoints::test_list_models_with_filters PASSED [ 47%]
+tests/model_registry/test_api_endpoints.py::TestModelListingEndpoints::test_search_models PASSED [ 48%]
+tests/model_registry/test_api_endpoints.py::TestModelInfoEndpoints::test_get_model_info_success PASSED [ 50%]
+tests/model_registry/test_api_endpoints.py::TestModelInfoEndpoints::test_get_model_info_not_found PASSED [ 51%]
+tests/model_registry/test_api_endpoints.py::TestModelManagementEndpoints::test_remove_model_success PASSED [ 52%]
+tests/model_registry/test_api_endpoints.py::TestModelManagementEndpoints::test_remove_model_not_found PASSED [ 54%]
+tests/model_registry/test_api_endpoints.py::TestModelManagementEndpoints::test_track_download_success PASSED [ 55%]
+tests/model_registry/test_api_endpoints.py::TestPermissionEndpoints::test_list_permissions_success PASSED [ 56%]
+tests/model_registry/test_api_endpoints.py::TestPermissionEndpoints::test_grant_permission_success PASSED [ 58%]
+tests/model_registry/test_api_endpoints.py::TestPermissionEndpoints::test_grant_permission_invalid_level PASSED [ 59%]
+tests/model_registry/test_api_endpoints.py::TestPermissionEndpoints::test_revoke_permission_success PASSED [ 60%]
+tests/model_registry/test_api_endpoints.py::TestPermissionEndpoints::test_set_public_status_success PASSED [ 62%]
+tests/model_registry/test_api_endpoints.py::TestModelRegistrationEndpoint::test_register_model_success PASSED [ 63%]
+tests/model_registry/test_api_endpoints.py::TestModelRegistrationEndpoint::test_register_model_missing_file PASSED [ 64%]
+tests/model_registry/test_api_endpoints.py::TestErrorHandling::test_database_error_handling PASSED [ 66%]
+tests/model_registry/test_api_endpoints.py::TestErrorHandling::test_invalid_uuid_handling PASSED [ 67%]
+tests/model_registry/test_database_registry.py::TestDatabaseModelRegistryInitialization::test_initialization_with_defaults PASSED [ 68%]
+tests/model_registry/test_database_registry.py::TestDatabaseModelRegistryInitialization::test_initialization_with_custom_path PASSED [ 70%]
+tests/model_registry/test_database_registry.py::TestDatabaseModelRegistryInitialization::test_directory_creation PASSED [ 71%]
+tests/model_registry/test_database_registry.py::TestDatabaseModelRegistryRegistration::test_register_model_success PASSED [ 72%]
+tests/model_registry/test_database_registry.py::TestDatabaseModelRegistryRegistration::test_register_model_validation_error PASSED [ 74%]
+tests/model_registry/test_database_registry.py::TestDatabaseModelRegistryRegistration::test_register_model_with_workspace PASSED [ 75%]
+tests/model_registry/test_database_registry.py::TestDatabaseModelRegistryRegistration::test_register_model_invalid_workspace PASSED [ 77%]
+tests/model_registry/test_database_registry.py::TestDatabaseModelRegistryQuerying::test_list_models_empty_registry PASSED [ 78%]
+tests/model_registry/test_database_registry.py::TestDatabaseModelRegistryQuerying::test_list_models_with_user_models PASSED [ 79%]
+tests/model_registry/test_database_registry.py::TestDatabaseModelRegistryQuerying::test_list_models_with_filters PASSED [ 81%]
+tests/model_registry/test_database_registry.py::TestDatabaseModelRegistryQuerying::test_get_model_info_success PASSED [ 82%]
+tests/model_registry/test_database_registry.py::TestDatabaseModelRegistryQuerying::test_get_model_info_not_found PASSED [ 83%]
+tests/model_registry/test_database_registry.py::TestDatabaseModelRegistryQuerying::test_search_models_by_name PASSED [ 85%]
+tests/model_registry/test_database_registry.py::TestDatabaseModelRegistryQuerying::test_search_models_empty_query PASSED [ 86%]
+tests/model_registry/test_database_registry.py::TestDatabaseModelRegistryManagement::test_remove_model_success PASSED [ 87%]
+tests/model_registry/test_database_registry.py::TestDatabaseModelRegistryManagement::test_remove_model_not_found PASSED [ 89%]
+tests/model_registry/test_database_registry.py::TestDatabaseModelRegistryManagement::test_remove_model_permission_denied PASSED [ 90%]
+tests/model_registry/test_database_registry.py::TestDatabaseModelRegistryManagement::test_track_download PASSED [ 91%]
+tests/model_registry/test_database_registry.py::TestDatabaseModelRegistryManagement::test_get_registry_stats PASSED [ 93%]
+tests/model_registry/test_database_registry.py::TestDatabaseModelRegistryPermissions::test_check_model_access_owner PASSED [ 94%]
+tests/model_registry/test_database_registry.py::TestDatabaseModelRegistryPermissions::test_check_model_access_public PASSED [ 95%]
+tests/model_registry/test_database_registry.py::TestDatabaseModelRegistryPermissions::test_check_model_access_workspace PASSED [ 97%]
+tests/model_registry/test_database_registry.py::TestDatabaseModelRegistryPermissions::test_calculate_manifest_hash PASSED [ 98%]
+tests/model_registry/test_database_registry.py::TestDatabaseModelRegistryPermissions::test_calculate_directory_size PASSED [100%]
+
+=================================== FAILURES ===================================
+________ TestLocalModelRegistryInstallation.test_install_model_success _________
+tests/model_registry/test_local_registry.py:131: in test_install_model_success
+    mock_model_io.install_model.assert_called_once()
+/home/tolhsadum/miniforge3/envs/emuses/lib/python3.11/unittest/mock.py:918: in assert_called_once
+    raise AssertionError(msg)
+E   AssertionError: Expected 'install_model' to have been called once. Called 0 times.
+------------------------------ Captured log call -------------------------------
+ERROR    emuses.tools.local_model_registry:local_model_registry.py:742 Invalid EMUSES folder:
+______ TestLocalModelRegistryInstallation.test_install_model_without_name ______
+tests/model_registry/test_local_registry.py:144: in test_install_model_without_name
+    assert result["status"] == "success"
+E   AssertionError: assert 'error' == 'success'
+E     
+E     - success
+E     + error
+------------------------------ Captured log call -------------------------------
+ERROR    emuses.tools.local_model_registry:local_model_registry.py:742 Invalid EMUSES folder:
+_____ TestLocalModelRegistryInstallation.test_install_model_updates_index ______
+tests/model_registry/test_local_registry.py:172: in test_install_model_updates_index
+    assert len(models) == 1
+E   assert 0 == 1
+E    +  where 0 = len([])
+------------------------------ Captured log call -------------------------------
+ERROR    emuses.tools.local_model_registry:local_model_registry.py:742 Invalid EMUSES folder:
+=========================== short test summary info ============================
+FAILED tests/model_registry/test_local_registry.py::TestLocalModelRegistryInstallation::test_install_model_success - AssertionError: Expected 'install_model' to have been called once. Called 0 times.
+FAILED tests/model_registry/test_local_registry.py::TestLocalModelRegistryInstallation::test_install_model_without_name - AssertionError: assert 'error' == 'success'
+  
+  - success
+  + error
+FAILED tests/model_registry/test_local_registry.py::TestLocalModelRegistryInstallation::test_install_model_updates_index - assert 0 == 1
+ +  where 0 = len([])
+========================= 3 failed, 71 passed in 4.07s =========================

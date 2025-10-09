@@ -1,7 +1,9 @@
 import numpy as np
+import pandas as pd
 import pytest
 import joblib
 import optuna
+from pathlib import Path
 from unittest.mock import patch, MagicMock
 
 # Importing the functions from your module (adjust the import as needed)
@@ -15,14 +17,18 @@ from emuses.tools.UMAP_utils import (
 
 @pytest.fixture
 def small_input_data():
-    # A small random input matrix (10 samples, 5 features)
-    return np.random.rand(10, 5)
+    # Use real test data for input matrix (10 samples, 5 features)
+    project_root = Path(__file__).parent.parent.parent
+    features = pd.read_csv(project_root / 'test_data/features.csv', header=None).values
+    return features[:10, :5]  # First 10 samples, first 5 features
 
 
 @pytest.fixture
 def small_embeddings():
-    # A tiny embedding (10 samples, 2D)
-    return np.random.rand(10, 2)
+    # Use real test data for embeddings (10 samples, 2D)
+    project_root = Path(__file__).parent.parent.parent
+    features = pd.read_csv(project_root / 'test_data/features.csv', header=None).values
+    return features[:10, :2]  # First 10 samples, first 2 dimensions
 
 
 def test_evaluate_embedding_statistics(small_embeddings):

@@ -88,7 +88,9 @@ markdown_extensions:
 nav:
   - Home: 'index.md'
   - Quick Start: 'QUICK_START.md'
+  - Results Guide: 'RESULTS_GUIDE.md'
   - User Guide: 'USER_GUIDE.md'
+  - Analysis Outputs: 'emuses/output_formats.md'  
   - API Documentation:
     - Overview: 'API_REFERENCE.md'
     - Model Registry API: 'model-registry/api_reference.md'
@@ -103,6 +105,7 @@ nav:
     - API Integration: 'examples/api_integration.md'
   - Development:
     - Architecture: 'emuses/architecture.md'
+    - Pipeline Stages: 'emuses/heatmap_stage.md'
     - Testing Commands: 'testing-commands.md'
     - Testing Configuration: 'testing-config-isolation.md'
   - Model Registry:

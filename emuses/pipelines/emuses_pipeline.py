@@ -5,6 +5,7 @@ import time
 from pathlib import Path
 
 import numpy as np
+import joblib
 from bcblib.tools.dataframe_filtering import normalize_dataframe
 from bcblib.tools.general_utils import parse_file_list_argument, save_json
 from bcblib.tools.nifti_utils import load_nifti
@@ -22,10 +23,27 @@ from emuses.tools.inputs_utils import (detect_dataset_type,
 
 
 class EMUSESPipeline:
-    def __init__(self, args):
+    def __init__(self, args, inference_data=None):
+        """
+        Initialize EMUSESPipeline with optional inference data injection.
+
+        Parameters
+        ----------
+        args : Namespace
+            Pipeline configuration arguments
+        inference_data : dict, optional
+            Inference-specific data for lightweight initialization.
+            If provided, should contain:
+            - input_path: str, path to inference input data
+            - scores_path: str or None, path to scores for validation
+            - model_path: str, path to trained model directory
+        """
         self.config = PipelineConfig(args)
         self.args = self.config  # For backward compatibility
         self.output_folder = self.config.output_path  # Use Path object, not string
+
+        # Store inference data for later processing
+        self._inference_data = inference_data
 
         # In classic mode, these come from the main dataset;
         # in label_dataset mode, the labelled dataset is processed separately.
@@ -53,7 +71,10 @@ class EMUSESPipeline:
         }
 
         self.validate_args()
-        self.format_args()  # Initialize random state management
+        
+        # Always call format_args - it handles both training and inference modes properly
+        self.format_args()
+        
         master_seed = getattr(self.config, "random_state", 42)
         self.logger.info(
             f"Initializing pipeline with master random seed: {master_seed}"
@@ -103,6 +124,7 @@ class EMUSESPipeline:
         # Add any necessary validation here.
         pass
 
+
     def format_args(self):
         """
         Process the dataset based on the mode and update context.
@@ -111,6 +133,9 @@ class EMUSESPipeline:
         For classic mode:
           - Process the main (fully labelled) dataset.
         Then, call split_dataset() to perform the splitting, save the files, and update the context.
+          
+        Note: Handles both training and inference modes. In inference mode,
+        uses simplified processing paths and loads saved scalers.
         """
         if getattr(self.config, "label_dataset", None):
             self.logger.info("Labelled dataset mode activated.")
@@ -130,6 +155,10 @@ class EMUSESPipeline:
                     expected_length=self.labelled_input_matrix.shape[0]
                 )
             self.logger.info(f"Main dataset type: {self.dataset_type}")
+            
+            # Add dataset metadata to context for stages to access
+            self.context["dataset_type"] = self.dataset_type
+            self.context["output_format_info"] = self.output_format_info
         else:
             self.input_matrix, self.dataset_type, self.output_format_info, scores = (
                 self.process_dataset(self.config.input_dataset, is_labelled=False)
@@ -138,8 +167,21 @@ class EMUSESPipeline:
                 self.scores = scores
             else:
                 self.load_and_process_scores(expected_length=self.input_matrix.shape[0])
+                
+            # Add dataset metadata to context for stages to access
+            self.context["dataset_type"] = self.dataset_type
+            self.context["output_format_info"] = self.output_format_info
         # After processing the datasets, perform the splitting:
-        self.split_dataset()
+        # Skip dataset splitting in inference mode
+        if not getattr(self.config, 'inference_mode', False):
+            self.split_dataset()
+        else:
+            # In inference mode, set up context that InferenceStage expects
+            self.context.update({
+                "inference_features": self.input_matrix,
+                "inference_labels": self.scores
+            })
+            self.logger.info(f"Inference mode data processing complete: {self.input_matrix.shape[0]} samples")
 
     def process_dataset(self, dataset_identifier, is_labelled=False):
         """
@@ -322,23 +364,69 @@ class EMUSESPipeline:
                 )
                 before_shape = inputs_df.shape
 
-                # Compute scaling factors for the training dataset or apply precomputed ones
-                if not is_labelled:
-                    inputs_df, scaling_factors = normalize_dataframe(
-                        inputs_df, method=args.input_normalization
-                    )
-                    self.context["input_scaling_factors"] = scaling_factors
-                else:
-                    scaling_factors = self.context.get("input_scaling_factors", None)
-                    if scaling_factors is None:
-                        raise ValueError(
-                            "Scaling factors are missing for labelled dataset normalization."
+                if not getattr(args, 'inference_mode', False):
+                    # TRAINING MODE: Compute scaling factors for the training dataset or apply precomputed ones
+                    if not is_labelled:
+                        inputs_df, scaling_factors = normalize_dataframe(
+                            inputs_df, method=args.input_normalization
                         )
-                    inputs_df, _ = normalize_dataframe(
-                        inputs_df,
-                        method=args.input_normalization,
-                        scaling_factors=scaling_factors,
-                    )
+                        self.context["input_scaling_factors"] = scaling_factors
+                        
+                        # Save input scaler to model directory for inference reuse
+                        self.output_folder.mkdir(parents=True, exist_ok=True)
+                        input_scaler_path = self.output_folder / "input_scaler.joblib"
+                        joblib.dump(scaling_factors, input_scaler_path)
+                        self.logger.info(f"Saved input scaler ({args.input_normalization}) to {input_scaler_path}")
+                        
+                        # Store scaler info in context for manifest generation
+                        self.context["input_scaler_info"] = {
+                            "path": "input_scaler.joblib",
+                            "method": args.input_normalization,
+                            "scaling_factors": scaling_factors
+                        }
+                    else:
+                        scaling_factors = self.context.get("input_scaling_factors", None)
+                        if scaling_factors is None:
+                            raise ValueError(
+                                "Scaling factors are missing for labelled dataset normalization."
+                            )
+                        inputs_df, _ = normalize_dataframe(
+                            inputs_df,
+                            method=args.input_normalization,
+                            scaling_factors=scaling_factors,
+                        )
+                        
+                        # Save input scaler to model directory for cross-validation denormalization
+                        self.output_folder.mkdir(parents=True, exist_ok=True)
+                        input_scaler_path = self.output_folder / "input_scaler.joblib"
+                        joblib.dump(scaling_factors, input_scaler_path)
+                        self.logger.info(f"Saved input scaler ({args.input_normalization}) to {input_scaler_path}")
+                        
+                        # Store scaler info in context for manifest generation
+                        self.context["input_scaler_info"] = {
+                            "path": "input_scaler.joblib",
+                            "method": args.input_normalization,
+                            "scaling_factors": scaling_factors
+                        }
+                else:
+                    # INFERENCE MODE: Load and apply saved scaler
+                    # Use model path if available, otherwise fall back to output folder
+                    if hasattr(args, 'model_path') and args.model_path:
+                        scaler_base_path = Path(args.model_path)
+                    else:
+                        scaler_base_path = self.output_folder
+                    
+                    input_scaler_path = scaler_base_path / "input_scaler.joblib"
+                    if input_scaler_path.exists():
+                        scaling_factors = joblib.load(input_scaler_path)
+                        inputs_df, _ = normalize_dataframe(
+                            inputs_df,
+                            method=args.input_normalization,
+                            scaling_factors=scaling_factors
+                        )
+                        self.logger.info(f"Applied saved input normalization ({args.input_normalization}) during inference")
+                    else:
+                        self.logger.warning("Input scaler not found, skipping normalization - this may cause inference failures")
 
                 after_shape = inputs_df.shape
                 if after_shape != before_shape:
@@ -382,9 +470,45 @@ class EMUSESPipeline:
                     f"Normalizing scores dataframe with method={args.scores_normalization}"
                 )
                 before_shape = scores_df.shape
-                scores_df = normalize_dataframe(
-                    scores_df, method=args.scores_normalization
-                )
+                
+                if not getattr(args, 'inference_mode', False):
+                    # TRAINING MODE: Compute and save scores scaling factors
+                    scores_df, scores_scaling_factors = normalize_dataframe(
+                        scores_df, method=args.scores_normalization
+                    )
+                    
+                    # Save scores scaler to model directory for inference reuse
+                    self.output_folder.mkdir(parents=True, exist_ok=True)
+                    scores_scaler_path = self.output_folder / "scores_scaler.joblib"
+                    joblib.dump(scores_scaling_factors, scores_scaler_path)
+                    self.logger.info(f"Saved scores scaler ({args.scores_normalization}) to {scores_scaler_path}")
+                    
+                    # Store scaler info in context for manifest generation
+                    self.context["scores_scaler_info"] = {
+                        "path": "scores_scaler.joblib",
+                        "method": args.scores_normalization,
+                        "scaling_factors": scores_scaling_factors
+                    }
+                else:
+                    # INFERENCE MODE: Load and apply saved scaler
+                    # Use model path if available, otherwise fall back to output folder
+                    if hasattr(args, 'model_path') and args.model_path:
+                        scaler_base_path = Path(args.model_path)
+                    else:
+                        scaler_base_path = self.output_folder
+                    
+                    scores_scaler_path = scaler_base_path / "scores_scaler.joblib"
+                    if scores_scaler_path.exists():
+                        scores_scaling_factors = joblib.load(scores_scaler_path)
+                        scores_df, _ = normalize_dataframe(
+                            scores_df,
+                            method=args.scores_normalization,
+                            scaling_factors=scores_scaling_factors
+                        )
+                        self.logger.info(f"Applied saved scores normalization ({args.scores_normalization}) during inference")
+                    else:
+                        self.logger.warning("Scores scaler not found, skipping normalization - this may cause inference failures")
+                
                 after_shape = scores_df.shape
                 if after_shape != before_shape:
                     self.logger.warning(
@@ -734,3 +858,15 @@ class EMUSESPipeline:
                 "stages_completed",
                 len(self.context["pipeline_metadata"]["stages_completed"]),
             )
+
+            # Enhance model manifest with pipeline data
+            try:
+                from emuses.tools.model_io import enhance_model_manifest_with_pipeline_data
+                self.logger.info("Enhancing model manifest with pipeline data...")
+                success = enhance_model_manifest_with_pipeline_data(self.output_folder)
+                if success:
+                    self.logger.info("Model manifest successfully enhanced")
+                else:
+                    self.logger.warning("Model manifest enhancement failed")
+            except Exception as e:
+                self.logger.warning(f"Could not enhance model manifest: {e}")

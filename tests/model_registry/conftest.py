@@ -14,7 +14,15 @@ import json
 from unittest.mock import MagicMock
 from uuid import uuid4
 from sqlalchemy.orm import Session
-from emuses.multi_user_service.models import User
+
+# Conditional import for multi-user service models
+try:
+    from emuses.multi_user_service.models import User
+except ImportError:
+    # If fastapi_users is not available, create a mock User class
+    class User:
+        """Mock User class for when fastapi_users is not available."""
+        pass
 
 
 # Test markers for different testing modes

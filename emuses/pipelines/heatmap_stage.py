@@ -28,9 +28,9 @@ from emuses.tools.kernel_regression_utils import (KernelLogisticRegressor,
                                                   ensemble_predict,
                                                   nested_cv_kernel_regression,
                                                   run_kernel_heatmap_analysis)
+from emuses.tools.visualisation import plot_clustering_interactive_with_hover
 from emuses.tools.optim_utils import suggest_parameters_conditional
 from emuses.tools.optuna_cv import nested_optuna_cv
-from emuses.tools.visualisation import plot_clustering_interactive_with_hover
 
 # Import new model I/O system
 from ..tools.model_io import ModelIOManager
@@ -130,18 +130,16 @@ class HeatmapStage(PipelineStage):
             optim_dict_predict_selected = optim_dict_predict
 
         # ------------------------------------------------------------------
-        # 1 ─ Assemble the design matrix (X) and targets (y) for Optuna
-        #     You can later replace `prediction_train_coords` by any feature
-        #     stack you build (e.g. RawCoords ⊕ GWD, polynomial terms, …)
+        # 1 ─ Assemble the design matrix and targets for Optuna
+        #     prediction_train_coords are the UMAP embedding coordinates used for training
+        #     prediction_train_labels are the target scores/labels for prediction
         # ------------------------------------------------------------------
-        X = prediction_train_coords  # shape (n_samples, 2)
-        y = prediction_train_labels  # shape (n_samples,) or (n_samples, p)
 
         # Store everything in context for the next step (nested CV / training)
         context.update(
             {
-                "prediction_X": X,
-                "prediction_y": y,
+                "prediction_X": prediction_train_coords,  # shape (n_samples, 2) - rescaled embedding coordinates
+                "prediction_y": prediction_train_labels,  # shape (n_samples,) or (n_samples, p) - target values
                 "prediction_task": task,
                 "optim_dict_predict": optim_dict_predict_selected,
             }
@@ -327,11 +325,13 @@ class HeatmapStage(PipelineStage):
         # ------------------------------------------------------------------
 
         # --------------  LOOP OVER TARGET COLUMNS  ------------------------
-        X = prediction_train_coords  # design matrix
-        Y = prediction_train_labels  # 1-D or 2-D
+        # Use prediction_train_coords directly (rescaled UMAP embedding coordinates)
+        # Use prediction_train_labels directly (target values for prediction)
 
-        if Y.ndim == 1:  # ensure 2-D for uniform loop
-            Y = Y[:, None]
+        if prediction_train_labels.ndim == 1:  # ensure 2-D for uniform loop
+            Y = prediction_train_labels[:, None]
+        else:
+            Y = prediction_train_labels
 
         task = "clf" if getattr(self.config, "classification", False) else "reg"
 
@@ -386,7 +386,7 @@ class HeatmapStage(PipelineStage):
         results = parallel(
             delayed(_optimise_target)(
                 col_idx,
-                X,
+                prediction_train_coords,  # rescaled UMAP embedding coordinates
                 Y,
                 task,
                 self.config,
@@ -425,6 +425,26 @@ class HeatmapStage(PipelineStage):
         # Generate performance measures CSV files
         # ------------------------------------------------------------------
         self._generate_performance_csv_files(context, task, Y.shape[1], logger)
+
+        # ------------------------------------------------------------------
+        # TRIPLE GRID STATISTICAL ANALYSIS AFTER NESTED CV TRAINING
+        # ------------------------------------------------------------------
+        logger.info("=== Starting Triple Grid Statistical Analysis ===")
+        
+        try:
+            # Execute triple grid analysis using current pipeline data
+            self._execute_triple_grid_analysis(
+                context=context,
+                embeddings=prediction_train_coords,  # Rescaled UMAP coordinates (0-1)
+                target_matrix=Y,  # Processed target matrix [n_samples, n_targets]
+                output_folder=self.config.output_folder,
+                logger=logger
+            )
+            logger.info("Triple grid statistical analysis completed successfully")
+            
+        except Exception as e:
+            logger.error(f"Triple grid analysis failed: {e}")
+            logger.warning("Continuing pipeline without statistical grid analysis")
 
         # ------------------------------------------------------------------
 
@@ -691,8 +711,30 @@ class HeatmapStage(PipelineStage):
         #     classification=getattr(self.config, "classification", False),
         # )
 
-        # # Store results in context
-        # context.update(results)
+        # Prepare context for InferenceStage (required for pipeline completion)
+        prediction_test_features = context.get("prediction_test_features")
+        prediction_test_labels = context.get("prediction_test_labels")
+        prediction_train_features = context.get("prediction_train_features")
+        prediction_train_labels = context.get("prediction_train_labels")
+
+        if prediction_test_features is not None:
+            # Use test data for inference (preferred for validation)
+            context["inference_features"] = prediction_test_features
+            if prediction_test_labels is not None:
+                context["inference_labels"] = prediction_test_labels
+            logger.info(
+                "Prepared prediction test data for inference stage."
+            )
+        elif prediction_train_features is not None:
+            # Fallback to train data if no test data available
+            context["inference_features"] = prediction_train_features
+            if prediction_train_labels is not None:
+                context["inference_labels"] = prediction_train_labels
+            logger.info(
+                "Prepared prediction training data for inference stage (fallback)."
+            )
+        else:
+            logger.warning("No prediction features found - inference stage may fail")
 
     def _generate_performance_csv_files(self, context, task, n_targets, logger):
         """
@@ -912,6 +954,339 @@ class HeatmapStage(PipelineStage):
 
         except Exception as e:
             logger.error(f"Error generating performance CSV files: {e}")
+
+    def _execute_triple_grid_analysis(self, context, embeddings, target_matrix, output_folder, logger):
+        """
+        Execute triple grid statistical analysis after nested CV training.
+        
+        Integrates prediction grids, correlation grids, and statistical maps analysis
+        using the current pipeline data flow with existing trained models.
+        
+        Parameters
+        ----------
+        context : dict
+            Pipeline context with trained models and data
+        embeddings : np.ndarray
+            Rescaled UMAP coordinates [n_samples, 2] from prediction_train_coords
+        target_matrix : np.ndarray  
+            Processed target matrix [n_samples, n_targets] (Y from nested CV)
+        output_folder : Path
+            Base output directory
+        logger : logging.Logger
+            Logger instance
+        """
+        try:
+            # Import triple grid analysis components
+            from emuses.tools.grid_creator import GridCreator
+            from emuses.tools.correlation_grid_creator import CorrelationGridCreator  
+            from emuses.tools.region_statistical_analyzer import RegionStatisticalAnalyzer
+            
+            logger.info(f"Executing triple grid analysis for {target_matrix.shape[1]} targets")
+            
+            # Get input matrix for statistical maps from current context
+            input_matrix = context.get("prediction_train_features")
+            if input_matrix is None:
+                logger.warning("No prediction_train_features available for statistical maps")
+                input_matrix = embeddings  # Fallback to embeddings
+                
+            dataset_type = context.get("dataset_type", "image")
+            
+            # Process each target separately (per-target organization)
+            for target_idx in range(target_matrix.shape[1]):
+                target_name = f"target_{target_idx}"
+                target_scores = target_matrix[:, target_idx]
+                
+                logger.info(f"Processing {target_name} (range: {np.min(target_scores):.3f} to {np.max(target_scores):.3f})")
+                
+                # Create target-specific output directory
+                target_output = Path(output_folder) / target_name
+                target_output.mkdir(parents=True, exist_ok=True)
+                
+                # Initialize result containers and success tracking
+                prediction_results = None
+                correlation_results = None
+                component_success = {
+                    'prediction_grids': False,
+                    'correlation_grids': False,
+                    'statistical_maps': False,
+                    'heatmap_visualizations': False,
+                    'interactive_plots': False
+                }
+                
+                # 1. PREDICTION GRID ANALYSIS (using existing trained models)
+                try:
+                    prediction_models = context.get("prediction_models", [])
+                    target_models = prediction_models  # All models are already target-specific from CV training
+                    
+                    if target_models:
+                        logger.info(f"  Creating prediction grids using {len(target_models)} existing models")
+                        grid_creator = GridCreator(grid_size=100)
+                        
+                        # Create target data dictionary (required by GridCreator)
+                        target_data = {target_name: target_scores}
+                        
+                        # Generate grid coordinates first
+                        grid_coords = grid_creator.generate_coordinate_grid(embeddings)
+                        
+                        # Create prediction*confidence heatmaps using EXISTING MODELS
+                        # Wrap models in expected dictionary structure
+                        trained_models_dict = {
+                            'prediction_models': prediction_models,
+                            'scores_scaler': context.get('scores_scaler'),
+                            'metadata': context.get('metadata', {})
+                        }
+                        
+                        prediction_results = grid_creator.create_prediction_heatmaps(
+                            embeddings=embeddings,
+                            trained_models=trained_models_dict,  # Properly structured dictionary
+                            target_data=target_data,  # Target scores for this target
+                            output_folder=target_output,
+                            denormalize=True
+                        )
+                        
+                        # Load actual combined values for statistical analysis
+                        prediction_data_loaded = False
+                        if prediction_results and 'heatmap_results' in prediction_results:
+                            if target_name in prediction_results['heatmap_results']:
+                                target_result = prediction_results['heatmap_results'][target_name]
+                                if 'artifacts' in target_result and 'combined_values' in target_result['artifacts']:
+                                    try:
+                                        combined_values_path = target_result['artifacts']['combined_values']
+                                        combined_values = np.load(combined_values_path)
+                                        # Store grid coordinates and combined values for statistical analysis
+                                        prediction_results['grid_coordinates'] = grid_coords
+                                        prediction_results['combined_values'] = combined_values
+                                        prediction_data_loaded = True
+                                        logger.info(f"    Loaded prediction data: {combined_values.shape} combined values")
+                                    except Exception as e:
+                                        logger.error(f"    Failed to load prediction files: {e}")
+                        
+                        if prediction_data_loaded:
+                            component_success['prediction_grids'] = True
+                            logger.info(f"  Prediction grids completed for {target_name}")
+                        else:
+                            logger.warning(f"  Prediction grids incomplete - data loading failed for {target_name}")
+                    else:
+                        logger.warning(f"  No trained models found for {target_name}")
+                        
+                except Exception as e:
+                    logger.error(f"  Prediction grid analysis failed for {target_name}: {e}")
+                    # component_success['prediction_grids'] remains False
+                
+                # 2. CORRELATION GRID ANALYSIS (using median sigma, no kernel regression)
+                try:
+                    logger.info("  Creating correlation grids with median sigma method")
+                    correlation_creator = CorrelationGridCreator(
+                        grid_size=100,
+                        correlation_methods=["pearson", "spearman", "point_biserial"]
+                    )
+                    
+                    # Create target data dictionary
+                    target_data = {target_name: target_scores}
+                    
+                    # Create correlation heatmaps with optimized sigma (NOT kernel regression)
+                    # Using 25th percentile for sigma to create sharper, more localized correlation patterns
+                    # instead of broad smooth gradients from median (50th percentile)
+                    correlation_results = correlation_creator.create_correlation_heatmaps(
+                        embeddings=embeddings,
+                        target_data=target_data,
+                        output_folder=target_output,
+                        optimize_sigma=True,  # Enable sigma optimization to set sigma value
+                        sigma_method="percentile",  # Use percentile method for better local correlation patterns
+                        sigma_percentile=25.0  # Use 25th percentile for more localized kernels (sharper patterns)
+                    )
+                    
+                    # Load actual correlation data for statistical analysis
+                    if correlation_results and 'correlation_results' in correlation_results:
+                        if target_name in correlation_results['correlation_results']:
+                            target_result = correlation_results['correlation_results'][target_name]
+                            if 'artifacts' in target_result:
+                                try:
+                                    # Load grid coordinates
+                                    grid_coords_path = target_result['artifacts']['grid_coordinates']
+                                    correlation_grid_coords = np.load(grid_coords_path)
+                                    
+                                    # Load pearson correlation values (primary method)
+                                    pearson_path = target_result['artifacts']['correlation_values_pearson']
+                                    pearson_correlation = np.load(pearson_path)
+                                    
+                                    # Store in correlation_results for downstream use
+                                    correlation_results['grid_coordinates'] = correlation_grid_coords
+                                    correlation_results['pearson_correlation'] = pearson_correlation
+                                    
+                                    logger.info(f"    Loaded correlation data: {pearson_correlation.shape} correlation values")
+                                except Exception as e:
+                                    logger.error(f"    Failed to load correlation files: {e}")
+                    
+                    component_success['correlation_grids'] = True
+                    logger.info(f"  Correlation grids completed for {target_name}")
+                    
+                except Exception as e:
+                    logger.error(f"  Correlation grid analysis failed for {target_name}: {e}")
+                    # component_success['correlation_grids'] remains False
+                
+                # 3. STATISTICAL MAPS ANALYSIS (Dual analysis: prediction + correlation)
+                try:
+                    logger.info("  Creating region-based statistical maps with dual analysis")
+                    statistical_analyzer = RegionStatisticalAnalyzer(
+                        visualization_threshold=0.2,
+                        effect_size_threshold=0.5,
+                        min_cluster_size=3
+                    )
+                    
+                    # Get dataset type and output format info from context (computed by EMUSESPipeline)
+                    input_type = context.get("dataset_type", "image")
+                    output_format_info = context.get("output_format_info", self.output_format_info)
+                    
+                    logger.debug(f"Using dataset type: {input_type}, output format info: {type(output_format_info)}")
+                    
+                    # Create target data dictionary for this target
+                    target_data = {target_name: target_scores}
+                    
+                    # Dual Analysis Pattern: Call RegionStatisticalAnalyzer twice
+                    
+                    # Call 1: Prediction significance analysis (both high & low regions)  
+                    if (prediction_results is not None and 
+                        'grid_coordinates' in prediction_results and 
+                        'combined_values' in prediction_results):
+                        logger.info("    Running prediction significance analysis")
+                        # Store heatmap data for cluster visualizations
+                        statistical_analyzer._prediction_heatmap_data = prediction_results['combined_values']
+                        statistical_analyzer._current_analysis_type = "prediction"
+                        
+                        statistical_analyzer.create_statistical_maps(
+                            grid_coords=prediction_results['grid_coordinates'],
+                            significance_values=prediction_results['combined_values'],  # prediction×confidence
+                            input_matrix=input_matrix,
+                            target_data=target_data,
+                            output_folder=target_output,
+                            input_type=input_type,
+                            output_format_info=output_format_info,
+                            training_embeddings=embeddings,
+                            significance_source='prediction',
+                            percentile_threshold=5.0  # Creates 5%-95% range
+                        )
+                    else:
+                        logger.warning("    Skipping prediction significance analysis - prediction data not available")
+                    
+                    # Call 2: Correlation significance analysis (high regions only)
+                    if (correlation_results is not None and 
+                        'grid_coordinates' in correlation_results and 
+                        'pearson_correlation' in correlation_results):
+                        logger.info("    Running correlation significance analysis")
+                        # Store correlation heatmap data for cluster visualizations
+                        statistical_analyzer._correlation_heatmap_data = correlation_results['pearson_correlation']
+                        statistical_analyzer._current_analysis_type = "correlation"
+                        
+                        statistical_analyzer.create_statistical_maps(
+                            grid_coords=correlation_results['grid_coordinates'],
+                            significance_values=np.abs(correlation_results['pearson_correlation']),  # absolute correlation
+                            input_matrix=input_matrix,
+                            target_data=target_data,
+                            output_folder=target_output,
+                            input_type=input_type,
+                            output_format_info=output_format_info,
+                            training_embeddings=embeddings,
+                            significance_source='correlation',
+                            percentile_threshold=5.0  # Only high regions meaningful
+                        )
+                    else:
+                        logger.warning("    Skipping correlation significance analysis - correlation data not available")
+                    
+                    component_success['statistical_maps'] = True
+                    logger.info(f"  Statistical maps completed for {target_name}")
+                    
+                except Exception as e:
+                    logger.error(f"  Statistical maps analysis failed for {target_name}: {e}")
+                    # component_success['statistical_maps'] remains False
+                
+                # 4. HEATMAP VISUALIZATIONS WITH SCATTER OVERLAY
+                try:
+                    from emuses.tools.heatmap_visualization import (
+                        plot_prediction_heatmap,
+                        plot_correlation_heatmap
+                    )
+                    
+                    visualization_folder = target_output / "heatmap_visualizations"
+                    visualization_folder.mkdir(exist_ok=True)
+                    
+                    # Generate prediction heatmap with UMAP scatter overlay
+                    if (prediction_results is not None and 
+                        'combined_values' in prediction_results):
+                        pred_viz_path = visualization_folder / f"prediction_heatmap_{target_name}.png"
+                        plot_prediction_heatmap(
+                            heatmap_values=prediction_results['combined_values'],
+                            training_embeddings=embeddings,
+                            target_scores=target_scores,
+                            target_name=target_name,
+                            output_path=pred_viz_path,
+                            show_plot=False
+                        )
+                        logger.info(f"    Prediction heatmap visualization saved: {pred_viz_path.name}")
+                    
+                    # Generate correlation heatmap with UMAP scatter overlay
+                    if (correlation_results is not None and 
+                        'pearson_correlation' in correlation_results):
+                        corr_viz_path = visualization_folder / f"correlation_heatmap_{target_name}.png"
+                        plot_correlation_heatmap(
+                            correlation_values=correlation_results['pearson_correlation'],
+                            training_embeddings=embeddings,
+                            target_scores=target_scores,
+                            target_name=target_name,
+                            correlation_method="pearson",
+                            output_path=corr_viz_path,
+                            show_plot=False
+                        )
+                        logger.info(f"    Correlation heatmap visualization saved: {corr_viz_path.name}")
+                    
+                    component_success['heatmap_visualizations'] = True
+                    logger.info(f"  Heatmap visualizations completed for {target_name}")
+                    
+                except Exception as e:
+                    logger.error(f"  Heatmap visualization failed for {target_name}: {e}")
+                    # component_success['heatmap_visualizations'] remains False
+                
+                # 5. INTERACTIVE VISUALIZATION ENHANCEMENT
+                try:
+                    interactive_folder = target_output / "interactive_plots"
+                    interactive_folder.mkdir(exist_ok=True)
+                    
+                    interactive_path = interactive_folder / f"interactive_clustering_{target_name}.html"
+                    plot_clustering_interactive_with_hover(
+                        embeddings,
+                        target_scores,
+                        output_path=interactive_path,
+                        show_plot=False,
+                        return_plot=True,
+                    )
+                    
+                    component_success['interactive_plots'] = True
+                    logger.info(f"  Interactive visualization saved for {target_name}")
+                    
+                except Exception as e:
+                    logger.error(f"  Interactive visualization failed for {target_name}: {e}")
+                    # component_success['interactive_plots'] remains False
+                
+                # Summary report for this target
+                successful_components = [k for k, v in component_success.items() if v]
+                failed_components = [k for k, v in component_success.items() if not v]
+                
+                logger.info(f"Target {target_name} summary: {len(successful_components)}/5 components successful")
+                if successful_components:
+                    logger.info(f"  ✓ Successful: {', '.join(successful_components)}")
+                if failed_components:
+                    logger.warning(f"  ✗ Failed: {', '.join(failed_components)}")
+                    
+            logger.info("Triple grid analysis completed for all targets")
+            
+        except ImportError as e:
+            logger.error(f"Triple grid analysis components not available: {e}")
+            raise
+        except Exception as e:
+            logger.error(f"Triple grid analysis failed: {e}")
+            logger.warning("Continuing pipeline without complete grid analysis functionality")
+            # Don't raise - allow pipeline to continue with partial functionality
+            
 
 
 # TODO check if we still need this function or if we should put it somewhere else as a reference for unittest or something

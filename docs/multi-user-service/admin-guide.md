@@ -6,11 +6,12 @@ This guide provides comprehensive usage examples, troubleshooting steps, and bes
 
 1. [Getting Started](#getting-started)
 2. [Authentication Setup](#authentication-setup)
-3. [Command Usage Examples](#command-usage-examples)
-4. [Common Workflows](#common-workflows)
-5. [Troubleshooting](#troubleshooting)
-6. [Best Practices](#best-practices)
-7. [Emergency Procedures](#emergency-procedures)
+3. [Enterprise Security](#enterprise-security)
+4. [Command Usage Examples](#command-usage-examples)
+5. [Common Workflows](#common-workflows)
+6. [Troubleshooting](#troubleshooting)
+7. [Best Practices](#best-practices)
+8. [Emergency Procedures](#emergency-procedures)
 
 ## Getting Started
 
@@ -69,6 +70,58 @@ python -m emuses.cli admin system-status
 
 # If token is expired, you'll see:
 # ❌ Service error: 401 Unauthorized
+```
+
+## Enterprise Security
+
+EMUSES supports enterprise-grade security with HashiCorp Vault integration for secure secret management, audit trails, and compliance requirements.
+
+### Vault Integration Overview
+
+EMUSES provides multi-source secret management with the following priority hierarchy:
+1. **HashiCorp Vault** (enterprise environments)
+2. **Secure file** (production deployments)  
+3. **Environment variable** (development/compatibility)
+4. **Development default** (local development only)
+
+**📚 Comprehensive Guides:**
+- **[Vault Integration Guide](vault-integration-guide.md)** - Complete setup and configuration
+- **[Enterprise Deployment Patterns](enterprise-deployment-patterns.md)** - Production architectures
+- **[Security & Compliance Guide](security-compliance-guide.md)** - SOC 2, HIPAA, GDPR compliance
+
+### Quick Vault Setup
+
+```bash
+# 1. Configure Vault access
+export VAULT_ADDR="https://vault.company.com:8200"
+export VAULT_TOKEN="your-vault-token"
+
+# 2. Store EMUSES secrets in Vault
+vault kv put secret/emuses \
+  jwt_secret="$(openssl rand -base64 32)" \
+  admin_password="SecureAdminPass123"
+
+# 3. Verify Vault integration
+python -m emuses.cli admin system-status
+# Should show: "JWT secret loaded from HashiCorp Vault"
+
+# 4. Start multi-user service with Vault
+export EMUSES_DEPLOYMENT_MODE="multi_user"
+python -m emuses.api.main --host 0.0.0.0 --port 8000
+```
+
+### Enhanced Security Commands
+
+With Vault integration, admin commands automatically benefit from enterprise security:
+
+```bash
+# Commands work seamlessly with Vault-secured secrets
+python -m emuses.cli admin add-user researcher@company.com --password SecurePass123
+python -m emuses.cli admin list-users
+python -m emuses.cli admin system-status --detailed
+
+# Secret sources are logged for audit compliance
+# Log output shows: "JWT secret loaded from HashiCorp Vault"
 ```
 
 ## Command Usage Examples

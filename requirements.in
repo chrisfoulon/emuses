@@ -67,3 +67,6 @@ pytest-servers>=0.5.0
 # Caching packages (for model-registry Phase 3.4) ✅ IMPLEMENTED
 redis>=5.0.0
 pymemcache>=4.0.0
+
+# Enterprise security packages (optional - for Vault integration)
+hvac>=1.0.0

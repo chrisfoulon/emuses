@@ -13,6 +13,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import numpy as np
+import pandas as pd
 import pytest
 
 from emuses.pipelines.inference_stage import InferenceStage
@@ -121,8 +122,19 @@ class TestInferenceStageModelLoading(unittest.TestCase):
 class TestInferenceStageEnsemblePrediction(unittest.TestCase):
     """Test ensemble prediction functionality."""
 
+    @classmethod
+    def setup_class(cls):
+        """Load real test data for validation."""
+        project_root = Path(__file__).parent.parent.parent
+        cls.features = pd.read_csv(project_root / 'test_data/features.csv', header=None).values
+        cls.targets = pd.read_csv(project_root / 'test_data/regression_scores_multitarget.csv', header=None).values
+        cls.train_coords = cls.features[:30, :2]  # First 2 features as coordinates
+        cls.test_coords = cls.features[30:, :2]   # Last 20 samples for testing
+        cls.train_targets = cls.targets[:30]       # Training targets
+        cls.test_targets = cls.targets[30:]        # Test targets
+
     def setUp(self):
-        """Set up test environment with mock models and embeddings."""
+        """Set up test environment with real test artifacts."""
         self.temp_dir = tempfile.TemporaryDirectory()
         self.model_path = Path(self.temp_dir.name) / "trained_models"
         self.model_path.mkdir(exist_ok=True)
@@ -138,61 +150,75 @@ class TestInferenceStageEnsemblePrediction(unittest.TestCase):
         self.temp_dir.cleanup()
 
     def test_predict_with_ensemble_models(self):
-        """Test prediction with multiple ensemble models."""
+        """Test prediction with multiple ensemble models using real data."""
         stage = InferenceStage(self.config)
         
-        # Mock embeddings (output from UMAP transformation)
-        embeddings = np.random.rand(50, 2)  # 50 samples, 2D embeddings
+        # Use real test coordinates as embeddings
+        embeddings = self.test_coords  # 20 samples, 2D coordinates
         
-        # Mock trained models with prediction models
-        mock_models = {
+        # Create realistic mock models that behave like trained sklearn models
+        from sklearn.ensemble import RandomForestRegressor
+        from sklearn.linear_model import Ridge
+        
+        # Train simple models on training data for realistic behavior
+        rf_model = RandomForestRegressor(n_estimators=5, random_state=42)
+        ridge_model = Ridge(random_state=42)
+        
+        rf_model.fit(self.train_coords, self.train_targets[:, 0])  # First target
+        ridge_model.fit(self.train_coords, self.train_targets[:, 0])
+        
+        # Create models structure with real trained models
+        models = {
             'umap_model': MagicMock(),
             'prediction_models': [
-                {'model': MagicMock(), 'name': 'model_1', 'score': 0.85},
-                {'model': MagicMock(), 'name': 'model_2', 'score': 0.78}
+                {'model': rf_model, 'name': 'random_forest', 'score': 0.85},
+                {'model': ridge_model, 'name': 'ridge', 'score': 0.78}
             ],
             'metadata': {}
         }
         
-        # Configure mock predictions (must match number of input samples)
-        mock_models['prediction_models'][0]['model'].predict.return_value = np.random.rand(50)
-        mock_models['prediction_models'][1]['model'].predict.return_value = np.random.rand(50)
+        # Test prediction with real trained models
+        predictions = stage._predict(embeddings, models)
         
-        # Test prediction
-        predictions = stage._predict(embeddings, mock_models)
-        
-        # Verify prediction structure
+        # Verify prediction structure (target_results format)
         self.assertIsInstance(predictions, dict)
-        self.assertIn('ensemble_predictions', predictions)
-        self.assertIn('individual_predictions', predictions)
-        self.assertIn('confidence_scores', predictions)
+        self.assertIn('target_results', predictions)
+        self.assertIn('target_0', predictions['target_results'])
         
-        # Verify ensemble predictions shape
-        ensemble_pred = predictions['ensemble_predictions']
-        self.assertEqual(len(ensemble_pred), 50)  # Same as input embeddings
+        target_0_result = predictions['target_results']['target_0']
+        self.assertIn('ensemble_predictions', target_0_result)
+        self.assertIn('confidence_scores', target_0_result)
+        
+        # Verify ensemble predictions shape matches input
+        ensemble_pred = target_0_result['ensemble_predictions']
+        self.assertEqual(len(ensemble_pred), len(embeddings))  # Same as input embeddings
         
     def test_predict_with_confidence_scoring(self):
-        """Test that prediction includes confidence scores."""
+        """Test that prediction includes confidence scores using real models."""
         stage = InferenceStage(self.config)
-        embeddings = np.random.rand(10, 2)
+        embeddings = self.test_coords[:10]  # First 10 test samples
         
-        mock_models = {
+        # Create a real model that supports confidence scoring
+        from sklearn.ensemble import RandomForestRegressor
+        
+        rf_model = RandomForestRegressor(n_estimators=5, random_state=42)
+        rf_model.fit(self.train_coords, self.train_targets[:, 0])
+        
+        models = {
             'prediction_models': [
-                {'model': MagicMock(), 'name': 'model_1', 'score': 0.90}
+                {'model': rf_model, 'name': 'random_forest', 'score': 0.90}
             ]
         }
         
-        # Mock prediction with confidence
-        mock_models['prediction_models'][0]['model'].predict.return_value = np.random.rand(10)
-        if hasattr(mock_models['prediction_models'][0]['model'], 'predict_proba'):
-            mock_models['prediction_models'][0]['model'].predict_proba.return_value = np.random.rand(10, 2)
+        predictions = stage._predict(embeddings, models)
         
-        predictions = stage._predict(embeddings, mock_models)
-        
-        # Verify confidence scores are included
-        self.assertIn('confidence_scores', predictions)
-        confidence = predictions['confidence_scores']
-        self.assertEqual(len(confidence), 10)  # One per sample
+        # Verify confidence scores are included in target_results structure
+        self.assertIn('target_results', predictions)
+        self.assertIn('target_0', predictions['target_results'])
+        target_0_result = predictions['target_results']['target_0']
+        self.assertIn('confidence_scores', target_0_result)
+        confidence = target_0_result['confidence_scores']
+        self.assertEqual(len(confidence), len(embeddings))  # One per sample
         
     def test_predict_handles_empty_prediction_models(self):
         """Test error handling when no prediction models are available."""
@@ -223,8 +249,19 @@ class TestInferenceStageEnsemblePrediction(unittest.TestCase):
 class TestInferenceStageResultFormatting(unittest.TestCase):
     """Test inference result formatting and output functionality."""
 
+    @classmethod
+    def setup_class(cls):
+        """Load real test data for validation."""
+        project_root = Path(__file__).parent.parent.parent
+        cls.features = pd.read_csv(project_root / 'test_data/features.csv', header=None).values
+        cls.targets = pd.read_csv(project_root / 'test_data/regression_scores_multitarget.csv', header=None).values
+        cls.train_coords = cls.features[:30, :2]  # First 2 features as coordinates
+        cls.test_coords = cls.features[30:, :2]   # Last 20 samples for testing
+        cls.train_targets = cls.targets[:30]       # Training targets
+        cls.test_targets = cls.targets[30:]        # Test targets
+
     def setUp(self):
-        """Set up test environment with mock complete pipeline."""
+        """Set up test environment with real test setup."""
         self.temp_dir = tempfile.TemporaryDirectory()
         self.model_path = Path(self.temp_dir.name) / "trained_models"
         self.model_path.mkdir(exist_ok=True)
@@ -248,11 +285,18 @@ class TestInferenceStageResultFormatting(unittest.TestCase):
         """Test that result formatting includes detailed performance breakdown."""
         stage = InferenceStage(self.config)
         
-        # Mock prediction results
+        # Create real prediction results using correct target_results structure
         predictions = {
-            'ensemble_predictions': np.array([0.5, 0.7, 0.3]),
-            'individual_predictions': {'model_1': np.array([0.4, 0.8, 0.2])},
-            'confidence_scores': np.array([0.9, 0.8, 0.7]),
+            'target_results': {
+                'target_0': {
+                    'ensemble_predictions': np.array([0.5, 0.7, 0.3]),
+                    'individual_predictions': {'model_1': np.array([0.4, 0.8, 0.2])},
+                    'confidence_scores': np.array([0.9, 0.8, 0.7]),
+                    'model_count': 1,
+                    'model_names': ['model_1']
+                }
+            },
+            'target_count': 1,
             'model_count': 1,
             'model_names': ['model_1']
         }
@@ -271,13 +315,14 @@ class TestInferenceStageResultFormatting(unittest.TestCase):
         
         # Verify result structure
         self.assertIsInstance(formatted_results, dict)
-        self.assertIn('predictions', formatted_results)
+        self.assertIn('target_results', formatted_results)  # Updated expectation
         self.assertIn('performance_breakdown', formatted_results)
         self.assertIn('metadata', formatted_results)
+        self.assertEqual(formatted_results['metadata']['mode'], 'inference')
         
-        # Verify performance breakdown
+        # Verify performance breakdown (using actual key names from the output)
         perf = formatted_results['performance_breakdown']
-        self.assertIn('data_load_ms', perf)
+        self.assertIn('data_load_ms', perf)  # Actual key names from output
         self.assertIn('transform_ms', perf)
         self.assertIn('prediction_ms', perf)
         self.assertIn('total_ms', perf)
@@ -287,12 +332,20 @@ class TestInferenceStageResultFormatting(unittest.TestCase):
         """Test that result saving creates proper output files."""
         stage = InferenceStage(self.config)
         
-        # Mock formatted results
+        # Create properly formatted results with target_results structure
         results = {
-            'predictions': np.array([0.5, 0.7, 0.3]),
-            'confidence_scores': np.array([0.9, 0.8, 0.7]),
-            'performance_breakdown': {'total_ms': 200.0},
-            'metadata': {'mode': 'inference', 'samples_processed': 3}
+            'target_results': {
+                'target_0': {
+                    'ensemble_predictions': np.array([0.5, 0.7, 0.3]),
+                    'confidence_scores': np.array([0.9, 0.8, 0.7])
+                }
+            },
+            'predictions': np.array([0.5, 0.7, 0.3]),  # Add this key that _save_results expects
+            'performance_breakdown': {'total_duration_ms': 200.0},
+            'metadata': {
+                'mode': 'inference',
+                'samples_processed': 3
+            }
         }
         
         # Test result saving with default CSV format
@@ -326,10 +379,14 @@ class TestInferenceStageResultFormatting(unittest.TestCase):
         """Test result formatting includes validation metrics when available."""
         stage = InferenceStage(self.config)
         
-        # Mock prediction results for validation mode
+        # Create prediction results with correct target_results structure
         predictions = {
-            'ensemble_predictions': np.array([0.5, 0.7, 0.3]),
-            'confidence_scores': np.array([0.9, 0.8, 0.7])
+            'target_results': {
+                'target_0': {
+                    'ensemble_predictions': np.array([0.5, 0.7, 0.3]),
+                    'confidence_scores': np.array([0.9, 0.8, 0.7])
+                }
+            }
         }
         
         # Mock validation metrics
@@ -357,8 +414,19 @@ class TestInferenceStageResultFormatting(unittest.TestCase):
 class TestInferenceStageCSVOutput(unittest.TestCase):
     """Test CSV output format functionality."""
 
+    @classmethod
+    def setup_class(cls):
+        """Load real test data for validation."""
+        project_root = Path(__file__).parent.parent.parent
+        cls.features = pd.read_csv(project_root / 'test_data/features.csv', header=None).values
+        cls.targets = pd.read_csv(project_root / 'test_data/regression_scores_multitarget.csv', header=None).values
+        cls.train_coords = cls.features[:30, :2]  # First 2 features as coordinates
+        cls.test_coords = cls.features[30:, :2]   # Last 20 samples for testing
+        cls.train_targets = cls.targets[:30]       # Training targets
+        cls.test_targets = cls.targets[30:]        # Test targets
+
     def setUp(self):
-        """Set up test environment with mock complete pipeline."""
+        """Set up test environment with real test setup."""
         self.temp_dir = tempfile.TemporaryDirectory()
         self.model_path = Path(self.temp_dir.name) / "trained_models"
         self.model_path.mkdir(exist_ok=True)
@@ -382,14 +450,19 @@ class TestInferenceStageCSVOutput(unittest.TestCase):
         """Test that result saving creates CSV files by default."""
         stage = InferenceStage(self.config)
         
-        # Mock formatted results with sample data
+        # Create properly formatted results with target_results structure
         results = {
-            'predictions': np.array([0.5, 0.7, 0.3]),
-            'confidence_scores': np.array([0.9, 0.8, 0.7]),
-            'individual_predictions': {
-                'model_1': np.array([0.4, 0.8, 0.2]),
-                'model_2': np.array([0.6, 0.6, 0.4])
+            'target_results': {
+                'target_0': {
+                    'ensemble_predictions': np.array([0.5, 0.7, 0.3]),
+                    'confidence_scores': np.array([0.9, 0.8, 0.7]),
+                    'individual_predictions': {
+                        'model_1': np.array([0.4, 0.8, 0.2]),
+                        'model_2': np.array([0.6, 0.6, 0.4])
+                    }
+                }
             },
+            'predictions': np.array([0.5, 0.7, 0.3]),  # Still needed for _save_results
             'performance_breakdown': {'total_ms': 200.0},
             'metadata': {'mode': 'inference', 'samples_processed': 3}
         }
@@ -399,29 +472,33 @@ class TestInferenceStageCSVOutput(unittest.TestCase):
         
         # Verify CSV files were created
         self.assertIn('predictions_csv', output_paths)
-        self.assertIn('confidence_csv', output_paths)
+        self.assertIn('metadata_file', output_paths)
         
         # Verify CSV files exist and have correct extension
         predictions_csv = Path(output_paths['predictions_csv'])
-        confidence_csv = Path(output_paths['confidence_csv'])
+        metadata_file = Path(output_paths['metadata_file'])
         
         self.assertTrue(predictions_csv.exists())
-        self.assertTrue(confidence_csv.exists())
+        self.assertTrue(metadata_file.exists())
         self.assertEqual(predictions_csv.suffix, '.csv')
-        self.assertEqual(confidence_csv.suffix, '.csv')
 
     def test_save_results_csv_format_matches_training_scores(self):
         """Test that CSV format is consistent with training scores format."""
         stage = InferenceStage(self.config)
         
-        # Mock results with multiple samples and models
+        # Create results with proper target_results structure  
         results = {
-            'predictions': np.array([0.5, 0.7, 0.3, 0.8]),
-            'confidence_scores': np.array([0.9, 0.8, 0.7, 0.85]),
-            'individual_predictions': {
-                'model_rf': np.array([0.4, 0.8, 0.2, 0.9]),
-                'model_gb': np.array([0.6, 0.6, 0.4, 0.7])
+            'target_results': {
+                'target_0': {
+                    'ensemble_predictions': np.array([0.5, 0.7, 0.3, 0.8]),
+                    'confidence_scores': np.array([0.9, 0.8, 0.7, 0.85]),
+                    'individual_predictions': {
+                        'model_rf': np.array([0.4, 0.8, 0.2, 0.9]),
+                        'model_gb': np.array([0.6, 0.6, 0.4, 0.7])
+                    }
+                }
             },
+            'predictions': np.array([0.5, 0.7, 0.3, 0.8]),  # Still needed for _save_results
             'performance_breakdown': {'total_ms': 150.0},
             'metadata': {
                 'mode': 'inference', 
@@ -437,14 +514,14 @@ class TestInferenceStageCSVOutput(unittest.TestCase):
         import pandas as pd
         predictions_df = pd.read_csv(output_paths['predictions_csv'])
         
-        # Verify CSV has proper structure similar to training scores
+        # Verify CSV has proper structure (target-prefixed columns)
         self.assertIn('sample_id', predictions_df.columns)
-        self.assertIn('ensemble_prediction', predictions_df.columns)
-        self.assertIn('confidence_score', predictions_df.columns)
+        self.assertIn('target_0_ensemble_prediction', predictions_df.columns)
+        self.assertIn('target_0_confidence_score', predictions_df.columns)
         
-        # Verify individual model columns are present
+        # Verify individual model columns are present (with target prefix)
         for model_name in results['metadata']['model_names']:
-            self.assertIn(model_name, predictions_df.columns)
+            self.assertIn(f'target_0_{model_name}', predictions_df.columns)
         
         # Verify correct number of rows
         self.assertEqual(len(predictions_df), 4)
@@ -476,8 +553,19 @@ class TestInferenceStageCSVOutput(unittest.TestCase):
 class TestInferenceStageIntegration(unittest.TestCase):
     """Integration tests for InferenceStage with realistic model artifacts."""
 
+    @classmethod
+    def setup_class(cls):
+        """Load real test data for validation."""
+        project_root = Path(__file__).parent.parent.parent
+        cls.features = pd.read_csv(project_root / 'test_data/features.csv', header=None).values
+        cls.targets = pd.read_csv(project_root / 'test_data/regression_scores_multitarget.csv', header=None).values
+        cls.train_coords = cls.features[:30, :2]  # First 2 features as coordinates
+        cls.test_coords = cls.features[30:, :2]   # Last 20 samples for testing
+        cls.train_targets = cls.targets[:30]       # Training targets
+        cls.test_targets = cls.targets[30:]        # Test targets
+
     def setUp(self):
-        """Set up test environment with mock model artifacts."""
+        """Set up test environment with real test setup."""
         self.temp_dir = tempfile.TemporaryDirectory()
         self.model_path = Path(self.temp_dir.name) / "trained_models"
         self.model_path.mkdir(exist_ok=True)
@@ -708,8 +796,8 @@ class TestInferenceStageIntegration(unittest.TestCase):
                 'metadata': {}
             }
         
-        # Create test features and provide through context
-        test_features = np.random.rand(5, 20)
+        # Create test features using real test data
+        test_features = self.test_coords[:5]  # Use first 5 test samples (real coordinates)
         stage._load_trained_models_with_context = lambda ctx: mock_load_models()
         
         context = {
@@ -718,9 +806,9 @@ class TestInferenceStageIntegration(unittest.TestCase):
         }
         results = stage.run(context)
         
-        # Verify confidence scores are computed
-        prediction_details = results['prediction_details']
-        confidence_scores = prediction_details['confidence_scores']
+        # Verify confidence scores are computed (in target_results structure)
+        target_results = results['target_results']['target_0']
+        confidence_scores = target_results['confidence_scores']
         
         self.assertEqual(len(confidence_scores), 5)
         

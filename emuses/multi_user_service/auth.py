@@ -6,7 +6,7 @@ user management logic, token handling, and role-based access control.
 
 import logging
 import os
-from typing import Optional, Type
+from typing import Optional
 
 from fastapi import Depends, Request, Response
 from fastapi_users import BaseUserManager, FastAPIUsers, UUIDIDMixin
@@ -15,15 +15,91 @@ from fastapi_users.authentication import (AuthenticationBackend,
 from fastapi_users.db import SQLAlchemyUserDatabase
 
 from emuses.multi_user_service.database import get_async_session
-from emuses.multi_user_service.models import User, UserSettings
+from emuses.multi_user_service.models import User
 
 logger = logging.getLogger(__name__)
+
+
+class VaultError(Exception):
+    """Custom exception for Vault-related errors."""
+    pass
 
 # Authentication configuration
 
 
+def vault_configured() -> bool:
+    """Detect if HashiCorp Vault is properly configured.
+
+    Returns
+    -------
+    bool
+        True if Vault is configured with appropriate authentication
+    """
+    vault_addr = os.getenv("VAULT_ADDR")
+    if not vault_addr:
+        return False
+
+    # Check for token authentication
+    vault_token = os.getenv("VAULT_TOKEN")
+    if vault_token:
+        return True
+
+    # Check for AppRole authentication
+    vault_role_id = os.getenv("VAULT_ROLE_ID")
+    vault_secret_id = os.getenv("VAULT_SECRET_ID")
+    if vault_role_id and vault_secret_id:
+        return True
+
+    return False
+
+
+def _get_secret_from_vault(secret_name: str) -> Optional[str]:
+    """Retrieve specific secret from HashiCorp Vault.
+
+    Parameters
+    ----------
+    secret_name : str
+        Name of the secret to retrieve
+
+    Returns
+    -------
+    Optional[str]
+        Secret value if successful, None if failed
+    """
+    try:
+        import hvac
+
+        vault_addr = os.getenv("VAULT_ADDR")
+        vault_token = os.getenv("VAULT_TOKEN")
+        vault_path = os.getenv("EMUSES_VAULT_SECRET_PATH", "secret/emuses")
+
+        client = hvac.Client(url=vault_addr, token=vault_token)
+
+        if not client.is_authenticated():
+            raise VaultError("Vault authentication failed")
+
+        # Read secret from KV v2 engine
+        response = client.secrets.kv.v2.read_secret_version(path=vault_path)
+        secrets = response['data']['data']
+
+        return secrets.get(secret_name)
+
+    except ImportError:
+        logger.error("hvac package not installed. Install with: pip install hvac")
+        return None
+    except Exception as e:
+        logger.error(f"Vault secret retrieval failed: {e}")
+        return None
+
+
 def get_jwt_secret() -> str:
-    """Get JWT secret from environment with validation.
+    """Enhanced JWT secret retrieval with multi-source support.
+
+    Priority order:
+    1. HashiCorp Vault (enterprise)
+    2. Secure file (production)
+    3. Environment variable (development)
+    4. Development default (local only)
 
     Returns
     -------
@@ -33,18 +109,46 @@ def get_jwt_secret() -> str:
     Raises
     ------
     ValueError
-        If EMUSES_JWT_SECRET is missing in non-local deployment modes
+        If no JWT secret is configured in non-local deployment modes
     """
-    jwt_secret = os.getenv("EMUSES_JWT_SECRET")
-    if not jwt_secret:
-        deployment_mode = os.getenv("EMUSES_DEPLOYMENT_MODE", "local")
-        if deployment_mode != "local":
-            raise ValueError(
-                "EMUSES_JWT_SECRET environment variable is required for multi-user deployment"
-            )
-        # Use development secret for local mode
-        jwt_secret = "development-secret-key-change-in-production"
-    return jwt_secret
+    # 1. Try Vault first (enterprise)
+    if vault_configured():
+        try:
+            vault_secret = _get_secret_from_vault("jwt_secret")
+            if vault_secret:
+                logger.info("JWT secret loaded from HashiCorp Vault")
+                return vault_secret
+        except VaultError as e:
+            logger.warning(f"Vault configured but retrieval failed: {e}")
+
+    # 2. Try secure file (production)
+    secret_file = os.getenv("EMUSES_JWT_SECRET_FILE")
+    if secret_file and os.path.exists(secret_file):
+        try:
+            with open(secret_file, 'r') as f:
+                file_secret = f.read().strip()
+                if file_secret:
+                    logger.info("JWT secret loaded from secure file")
+                    return file_secret
+        except IOError as e:
+            logger.warning(f"Secret file configured but unreadable: {e}")
+
+    # 3. Environment variable (compatibility)
+    env_secret = os.getenv("EMUSES_JWT_SECRET")
+    if env_secret:
+        logger.warning("JWT secret loaded from environment variable (less secure)")
+        return env_secret
+
+    # 4. Development default (local only)
+    deployment_mode = os.getenv("EMUSES_DEPLOYMENT_MODE", "local")
+    if deployment_mode == "local":
+        logger.warning("Using development JWT secret - configure secure secret for production")
+        return "development-secret-key-change-in-production"
+
+    raise ValueError(
+        "No JWT secret configured. Configure Vault (VAULT_ADDR + VAULT_TOKEN), "
+        "file (EMUSES_JWT_SECRET_FILE), or environment variable (EMUSES_JWT_SECRET)"
+    )
 
 
 TOKEN_LIFETIME_SECONDS = int(os.getenv("JWT_TOKEN_LIFETIME", "3600"))  # 1 hour default

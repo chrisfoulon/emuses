@@ -124,11 +124,12 @@ models_app = typer.Typer(
 def install(
     model_path: Annotated[Path, typer.Argument(help="Path to model file or directory")],
     name: Annotated[Optional[str], typer.Option("--name", "-n", help="Custom name for the model")] = None,
-    registry_path: Annotated[Optional[Path], typer.Option("--registry", "-r", help="Custom registry path")] = None
+    registry_path: Annotated[Optional[Path], typer.Option("--registry", "-r", help="Custom registry path")] = None,
+    force: Annotated[bool, typer.Option("--force", help="Force installation bypassing duplicate detection")] = False
 ) -> None:
-    """Install a model into the local registry.
+    """Install a model into the local registry with enhanced complete model support.
 
-    Validates the model, installs it using ModelIOManager, and adds it to the registry index.
+    Automatically detects complete EMUSES models and provides intelligent duplicate handling.
 
     Parameters
     ----------
@@ -138,6 +139,8 @@ def install(
         Custom name for the model. If not provided, uses name from manifest.
     registry_path : Path, optional
         Custom registry location. If not provided, uses default location.
+    force : bool, optional
+        Force installation bypassing duplicate detection.
     """
     try:
         # Validate and resolve paths
@@ -151,13 +154,29 @@ def install(
 
         console.print(f"Installing model from [cyan]{model_path}[/cyan]...")
 
-        # Install model using local registry (simplified for CLI)
-        result = registry.install_model(model_path, name=name)
+        # Try installing with deduplication (Phase 2 functionality) first
+        if hasattr(registry, 'install_model_with_deduplication'):
+            result = registry.install_model_with_deduplication(
+                model_path=model_path, 
+                model_name=name,
+                force=force
+            )
+        else:
+            # Fallback to standard installation for backward compatibility
+            result = registry.install_model(model_path, name=name)
 
         if result["status"] == "success":
             model_name = result.get('name', 'Unknown')
             model_id = result.get('model_id', 'Unknown')
-            console.print(f"✅ Successfully installed model '[green]{model_name}[/green]' with ID [blue]{model_id}[/blue]")
+            model_type = result.get('model_type', 'unknown')
+            
+            if model_type == "emuses_model":
+                console.print(f"✅ EMUSES model installed successfully")
+            else:
+                console.print(f"✅ Successfully installed model")
+                
+            console.print(f"   Name: '[green]{model_name}[/green]'")
+            console.print(f"   ID: [blue]{model_id}[/blue]")
 
             # Display storage warning if present
             if "storage_warning" in result:
@@ -172,6 +191,31 @@ def install(
                     console.print(f"   • Registry size: [cyan]{warning['registry_size_mb']:.1f} MB[/cyan]")
                     console.print(f"   • Available space: [yellow]{warning['available_space_mb']:.1f} MB[/yellow]")
                     console.print("   Monitor disk usage to prevent storage issues.")
+
+        elif result["status"] == "duplicate_detected":
+            # Handle duplicate detection interactively
+            duplicate_info = result.get("duplicate_info", {})
+            similar_models = duplicate_info.get("similar_models", [])
+            
+            console.print(f"⚠️ [yellow]Potential duplicate detected![/yellow]")
+            for similar in similar_models:
+                similarity = similar.get("similarity", 0)
+                console.print(f"   Similar to: [cyan]{similar['model_id']}[/cyan] ({similarity*100:.1f}% similar)")
+            
+            if not force and typer.confirm("Install anyway?"):
+                # Retry with force=True
+                result = registry.install_model_with_deduplication(
+                    model_path=model_path,
+                    model_name=name,
+                    force=True
+                )
+                if result["status"] == "success":
+                    model_name = result.get('name', 'Unknown')
+                    model_id = result.get('model_id', 'Unknown')
+                    console.print(f"✅ Model '[green]{model_name}[/green]' installed with ID [blue]{model_id}[/blue] (duplicates bypassed)")
+            else:
+                console.print("Installation cancelled.")
+                return
         else:
             console.print(f"❌ Installation failed: [red]{result['message']}[/red]")
             raise typer.Exit(1)
@@ -227,20 +271,34 @@ def list(
                 console.print("No models found in registry.")
             return
 
-        # Create and display table
+        # Create and display table with complete model status
         table = Table(title=f"Model Registry ({len(models)} models)")
         table.add_column("Name", style="cyan")
-        table.add_column("Version", style="green")
+        table.add_column("Version", style="green") 
         table.add_column("Type", style="yellow")
+        table.add_column("Status", style="bright_white")
         table.add_column("Description", style="dim")
         table.add_column("Model ID", style="blue")
 
         for model in models:
+            # Determine model status for complete models
+            complete_model_info = model.get("complete_model_info", {})
+            is_complete = complete_model_info.get("is_complete_model", False)
+            missing_components = complete_model_info.get("missing_components", [])
+            
+            if is_complete:
+                status = "✅ Complete"
+            elif missing_components:
+                status = "⚠️ Incomplete"
+            else:
+                status = "—"  # Standard individual component
+                
             table.add_row(
                 model.get("name", "Unknown"),
                 model.get("version", "Unknown"),
                 model.get("type", "Unknown"),
-                model.get("description", "")[:50] + ("..." if len(model.get("description", "")) > 50 else ""),
+                status,
+                model.get("description", "")[:40] + ("..." if len(model.get("description", "")) > 40 else ""),
                 model.get("model_id", "Unknown")
             )
 
@@ -279,8 +337,15 @@ def info(
             console.print(f"❌ Model with ID '[red]{model_id}[/red]' not found")
             raise typer.Exit(1)
 
-        # Display detailed information
-        console.print(f"\n[bold cyan]Model Information[/bold cyan]")
+        # Check if this is a complete model and display accordingly
+        complete_model_info = model_info.get("complete_model_info", {})
+        is_complete = complete_model_info.get("is_complete_model", False)
+        
+        if is_complete:
+            console.print(f"\n[bold cyan]Complete EMUSES Model Information[/bold cyan]")
+        else:
+            console.print(f"\n[bold cyan]Model Information[/bold cyan]")
+            
         console.print(f"Name: [green]{model_info.get('name', 'Unknown')}[/green]")
         console.print(f"Model ID: [blue]{model_info.get('model_id', 'Unknown')}[/blue]")
         console.print(f"Version: [yellow]{model_info.get('version', 'Unknown')}[/yellow]")
@@ -289,18 +354,118 @@ def info(
         console.print(f"Installed: [dim]{model_info.get('installed_at', 'Unknown')}[/dim]")
         console.print(f"Source Path: [dim]{model_info.get('source_path', 'Unknown')}[/dim]")
 
+        # Display complete model specific information
+        if is_complete and complete_model_info:
+            console.print(f"\n[bold]Complete Model Details:[/bold]")
+            
+            components = complete_model_info.get("components_found", {})
+            if components:
+                console.print(f"\n[bold green]Components Found:[/bold green]")
+                for comp_type, comp_info in components.items():
+                    console.print(f"  ✅ [cyan]{comp_type.upper()} Component[/cyan]")
+                    if isinstance(comp_info, dict):
+                        if "file_path" in comp_info:
+                            console.print(f"     Path: [dim]{comp_info['file_path']}[/dim]")
+                        if "size" in comp_info:
+                            size_mb = comp_info['size'] / (1024 * 1024)
+                            console.print(f"     Size: [yellow]{size_mb:.2f} MB[/yellow]")
+            
+            missing_components = complete_model_info.get("missing_components", [])
+            if missing_components:
+                console.print(f"\n[bold red]Missing Components:[/bold red]")
+                for missing in missing_components:
+                    console.print(f"  ❌ [red]{missing.upper()}[/red]")
+            
+            # Display hash information
+            if "configuration_hash" in complete_model_info:
+                console.print(f"\nConfiguration Hash: [dim]{complete_model_info['configuration_hash']}[/dim]")
+            if "content_hash" in complete_model_info:
+                console.print(f"Content Hash: [dim]{complete_model_info['content_hash']}[/dim]")
+
         # Display tags if available
         tags = model_info.get("tags", [])
         if tags:
-            console.print(f"Tags: [cyan]{', '.join(tags)}[/cyan]")
+            console.print(f"\nTags: [cyan]{', '.join(tags)}[/cyan]")
 
-        # Display manifest info if available
+        # Display enhanced manifest info if available
         manifest = model_info.get("manifest", {})
-        if manifest and isinstance(manifest, dict):
+        enhanced_manifest = {}
+        
+        # Try to load enhanced manifest from the model's source path
+        if "source_path" in model_info:
+            try:
+                import json
+                from pathlib import Path
+                manifest_path = Path(model_info["source_path"]) / "model_manifest.json"
+                if manifest_path.exists():
+                    with open(manifest_path, 'r') as f:
+                        enhanced_manifest = json.load(f)
+            except Exception:
+                pass  # Fall back to basic manifest
+        
+        # Combine basic manifest with enhanced data
+        all_manifest_data = {**manifest, **enhanced_manifest}
+        
+        if all_manifest_data and isinstance(all_manifest_data, dict):
             console.print(f"\n[bold]Manifest Details:[/bold]")
-            for key, value in manifest.items():
-                if key not in ["name", "version", "type", "description"]:  # Skip already displayed
-                    console.print(f"  {key}: {value}")
+            
+            # Skip basic fields that are already displayed
+            skip_keys = {"name", "version", "type", "description", "compatibility", 
+                        "created_at", "emuses_version", "file_integrity", "model_type"}
+            
+            for key, value in all_manifest_data.items():
+                if key not in skip_keys:
+                    if key == "component_configuration":
+                        console.print(f"  [cyan]Component Configuration:[/cyan]")
+                        if isinstance(value, dict):
+                            for component, params in value.items():
+                                if isinstance(params, dict):
+                                    param_str = ", ".join([f"{k}={v}" for k, v in params.items()])
+                                    console.print(f"    {component.upper()}: {param_str}")
+                                else:
+                                    console.print(f"    {component}: {params}")
+                    elif key == "performance_metrics":
+                        console.print(f"  [cyan]Performance Metrics:[/cyan]")
+                        if isinstance(value, dict):
+                            if "optimization" in value:
+                                opt = value["optimization"]
+                                if "composite_score" in opt:
+                                    console.print(f"    Composite Score: {opt['composite_score']:.4f}")
+                            if "prediction" in value and value["prediction"]["targets"] != ["Not Found"]:
+                                console.print(f"    Prediction Targets: {len(value['prediction']['targets'])}")
+                                for target in value["prediction"]["targets"][:3]:  # Show first 3
+                                    if isinstance(target, dict):
+                                        console.print(f"      Target {target['target_id']}: CV {target.get('avg_cv_score', 'N/A'):.4f} ({target.get('cv_folds', 'N/A')} folds)")
+                                if len(value["prediction"]["targets"]) > 3:
+                                    console.print(f"      ... and {len(value['prediction']['targets'])-3} more")
+                    elif key == "file_statistics":
+                        console.print(f"  [cyan]File Statistics:[/cyan]")
+                        if isinstance(value, dict):
+                            console.print(f"    Total Size: {value.get('total_size_mb', 'N/A')} MB")
+                            console.print(f"    Total Files: {value.get('file_count', 'N/A')}")
+                            if "components" in value:
+                                comp = value["components"]
+                                if "prediction_targets" in comp:
+                                    console.print(f"    Prediction Models: {comp.get('prediction_models_mb', 'N/A')} MB ({comp.get('prediction_targets', 'N/A')} targets)")
+                    elif key == "training_context":
+                        console.print(f"  [cyan]Training Context:[/cyan]")
+                        if isinstance(value, dict):
+                            if "dataset" in value and value["dataset"] != "Not Found":
+                                dataset_name = str(value["dataset"]).split("/")[-1] if "/" in str(value["dataset"]) else value["dataset"]
+                                console.print(f"    Dataset: {dataset_name}")
+                            if "training_date" in value and value["training_date"] != "Not Found":
+                                console.print(f"    Training Date: {value['training_date']}")
+                            if "optimization_config" in value:
+                                opt_cfg = value["optimization_config"]
+                                trials_info = []
+                                for trial_type, count in opt_cfg.items():
+                                    if count != "Not Found":
+                                        trials_info.append(f"{trial_type.replace('_', ' ').title()}: {count}")
+                                if trials_info:
+                                    console.print(f"    Optimization: {', '.join(trials_info)}")
+                    else:
+                        # Display other fields as-is
+                        console.print(f"  {key}: {value}")
 
     except Exception as e:
         console.print(f"❌ Error getting model info: [red]{str(e)}[/red]")
@@ -842,4 +1007,105 @@ def storage(
 
     except Exception as e:
         console.print(f"❌ Error getting storage information: [red]{str(e)}[/red]")
+        raise typer.Exit(1)
+
+
+# REMOVED: components command (architectural violation)
+# The components command treated EMUSES models as collections of separable components,
+# which violates the EMUSES architecture. EMUSES models are complete folder units.
+# Use 'models info <model_id>' to get information about complete EMUSES folders.
+
+
+@models_app.command(help="Find and clean up duplicate models in the registry")
+def deduplicate(
+    registry_path: Annotated[Optional[Path], typer.Option("--registry", "-r", help="Custom registry path")] = None,
+    dry_run: Annotated[bool, typer.Option("--dry-run", help="Show duplicates without removing them")] = False
+) -> None:
+    """Find and clean up duplicate models to optimize storage usage.
+
+    Parameters
+    ----------
+    registry_path : Path, optional
+        Custom registry location. If not provided, uses default location.
+    dry_run : bool, default=False
+        If True, shows what would be removed without actually removing models
+    """
+    try:
+        if registry_path:
+            registry_path = Path(validate_path(str(registry_path)))
+
+        # Initialize registry
+        registry = LocalModelRegistry(registry_path=registry_path)
+
+        console.print("Scanning registry for duplicate models...")
+
+        # Find duplicate groups
+        try:
+            duplicate_groups = registry.find_duplicate_groups()
+        except AttributeError:
+            # If method not available, provide guidance
+            console.print("❌ Duplicate detection not available in this registry version")
+            console.print("   Update to latest version for duplicate detection capabilities")
+            raise typer.Exit(1)
+
+        if not duplicate_groups:
+            console.print("✅ No duplicate models found")
+            return
+
+        console.print(f"Found [yellow]{len(duplicate_groups)}[/yellow] duplicate groups")
+
+        total_duplicates = 0
+        total_space_savings = 0.0
+
+        for i, group in enumerate(duplicate_groups, 1):
+            primary_model = group.get("primary_model", "Unknown")
+            duplicates = group.get("duplicates", [])
+            similarity = group.get("similarity", 0.0)
+            
+            console.print(f"\n[bold]Group {i}:[/bold] {len(duplicates)} duplicates ({similarity*100:.1f}% similar)")
+            console.print(f"  Primary: [green]{primary_model}[/green] (keeping)")
+            
+            for duplicate in duplicates:
+                console.print(f"  Duplicate: [red]{duplicate}[/red] (would remove)")
+                total_duplicates += 1
+
+        if dry_run:
+            console.print(f"\n[yellow]DRY RUN MODE - No models will be removed[/yellow]")
+            console.print(f"Would remove [red]{total_duplicates}[/red] duplicate models")
+            return
+
+        # Ask for confirmation
+        if not typer.confirm(f"\nRemove {total_duplicates} duplicate models?"):
+            console.print("Deduplication cancelled.")
+            return
+
+        # Remove duplicates
+        console.print("Removing duplicate models...")
+        
+        removed_count = 0
+        for group in duplicate_groups:
+            try:
+                result = registry.remove_duplicate_group(group)
+                if result.get("status") == "success":
+                    removed_models = result.get("removed_models", 0)
+                    space_freed = result.get("space_freed_mb", 0.0)
+                    removed_count += removed_models
+                    total_space_savings += space_freed
+            except AttributeError:
+                # Fallback to removing individual models
+                duplicates = group.get("duplicates", [])
+                for duplicate_id in duplicates:
+                    remove_result = registry.remove_model(duplicate_id, cleanup_files=True)
+                    if remove_result.get("status") == "success":
+                        removed_count += 1
+
+        if removed_count > 0:
+            console.print(f"✅ Successfully removed [green]{removed_count}[/green] duplicate models")
+            if total_space_savings > 0:
+                console.print(f"   Space freed: [yellow]{total_space_savings:.1f} MB[/yellow]")
+        else:
+            console.print("⚠️ No models were removed")
+
+    except Exception as e:
+        console.print(f"❌ Error during deduplication: [red]{str(e)}[/red]")
         raise typer.Exit(1)

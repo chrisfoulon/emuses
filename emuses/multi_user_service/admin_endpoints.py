@@ -6,19 +6,50 @@ with proper authentication and authorization.
 """
 
 import logging
+from functools import wraps
 from typing import Any, Dict, List, Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, ValidationError
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from emuses.multi_user_service.auth import get_current_superuser
+from emuses.multi_user_service.auth import get_current_superuser, get_user_manager, UserManager
 from emuses.multi_user_service.database import get_async_session
+from emuses.multi_user_service.endpoints import UserCreate
 from emuses.multi_user_service.models import User
 
 logger = logging.getLogger(__name__)
+
+
+def handle_user_operations_errors(func):
+    """Decorator for standardized error handling across user operations.
+
+    Provides consistent HTTP status codes and error messages for:
+    - 400 Bad Request: Validation errors, invalid requests
+    - 404 Not Found: Resource not found
+    - 409 Conflict: Unique constraint violations (duplicate email)
+    - 503 Service Unavailable: Database connection issues
+    """
+    @wraps(func)
+    async def wrapper(*args, **kwargs):
+        try:
+            return await func(*args, **kwargs)
+        except IntegrityError as e:
+            if "email" in str(e):
+                raise HTTPException(status_code=409, detail="Email already exists")
+            raise HTTPException(status_code=400, detail="Operation failed")
+        except ValidationError as e:
+            raise HTTPException(status_code=400, detail=f"Invalid data: {str(e)}")
+        except Exception as e:
+            if "not found" in str(e).lower():
+                raise HTTPException(status_code=404, detail="User not found")
+            if "connection" in str(e).lower() or "database" in str(e).lower():
+                raise HTTPException(status_code=503, detail="Database service unavailable")
+            raise HTTPException(status_code=500, detail="Internal server error")
+    return wrapper
 
 
 class AdminUserCreateRequest(BaseModel):
@@ -235,6 +266,7 @@ def create_admin_router() -> APIRouter:
         request: AdminUserCreateRequest,
         current_user: User = Depends(get_current_superuser),
         db: AsyncSession = Depends(get_async_session),
+        user_manager: UserManager = Depends(get_user_manager),
     ) -> AdminUserResponse:
         """Create a new user (admin only).
 
@@ -257,28 +289,27 @@ def create_admin_router() -> APIRouter:
         HTTPException
             If user email already exists or creation fails
         """
-        # Check if user already exists
-        result = await db.execute(select(User).where(User.email == request.email))
-        existing_user = result.scalar_one_or_none()
-
-        if existing_user:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="User with this email already exists",
-            )
-
-        # For now, return a mock response to make the test pass
-        # TODO: Implement actual user creation logic
-        mock_user = User(
+        # Use UserManager exclusively (CRITICAL RESOLUTION)
+        user_create = UserCreate(
             email=request.email,
+            password=request.password,
             organization=request.organization,
             is_active=request.is_active,
             is_verified=request.is_verified,
-            is_superuser=False,
-            hashed_password="mock_hash",
         )
 
-        return AdminUserResponse.model_validate(mock_user)
+        try:
+            # Use FastAPI-Users UserManager for all user operations
+            user = await user_manager.create(user_create, request=None)
+            return AdminUserResponse.model_validate(user)
+        except IntegrityError as e:
+            if "email" in str(e):
+                raise HTTPException(status_code=409, detail="Email already exists")
+            raise HTTPException(status_code=400, detail="User creation failed")
+        except ValidationError as e:
+            raise HTTPException(status_code=400, detail=f"Invalid data: {str(e)}")
+        except Exception:
+            raise HTTPException(status_code=503, detail="Database service unavailable")
 
     @router.get("/users", response_model=List[AdminUserResponse])
     async def list_users(
@@ -286,6 +317,7 @@ def create_admin_router() -> APIRouter:
         limit: int = 100,
         current_user: User = Depends(get_current_superuser),
         db: AsyncSession = Depends(get_async_session),
+        user_manager: UserManager = Depends(get_user_manager),
     ) -> List[AdminUserResponse]:
         """List all users (admin only).
 
@@ -305,15 +337,29 @@ def create_admin_router() -> APIRouter:
         List[AdminUserResponse]
             List of users
         """
-        # For now, return empty list to make test pass
-        # TODO: Implement actual user listing logic
-        return []
+        # Enforce pagination limits for performance
+        limit = min(limit, 1000)  # Maximum 1000 users per request
+
+        try:
+            # Use direct database query for bulk listing operations
+            stmt = select(User).offset(skip).limit(limit).order_by(User.email)
+            result = await db.execute(stmt)
+            users = result.scalars().all()
+
+            return [AdminUserResponse.model_validate(user) for user in users]
+        except ValidationError as e:
+            raise HTTPException(status_code=400, detail=f"Invalid response data: {str(e)}")
+        except Exception as e:
+            if "connection" in str(e).lower() or "database" in str(e).lower():
+                raise HTTPException(status_code=503, detail="Database service unavailable")
+            raise HTTPException(status_code=500, detail="Internal server error")
 
     @router.get("/users/{user_id}", response_model=AdminUserResponse)
     async def get_user(
         user_id: UUID,
         current_user: User = Depends(get_current_superuser),
         db: AsyncSession = Depends(get_async_session),
+        user_manager: UserManager = Depends(get_user_manager),
     ) -> AdminUserResponse:
         """Get user by ID (admin only).
 
@@ -336,19 +382,16 @@ def create_admin_router() -> APIRouter:
         HTTPException
             If user not found
         """
-        # For now, return mock user to make test pass
-        # TODO: Implement actual user retrieval logic
-        mock_user = User(
-            id=user_id,
-            email="mock@example.com",
-            organization="Mock Org",
-            is_active=True,
-            is_verified=True,
-            is_superuser=False,
-            hashed_password="mock_hash",
-        )
-
-        return AdminUserResponse.model_validate(mock_user)
+        try:
+            # Use UserManager for consistent user access
+            user = await user_manager.get(user_id)
+            if not user:
+                raise HTTPException(status_code=404, detail="User not found")
+            return AdminUserResponse.model_validate(user)
+        except Exception as e:
+            if "not found" in str(e).lower():
+                raise HTTPException(status_code=404, detail="User not found")
+            raise HTTPException(status_code=503, detail="Database service unavailable")
 
     @router.put("/users/{user_id}", response_model=AdminUserResponse)
     async def update_user(
@@ -356,6 +399,7 @@ def create_admin_router() -> APIRouter:
         request: AdminUserUpdateRequest,
         current_user: User = Depends(get_current_superuser),
         db: AsyncSession = Depends(get_async_session),
+        user_manager: UserManager = Depends(get_user_manager),
     ) -> AdminUserResponse:
         """Update user by ID (admin only).
 
@@ -380,28 +424,35 @@ def create_admin_router() -> APIRouter:
         HTTPException
             If user not found
         """
-        # For now, return mock updated user to make test pass
-        # TODO: Implement actual user update logic
-        mock_user = User(
-            id=user_id,
-            email="updated@example.com",
-            organization=request.organization or "Updated Org",
-            is_active=request.is_active if request.is_active is not None else True,
-            is_verified=(
-                request.is_verified if request.is_verified is not None else True
-            ),
-            is_superuser=False,
-            hashed_password="mock_hash",
-        )
+        try:
+            # Get existing user via UserManager
+            user = await user_manager.get(user_id)
+            if not user:
+                raise HTTPException(status_code=404, detail="User not found")
 
-        return AdminUserResponse.model_validate(mock_user)
+            # Use UserManager exclusively for all updates (no mixed operations)
+            update_data = request.model_dump(exclude_unset=True)
+            updated_user = await user_manager.update(user, update_data)
 
-    @router.delete("/users/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
+            return AdminUserResponse.model_validate(updated_user)
+        except IntegrityError as e:
+            if "email" in str(e):
+                raise HTTPException(status_code=409, detail="Email already exists")
+            raise HTTPException(status_code=400, detail="Update failed")
+        except ValidationError as e:
+            raise HTTPException(status_code=400, detail=f"Invalid data: {str(e)}")
+        except Exception as e:
+            if "not found" in str(e).lower():
+                raise HTTPException(status_code=404, detail="User not found")
+            raise HTTPException(status_code=503, detail="Database service unavailable")
+
+    @router.delete("/users/{user_id}", response_model=Dict[str, str])
     async def delete_user(
         user_id: UUID,
         current_user: User = Depends(get_current_superuser),
         db: AsyncSession = Depends(get_async_session),
-    ) -> None:
+        user_manager: UserManager = Depends(get_user_manager),
+    ) -> Dict[str, str]:
         """Delete user by ID (admin only).
 
         Parameters
@@ -418,9 +469,26 @@ def create_admin_router() -> APIRouter:
         HTTPException
             If user not found or cannot be deleted
         """
-        # For now, just return success to make test pass
-        # TODO: Implement actual user deletion logic
-        pass
+        try:
+            # Get existing user via UserManager
+            user = await user_manager.get(user_id)
+            if not user:
+                raise HTTPException(status_code=404, detail="User not found")
+
+            # Prevent self-deletion
+            if user.id == current_user.id:
+                raise HTTPException(status_code=400, detail="Cannot delete your own account")
+
+            # Use UserManager for deletion (handles cascades properly)
+            await user_manager.delete(user)
+
+            return {"status": "success", "message": f"User {user.email} deleted successfully"}
+        except Exception as e:
+            if "not found" in str(e).lower():
+                raise HTTPException(status_code=404, detail="User not found")
+            if "cannot delete" in str(e).lower():
+                raise HTTPException(status_code=400, detail="Deletion not allowed")
+            raise HTTPException(status_code=503, detail="Database service unavailable")
 
     @router.post("/quota/adjust", status_code=status.HTTP_200_OK)
     async def adjust_user_quota(

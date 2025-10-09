@@ -18,6 +18,9 @@ optim_dict_predict = {
                 # classification path
                 "C": {"low": 0.01, "high": 100, "log": True},
                 "penalty": {"choices": ["l1", "l2"]},
+                # convergence parameters (configurable)
+                "max_iter": {"choices": [1000, 2000, 5000, 10000]},  # Allow up to 10k for difficult problems
+                "tol": {"choices": [1e-4, 1e-3, 1e-2]},              # Tolerance options
             },
         },
         "features": {
@@ -131,6 +134,9 @@ optim_dict_corr_pca = {
                 "l1_ratio": {"low": 0.0, "high": 1.0},
                 "C": {"low": 0.01, "high": 100, "log": True},
                 "penalty": {"choices": ["l1", "l2"]},
+                # convergence parameters (configurable)
+                "max_iter": {"choices": [1000, 2000, 5000, 10000]},  # Allow up to 10k for difficult problems
+                "tol": {"choices": [1e-4, 1e-3, 1e-2]},              # Tolerance options
             },
         },
         "features": {
@@ -197,6 +203,9 @@ optim_dict_ae = {
                 "l1_ratio": {"low": 0.0, "high": 1.0},
                 "C": {"low": 0.01, "high": 100, "log": True},
                 "penalty": {"choices": ["l1", "l2"]},
+                # convergence parameters (configurable)
+                "max_iter": {"choices": [1000, 2000, 5000, 10000]},  # Allow up to 10k for difficult problems
+                "tol": {"choices": [1e-4, 1e-3, 1e-2]},              # Tolerance options
             },
         },
         "features": {
@@ -230,6 +239,9 @@ optim_dict_raw_only = {
                 "l1_ratio": {"low": 0.0, "high": 1.0},
                 "C": {"low": 0.01, "high": 100, "log": True},
                 "penalty": {"choices": ["l1", "l2"]},
+                # convergence parameters (configurable)
+                "max_iter": {"choices": [1000, 2000, 5000, 10000]},  # Allow up to 10k for difficult problems
+                "tol": {"choices": [1e-4, 1e-3, 1e-2]},              # Tolerance options
             },
         },
         "features": {
@@ -315,6 +327,9 @@ quick_train_dict = {
                 "l1_ratio": {"low": 0.2, "high": 0.8},  # Avoid extremes
                 "C": {"low": 0.1, "high": 10, "log": True},  # Narrower range
                 "penalty": {"choices": ["l2"]},  # Only L2 for speed
+                # Fast convergence for quick training
+                "max_iter": {"choices": [500, 1000]},     # Lower values for speed
+                "tol": {"choices": [1e-3, 1e-2]},         # Higher tolerance for speed
             },
         },
         "features": {

@@ -258,7 +258,7 @@ class TestStorageIntegrationWithRegistry:
                     mock_io.validate_model.return_value = {"name": "test_model", "type": "test", "description": "Test model"}
                     mock_io.install_model.return_value = "test-model-id"
                     
-                    result = registry.install_model(model_file, name="test_model")
+                    result = registry.install_model(model_file, model_name="test_model")
                     
                     # Verify installation succeeded with storage warning
                     assert result["status"] == "success"
@@ -293,7 +293,7 @@ class TestStorageIntegrationWithRegistry:
                     mock_io.validate_model.return_value = {"name": "test_model", "type": "test", "description": "Test model"}
                     mock_io.install_model.return_value = "test-model-id"
                     
-                    result = registry.install_model(model_file, name="test_model")
+                    result = registry.install_model(model_file, model_name="test_model")
                     
                     # Verify installation succeeded but includes critical warning
                     assert result["status"] == "success"
@@ -320,7 +320,7 @@ class TestStorageIntegrationWithRegistry:
                     mock_io.validate_model.return_value = {"name": "test_model", "type": "test", "description": "Test model"}
                     mock_io.install_model.return_value = "test-model-id"
                     
-                    result = registry.install_model(model_file, name="test_model")
+                    result = registry.install_model(model_file, model_name="test_model")
                     
                     # Verify installation succeeded without storage warning
                     assert result["status"] == "success"
@@ -390,7 +390,7 @@ class TestStorageCLIIntegration:
                     mock_io.validate_model.return_value = {"name": "test_model", "type": "test", "description": "Test model"}
                     mock_io.install_model.return_value = "test-model-id"
                     
-                    result = registry.install_model(model_file, name="test_model")
+                    result = registry.install_model(model_file, model_name="test_model")
                     
                     # Verify that the result contains storage warning information
                     # that would be displayed by the CLI

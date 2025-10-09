@@ -199,30 +199,39 @@ class FileUploadResponse(BaseModel):
 class InferenceRequest(BaseModel):
     """
     API model for inference requests.
-    
+
     This model defines the request structure for running inference
     on trained EMUSES models with validation and format options.
+    Supports both traditional model paths and complete model IDs from registry.
     """
-    
-    model_path: str = Field(..., description="Path to trained model directory")
+
+    model_path: Optional[str] = Field(None, description="Path to trained model directory (for traditional models)")
+    model_id: Optional[str] = Field(None, description="Registry model ID (alternative to model_path)")
     data_path: str = Field(..., description="Path to input data for inference")
     output_path: Optional[str] = Field(
-        default=None, 
+        default=None,
         description="Output path for results (default: model_dir/inference_results)"
     )
     validation_mode: bool = Field(
-        default=False, 
+        default=False,
         description="Force validation mode (requires ground truth)"
     )
     verify_integrity: bool = Field(
-        default=True, 
+        default=True,
         description="Verify model integrity before inference"
     )
     output_format: str = Field(
-        default="csv", 
+        default="csv",
         description="Output format (csv or npy)"
     )
-    
+
+    def model_post_init(self, __context):
+        """Validate that exactly one of model_path or model_id is provided."""
+        if not self.model_path and not self.model_id:
+            raise ValueError("Either model_path or model_id must be provided")
+        if self.model_path and self.model_id:
+            raise ValueError("Cannot specify both model_path and model_id")
+
     model_config = ConfigDict(
         protected_namespaces=(),
         json_schema_extra={
@@ -241,17 +250,17 @@ class InferenceRequest(BaseModel):
 class InferenceResponse(BaseModel):
     """
     API response model for inference results.
-    
+
     This model defines the response structure containing inference
     results, metadata, and performance information.
     """
-    
+
     status: str = Field(..., description="Inference execution status")
     mode: str = Field(..., description="Inference mode (inference or validation)")
     samples_processed: int = Field(..., description="Number of samples processed")
     predictions: List[float] = Field(..., description="Ensemble predictions")
     confidence_scores: Optional[List[float]] = Field(
-        default=None, 
+        default=None,
         description="Confidence scores for predictions"
     )
     processing_time_ms: float = Field(..., description="Total processing time in milliseconds")
@@ -259,10 +268,10 @@ class InferenceResponse(BaseModel):
     model_info: Dict[str, Any] = Field(..., description="Model metadata information")
     output_files: Dict[str, str] = Field(..., description="Generated output file paths")
     validation_metrics: Optional[Dict[str, float]] = Field(
-        default=None, 
+        default=None,
         description="Validation metrics (only for validation mode)"
     )
-    
+
     model_config = ConfigDict(
         protected_namespaces=(),
         json_schema_extra={
@@ -283,6 +292,254 @@ class InferenceResponse(BaseModel):
                     "metadata_file": "/results/metadata_20250805.json"
                 },
                 "validation_metrics": None
+            }
+        }
+    )
+
+
+class StatisticalMapsRequest(BaseModel):
+    """
+    API model for statistical maps analysis requests.
+
+    This model defines the request structure for creating region-based statistical maps
+    using two-stage filtering, HDBSCAN clustering, and statistical analysis.
+    """
+
+    model_path: Optional[str] = Field(None, description="Path to trained model directory")
+    model_id: Optional[str] = Field(None, description="Registry model ID (alternative to model_path)")
+    input_data_path: str = Field(..., description="Path to input data file")
+    output_folder: str = Field(..., description="Output folder for statistical maps")
+    targets: List[str] = Field(..., description="Target variable names for analysis")
+
+    # Statistical analysis parameters
+    statistical_test: str = Field(
+        default="mann-whitney",
+        description="Statistical test method",
+        pattern="^(mann-whitney|t-test)$"
+    )
+    visualization_threshold: float = Field(
+        default=0.2,
+        description="Confidence threshold for visualization filtering",
+        ge=0.0
+    )
+    effect_size_threshold: float = Field(
+        default=0.5,
+        description="Prediction threshold for effect size filtering",
+        ge=0.0
+    )
+    min_cluster_size: int = Field(
+        default=3,
+        description="Minimum cluster size for HDBSCAN clustering",
+        gt=0
+    )
+
+    # Data format information
+    input_type: str = Field(
+        default="spreadsheet",
+        description="Input data format type",
+        pattern="^(nifti|image|spreadsheet)$"
+    )
+
+    def model_post_init(self, __context):
+        """Validate that exactly one of model_path or model_id is provided."""
+        if not self.model_path and not self.model_id:
+            raise ValueError("Either model_path or model_id must be provided")
+        if self.model_path and self.model_id:
+            raise ValueError("Cannot specify both model_path and model_id")
+
+    model_config = ConfigDict(
+        protected_namespaces=(),
+        json_schema_extra={
+            "example": {
+                "model_path": "/path/to/trained/model",
+                "input_data_path": "/path/to/input/data.csv",
+                "output_folder": "/path/to/statistical/maps/output",
+                "targets": ["target_0", "target_1"],
+                "statistical_test": "mann-whitney",
+                "visualization_threshold": 0.2,
+                "effect_size_threshold": 0.5,
+                "min_cluster_size": 3,
+                "input_type": "spreadsheet"
+            }
+        }
+    )
+
+
+class StatisticalMapsResponse(BaseModel):
+    """
+    API model for statistical maps analysis responses.
+
+    This model defines the response structure containing statistical analysis results
+    and metadata from region-based statistical maps generation.
+    """
+
+    statistical_results: Dict[str, Dict] = Field(
+        ...,
+        description="Statistical analysis results per target"
+    )
+    analysis_metadata: Dict[str, Any] = Field(
+        ...,
+        description="Analysis parameters and metadata"
+    )
+    processing_info: Dict[str, Any] = Field(
+        ...,
+        description="Processing information and performance metrics"
+    )
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "statistical_results": {
+                    "target_0": {
+                        "clusters_analyzed": 2,
+                        "filtering_results": {
+                            "total_grid_points": 100,
+                            "points_after_filtering": 25,
+                            "clusters_found": 2,
+                            "valid_clusters": 2
+                        }
+                    }
+                },
+                "analysis_metadata": {
+                    "visualization_threshold": 0.2,
+                    "effect_size_threshold": 0.5,
+                    "min_cluster_size": 3,
+                    "statistical_test": "mann-whitney"
+                },
+                "processing_info": {
+                    "processing_time_ms": 5400.2,
+                    "grid_points_generated": 10000,
+                    "targets_processed": 2
+                }
+            }
+        }
+    )
+
+
+class HeatmapsRequest(BaseModel):
+    """
+    API model for heatmaps analysis requests.
+
+    This model defines the request structure for creating prediction and correlation
+    grids using GridCreator and CorrelationGridCreator.
+    """
+
+    model_path: Optional[str] = Field(None, description="Path to trained model directory")
+    model_id: Optional[str] = Field(None, description="Registry model ID (alternative to model_path)")
+    input_data_path: str = Field(..., description="Path to input data file")
+    output_folder: str = Field(..., description="Output folder for heatmaps")
+    targets: List[str] = Field(..., description="Target variable names for analysis")
+
+    # Grid generation parameters
+    grid_size: tuple = Field(
+        default=(100, 100),
+        description="Grid size for coordinate generation"
+    )
+    denormalize_predictions: bool = Field(
+        default=True,
+        description="Apply denormalization to prediction values"
+    )
+
+    # Correlation analysis parameters
+    correlation_methods: List[str] = Field(
+        default=["pearson"],
+        description="Correlation methods to use"
+    )
+    sigma_optimization: bool = Field(
+        default=True,
+        description="Enable sigma optimization for correlation grids"
+    )
+    max_sigma_trials: int = Field(
+        default=100,
+        description="Maximum trials for sigma optimization",
+        gt=0
+    )
+
+    def model_post_init(self, __context):
+        """Validate that exactly one of model_path or model_id is provided."""
+        if not self.model_path and not self.model_id:
+            raise ValueError("Either model_path or model_id must be provided")
+        if self.model_path and self.model_id:
+            raise ValueError("Cannot specify both model_path and model_id")
+
+        # Validate correlation methods
+        valid_methods = ["pearson", "spearman", "point-biserial"]
+        for method in self.correlation_methods:
+            if method not in valid_methods:
+                raise ValueError(f"Invalid correlation method '{method}'. Valid methods: {valid_methods}")
+
+    model_config = ConfigDict(
+        protected_namespaces=(),
+        json_schema_extra={
+            "example": {
+                "model_path": "/path/to/trained/model",
+                "input_data_path": "/path/to/input/data.csv",
+                "output_folder": "/path/to/heatmaps/output",
+                "targets": ["target_0", "target_1"],
+                "grid_size": [100, 100],
+                "denormalize_predictions": True,
+                "correlation_methods": ["pearson", "spearman"],
+                "sigma_optimization": True,
+                "max_sigma_trials": 100
+            }
+        }
+    )
+
+
+class HeatmapsResponse(BaseModel):
+    """
+    API model for heatmaps analysis responses.
+
+    This model defines the response structure containing prediction grids
+    and correlation grids results with metadata.
+    """
+
+    prediction_results: Dict[str, Dict] = Field(
+        ...,
+        description="Prediction grid results per target"
+    )
+    correlation_results: Dict[str, Dict] = Field(
+        ...,
+        description="Correlation grid results per target"
+    )
+    analysis_metadata: Dict[str, Any] = Field(
+        ...,
+        description="Analysis parameters and metadata"
+    )
+    processing_info: Dict[str, Any] = Field(
+        ...,
+        description="Processing information and performance metrics"
+    )
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "prediction_results": {
+                    "target_0": {
+                        "grid_points_generated": 10000,
+                        "prediction_range": [0.1, 0.9],
+                        "confidence_range": [0.3, 1.0],
+                        "output_files": ["prediction_grids/target_0_grid.csv"]
+                    }
+                },
+                "correlation_results": {
+                    "target_0": {
+                        "correlation_methods": ["pearson", "spearman"],
+                        "optimal_sigma": 0.15,
+                        "correlation_range": [-0.8, 0.8],
+                        "output_files": ["correlation_grids/target_0_pearson.csv"]
+                    }
+                },
+                "analysis_metadata": {
+                    "grid_size": [100, 100],
+                    "denormalize_predictions": True,
+                    "sigma_optimization": True
+                },
+                "processing_info": {
+                    "processing_time_ms": 8500.3,
+                    "targets_processed": 2,
+                    "total_grid_points": 20000
+                }
             }
         }
     )

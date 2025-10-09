@@ -30,15 +30,22 @@ import subprocess
 import sys
 import time
 import urllib.parse
+import warnings
 from enum import Enum
 from multiprocessing import Process
 from pathlib import Path
 from typing import Annotated, List, Optional, Union
 
+# Suppress sklearn warnings
+warnings.filterwarnings("ignore", category=FutureWarning, module="sklearn.pipeline")
+# Suppress sklearn deprecation warnings from dependencies (UMAP, HDBSCAN) until they update
+warnings.filterwarnings("ignore", message="'force_all_finite' was renamed to 'ensure_all_finite'")
+
 import requests
 import typer
 import uvicorn
 
+from emuses import __version__
 from .interactive_mode import InteractiveWorkflowManager
 from .rich_features import ProgressTracker, StatusRenderer
 # Import security functions
@@ -75,6 +82,7 @@ class ScoresNormalization(str, Enum):
     zscore = "zscore"
     min_max = "min-max"
     zero_max = "zero-max"
+    robust = "robust"
 
 
 def save_command_to_output_folder(output_folder: Path) -> None:
@@ -427,6 +435,34 @@ def create_typer_app() -> typer.Typer:
 app = create_typer_app()
 
 
+def _version_callback(value: bool):
+    """Callback to show version and exit."""
+    if value:
+        typer.echo(f"emuses {__version__}")
+        raise typer.Exit()
+
+
+@app.callback()
+def main_callback(
+    version: Annotated[
+        Optional[bool],
+        typer.Option(
+            "--version", "-V",
+            callback=_version_callback,
+            is_eager=True,
+            help="Show version and exit"
+        )
+    ] = None,
+):
+    """
+    EMUSES - Enhanced Multimodal Unified Statistical Embedding System
+
+    A comprehensive neuroimaging analysis pipeline for dimensionality reduction,
+    clustering, and predictive modeling.
+    """
+    pass
+
+
 @app.command()
 def rerun(
     output_folder: Annotated[
@@ -496,7 +532,7 @@ def full(
         typer.Option(help="Path to scores file associated with the dataset"),
     ] = None,
     label_dataset: Annotated[
-        Optional[Path], typer.Option(help="Path to a separate labelled dataset")
+        Optional[Path], typer.Option("--label_dataset", help="Path to a separate labelled dataset")
     ] = None,
     recursive_search: Annotated[
         bool,
@@ -726,12 +762,8 @@ def full(
     ] = "optim_dict_predict",
     random_state: Annotated[
         int,
-        typer.Option("--random_state", help="Master random seed for reproducibility"),
+        typer.Option("--random_state", help="Master random seed for reproducibility. Note: Setting this will disable UMAP parallel processing (n_jobs=1) to ensure reproducible results. For faster UMAP training at the cost of reproducibility, consider using different seeds for different runs."),
     ] = 42,
-    run_old_prediction: Annotated[
-        bool,
-        typer.Option("--run_old_prediction", help="Run the old prediction pipeline"),
-    ] = False,
     umap_jobs: Annotated[
         Optional[int],
         typer.Option(
@@ -853,8 +885,6 @@ def full(
         Name of a prediction optim_dict in optim_configs_predict.py, by default "optim_dict_predict"
     random_state : int, optional
         Master random seed for reproducibility, by default 42
-    run_old_prediction : bool, optional
-        Run the old prediction pipeline, by default False
     umap_jobs : Optional[int], optional
         Number of parallel jobs for outer (UMAP) optimization
     hdbscan_jobs : Optional[int], optional
@@ -931,7 +961,6 @@ def full(
                 model_selection=model_selection,
                 prediction_optim_dict=prediction_optim_dict,
                 random_state=random_state,
-                run_old_prediction=run_old_prediction,
                 umap_jobs=umap_jobs,
                 hdbscan_jobs=hdbscan_jobs,
                 interactive=interactive,
@@ -1075,10 +1104,10 @@ def _convert_typer_args_to_service_config(**kwargs) -> dict:
             config[key] = str(value)
         elif isinstance(value, list) and value:
             config[key] = [str(item) for item in value]
+        elif hasattr(value, "value"):  # Enum types - check before str types since str enums are also str
+            config[key] = value.value
         elif isinstance(value, (str, int, float, bool)):
             config[key] = value
-        elif hasattr(value, "value"):  # Enum types
-            config[key] = value.value
         else:
             config[key] = str(value)
 
@@ -1354,7 +1383,19 @@ def _start_local_service(port: int = 8000) -> Optional[Process]:
     try:
 
         def run_service():
-            """Run the FastAPI service."""
+            """Run the FastAPI service with graceful shutdown support."""
+            import signal
+            import sys
+            
+            def signal_handler(signum, frame):
+                """Handle termination signals gracefully."""
+                logger.info(f"Service received signal {signum}, shutting down gracefully...")
+                sys.exit(0)
+            
+            # Register signal handlers for graceful shutdown
+            signal.signal(signal.SIGINT, signal_handler)
+            signal.signal(signal.SIGTERM, signal_handler)
+            
             try:
                 logger.info(f"Starting FastAPI service on port {port}...")
                 from emuses.api.main import create_app
@@ -1369,9 +1410,25 @@ def _start_local_service(port: int = 8000) -> Optional[Process]:
 
                 traceback.print_exc()
 
-        # Start service in background process
-        service_process = Process(target=run_service, daemon=True)
+        # Start service in background process (non-daemon to receive signals)
+        service_process = Process(target=run_service, daemon=False)
         service_process.start()
+        
+        # Register emergency cleanup handler as safety net
+        # This ensures cleanup even if finally block doesn't run (rare edge cases)
+        import atexit
+        
+        def emergency_cleanup():
+            """Emergency cleanup if normal shutdown fails."""
+            if service_process and service_process.is_alive():
+                logger.warning("Emergency cleanup: Force-killing orphaned service process")
+                try:
+                    service_process.kill()
+                    service_process.join(timeout=2)
+                except Exception as e:
+                    logger.error(f"Emergency cleanup failed: {e}")
+        
+        atexit.register(emergency_cleanup)
 
         # Give the process more time to start up
         time.sleep(2)
@@ -1395,7 +1452,10 @@ def _start_local_service(port: int = 8000) -> Optional[Process]:
 
 def _stop_local_service(service_process: Process) -> None:
     """
-    Stop local FastAPI service process.
+    Stop local FastAPI service process with graceful shutdown.
+    
+    Attempts graceful termination first (SIGTERM), then force-kills if needed.
+    With daemon=False, the service can now receive and respond to SIGTERM.
 
     Parameters
     ----------
@@ -1404,15 +1464,25 @@ def _stop_local_service(service_process: Process) -> None:
     """
     try:
         if service_process and service_process.is_alive():
+            logger.info(f"Stopping service process (PID: {service_process.pid})...")
+            
+            # Try graceful shutdown first (service now receives SIGTERM)
             service_process.terminate()
             service_process.join(timeout=5)
 
             if service_process.is_alive():
+                logger.warning("Service didn't stop gracefully, forcing kill...")
                 service_process.kill()  # Force kill if needed
-                service_process.join()
+                service_process.join(timeout=2)
+                
+            if service_process.is_alive():
+                logger.error("Failed to kill service process - may require manual cleanup")
+            else:
+                logger.info("Service process stopped successfully")
 
     except Exception as e:
-        print(f"Error stopping service: {e}")
+        logger.error(f"Error stopping service: {e}")
+        # Don't re-raise - this is cleanup code
 
 
 def _wait_for_service_ready(service_url: str, timeout: int = 30) -> bool:
@@ -1487,7 +1557,6 @@ async def _umap_async(**kwargs) -> None:
         )
 
 
-
 async def _heatmap_async(**kwargs) -> None:
     """Async implementation of the heatmap generation command."""
     status_renderer = StatusRenderer()
@@ -1524,16 +1593,12 @@ async def _heatmap_async(**kwargs) -> None:
         )
 
 
-
-
 async def _inference_async(**kwargs) -> None:
     """Async implementation of the inference command."""
     status_renderer = StatusRenderer()
     # progress_tracker = ProgressTracker()  # Currently unused
 
-    print(status_renderer.render_status("info", "Starting inference..."))
-
-    # Execute inference locally using InferenceStage
+    # Execute inference locally using InferenceStage (handles its own status messages)
     try:
         await _execute_inference_locally(kwargs, status_renderer)
         print(
@@ -1561,35 +1626,58 @@ async def _execute_inference_locally(config: dict, status_renderer) -> None:
         from emuses.pipelines.inference_stage import InferenceStage
         from emuses.pipelines.emuses_pipeline import EMUSESPipeline
 
-        print(status_renderer.render_status("info", "Initializing inference pipeline..."))
+        # InferenceStage will handle pipeline status messages
+        # Removed redundant "Initializing inference pipeline..." message
 
-        # Create args object for EMUSESPipeline (required for data processing)
+        # Create args object for EMUSESPipeline (consolidated approach)
         args = type('Args', (), {})()
-        args.input_dataset = str(config["data"])
+        args.input_dataset = str(config["data"])  # Still needed for PipelineConfig
         args.output_folder = str(config["output"])
         args.random_state = 42
         args.load_embeddings = None
         args.bids_filters = None
 
-        print(status_renderer.render_status("info", "Processing input data..."))
+        # Critical preprocessing parameters for data processing
+        args.input_header = config.get("input_header")
+        args.input_index_column = config.get("input_index_column")
+        args.scores_header = config.get("scores_header")
+        args.scores_index_column = config.get("scores_index_column")
+        args.scores = str(config["scores"]) if config.get("scores") else None
 
-        # Create EMUSESPipeline for data processing (standard pattern)
+        # Additional preprocessing parameters
+        args.columns_are_features = config.get("columns_are_features", False)
+        args.input_normalization = config.get("input_normalization", "none")
+        args.inputs_columns = config.get("inputs_columns")
+        args.classification = config.get("classification", False)
+        
+        # Advanced processing parameters
+        args.scores_normalization = config.get("scores_normalization", "none")
+        args.scores_are_rows = config.get("scores_are_rows", False)
+        args.scores_column = config.get("scores_column")
+        args.filter_labelled_by_scores = config.get("filter_labelled_by_scores", False)
+        args.recursive_search = config.get("recursive_search", False)
+        args.input_file_types = config.get("input_file_types")
+        args.arg_separator = config.get("arg_separator", ",")
+        args.bids_filters = config.get("bids_filters")
+
+        # Set inference mode to skip training-specific operations
+        args.inference_mode = True
+        
+        # Set model path for scaler loading in inference mode
+        if config.get("model"):
+            args.model_path = str(config["model"])
+
+        # Create EMUSESPipeline - format_args will handle inference mode properly
         pipeline = EMUSESPipeline(args)
-
-        # Process dataset to get features and labels in context format
-        input_matrix, dataset_type, output_format_info, scores = pipeline.process_dataset(config["data"])
-
-        # Prepare context with processed data (standard stage pattern)
-        context = {
-            "inference_features": input_matrix,
-            "inference_labels": scores,
-            "dataset_type": dataset_type,
-            "output_format_info": output_format_info,
+        
+        # Use pipeline context directly - no duplicate processing
+        context = pipeline.context.copy()  # Copy to avoid modifying pipeline context
+        context.update({
             "verify_integrity": config.get("verify", True),
-            "output_format": config.get("output_format", "csv")
-        }
-
-        print(status_renderer.render_status("info", "Adding inference stage..."))
+            "output_format": config.get("output_format", "csv"),
+            "model_path": str(config["model"]) if config.get("model") else None,
+            "cli_inference_mode": True
+        })
 
         # Create inference stage with proper configuration
         inference_stage = InferenceStage(pipeline.config)
@@ -1597,25 +1685,11 @@ async def _execute_inference_locally(config: dict, status_renderer) -> None:
         inference_stage.output_path = str(config["output"])
         inference_stage.validate_mode = config.get("validate", False)
 
-        print(status_renderer.render_status("info", "Running inference..."))
-
         # Run inference stage with processed data in context (standard pattern)
         results = inference_stage.run(context)
 
-        # Display results summary
+        # InferenceStage already provides comprehensive output including sample count and mode
         mode = results.get("mode", "inference")
-        samples_processed = results.get("samples_processed", 0)
-        performance = results.get("performance_breakdown", {})
-        total_time = performance.get("total_ms", 0) / 1000.0  # Convert to seconds
-
-        print(status_renderer.render_status("success", f"Processed {samples_processed} samples in {mode} mode"))
-        print(status_renderer.render_status("info", f"Total time: {total_time:.2f} seconds"))
-
-        if "output_files" in results:
-            output_files = results["output_files"]
-            print(status_renderer.render_status("info", f"Results saved to {len(output_files)} files:"))
-            for file_type, file_path in output_files.items():
-                print(status_renderer.render_status("info", f"  {file_type}: {file_path}"))
 
         # Show validation results if available
         if mode == "validation" and "validation_metrics" in results:
@@ -1757,11 +1831,15 @@ def heatmap(
 
 @app.command(help="Run inference on trained model")
 def inference(
-    model: Annotated[Path, typer.Argument(help="Path to trained model directory")],
+    output: Annotated[Path, typer.Argument(help="Output path for results (REQUIRED for data privacy)")],
     data: Annotated[Path, typer.Argument(help="Path to input data for inference")],
-    output: Annotated[
+    model: Annotated[
         Optional[Path],
-        typer.Option("--output", "-o", help="Output path for results (default: model_dir/inference_results)")
+        typer.Option("--model", help="Path to trained model directory")
+    ] = None,
+    model_id: Annotated[
+        Optional[str],
+        typer.Option("--model-id", help="Registry model ID for trained model")
     ] = None,
     validate: Annotated[
         bool,
@@ -1775,6 +1853,78 @@ def inference(
         str,
         typer.Option("--format", help="Output format (csv or npy)")
     ] = "csv",
+    # Phase 1: Critical preprocessing parameters
+    input_header: Annotated[
+        Optional[int],
+        typer.Option("--input_header", help="Header row for input dataset (0-based)")
+    ] = None,
+    input_index_column: Annotated[
+        Optional[int],
+        typer.Option("--input_index_column", help="Index column for input dataset (0-based)")
+    ] = None,
+    scores_header: Annotated[
+        Optional[int],
+        typer.Option("--scores_header", help="Header row for scores file (0-based)")
+    ] = None,
+    scores_index_column: Annotated[
+        Optional[int],
+        typer.Option("--scores_index_column", help="Index column for scores file (0-based)")
+    ] = None,
+    scores: Annotated[
+        Optional[Path],
+        typer.Option("--scores", help="Path to scores file for validation mode")
+    ] = None,
+    # Additional critical preprocessing parameters
+    columns_are_features: Annotated[
+        bool,
+        typer.Option("--columns_are_features", help="Columns represent features (not samples)")
+    ] = False,
+    input_normalization: Annotated[
+        InputNormalization,
+        typer.Option("--input_normalization", help="Input normalization method")
+    ] = InputNormalization.none,
+    inputs_columns: Annotated[
+        Optional[List[str]],
+        typer.Option("--inputs_columns", help="List of columns for inputs in the dataset")
+    ] = None,
+    classification: Annotated[
+        bool,
+        typer.Option("--classification", help="Use classification mode instead of regression")
+    ] = False,
+    # Phase 3: Advanced scores processing parameters
+    scores_normalization: Annotated[
+        ScoresNormalization,
+        typer.Option("--scores_normalization", help="Normalization method for scores data")
+    ] = ScoresNormalization.none,
+    scores_are_rows: Annotated[
+        bool,
+        typer.Option("--scores_are_rows", help="Whether scores data has observations in rows")
+    ] = False,
+    scores_column: Annotated[
+        Optional[List[str]],
+        typer.Option("--scores_column", help="List of columns for scores in the dataset")
+    ] = None,
+    filter_labelled_by_scores: Annotated[
+        bool,
+        typer.Option("--filter_labelled_by_scores", help="Filter data to include only labelled observations")
+    ] = False,
+    # Phase 3: Advanced input processing parameters
+    recursive_search: Annotated[
+        bool,
+        typer.Option("--recursive-input-file-search", help="Search recursively in the input dataset folder")
+    ] = False,
+    input_file_types: Annotated[
+        Optional[List[str]],
+        typer.Option("--input_file_types", help="File types to search for in the input dataset folder")
+    ] = None,
+    arg_separator: Annotated[
+        str,
+        typer.Option("--arg_separator", help="Separator for the input dataset list")
+    ] = ",",
+    bids_filters: Annotated[
+        Optional[List[str]],
+        typer.Option("--bids_filters", help="BIDS filters for the input dataset")
+    ] = None,
 ) -> None:
     """
     Run inference on trained EMUSES model.
@@ -1782,30 +1932,89 @@ def inference(
     This command loads a trained model and runs inference on new data,
     automatically detecting validation vs pure inference modes.
 
+    Model specification (exactly one required):
+    - Use --model for direct path to model directory
+    - Use --model-id for registry-based model lookup
+
     Parameters
     ----------
-    model : Path
-        Path to trained model directory
     data : Path
         Path to input data for inference
-    output : Optional[Path]
-        Output path for results (default: model_dir/inference_results)
+    output : Path
+        Output path for results (REQUIRED for data privacy protection)
+    model : Optional[Path]
+        Path to trained model directory (use with --model)
+    model_id : Optional[str]
+        Registry model ID for trained model (use with --model-id)
     validate : bool
         Force validation mode (requires ground truth)
     verify : bool
         Verify model integrity before inference
     output_format : str
         Output format (csv or npy)
+    input_header : Optional[int]
+        Header row for input dataset (0-based), use when CSV has header row
+    input_index_column : Optional[int]
+        Index column for input dataset (0-based), use when CSV has row labels/IDs
+    scores_header : Optional[int]
+        Header row for scores file (0-based), use when scores CSV has header row
+    scores_index_column : Optional[int]
+        Index column for scores file (0-based), use when scores CSV has row labels/IDs
+    scores : Optional[Path]
+        Path to scores file for validation mode, enables ground truth comparison
+    columns_are_features : bool
+        Whether columns represent features (not samples), affects data interpretation
+    input_normalization : InputNormalization
+        Input normalization method (none, zscore, robust, min-max, zero-max)
+    inputs_columns : Optional[List[str]]
+        List of specific columns to use for inputs in the dataset
+    classification : bool
+        Use classification mode instead of regression for model predictions
+    scores_normalization : ScoresNormalization
+        Normalization method for scores data (none, zscore, min-max, zero-max, robust)
+    scores_are_rows : bool
+        Whether scores data has observations in rows (not columns)
+    scores_column : Optional[List[str]]
+        List of specific columns to use for scores in the dataset
+    filter_labelled_by_scores : bool
+        Filter data to include only labelled observations from scores
+    recursive_search : bool
+        Search recursively in the input dataset folder for files
+    input_file_types : Optional[List[str]]
+        File types to search for in the input dataset folder
+    arg_separator : str
+        Separator for the input dataset list parsing
+    bids_filters : Optional[List[str]]
+        BIDS filters for the input dataset processing
 
     Returns
     -------
     None
     """
-    # Validate arguments
+    # Validate model specification: exactly one of --model or --model-id required
+    if model and model_id:
+        typer.echo("❌ Cannot specify both --model and --model-id. Use exactly one.", err=True)
+        raise typer.Exit(code=1)
+    elif model_id:
+        # Registry-based model lookup
+        try:
+            from emuses.tools.local_model_registry import LocalModelRegistry
+            registry = LocalModelRegistry()
+            model = registry.get_model_path(model_id)
+            typer.echo(f"🔍 Registry lookup: {model_id} -> {model}")
+        except Exception as e:
+            typer.echo(f"❌ Registry lookup failed for model ID '{model_id}': {e}", err=True)
+            raise typer.Exit(code=1)
+    elif not model:
+        typer.echo("❌ Model specification required. Use --model <path> or --model-id <id>", err=True)
+        raise typer.Exit(code=1)
+
+    # Validate resolved model path exists
     if not model.exists():
         typer.echo(f"❌ Model directory not found: {model}", err=True)
         raise typer.Exit(code=1)
 
+    # Validate input data
     if not data.exists():
         typer.echo(f"❌ Input data not found: {data}", err=True)
         raise typer.Exit(code=1)
@@ -1814,9 +2023,7 @@ def inference(
         typer.echo(f"❌ Unsupported output format: {output_format}. Use 'csv' or 'npy'", err=True)
         raise typer.Exit(code=1)
 
-    # Set default output path if not provided
-    if output is None:
-        output = model / "inference_results"
+    # Output path is now required - no default to prevent data privacy issues
 
     # Save command for easy rerun (use output directory for command saving)
     save_command_to_output_folder(output)
@@ -1831,6 +2038,27 @@ def inference(
                 validate=validate,
                 verify=verify,
                 output_format=output_format,
+                # Phase 1: Critical preprocessing parameters
+                input_header=input_header,
+                input_index_column=input_index_column,
+                scores_header=scores_header,
+                scores_index_column=scores_index_column,
+                scores=scores,
+                # Additional critical preprocessing parameters
+                columns_are_features=columns_are_features,
+                input_normalization=input_normalization,
+                inputs_columns=inputs_columns,
+                classification=classification,
+                # Phase 3: Advanced scores processing parameters
+                scores_normalization=scores_normalization,
+                scores_are_rows=scores_are_rows,
+                scores_column=scores_column,
+                filter_labelled_by_scores=filter_labelled_by_scores,
+                # Phase 3: Advanced input processing parameters
+                recursive_search=recursive_search,
+                input_file_types=input_file_types,
+                arg_separator=arg_separator,
+                bids_filters=bids_filters,
             )
         )
     except KeyboardInterrupt:
@@ -2604,7 +2832,7 @@ def _display_model_comparison(manifest1: dict, manifest2: dict, name1: str, name
     # Summary
     typer.echo("\n📋 Summary")
     if (config1 == config2 and seeds1 == seeds2 and py1 == py2 and
-        emuses1 == emuses2 and packages1 == packages2):
+            emuses1 == emuses2 and packages1 == packages2):
         typer.echo("   ✅ Models appear to have identical configurations")
     else:
         typer.echo("   📝 Models have different configurations")
@@ -2657,7 +2885,7 @@ except ImportError:
 # Add workspace subcommand
 try:
     from .workspace_commands import workspace_app
-    
+
     app.add_typer(workspace_app, name="workspace")
 except ImportError:
     # Workspace commands not available (likely missing dependencies)

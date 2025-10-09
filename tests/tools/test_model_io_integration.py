@@ -203,7 +203,7 @@ class TestModelIOIntegration:
         
         # Check first version in manifest
         manifest_info = model_manager.get_manifest_info("versioned_model")
-        assert manifest_info["model_info"]["version"] == "1.0.0"
+        assert manifest_info["version"] == "1.0.0"
         
         # Save second version (same name) 
         path2 = model_manager.save_model(
@@ -214,7 +214,7 @@ class TestModelIOIntegration:
         
         # Check that version incremented in manifest
         manifest_info = model_manager.get_manifest_info("versioned_model")
-        assert manifest_info["model_info"]["version"] == "1.0.1"
+        assert manifest_info["version"] == "1.0.1"
         
         # Check that both model files exist and are tracked
         file_integrity = manifest_info.get("file_integrity", {})

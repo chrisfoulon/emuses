@@ -1,12 +1,16 @@
 #!/bin/bash
 set -e
 
-# Script to generate secure secrets for EMUSES production deployment
+# Enhanced script to generate secure secrets for EMUSES production deployment
+# Supports both traditional file-based secrets and HashiCorp Vault integration
 
 SECRETS_DIR="$(dirname "$0")/../secrets"
 SECRETS_FILE="$SECRETS_DIR/secrets.env"
+VAULT_INTEGRATION="${VAULT_INTEGRATION:-false}"
+VAULT_PATH="${VAULT_PATH:-secret/emuses}"
 
-echo "Generating EMUSES production secrets..."
+echo "🔐 Generating EMUSES production secrets..."
+echo "Vault integration: $VAULT_INTEGRATION"
 
 # Create secrets directory if it doesn't exist
 mkdir -p "$SECRETS_DIR"
@@ -32,7 +36,62 @@ DATA_ENCRYPTION_KEY=$(generate_secret 32)
 SESSION_SECRET_KEY=$(generate_secret 32)
 BACKUP_ENCRYPTION_KEY=$(generate_secret 32)
 
-# Create secrets file
+# Function to store secrets in HashiCorp Vault
+store_secrets_in_vault() {
+    echo "🏦 Storing secrets in HashiCorp Vault..."
+    
+    # Verify Vault connection
+    if ! vault status &> /dev/null; then
+        echo "❌ Cannot connect to Vault at ${VAULT_ADDR:-'(not set)'}"
+        echo "💡 Ensure Vault is running and VAULT_ADDR/VAULT_TOKEN are set"
+        exit 1
+    fi
+    
+    # Store secrets in Vault
+    vault kv put "$VAULT_PATH" \
+        jwt_secret="$JWT_SECRET" \
+        postgres_password="$POSTGRES_PASSWORD" \
+        admin_password="$ADMIN_PASSWORD" \
+        admin_token="$ADMIN_TOKEN" \
+        data_encryption_key="$DATA_ENCRYPTION_KEY" \
+        session_secret_key="$SESSION_SECRET_KEY" \
+        backup_encryption_key="$BACKUP_ENCRYPTION_KEY" \
+        generated_date="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    
+    echo "✅ Secrets stored in Vault at: $VAULT_PATH"
+    
+    # Create Vault configuration file
+    cat > "$SECRETS_DIR/vault-config.env" << EOF
+# EMUSES Vault Configuration
+# Source this file to configure EMUSES for Vault integration
+
+export VAULT_ADDR="${VAULT_ADDR:-http://127.0.0.1:8200}"
+export VAULT_TOKEN="${VAULT_TOKEN:-your-vault-token}"
+export EMUSES_VAULT_SECRET_PATH="$VAULT_PATH"
+export EMUSES_DEPLOYMENT_MODE="multi_user"
+
+echo "✅ EMUSES configured for Vault integration"
+echo "🔍 Vault status: \$(vault status &>/dev/null && echo 'accessible' || echo 'not accessible')"
+echo "📍 Vault path: $VAULT_PATH"
+EOF
+    
+    chmod 600 "$SECRETS_DIR/vault-config.env"
+    
+    echo "📝 Vault configuration created: $SECRETS_DIR/vault-config.env"
+    echo ""
+    echo "🚀 To use with EMUSES:"
+    echo "   source $SECRETS_DIR/vault-config.env"
+    echo "   python -m emuses.cli admin create-superuser"
+}
+
+# Function to store secrets in traditional file
+store_secrets_in_file() {
+    echo "📁 Storing secrets in traditional file..."
+    create_secrets_file
+}
+
+# Create traditional secrets file
+create_secrets_file() {
 cat > "$SECRETS_FILE" << EOF
 # EMUSES Production Secrets
 # Generated on $(date)
@@ -93,8 +152,33 @@ echo "3. Never commit this file to version control"
 echo "4. Store backups of this file in a secure location"
 echo "5. Rotate secrets regularly for enhanced security"
 echo ""
-echo "Generated admin credentials:"
+# Store secrets based on integration method
+if [ "$VAULT_INTEGRATION" = "true" ] && command -v vault &> /dev/null; then
+    store_secrets_in_vault
+else
+    store_secrets_in_file
+fi
+
+echo ""
+echo "🔑 Generated admin credentials:"
 echo "  Admin Password: $ADMIN_PASSWORD"
 echo "  Admin Token: $ADMIN_TOKEN"
 echo ""
-echo "Save these credentials in a secure password manager!"
+echo "💾 Save these credentials in a secure password manager!"
+
+if [ "$VAULT_INTEGRATION" = "true" ]; then
+    echo ""
+    echo "🏦 Vault Integration Notes:"
+    echo "• Secrets are stored in Vault and file for backup"
+    echo "• Use vault-config.env to configure EMUSES for Vault"
+    echo "• Vault provides audit trails and centralized secret management"
+fi
+
+# Set secure permissions and finish
+chmod 600 "$SECRETS_FILE"
+
+}
+
+echo ""
+echo "✅ Secret generation complete!"
+echo "📍 File location: $SECRETS_FILE"
