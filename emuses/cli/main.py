@@ -1383,7 +1383,19 @@ def _start_local_service(port: int = 8000) -> Optional[Process]:
     try:
 
         def run_service():
-            """Run the FastAPI service."""
+            """Run the FastAPI service with graceful shutdown support."""
+            import signal
+            import sys
+            
+            def signal_handler(signum, frame):
+                """Handle termination signals gracefully."""
+                logger.info(f"Service received signal {signum}, shutting down gracefully...")
+                sys.exit(0)
+            
+            # Register signal handlers for graceful shutdown
+            signal.signal(signal.SIGINT, signal_handler)
+            signal.signal(signal.SIGTERM, signal_handler)
+            
             try:
                 logger.info(f"Starting FastAPI service on port {port}...")
                 from emuses.api.main import create_app
@@ -1398,9 +1410,25 @@ def _start_local_service(port: int = 8000) -> Optional[Process]:
 
                 traceback.print_exc()
 
-        # Start service in background process
-        service_process = Process(target=run_service, daemon=True)
+        # Start service in background process (non-daemon to receive signals)
+        service_process = Process(target=run_service, daemon=False)
         service_process.start()
+        
+        # Register emergency cleanup handler as safety net
+        # This ensures cleanup even if finally block doesn't run (rare edge cases)
+        import atexit
+        
+        def emergency_cleanup():
+            """Emergency cleanup if normal shutdown fails."""
+            if service_process and service_process.is_alive():
+                logger.warning("Emergency cleanup: Force-killing orphaned service process")
+                try:
+                    service_process.kill()
+                    service_process.join(timeout=2)
+                except Exception as e:
+                    logger.error(f"Emergency cleanup failed: {e}")
+        
+        atexit.register(emergency_cleanup)
 
         # Give the process more time to start up
         time.sleep(2)
@@ -1424,7 +1452,10 @@ def _start_local_service(port: int = 8000) -> Optional[Process]:
 
 def _stop_local_service(service_process: Process) -> None:
     """
-    Stop local FastAPI service process.
+    Stop local FastAPI service process with graceful shutdown.
+    
+    Attempts graceful termination first (SIGTERM), then force-kills if needed.
+    With daemon=False, the service can now receive and respond to SIGTERM.
 
     Parameters
     ----------
@@ -1433,15 +1464,25 @@ def _stop_local_service(service_process: Process) -> None:
     """
     try:
         if service_process and service_process.is_alive():
+            logger.info(f"Stopping service process (PID: {service_process.pid})...")
+            
+            # Try graceful shutdown first (service now receives SIGTERM)
             service_process.terminate()
             service_process.join(timeout=5)
 
             if service_process.is_alive():
+                logger.warning("Service didn't stop gracefully, forcing kill...")
                 service_process.kill()  # Force kill if needed
-                service_process.join()
+                service_process.join(timeout=2)
+                
+            if service_process.is_alive():
+                logger.error("Failed to kill service process - may require manual cleanup")
+            else:
+                logger.info("Service process stopped successfully")
 
     except Exception as e:
-        print(f"Error stopping service: {e}")
+        logger.error(f"Error stopping service: {e}")
+        # Don't re-raise - this is cleanup code
 
 
 def _wait_for_service_ready(service_url: str, timeout: int = 30) -> bool:

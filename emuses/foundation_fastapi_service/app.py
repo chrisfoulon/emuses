@@ -502,6 +502,83 @@ def validate_path_exists(file_path: str) -> Path:
     return path
 
 
+def _handle_special_dataset_scores(config: dict, output_folder: str) -> Optional[str]:
+    """
+    Extract labels from special datasets and save to temporary scores file.
+
+    Special datasets like MNIST provide their own labels internally, so they don't
+    require a separate scores file. This function detects such datasets, loads them,
+    extracts the labels, and saves them to a CSV file in the output folder.
+
+    Parameters
+    ----------
+    config : dict
+        Pipeline configuration dictionary
+    output_folder : str
+        Output folder path where temp scores file will be created
+
+    Returns
+    -------
+    Optional[str]
+        Path to temporary scores file if special dataset detected, None otherwise
+
+    Raises
+    ------
+    ValueError
+        If special dataset is recognized but loading fails
+    """
+    # Special datasets that provide their own labels
+    SPECIAL_DATASETS_WITH_LABELS = {"mnist", "digits_label_dataset"}
+
+    input_dataset = config.get("input_dataset", "").lower()
+
+    if input_dataset not in SPECIAL_DATASETS_WITH_LABELS:
+        return None
+
+    try:
+        from emuses.tools.inputs_utils import load_and_preprocess_digits_dataset
+        import pandas as pd
+
+        # Load dataset and extract labels
+        # Note: "mnist" keyword loads sklearn digits dataset (1797 samples, 8x8 images)
+        # The full 70000 MNIST will be handled separately in future work
+        if input_dataset == "mnist":
+            features, labels = load_and_preprocess_digits_dataset("digits")
+            logger.info(f"Loaded sklearn digits dataset: {features.shape[0]} samples")
+        elif input_dataset == "digits_label_dataset":
+            # For digits_label_dataset, use full labels (will be filtered later by pipeline)
+            features, labels, labeled_indices = load_and_preprocess_digits_dataset("digits_label_dataset")
+            logger.info(f"Loaded digits_label_dataset: {features.shape[0]} samples, {len(labeled_indices)} labeled")
+        else:
+            raise ValueError(f"Unsupported special dataset: {input_dataset}")
+
+        # Create output folder if it doesn't exist
+        output_path = Path(output_folder)
+        output_path.mkdir(parents=True, exist_ok=True)
+
+        # Create temporary scores file in output folder (cross-platform compatible)
+        scores_temp_file = output_path / "_emuses_temp_scores.csv"
+
+        # Convert labels to DataFrame (handle both Series and arrays)
+        # labels might be a pandas Series or numpy array, ensure it's array-like
+        import numpy as np
+        if hasattr(labels, 'values'):
+            labels_array = labels.values
+        else:
+            labels_array = np.asarray(labels)
+
+        # Save labels as CSV (matching expected scores format)
+        pd.DataFrame({"label": labels_array}).to_csv(scores_temp_file, index=False)
+
+        logger.info(f"Extracted {len(labels)} labels from {input_dataset} to {scores_temp_file}")
+
+        return str(scores_temp_file)
+
+    except Exception as e:
+        logger.error(f"Failed to extract labels from special dataset {input_dataset}: {e}")
+        raise ValueError(f"Failed to load special dataset {input_dataset}: {str(e)}")
+
+
 def _convert_windows_path_to_wsl(file_path: str) -> str:
     """Convert Windows path to WSL path if needed.
 
@@ -974,18 +1051,38 @@ async def submit_full_pipeline_job(
         # Validate required fields
         if "input_dataset" not in config:
             raise ValueError("input_dataset is required")
-        if "scores" not in config:
-            raise ValueError("scores is required")
         if "output_folder" not in config:
             raise ValueError("output_folder is required")
 
-        # Validate paths exist
-        # input_dataset and label_dataset can be files or directories
-        validate_path_exists(config["input_dataset"])
-        # scores must be a file
-        validate_file_path(config["scores"])
-        if config.get("label_dataset"):
-            validate_path_exists(config["label_dataset"])
+        # Handle special datasets that provide their own labels (e.g., MNIST)
+        # This must be done BEFORE validation so we can inject the scores path
+        temp_scores_file = _handle_special_dataset_scores(config, config["output_folder"])
+
+        if temp_scores_file:
+            # Special dataset detected: inject scores path into config
+            config["scores"] = temp_scores_file
+            config["scores_header"] = 0
+            config["scores_index_column"] = None
+            config["_temp_scores_file"] = temp_scores_file  # Mark for cleanup
+
+            # For MNIST, default to classification mode if not specified
+            if config.get("input_dataset", "").lower() == "mnist" and "classification" not in config:
+                config["classification"] = True
+                logger.info("Auto-enabled classification mode for MNIST dataset")
+
+            # Skip path validation for input_dataset (it's a keyword, not a filesystem path)
+            # Only validate label_dataset if provided
+            if config.get("label_dataset"):
+                validate_path_exists(config["label_dataset"])
+        else:
+            # Normal dataset: validate all paths
+            if "scores" not in config:
+                raise ValueError("scores is required (unless using special datasets like 'mnist')")
+
+            validate_path_exists(config["input_dataset"])
+            validate_file_path(config["scores"])
+            if config.get("label_dataset"):
+                validate_path_exists(config["label_dataset"])
 
         # Create job with original config (for logging/tracking)
         job_id = get_job_manager().create_job(
