@@ -12,38 +12,47 @@ EMUSES transforms scientific data into predictive insights, supporting research 
 
 ### Installation & First Analysis
 
-#### Recommended: Isolated Environment Setup
+#### Recommended: Using Conda (Best for Scientific Computing)
 ```bash
-# Option A: Using venv (lightweight, built-in)
+# 1. Create isolated environment
+conda create -n emuses-env python=3.11
+conda activate emuses-env
+
+# 2. macOS ONLY: Install OpenMP (one-time setup)
+# Required for XGBoost and other ML libraries
+conda install -c conda-forge libomp  # macOS only
+
+# 3. Install EMUSES
+pip install git+https://github.com/chrisfoulon/emuses.git
+
+# 4. Verify installation
+python -m emuses.cli --help
+
+# 5. Run your first analysis (with sample data)
+python -m emuses.cli full output_folder docs/examples/sample_data/hcp_input_data.csv --scores docs/examples/sample_data/hcp_labels.csv
+```
+
+#### Alternative: Using pip + venv (Lightweight)
+```bash
+# 1. Create isolated environment
 python -m venv emuses-env
 source emuses-env/bin/activate  # Linux/macOS
 # emuses-env\Scripts\activate   # Windows
 
-# Option B: Using conda (recommended for scientific computing)
-conda create -n emuses-env python=3.11
-conda activate emuses-env
+# 2. macOS ONLY: Install OpenMP via Homebrew (one-time setup)
+# brew install libomp  # Required for XGBoost on macOS
 
-# Install EMUSES in your isolated environment
+# 3. Install EMUSES
 pip install git+https://github.com/chrisfoulon/emuses.git
 
-# Verify installation
+# 4. Verify installation
 python -m emuses.cli --help
 
-# Run your first analysis (with sample data)
+# 5. Run your first analysis (with sample data)
 python -m emuses.cli full output_folder docs/examples/sample_data/hcp_input_data.csv --scores docs/examples/sample_data/hcp_labels.csv
 ```
 
-#### Quick Installation (System-wide, not recommended for production)
-```bash
-# 1. Install EMUSES
-pip install git+https://github.com/chrisfoulon/emuses.git
-
-# 2. Verify installation
-python -m emuses.cli --help
-
-# 3. Run your first analysis (with sample data)
-python -m emuses.cli full output_folder docs/examples/sample_data/hcp_input_data.csv --scores docs/examples/sample_data/hcp_labels.csv
-```
+> **📝 macOS Users**: XGBoost requires OpenMP for multi-threading. Install via `brew install libomp` (pip/venv) or `conda install -c conda-forge libomp` (conda). This is a one-time setup that enables high-performance ML libraries.
 
 **✅ Success**: Your first scientific prediction model is ready in `output_folder/`!
 
@@ -130,8 +139,16 @@ python -m emuses.cli models status  # Shows current mode
 
 ## 🏗️ Installation Options
 
-### Standard Installation
+### Standard Installation (Conda - Recommended)
 ```bash
+# Create environment
+conda create -n emuses-env python=3.11
+conda activate emuses-env
+
+# macOS: Install OpenMP
+conda install -c conda-forge libomp  # macOS only
+
+# Install EMUSES
 pip install git+https://github.com/chrisfoulon/emuses.git
 ```
 
@@ -139,6 +156,15 @@ pip install git+https://github.com/chrisfoulon/emuses.git
 ```bash
 git clone https://github.com/chrisfoulon/emuses.git
 cd emuses
+
+# Create conda environment
+conda create -n emuses-dev python=3.11
+conda activate emuses-dev
+
+# macOS: Install OpenMP
+conda install -c conda-forge libomp  # macOS only
+
+# Install in editable mode
 pip install -e .
 ```
 

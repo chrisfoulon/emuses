@@ -54,6 +54,9 @@ source emuses-env/bin/activate    # Linux/macOS
 # Upgrade pip (recommended)
 pip install --upgrade pip
 
+# macOS ONLY: Install OpenMP via Homebrew (required for XGBoost)
+# brew install libomp  # Run this outside Python, then continue
+
 # Install EMUSES
 pip install git+https://github.com/chrisfoulon/emuses.git
 
@@ -80,7 +83,7 @@ source emuses-env/bin/activate    # Linux/macOS
 
 ### Option B: Using `conda` (Recommended for Scientific Computing)
 
-**Best for**: Research with heavy scientific dependencies, GPU computing, complex environments
+**Best for**: Research with heavy scientific dependencies, GPU computing, complex environments, **macOS users**
 
 ```bash
 # Create conda environment with specific Python version
@@ -88,6 +91,9 @@ conda create -n emuses-research python=3.11
 
 # Activate environment
 conda activate emuses-research
+
+# macOS ONLY: Install OpenMP (required for XGBoost and ML libraries)
+conda install -c conda-forge libomp  # macOS only - one-time setup
 
 # Install EMUSES via pip (recommended even in conda)
 pip install git+https://github.com/chrisfoulon/emuses.git
@@ -238,6 +244,25 @@ docker run -it --rm -v $(pwd)/data:/data emuses:latest \
 ## 🔧 Troubleshooting
 
 ### Common Installation Issues
+
+#### macOS: XGBoost/OpenMP Error
+
+**Error**: `XGBoost Library (libxgboost.dylib) could not be loaded` or `libomp.dylib missing`
+
+**Cause**: macOS doesn't include OpenMP by default, required by XGBoost and other ML libraries
+
+**Solution**:
+```bash
+# For conda users (recommended):
+conda install -c conda-forge libomp
+
+# For pip/venv users:
+brew install libomp
+
+# Then restart your Python environment
+```
+
+**Why needed?** OpenMP enables multi-threading for XGBoost, LightGBM, and other ML libraries. This is a one-time macOS system setup, not an EMUSES issue.
 
 #### Memory Errors During Installation
 ```bash
