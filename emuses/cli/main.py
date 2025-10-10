@@ -25,6 +25,7 @@ Consider refactoring to reduce duplication while maintaining functionality.
 
 import asyncio
 import logging
+import platform
 import re
 import subprocess
 import sys
@@ -1366,9 +1367,56 @@ async def _execute_via_unified_service(
             _stop_local_service(service_process)
 
 
+def _macos_service_worker(port: int):
+    """
+    MacOS-compatible service worker (module-level function for pickle compatibility).
+    
+    On macOS Python 3.8+, multiprocessing uses 'spawn' method which requires
+    picklable target functions. Nested functions cannot be pickled.
+    
+    This function is only used on macOS systems. Linux/Windows continue to use
+    the nested function inside _start_local_service() for zero behavior change.
+    
+    Parameters
+    ----------
+    port : int
+        Port to run service on
+    """
+    import logging
+    import signal
+    import sys
+    import traceback
+    
+    logger = logging.getLogger(__name__)
+    
+    def signal_handler(signum, frame):
+        """Handle termination signals gracefully."""
+        logger.info(f"Service received signal {signum}, shutting down gracefully...")
+        sys.exit(0)
+    
+    signal.signal(signal.SIGINT, signal_handler)
+    signal.signal(signal.SIGTERM, signal_handler)
+    
+    try:
+        logger.info(f"Starting FastAPI service on port {port}...")
+        from emuses.api.main import create_app
+        import uvicorn
+
+        app = create_app()
+        logger.info("FastAPI app created successfully")
+        uvicorn.run(app, host="127.0.0.1", port=port, log_level="info")
+    except Exception as e:
+        logger.error(f"Service failed to start: {e}")
+        traceback.print_exc()
+
+
 def _start_local_service(port: int = 8000) -> Optional[Process]:
     """
     Start local FastAPI service in background process.
+    
+    Platform-aware implementation:
+    - macOS: Uses module-level _macos_service_worker (required for pickle compatibility)
+    - Linux/Windows: Uses nested run_service function (original behavior, no changes)
 
     Parameters
     ----------
@@ -1381,37 +1429,47 @@ def _start_local_service(port: int = 8000) -> Optional[Process]:
         Service process if successful, None if failed
     """
     try:
+        # Detect platform for multiprocessing compatibility
+        is_macos = platform.system() == "Darwin"
+        
+        if is_macos:
+            # macOS Python 3.8+ uses 'spawn' method - requires picklable function
+            # Use module-level _macos_service_worker with port as argument
+            service_process = Process(target=_macos_service_worker, args=(port,), daemon=False)
+        else:
+            # Linux/Windows: Keep original nested function approach (zero behavior change)
+            def run_service():
+                """Run the FastAPI service with graceful shutdown support."""
+                import signal
+                import sys
+                
+                def signal_handler(signum, frame):
+                    """Handle termination signals gracefully."""
+                    logger.info(f"Service received signal {signum}, shutting down gracefully...")
+                    sys.exit(0)
+                
+                # Register signal handlers for graceful shutdown
+                signal.signal(signal.SIGINT, signal_handler)
+                signal.signal(signal.SIGTERM, signal_handler)
+                
+                try:
+                    logger.info(f"Starting FastAPI service on port {port}...")
+                    from emuses.api.main import create_app
 
-        def run_service():
-            """Run the FastAPI service with graceful shutdown support."""
-            import signal
-            import sys
+                    app = create_app()
+                    logger.info("FastAPI app created successfully")
+                    # Use info level to see startup messages
+                    uvicorn.run(app, host="127.0.0.1", port=port, log_level="info")
+                except Exception as e:
+                    logger.error(f"Service failed to start: {e}")
+                    import traceback
+
+                    traceback.print_exc()
             
-            def signal_handler(signum, frame):
-                """Handle termination signals gracefully."""
-                logger.info(f"Service received signal {signum}, shutting down gracefully...")
-                sys.exit(0)
-            
-            # Register signal handlers for graceful shutdown
-            signal.signal(signal.SIGINT, signal_handler)
-            signal.signal(signal.SIGTERM, signal_handler)
-            
-            try:
-                logger.info(f"Starting FastAPI service on port {port}...")
-                from emuses.api.main import create_app
-
-                app = create_app()
-                logger.info("FastAPI app created successfully")
-                # Use info level to see startup messages
-                uvicorn.run(app, host="127.0.0.1", port=port, log_level="info")
-            except Exception as e:
-                logger.error(f"Service failed to start: {e}")
-                import traceback
-
-                traceback.print_exc()
-
-        # Start service in background process (non-daemon to receive signals)
-        service_process = Process(target=run_service, daemon=False)
+            # Use nested function (original approach for non-macOS systems)
+            service_process = Process(target=run_service, daemon=False)
+        
+        # Start the process (common for both platforms)
         service_process.start()
         
         # Register emergency cleanup handler as safety net
