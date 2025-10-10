@@ -19,6 +19,58 @@ from emuses.tools.data_preproc import find_min_resolution
 from emuses.tools.model_io import ModelIOManager
 
 
+def _format_data_loading_error(
+    base_message: str,
+    file_path: str,
+    params: dict,
+    df_shape: Optional[tuple] = None,
+    removed_columns: Optional[list] = None,
+) -> str:
+    """
+    Format data loading error with context for debugging.
+
+    Parameters
+    ----------
+    base_message : str
+        Core error message with hints
+    file_path : str
+        Path to file being processed
+    params : dict
+        Parameters used (header, index_col, etc.)
+    df_shape : tuple, optional
+        DataFrame shape (rows, cols)
+    removed_columns : list, optional
+        List of columns that were removed
+
+    Returns
+    -------
+    str
+        Formatted error message with context
+    """
+    parts = [base_message, ""]  # Empty line after main message
+
+    # Add file information
+    parts.append(f"📁 File: {file_path}")
+
+    # Add parameters
+    param_strs = [f"{k}={v}" for k, v in params.items()]
+    parts.append(f"🔧 Parameters: {', '.join(param_strs)}")
+
+    # Add shape information if available
+    if df_shape:
+        parts.append(f"📊 Loaded shape: {df_shape[0]} rows × {df_shape[1]} columns")
+
+    # Add removed columns info if available
+    if removed_columns:
+        preview = removed_columns[:10]  # Limit to first 10
+        preview_str = ", ".join(f"'{c}'" for c in preview)
+        if len(removed_columns) > 10:
+            preview_str += f", ... ({len(removed_columns) - 10} more)"
+        parts.append(f"⚠️  Removed {len(removed_columns)} columns: {preview_str}")
+
+    return "\n".join(parts)
+
+
 def load_and_preprocess_digits_dataset(dataset="digits"):
     """
     Downloads the specified dataset if it's not already on the machine and preprocesses it to make an input matrix for
@@ -257,6 +309,7 @@ def spreadsheet_to_input_df(
     filter_columns_list=None,
     filter_rows_list=None,
     columns_are_features=False,
+    spreadsheet_separator=",",
 ):
     """
     Import a spreadsheet and make an input matrix (observations, features),
@@ -276,6 +329,10 @@ def spreadsheet_to_input_df(
         Rows to keep in the DataFrame. Default is None.
     columns_are_features : bool, optional
         If True, transpose the DataFrame so that columns become features. Default is False.
+    spreadsheet_separator : str, optional
+        Delimiter/separator character for CSV files. Default is ','.
+        Common alternatives: ';', '\\t' (tab), '|', ' ' (space).
+        Only used for CSV files, ignored for Excel files.
 
     Returns
     -------
@@ -298,7 +355,7 @@ def spreadsheet_to_input_df(
 
     # Read the spreadsheet into a DataFrame
     if str(file_path).endswith(".csv"):
-        df = pd.read_csv(file_path, header=header, index_col=index_col)
+        df = pd.read_csv(file_path, header=header, index_col=index_col, sep=spreadsheet_separator)
     else:
         df = pd.read_excel(file_path, header=header, index_col=index_col)
 
@@ -396,18 +453,30 @@ def spreadsheet_to_input_df(
 
     # Check if we have any data left after removing unprocessable columns
     if df.empty or df.shape[1] == 0:
-        raise ValueError(
-            "❌ ERROR: No numeric data remaining after processing the file.\n"
-            "🔧 LIKELY CAUSES:\n"
-            "   - Header row not properly specified\n"
-            "   - Index column not properly specified\n"
-            "   - File contains only text data or headers\n"
-            "💡 SOLUTIONS:\n"
-            "   - Add --input_header 0 (for input files) or --scores_header 0 (for scores files) if your file has headers\n"
-            "   - Add --input_index_column 0 (for input files) or --scores_index_column 0 (for scores files) if your file has row labels\n"
-            "   - Check that your file contains numeric data\n"
-            "📝 EXAMPLE: emuses full ... --input_header 0 --input_index_column 0"
+        error_msg = _format_data_loading_error(
+            base_message=(
+                "❌ ERROR: No numeric data remaining after processing the file.\n"
+                "🔧 LIKELY CAUSES:\n"
+                "   - Header row not properly specified\n"
+                "   - Index column not properly specified\n"
+                "   - File contains only text data or headers\n"
+                "💡 SOLUTIONS:\n"
+                "   - Add --input_header 0 (for input files) or --scores_header 0 (for scores files) if your file has headers\n"
+                "   - Add --input_index_column 0 (for input files) or --scores_index_column 0 (for scores files) if your file has row labels\n"
+                "   - Check that your file contains numeric data\n"
+                "📝 EXAMPLE: emuses full ... --input_header 0 --input_index_column 0"
+            ),
+            file_path=str(file_path),
+            params={
+                "header": header,
+                "index_col": index_col,
+                "columns_are_features": columns_are_features,
+                "separator": spreadsheet_separator if str(file_path).endswith(".csv") else "N/A",
+            },
+            df_shape=df.shape,
+            removed_columns=columns_to_remove if columns_to_remove else None,
         )
+        raise ValueError(error_msg)
 
     # Check if all remaining columns are numeric, datetime, or timedelta
     remaining_string_columns = [
@@ -417,9 +486,29 @@ def spreadsheet_to_input_df(
         for col in remaining_string_columns:
             print(f"Unconverted string column detected: {col}")
             print(f"Sample values: {df[col].dropna().unique()[:5].tolist()}")
-        raise ValueError(
-            "The resulting DataFrame contains unconverted string columns. Please inspect the sample values."
+
+        error_msg = _format_data_loading_error(
+            base_message=(
+                f"❌ ERROR: {len(remaining_string_columns)} columns could not be converted to numeric.\n"
+                "🔧 LIKELY CAUSES:\n"
+                "   - These columns contain text data that cannot be converted\n"
+                "   - Header row not properly specified\n"
+                "   - Index column not properly specified\n"
+                "💡 SOLUTIONS:\n"
+                "   - Add --input_header 0 (for input files) or --scores_header 0 (for scores files)\n"
+                "   - Add --input_index_column 0 (for input files) or --scores_index_column 0 (for scores files)\n"
+                "   - Check the sample values printed above"
+            ),
+            file_path=str(file_path),
+            params={
+                "header": header,
+                "index_col": index_col,
+                "columns_are_features": columns_are_features,
+            },
+            df_shape=df.shape,
+            removed_columns=remaining_string_columns,
         )
+        raise ValueError(error_msg)
 
     return df
 

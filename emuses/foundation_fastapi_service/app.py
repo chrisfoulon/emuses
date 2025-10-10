@@ -388,11 +388,15 @@ async def file_not_found_handler(request: Request, exc: FileNotFoundError):
 async def general_exception_handler(request: Request, exc: Exception):
     """Handle general exceptions as 500 Internal Server Error."""
     logger.error(f"Unhandled exception: {exc}", exc_info=True)
+
+    # Include actual error message for better debugging (consistent with ValueError handler)
+    error_message = str(exc) if str(exc) else "An internal server error occurred"
+
     return JSONResponse(
         status_code=500,
         content={
             "error_code": "SYSTEM_ERROR",
-            "message": "An internal server error occurred",
+            "message": error_message,
             "timestamp": datetime.now(timezone.utc).isoformat() + "Z",
         },
     )
