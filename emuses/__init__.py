@@ -43,6 +43,10 @@ def _check_macos_dependencies():
 ║                                                                   ║
 ║  To fix this (one-time setup):                                    ║
 ║                                                                   ║
+║  For conda users:                                                 ║
+║    conda install -c conda-forge llvm-openmp                       ║
+║                                                                   ║
+║  For pip/venv users:                                              ║
 ║    brew install libomp                                            ║
 ║                                                                   ║
 ║  Then restart your Python environment.                            ║
@@ -53,7 +57,8 @@ def _check_macos_dependencies():
 """, file=sys.stderr)
             raise RuntimeError(
                 "macOS OpenMP dependency missing. "
-                "Run: brew install libomp"
+                "Conda: conda install -c conda-forge llvm-openmp | "
+                "pip/venv: brew install libomp"
             ) from e
 
 

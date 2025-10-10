@@ -93,7 +93,7 @@ conda create -n emuses-research python=3.11
 conda activate emuses-research
 
 # macOS ONLY: Install OpenMP (required for XGBoost and ML libraries)
-conda install -c conda-forge libomp  # macOS only - one-time setup
+conda install -c conda-forge llvm-openmp  # macOS only - one-time setup
 
 # Install EMUSES via pip (recommended even in conda)
 pip install git+https://github.com/chrisfoulon/emuses.git
@@ -254,7 +254,7 @@ docker run -it --rm -v $(pwd)/data:/data emuses:latest \
 **Solution**:
 ```bash
 # For conda users (recommended):
-conda install -c conda-forge libomp
+conda install -c conda-forge llvm-openmp
 
 # For pip/venv users:
 brew install libomp
@@ -263,6 +263,8 @@ brew install libomp
 ```
 
 **Why needed?** OpenMP enables multi-threading for XGBoost, LightGBM, and other ML libraries. This is a one-time macOS system setup, not an EMUSES issue.
+
+**Important for conda users**: You MUST use `conda install llvm-openmp` - the Homebrew version (`brew install libomp`) installs to system directories that are not accessible from within conda environments due to conda's isolation.
 
 #### Memory Errors During Installation
 ```bash

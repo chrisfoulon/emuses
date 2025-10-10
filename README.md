@@ -20,7 +20,7 @@ conda activate emuses-env
 
 # 2. macOS ONLY: Install OpenMP (one-time setup)
 # Required for XGBoost and other ML libraries
-conda install -c conda-forge libomp  # macOS only
+conda install -c conda-forge llvm-openmp  # macOS only
 
 # 3. Install EMUSES
 pip install git+https://github.com/chrisfoulon/emuses.git
@@ -52,7 +52,7 @@ python -m emuses.cli --help
 python -m emuses.cli full output_folder docs/examples/sample_data/hcp_input_data.csv --scores docs/examples/sample_data/hcp_labels.csv
 ```
 
-> **📝 macOS Users**: XGBoost requires OpenMP for multi-threading. Install via `brew install libomp` (pip/venv) or `conda install -c conda-forge libomp` (conda). This is a one-time setup that enables high-performance ML libraries.
+> **📝 macOS Users**: XGBoost requires OpenMP for multi-threading. Install via `brew install libomp` (pip/venv) or `conda install -c conda-forge llvm-openmp` (conda). This is a one-time setup that enables high-performance ML libraries. **Important**: Conda users must use the conda installation (`llvm-openmp`) - the brew version won't be found inside conda environments.
 
 **✅ Success**: Your first scientific prediction model is ready in `output_folder/`!
 
@@ -146,7 +146,7 @@ conda create -n emuses-env python=3.11
 conda activate emuses-env
 
 # macOS: Install OpenMP
-conda install -c conda-forge libomp  # macOS only
+conda install -c conda-forge llvm-openmp  # macOS only
 
 # Install EMUSES
 pip install git+https://github.com/chrisfoulon/emuses.git
@@ -162,7 +162,7 @@ conda create -n emuses-dev python=3.11
 conda activate emuses-dev
 
 # macOS: Install OpenMP
-conda install -c conda-forge libomp  # macOS only
+conda install -c conda-forge llvm-openmp  # macOS only
 
 # Install in editable mode
 pip install -e .
