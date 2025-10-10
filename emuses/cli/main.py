@@ -528,6 +528,13 @@ def full(
         Path, typer.Argument(help="Input dataset of images (jpg), NIfTI, or MNIST")
     ],
     # Optional arguments start here
+    input_file_list: Annotated[
+        bool,
+        typer.Option(
+            "--input_file_list",
+            help="Treat input_dataset as a file (CSV/Excel/TXT) containing paths to data files"
+        ),
+    ] = False,
     scores: Annotated[
         Optional[Path],
         typer.Option(help="Path to scores file associated with the dataset"),
@@ -919,6 +926,7 @@ def full(
             _full_async(
                 output_folder=output_folder,
                 input_dataset=input_dataset,
+                input_file_list=input_file_list,
                 scores=scores,
                 label_dataset=label_dataset,
                 recursive_search=recursive_search,

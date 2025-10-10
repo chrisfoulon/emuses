@@ -7,7 +7,7 @@ from pathlib import Path
 import numpy as np
 import joblib
 from bcblib.tools.dataframe_filtering import normalize_dataframe
-from bcblib.tools.general_utils import parse_file_list_argument, save_json
+from bcblib.tools.general_utils import file_to_list, parse_file_list_argument, save_json
 from bcblib.tools.nifti_utils import load_nifti
 from numpy.random import default_rng
 from sklearn.model_selection import train_test_split
@@ -250,28 +250,69 @@ class EMUSESPipeline:
             output_format_info = args.output_format_info
             return input_matrix, dataset_type, output_format_info, None
 
-        # Otherwise, treat dataset_identifier as a file or folder.
-        dataset_path = Path(dataset_identifier).resolve()
-        if not dataset_path.exists():
-            raise ValueError(f"Dataset {dataset_path} is not a valid path")
-        # Check for BIDS dataset
-        if is_bids_dataset(dataset_path):
-            paths_list = handle_bids_dataset(
-                dataset_path, args.bids_filters, verbose=True
-            )
-            dataset_type = "nifti"
-        else:
-            if dataset_path.is_file():
-                dataset_type = detect_dataset_type([dataset_path])
-                paths_list = None
-            else:
-                paths_list = parse_file_list_argument(
-                    dataset_path,
-                    recursive_file_search=args.recursive_input_file_search,
-                    file_types=args.input_file_types,
-                    arg_separator=args.arg_separator,
+        # Handle file list mode (CSV/Excel/TXT containing paths to actual data files)
+        if getattr(args, 'input_file_list', False):
+            list_file_path = Path(dataset_identifier).resolve()
+            if not list_file_path.exists():
+                raise ValueError(f"File list {list_file_path} does not exist")
+
+            self.logger.info(f"Loading file paths from list file: {list_file_path}")
+
+            # Use bcblib to read the file list
+            paths_array = file_to_list(list_file_path)
+
+            # Convert to Path objects and filter out empty/whitespace entries
+            paths_list = [Path(p.strip()).resolve() for p in paths_array if p.strip()]
+
+            if len(paths_list) == 0:
+                raise ValueError(f"File list {list_file_path} contains no valid paths")
+
+            # Validate that paths exist
+            missing_paths = [p for p in paths_list if not p.exists()]
+            if missing_paths:
+                self.logger.error(
+                    f"File list contains {len(missing_paths)} non-existent paths. "
+                    f"First few: {[str(p) for p in missing_paths[:3]]}"
                 )
-                dataset_type = detect_dataset_type(paths_list)
+                raise ValueError(
+                    f"File list contains {len(missing_paths)} non-existent paths. "
+                    f"First missing: {missing_paths[0]}"
+                )
+
+            # Detect dataset type from the actual files (not the container file)
+            dataset_type = detect_dataset_type(paths_list)
+            self.logger.info(
+                f"Detected dataset type '{dataset_type}' from {len(paths_list)} files in list"
+            )
+
+            # Convert to strings for compatibility with existing processing logic
+            paths_list = [str(p) for p in paths_list]
+
+            # Continue to processing section based on detected type
+            # (skip the normal file/folder detection logic)
+        else:
+            # Otherwise, treat dataset_identifier as a file or folder.
+            dataset_path = Path(dataset_identifier).resolve()
+            if not dataset_path.exists():
+                raise ValueError(f"Dataset {dataset_path} is not a valid path")
+            # Check for BIDS dataset
+            if is_bids_dataset(dataset_path):
+                paths_list = handle_bids_dataset(
+                    dataset_path, args.bids_filters, verbose=True
+                )
+                dataset_type = "nifti"
+            else:
+                if dataset_path.is_file():
+                    dataset_type = detect_dataset_type([dataset_path])
+                    paths_list = None
+                else:
+                    paths_list = parse_file_list_argument(
+                        dataset_path,
+                        recursive_file_search=args.recursive_input_file_search,
+                        file_types=args.input_file_types,
+                        arg_separator=args.arg_separator,
+                    )
+                    dataset_type = detect_dataset_type(paths_list)
         if (
             dataset_type in ["image", "nifti"]
             and is_labelled
