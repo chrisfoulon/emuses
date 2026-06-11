@@ -246,6 +246,55 @@ optim_dict_hcp = {
 }
 
 
+# For large lesion/disconnectome datasets (~1000+ subjects).
+# Key differences from optim_dict_default:
+#   - n_neighbors starts at 15 (not 5) and searches continuously up to 50
+#   - min_cluster_size raised to 15-100 (appropriate for N~1333)
+#   - min_samples broadened to 1-15
+optim_dict_disconnectome = {
+    "param": {
+        "umap": {
+            "min_dist": {"name": "min_dist", "low": 0.0, "high": 0.5},
+            "n_neighbors": {"name": "n_neighbors", "low": 15, "high": 50},
+            "n_components": {"value": 2},
+            "metric": {"name": "metric", "choices": ["euclidean"]},
+        },
+        "hdbscan": {
+            "min_cluster_size": {"name": "min_cluster_size", "low": 15, "high": 100},
+            "min_samples": {"name": "min_samples", "low": 1, "high": 15},
+        },
+    },
+    "metrics": {
+        "umap": {
+            "eigen_spread": {
+                "weight": 2.0,
+            },
+            "density_variability": {"weight": 1.0, "target": 0.4, "epsilon": 0.2},
+            "entropy": {
+                "weight": 3.0,
+                "target": 0.6,
+                "epsilon": 0.25,
+            },
+        },
+        "hdbscan": {
+            "cluster_persistence": {
+                "weight": 2,
+            },
+            "noise_ratio": {
+                "weight": 1.0,
+                "target": 0.9,
+                "epsilon": 0.05,
+            },
+            "dbcv": {
+                "weight": 1.0,
+                "target": 1,
+                "epsilon": 0.5,
+            },
+        },
+    },
+}
+
+
 def generate_dynamic_metrics_configs(n_configs=10):
     """
     Generate a list of n_configs different metrics configurations for use in the composite score.
