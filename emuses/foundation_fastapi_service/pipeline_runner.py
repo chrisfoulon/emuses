@@ -183,7 +183,7 @@ class PipelineRunner:
         args.recursive_input_file_search = bool(
             config_dict.get("recursive_input_file_search", False)
         )
-        args.input_file_types = config_dict.get("input_file_types", [".nii", ".nii.gz"])
+        args.input_file_types = config_dict.get("input_file_types")
         args.arg_separator = str(config_dict.get("arg_separator", ","))
         args.bids_filters = config_dict.get("bids_filters", {})
         args.filter_labelled_by_scores = bool(

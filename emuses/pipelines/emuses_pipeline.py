@@ -6,6 +6,7 @@ from pathlib import Path
 
 import numpy as np
 import joblib
+import nibabel as nib
 from bcblib.tools.dataframe_filtering import normalize_dataframe
 from bcblib.tools.general_utils import file_to_list, parse_file_list_argument, save_json
 from bcblib.tools.nifti_utils import load_nifti
@@ -306,10 +307,15 @@ class EMUSESPipeline:
                     dataset_type = detect_dataset_type([dataset_path])
                     paths_list = None
                 else:
+                    file_types = args.input_file_types
+                    if file_types and not isinstance(file_types[0], list):
+                        file_types = [file_types]
+                    if file_types and len(file_types) == 1:
+                        file_types = None
                     paths_list = parse_file_list_argument(
                         dataset_path,
                         recursive_file_search=args.recursive_input_file_search,
-                        file_types=args.input_file_types,
+                        file_types=file_types,
                         arg_separator=args.arg_separator,
                     )
                     dataset_type = detect_dataset_type(paths_list)
@@ -387,8 +393,9 @@ class EMUSESPipeline:
         elif dataset_type == "nifti":
             input_matrix = nifti_dataset_to_matrix(paths_list)
             first_image = load_nifti(paths_list[0])
-            output_shape = first_image.shape
-            output_affine = first_image.affine
+            canonical_first = nib.as_closest_canonical(first_image)
+            output_shape = canonical_first.shape
+            output_affine = canonical_first.affine
             output_format_info = (output_shape, output_affine)
         elif dataset_type in ["spreadsheet", "tabular"]:
             inputs_df = spreadsheet_to_input_df(
