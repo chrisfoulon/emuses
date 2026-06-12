@@ -358,9 +358,31 @@ def get_pipeline_runner():
 
 
 # Exception handlers
+from fastapi.exceptions import RequestValidationError
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    """Handle Pydantic validation errors."""
+    import structlog
+    logger_local = structlog.get_logger()
+    logger_local.error("Pydantic validation error", errors=exc.errors(), path=request.url.path)
+    return JSONResponse(
+        status_code=400,
+        content={
+            "error_code": "PYDANTIC_VALIDATION_ERROR",
+            "message": "Request validation failed",
+            "details": exc.errors(),
+            "timestamp": datetime.now(timezone.utc).isoformat() + "Z",
+        },
+    )
+
+
 @app.exception_handler(ValueError)
 async def value_error_handler(request: Request, exc: ValueError):
     """Handle ValueError exceptions as 400 Bad Request."""
+    import structlog
+    logger_local = structlog.get_logger()
+    logger_local.error("ValueError in request", error=str(exc), path=request.url.path)
     return JSONResponse(
         status_code=400,
         content={
@@ -472,6 +494,33 @@ def validate_file_path(file_path: str) -> Path:
         raise ValueError(f"File not found: {file_path} (tried: {converted_path})")
     if not path.is_file():
         raise ValueError(f"Path is not a file: {file_path} (tried: {converted_path})")
+    return path
+
+
+def validate_path_exists(file_path: str) -> Path:
+    """Validate path exists and is accessible (can be file or directory).
+
+    Parameters
+    ----------
+    file_path : str
+        Path to validate
+
+    Returns
+    -------
+    Path
+        Validated Path object
+
+    Raises
+    ------
+    ValueError
+        If path does not exist or is not accessible
+    """
+    # Convert Windows paths to WSL paths if necessary
+    converted_path = _convert_windows_path_to_wsl(file_path)
+    path = Path(converted_path)
+
+    if not path.exists():
+        raise ValueError(f"Path not found: {file_path} (tried: {converted_path})")
     return path
 
 
@@ -952,11 +1001,13 @@ async def submit_full_pipeline_job(
         if "output_folder" not in config:
             raise ValueError("output_folder is required")
 
-        # Validate file paths exist
-        validate_file_path(config["input_dataset"])
+        # Validate paths exist
+        # input_dataset and label_dataset can be files or directories
+        validate_path_exists(config["input_dataset"])
+        # scores must be a file
         validate_file_path(config["scores"])
         if config.get("label_dataset"):
-            validate_file_path(config["label_dataset"])
+            validate_path_exists(config["label_dataset"])
 
         # Create job with original config (for logging/tracking)
         job_id = get_job_manager().create_job(
@@ -997,6 +1048,9 @@ async def submit_full_pipeline_job(
         return JobStatusResponse(**status)
 
     except ValueError as e:
+        import structlog
+        logger = structlog.get_logger()
+        logger.error("Pipeline validation failed", error=str(e), config_keys=list(config.keys()))
         raise HTTPException(
             status_code=400,
             detail={
