@@ -189,7 +189,7 @@ python -c "from emuses.observability import get_metrics_registry; print('✅ Met
 4. **Advanced Features**: Add request correlation, detailed tracing
 
 ### 📋 Session Startup Checklist
-1. Read `PROJECT_STATUS.md` for current status
+1. Read `STATUS.md` for current status
 2. Review this plan for implementation details
 3. Check TodoWrite status for specific tasks
 4. Test observability system: `./scripts/start-observability.sh`

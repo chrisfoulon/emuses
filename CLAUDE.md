@@ -2,7 +2,7 @@
 
 ## Status Maintenance Instructions
 
-**IMPORTANT**: Always read and update `PROJECT_STATUS.md` when:
+**IMPORTANT**: Always read and update `STATUS.md` when:
 - Starting new development sessions
 - Completing major tasks or features  
 - Moving between development phases
@@ -21,7 +21,7 @@ This project is indexed in codebase-memory-mcp (project name `home-chrisfoulon-n
 **Current Status**: Analysis API Enhancement Foundation Complete - Statistical Analysis + Model Registry + Pipeline Consolidation ✅
 
 **Key Status Files**:
-- **PROJECT_STATUS.md** - Central project status
+- **STATUS.md** - Current state of play (short; read this first)
 - **`lad:lad-standards` skill** - Static development guidelines and patterns (LAD v2 plugin, loaded automatically)
 - **dev-docs/test_quality_conventions.md** - EMUSES-specific testing conventions
 - **dev-docs/analysis-api/** - Current feature development context
@@ -74,8 +74,8 @@ This project is indexed in codebase-memory-mcp (project name `home-chrisfoulon-n
 
 ## Active Development Context
 
-**Current Branch**: `feature/analysis-api-enhancement`
-**Active Phase**: Analysis API Enhancement development
+**Current branch and active work**: see `STATUS.md` — do not duplicate it here, it goes stale.
+The `feature/analysis-api-enhancement` branch this section once named no longer exists.
 
 ### **COMPLETED**: Analysis API Enhancement - Model Registry Redesign Phase 1 ✅
 - **Sub-Plan**: 0A-Extended (Complete EMUSES Model Registry Redesign)  

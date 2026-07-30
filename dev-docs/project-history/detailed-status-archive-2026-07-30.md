@@ -1,3 +1,16 @@
+# Detailed Status Archive — 2026-07-30
+
+*Superseded long-form content of the former `PROJECT_STATUS.md`, archived when the project moved to
+the short-form `STATUS.md` convention (a 30-second current-state file) on 2026-07-30.*
+
+*Read this for historical detail only. `STATUS.md` at the repo root is the current state of play.*
+
+*Note: the "CURRENT FOCUS (Updated 2025-10-09)" section below was already stale when archived —
+`feature/web-gui-gradio` had since been merged into main, so its "READY FOR MERGE" banner no longer
+described reality.*
+
+---
+
 # EMUSES Project Status
 
 ## 🎯 PROJECT VISION

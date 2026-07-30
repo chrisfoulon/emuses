@@ -45,7 +45,7 @@ These documents serve as:
 For current development documentation, see:
 - `/docs/model-registry/` - Current model registry documentation
 - `/docs/project-history/` - Project status archives
-- `PROJECT_STATUS.md` - Current project status
+- `STATUS.md` - Current state of play (formerly `PROJECT_STATUS.md`)
 - `CLAUDE.md` and the `lad:lad-standards` skill - Current development context
 
 ## Archive Policy
