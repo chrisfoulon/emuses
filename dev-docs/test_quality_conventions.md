@@ -53,6 +53,42 @@ For integration tests, `tests/conftest.py` exposes a session-scoped `emuses_pipe
 that runs the full pipeline once per session across all four data modes. Use it rather than invoking
 the pipeline per-test.
 
+## Never hardcode absolute paths
+
+Two rules, both learned the hard way — a `Path('/mnt/c/Users/.../emuses')` in `conftest.py` silently
+broke the session pipeline fixture on every machine but the one it was written on.
+
+**Paths inside the repo** derive from the file's own location. `tests/conftest.py` exports
+`PROJECT_ROOT` for this; import it rather than recomputing `Path(__file__).parent.parent`.
+
+```python
+from tests.conftest import PROJECT_ROOT
+features = PROJECT_ROOT / 'test_data/features.csv'
+```
+
+**Large external datasets** (HCP and similar) are not in the repo and sit at a different mount point
+on every machine. They are configured by the `EMUSES_TEST_DATA_ROOT` environment variable, exported
+as `EXTERNAL_DATA_ROOT` from `tests/conftest.py`. It is `None` when unset, and tests that need it
+skip rather than fail:
+
+```python
+from tests.conftest import EXTERNAL_DATA_ROOT
+
+if EXTERNAL_DATA_ROOT is None:
+    pytest.skip("EMUSES_TEST_DATA_ROOT is not set")
+base = EXTERNAL_DATA_ROOT / "HCP_psy"
+```
+
+Set it like so, pointing at the directory that *contains* `HCP_psy`:
+
+```bash
+export EMUSES_TEST_DATA_ROOT="/gamma/GIN Dropbox/Chris Foulon/EMUSE"
+```
+
+The exception is literal path *strings used as test input* — path-traversal payloads in the security
+tests, or the sample paths fed to the network-drive detection tests. Those must stay literal; they
+are data, not filesystem locations.
+
 ## Environment caveat
 
 A full `pytest` run currently reports ~121 **collection** errors on a clean checkout. These are

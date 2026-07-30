@@ -16,6 +16,19 @@ import time
 import numpy as np
 from emuses.pipelines.emuses_pipeline import EMUSESPipeline
 
+# Repo root, derived from this file's location (tests/conftest.py -> repo root).
+# Never hardcode absolute paths: they break on every machine but the author's.
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+
+# Root of the large external research datasets (HCP and similar) that a few
+# integration tests use. These are not in the repo; point EMUSES_TEST_DATA_ROOT at
+# them to enable those tests, otherwise they skip.
+EXTERNAL_DATA_ROOT = (
+    Path(os.environ["EMUSES_TEST_DATA_ROOT"]).expanduser()
+    if os.environ.get("EMUSES_TEST_DATA_ROOT")
+    else None
+)
+
 
 @pytest.fixture(autouse=True)
 def setup_test_environment():
@@ -154,8 +167,8 @@ def emuses_pipeline_results():
     session_temp_dir = Path(tempfile.mkdtemp(prefix="emuses_session_test_"))
     print(f"📁 Session temp directory: {session_temp_dir}")
     
-    # Define test data configurations with absolute paths
-    project_root = Path('/mnt/c/Users/Tolhsadum/PycharmProjects/emuses')
+    # Resolve the repo root from this file's location so the fixture works on any machine
+    project_root = PROJECT_ROOT
     test_configs = {
         'regression': {
             'features': str(project_root / 'test_data/features.csv'),
