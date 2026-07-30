@@ -6,6 +6,27 @@
 - **Research Labs**: Collaborative model sharing with workspace isolation
 - **Scientific Community**: Public model registry with peer review and benchmarking
 
+## 🔧 TOOLING (Updated 2026-07-30)
+
+### **LAD v2 Plugin Migration** ✅ COMPLETE
+The `.lad/` subtree has been removed. LAD is now a Claude Code plugin (`lad@lad`), installed via
+`/plugin`, exposing `lad:feature-kickoff`, `lad:plan-feature`, `lad:implement-feature`,
+`lad:finalize-feature`, `lad:consolidate-feature`, `lad:test-quality`, `lad:maintenance-session`
+and `lad:lad-standards`. Static development guidelines that used to live in `.lad/CLAUDE.md` are
+now in the `lad:lad-standards` skill, loaded automatically.
+
+EMUSES work product that had been written into `.lad/` was rescued to
+`dev-docs/project-history/phase-implementations/`, with the still-current testing conventions
+distilled into `dev-docs/test_quality_conventions.md`.
+
+**Opened by this migration**: `dev-docs/issues/synthetic_test_data_conversion.md` — the 2025
+"Phase 3" synthetic-to-real test data conversion was never executed; 208 `np.random.rand()`
+instances remain across 27 test files.
+
+**Unrelated defect found**: `tests/conftest.py:158` hardcodes a dead absolute path
+(`/mnt/c/Users/Tolhsadum/PycharmProjects/emuses`), so the session-scoped `emuses_pipeline_results`
+fixture cannot work as written. Not fixed here.
+
 ## 🎯 CURRENT FOCUS (Updated 2025-10-09)
 
 ### **READY FOR MERGE TO MAIN** ✅
