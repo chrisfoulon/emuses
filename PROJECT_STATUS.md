@@ -23,9 +23,26 @@ distilled into `dev-docs/test_quality_conventions.md`.
 "Phase 3" synthetic-to-real test data conversion was never executed; 208 `np.random.rand()`
 instances remain across 27 test files.
 
-**Unrelated defect found**: `tests/conftest.py:158` hardcodes a dead absolute path
-(`/mnt/c/Users/Tolhsadum/PycharmProjects/emuses`), so the session-scoped `emuses_pipeline_results`
-fixture cannot work as written. Not fixed here.
+### **Hardcoded Test Paths Removed** ✅ COMPLETE (2026-07-30)
+Machine-specific absolute paths were removed from the test suite. `tests/conftest.py` had resolved
+the session fixture's inputs against a dead Windows PyCharm directory, so `emuses_pipeline_results`
+could never find its data. Two conventions now apply, documented in
+`dev-docs/test_quality_conventions.md`:
+
+- **In-repo paths** derive from `PROJECT_ROOT` (exported by `tests/conftest.py`).
+- **External datasets** (HCP etc.) come from the `EMUSES_TEST_DATA_ROOT` environment variable,
+  exported as `EXTERNAL_DATA_ROOT`; tests skip when it is unset.
+
+```bash
+export EMUSES_TEST_DATA_ROOT="/gamma/GIN Dropbox/Chris Foulon/EMUSE"   # contains HCP_psy
+```
+
+Path-traversal payloads in `tests/security/` and the network-drive detection fixtures keep their
+literal strings; those are test input, not filesystem locations.
+
+**Still open**: the full suite reports 121 collection errors from missing analysis dependencies
+(`hdbscan` and friends) in the active interpreter. Install them before reading anything into a full
+`pytest` run. `python scripts/dev_test_runner.py` (13/13) is unaffected.
 
 ## 🎯 CURRENT FOCUS (Updated 2025-10-09)
 
