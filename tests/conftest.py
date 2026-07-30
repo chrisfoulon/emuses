@@ -14,7 +14,12 @@ from unittest.mock import patch
 import logging
 import time
 import numpy as np
-from emuses.pipelines.emuses_pipeline import EMUSESPipeline
+# NOTE: EMUSESPipeline is deliberately NOT imported here. It pulls in nibabel and the rest
+# of the scientific stack, and conftest.py is loaded for *every* pytest invocation — including
+# the `fast-tests` CI job, which installs a minimal dependency set on purpose
+# (`pip install -e . --no-deps`, see .github/workflows/emuses_tests.yml). A module-level import
+# made that job fail at collection with ModuleNotFoundError: nibabel, so no test ran at all.
+# It is imported lazily inside the one fixture that needs it.
 
 # Repo root, derived from this file's location (tests/conftest.py -> repo root).
 # Never hardcode absolute paths: they break on every machine but the author's.
@@ -219,6 +224,9 @@ def emuses_pipeline_results():
             args.test_size = 0.2  # Required for dataset splitting
             args.outer_folds = 5   # Required for cross-validation
             
+            # Imported here rather than at module scope — see the note by the imports.
+            from emuses.pipelines.emuses_pipeline import EMUSESPipeline
+
             # Create and run pipeline
             pipeline = EMUSESPipeline(args)
             
