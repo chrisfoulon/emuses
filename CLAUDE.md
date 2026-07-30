@@ -8,6 +8,14 @@
 - Moving between development phases
 - Adding new pending work
 
+## Codebase Knowledge Graph & ADR (codebase-memory-mcp)
+
+This project is indexed in codebase-memory-mcp (project name `home-chrisfoulon-neuro_apps-emuses`). Use it as the primary way to explore and modify code, not just Grep/Read:
+- **Explore structure**: `search_graph`, `trace_path`, `get_code_snippet`, `get_architecture` before falling back to Grep/Read.
+- **Explore rationale**: `manage_adr(project, mode="get"|"sections")` (backed by `.codebase-memory/adr.md`, tracked in git) records *why*, not *what* — algorithm choices (UMAP/HDBSCAN/Optuna/etc.), architectural decisions (atomic model folders, context-dict stage communication, dual-dataset mode, etc.), and known open issues. **Read the relevant section before changing anything in the areas it covers** — several constraints there (e.g., models are atomic folders, not separable components) were previously violated and had to be reverted.
+- **Keep the ADR current**: when you make a new architectural/algorithmic decision, or resolve one of the "Known Constraints and Open Issues" entries, update it via `manage_adr(mode="update")` in the same session — it drifts stale exactly like undocumented code if left untouched.
+- **Keep the graph current**: after non-trivial edits (new/renamed/moved functions or files), re-index (`index_repository` or `detect_changes`) so `search_graph`/`trace_path` don't return stale results for the rest of the session.
+
 ## Quick Status for New Sessions
 
 **Current Status**: Analysis API Enhancement Foundation Complete - Statistical Analysis + Model Registry + Pipeline Consolidation ✅
