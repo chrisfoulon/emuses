@@ -59,13 +59,16 @@ jobs:
         restore-keys: |
           ${{ runner.os }}-pip-
     
-    - name: Install pip-tools and dependencies
+    - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install pip-tools
-        pip-sync requirements-dev.txt
+        # `pip-sync` is not used here: pip-tools 7.6.0 imports stdlib_pkgs from
+        # pip._internal.utils.compat, which current pip no longer provides, so pip-sync
+        # crashes before installing anything. On a fresh runner there is nothing for it to
+        # prune anyway, so a plain install of the compiled lockfile is equivalent.
+        pip install -r requirements-dev.txt
         pip install -e .
-    
+
     - name: Run tests with coverage
       run: |
         pytest --cov=emuses --cov-report=xml --cov-report=html --cov-report=term-missing
@@ -92,11 +95,12 @@ jobs:
     - name: Install security tools
       run: |
         python -m pip install --upgrade pip
-        pip install pip-tools safety bandit
-    
+        pip install safety bandit
+
     - name: Install dependencies for scanning
       run: |
-        pip-sync requirements.txt
+        # See the note in the test job: pip-sync is broken against current pip.
+        pip install -r requirements.txt
     
     - name: Run Safety dependency scan
       run: |
@@ -131,11 +135,12 @@ jobs:
     - name: Install quality tools
       run: |
         python -m pip install --upgrade pip
-        pip install pip-tools black isort flake8 mypy
-    
+        pip install black isort flake8 mypy
+
     - name: Install dependencies
       run: |
-        pip-sync requirements-dev.txt
+        # See the note in the test job: pip-sync is broken against current pip.
+        pip install -r requirements-dev.txt
     
     - name: Check code formatting with Black
       run: |
