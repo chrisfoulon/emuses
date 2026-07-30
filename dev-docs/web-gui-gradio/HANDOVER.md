@@ -217,7 +217,7 @@ TodoWrite([
 ### LAD Framework Guidance
 
 **Follow LAD Process**:
-- Use `.lad/claude_prompts/02_iterative_implementation.md` for implementation
+- Use the `lad:implement-feature` skill for implementation
 - Update `plan.md` checkboxes as tasks complete
 - Run tests after each task completion
 - Use TodoWrite to track progress

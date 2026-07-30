@@ -363,7 +363,7 @@ These documents contain:
 ## Next Steps
 
 1. **Review this kickoff document** - Validate requirements and scope
-2. **Proceed to LAD Phase 1** - Context gathering using `.lad/claude_prompts/01_autonomous_context_planning.md`
+2. **Proceed to LAD Phase 1** - Context gathering using the `lad:plan-feature` skill
 3. **Create detailed plan** - Technical design and implementation breakdown
 4. **Begin implementation** - Start with Phase 0 (setup) and Phase 1 (MVP)
 

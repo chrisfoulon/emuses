@@ -4,9 +4,6 @@
 * Protect existing functionality: do **not** delete or refactor code outside the immediate test context.
 * Before deleting any code, follow the "Coverage & Code Safety" guidelines below.
 
-Copilot, do not modify any files under .lad/.
-All edits must occur outside .lad/, or in prompts/ when explicitly updating LAD itself.
-
 Coding & formatting
 * Follow PEP 8; run Black.
 * Use type hints everywhere.
@@ -74,7 +71,6 @@ radon-max-cc = 10
 exclude = 
     __pycache__,
     .git,
-    .lad,
     .venv,
     venv,
     build,

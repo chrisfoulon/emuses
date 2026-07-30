@@ -46,7 +46,7 @@ For current development documentation, see:
 - `/docs/model-registry/` - Current model registry documentation
 - `/docs/project-history/` - Project status archives
 - `PROJECT_STATUS.md` - Current project status
-- `.lad/CLAUDE.md` - Current development context
+- `CLAUDE.md` and the `lad:lad-standards` skill - Current development context
 
 ## Archive Policy
 

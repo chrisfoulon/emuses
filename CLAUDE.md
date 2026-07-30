@@ -22,7 +22,8 @@ This project is indexed in codebase-memory-mcp (project name `home-chrisfoulon-n
 
 **Key Status Files**:
 - **PROJECT_STATUS.md** - Central project status
-- **.lad/CLAUDE.md** - Static development guidelines and patterns
+- **`lad:lad-standards` skill** - Static development guidelines and patterns (LAD v2 plugin, loaded automatically)
+- **dev-docs/test_quality_conventions.md** - EMUSES-specific testing conventions
 - **dev-docs/analysis-api/** - Current feature development context
 
 ## Project Mission
@@ -179,4 +180,4 @@ This project is indexed in codebase-memory-mcp (project name `home-chrisfoulon-n
 
 ---
 *Last Updated: 2025-08-31 - Analysis API Enhancement Foundation Complete: Statistical Analysis + Model Registry + Pipeline Consolidation*
-*Static guidelines in `.lad/CLAUDE.md` | Historical details in `dev-docs/project-history/`*
+*Static guidelines in the `lad:lad-standards` skill | Historical details in `dev-docs/project-history/`*
