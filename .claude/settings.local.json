@@ -23,7 +23,14 @@
       "Bash(flake8:*)",
       "Bash(rg:*)",
       "Bash(sed:*)",
-      "Bash(git ls-tree:*)"
+      "Bash(git ls-tree:*)",
+      "WebFetch(domain:github.com)",
+      "WebSearch",
+      "Bash(gh issue:*)",
+      "Bash(gh api:*)",
+      "Bash(xargs echo:*)",
+      "Bash(xargs -I {} basename {} done)",
+      "WebFetch(domain:repomix.com)"
     ],
     "deny": []
   }
