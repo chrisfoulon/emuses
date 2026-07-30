@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from logging.handlers import QueueHandler, QueueListener
 from pathlib import Path
-from typing import Union
+from typing import Optional, Union
 
 import optuna
 from bcblib.tools.general_utils import save_json
@@ -80,7 +80,7 @@ class PipelineConfig:
     n_jobs: int = -1  # Number of parallel jobs for model training
     model_selection: list = None  # List of models to try
     prediction_optim_dict: str = "optim_dict_predict"  # Prediction optim_dict name
-    random_state: int = 42  # Master random seed
+    random_state: Optional[int] = None  # Master random seed (None = parallel UMAP, int = reproducible but single-threaded UMAP)
 
     # Additional required fields
     input_dataset: str = None  # Input dataset path

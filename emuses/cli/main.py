@@ -769,9 +769,9 @@ def full(
         ),
     ] = "optim_dict_predict",
     random_state: Annotated[
-        int,
-        typer.Option("--random_state", help="Master random seed for reproducibility. Note: Setting this will disable UMAP parallel processing (n_jobs=1) to ensure reproducible results. For faster UMAP training at the cost of reproducibility, consider using different seeds for different runs."),
-    ] = 42,
+        Optional[int],
+        typer.Option("--random_state", help="Master random seed. When set, all component seeds are derived from this value for full reproducibility, but UMAP parallelism is disabled (n_jobs forced to 1). Omit for parallel UMAP (faster on multi-core machines) with non-reproducible runs."),
+    ] = None,
     umap_jobs: Annotated[
         Optional[int],
         typer.Option(
@@ -1699,7 +1699,7 @@ async def _execute_inference_locally(config: dict, status_renderer) -> None:
         args = type('Args', (), {})()
         args.input_dataset = str(config["data"])  # Still needed for PipelineConfig
         args.output_folder = str(config["output"])
-        args.random_state = 42
+        args.random_state = None
         args.load_embeddings = None
         args.bids_filters = None
 
