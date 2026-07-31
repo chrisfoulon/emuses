@@ -19,6 +19,21 @@ from emuses.observability.logging import setup_structured_logging
 # create ONE queue at module load, so children can see it
 LOG_QUEUE = mp.Queue(-1)
 
+# The single QueueListener draining LOG_QUEUE in the main process.
+#
+# There must be exactly one. _configure_logging() runs from PipelineConfig.__post_init__,
+# so it fires on every PipelineConfig instantiation; creating a listener there unguarded
+# started a new thread each time. Two consequences, and the second is the worse one:
+#
+#   1. The threads were never joined. Each also registered its own atexit handler, and at
+#      interpreter shutdown they raced for the stderr lock, aborting the process with
+#      "Fatal Python error: _enter_buffered_busy" (exit 134) *after* tests had already
+#      passed. Five listeners accumulated over a single four-test file.
+#   2. Multiple listeners consuming one queue compete for records. Each log record goes to
+#      whichever listener dequeues it first, so output was being split arbitrarily between
+#      them rather than duplicated — quietly losing lines from any given handler.
+_LOG_LISTENER = None
+
 
 @dataclass
 class PipelineConfig:
@@ -213,18 +228,23 @@ class PipelineConfig:
 
         # ➌ MAIN process: create listener & real handlers
         # Use only console handler for QueueListener since file logging is handled by observability
-        stream = logging.StreamHandler(sys.stdout)
+        global _LOG_LISTENER
+        if _LOG_LISTENER is None:
+            stream = logging.StreamHandler(sys.stdout)
 
-        listener = QueueListener(LOG_QUEUE, stream, respect_handler_level=True)
-        listener.start()
+            _LOG_LISTENER = QueueListener(
+                LOG_QUEUE, stream, respect_handler_level=True
+            )
+            _LOG_LISTENER.start()
+
+            # make sure everything is flushed on shutdown. Registered once, with the
+            # listener, so repeated PipelineConfig construction does not stack handlers.
+            atexit.register(_LOG_LISTENER.stop)
 
         # Don't clear handlers - let observability logging coexist
         # Only add QueueHandler if not already present
         if not any(isinstance(h, QueueHandler) for h in root.handlers):
             root.addHandler(QueueHandler(LOG_QUEUE))
-
-        # make sure everything is flushed on shutdown
-        atexit.register(listener.stop)
 
         opt_file = logging.FileHandler(
             log_dir / "optuna.log", mode="a", encoding="utf-8"

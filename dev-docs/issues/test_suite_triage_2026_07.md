@@ -24,7 +24,18 @@ alone this took 74 failed / 620 passed → 65 failed / 645 passed, and cleared
 
 ## Open — needs real work
 
+### 0. Flaky test (P3)
+
+`tests/inference/test_simple_validation.py::TestSimpleNormalizationValidation::test_denormalization_scores_capability`
+fails intermittently — 3 passes, 3 failures across six consecutive runs of identical code. Found
+while checking whether the QueueListener fix had caused a regression; it had not. A flaky test is a
+different problem from a broken one, and this one will corrupt any before/after comparison in
+`tests/inference/` until it is fixed.
+
 ### 1. `tests/multi-user-service/` hangs as a directory (P2)
+
+**Re-tested after the QueueListener fix: it still hangs** (420s cap). So it is a distinct cause,
+not accumulating listener threads as originally suspected.
 
 Every one of its 18 files passes or fails in ≤3s alone. Run together, the directory exceeds 900s,
 stalling on `test_deployment_mode_integration.py` — which by itself finishes in 0.84s.
@@ -69,9 +80,10 @@ Much of this is real retry/backoff delay being waited out. Injecting the backoff
 marking these `@pytest.mark.slow` and excluding them from the default run, would cut the suite
 substantially. `pytest.ini` already declares a `slow` marker that nothing uses.
 
-### 4. Leaked daemon monitor threads abort the interpreter (P1)
+### 4. Leaked QueueListener threads abort the interpreter — FIXED 2026-07-31 (was P1)
 
-**One root cause behind at least four directories.** Confirmed by capturing the crash:
+**One root cause behind five directories, including all three core dumps.** Confirmed by capturing
+the crash:
 
 ```
 Fatal Python error: _enter_buffered_busy: could not acquire lock for
@@ -85,27 +97,42 @@ Exception in thread Thread-1 (_monitor)   [also Thread-2, -4, -6, -7]
 are correct but the exit status is a crash — which any CI system reads as failure. This is why
 several directories reported "dumped core" while apparently having run fine.
 
-Affected: `flexible-inference-stage` and `foundation_fastapi_service` abort outright; `cli` and
-`inference` emit thread tracebacks (same leak, just fewer threads).
+**Mechanism**: `_monitor` is `logging.handlers.QueueListener._monitor` from the standard library —
+**not** EMUSES's own `ResourceMonitor`, which an earlier draft of this document wrongly blamed.
+(`ResourceMonitor.stop_monitoring()` is correct: it sets its stop event and joins with a timeout.)
 
-**Mechanism**: `ResourceMonitor.start_monitoring()` (`emuses/cli/rich_features.py:1142-1144`) starts
-a `daemon=True` thread. The matching `stop_monitoring()` is called at line 1437 — inside
-`stop_spinner`, **not in a `finally`**. Any path that starts a spinner with memory monitoring and
-does not reach a clean stop leaks a thread that lives until interpreter shutdown, where it races
-the finalizer for the stderr lock.
+`PipelineConfig.__post_init__` calls `_configure_logging()`, which built a fresh
+`QueueListener(LOG_QUEUE, ...)`, started it, and registered its own `atexit` handler — **on every
+`PipelineConfig` instantiation**. The pre-existing guard only prevented duplicate `QueueHandler`s,
+never duplicate listeners. Five `PipelineConfig` objects across one four-test file therefore left
+five listener threads and five atexit handlers, all contending for stderr during finalisation.
 
-Tests make it worse but are not the whole story: `tests/foundation_fastapi_service/test_stage_runners.py`
-calls `start_monitoring()` five times and `stop_monitoring()` once. But `flexible-inference-stage`
-starts no monitors of its own — those come from production code paths, so this is a real leak in
-the CLI, not only a test hygiene problem.
+A second, quieter consequence: multiple listeners draining a *single shared queue* compete for
+records. Each record goes to whichever listener dequeues it first, so log output was being split
+arbitrarily between them rather than duplicated — losing lines from any given handler. That is a
+correctness bug in logging independent of the crash.
 
-**Fix (production code, not a test change)**: guarantee the stop. Wrap the spinner lifecycle in
-`try/finally`, and have `stop_monitoring()` `join()` the thread with a timeout rather than relying
-on daemon semantics. An autouse conftest fixture that stops lingering monitors between tests would
-contain the blast radius but would be papering over a genuine CLI defect.
+**Fix applied**: a module-level `_LOG_LISTENER` singleton in `emuses/pipelines/pipeline_config.py`.
+The listener and its atexit registration happen once.
 
-Ranked P1 rather than P2 because it exits the process abnormally, and because a leaked monitor
-thread in the real CLI is a defect users could hit, not merely a test artefact.
+**Verified** against a stashed comparison rather than assumed:
+
+| Directory | Before | After |
+|---|---|---|
+| `flexible-inference-stage` | core dump, exit 134 | exit 1 — 6 failed, 9 passed |
+| `pipelines` | core dump | exit 1 — 12 failed, 82 passed |
+| `foundation_fastapi_service` | core dump | exit 1 — 32 failed, 171 passed |
+| `integration` | thread traceback, no summary | exit 1 — 1 failed, 115 passed |
+| `cli` | thread traceback | exit 1 — 19 failed, 58 passed (counts identical with/without) |
+| `inference` | thread traceback | exit 1 — 16 failed, 40 passed |
+
+`dev_test_runner.py` remained 13/13 throughout.
+
+**Known side effect, introduced by this fix**: an `EOFError` traceback now appears at shutdown. The
+one surviving listener blocks in `mp.Queue.get()` and sees the pipe close during finalisation;
+previously the process aborted before reaching that point. Exit codes and test results are correct,
+so this is strictly better than SIGABRT, but it is new noise. Silencing it properly means stopping
+the listener before multiprocessing tears the queue down.
 
 **Reproducer** — proves the leak directly rather than inferring it from the crash text. Five threads
 survive a four-test file:
