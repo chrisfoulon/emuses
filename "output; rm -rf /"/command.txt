@@ -1,6 +1,6 @@
 # EMUSES Pipeline Command
-# Generated on: 2026-07-31 11:03:13
-# To rerun: /home/chrisfoulon/miniconda3/envs/emuses/lib/python3.11/site-packages/pytest/__main__.py tests/enhanced-cli-typer/ -q --tb=no --timeout=30 -p no:cacheprovider
+# Generated on: 2026-07-31 12:19:02
+# To rerun: /home/chrisfoulon/miniconda3/envs/emuses/lib/python3.11/site-packages/pytest/__main__.py tests/enhanced-cli-typer/test_security_validation.py -q --tb=no -p no:cacheprovider
 # Or use: emuses rerun ""output; rm -rf /""
 
-/home/chrisfoulon/miniconda3/envs/emuses/lib/python3.11/site-packages/pytest/__main__.py tests/enhanced-cli-typer/ -q --tb=no --timeout=30 -p no:cacheprovider
+/home/chrisfoulon/miniconda3/envs/emuses/lib/python3.11/site-packages/pytest/__main__.py tests/enhanced-cli-typer/test_security_validation.py -q --tb=no -p no:cacheprovider

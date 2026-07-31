@@ -131,11 +131,20 @@ class TestCircuitBreakerFunctionality:
             circuit_breaker_threshold=3
         )
 
-        # Mock session to simulate failures
-        with patch.object(client, '_session') as mock_session:
-            mock_session.get = AsyncMock(side_effect=httpx.ConnectError("Connection failed"))
+        # Enter the context first, then patch the live session's `request`, matching
+        # test_circuit_breaker_half_open_state below.
+        #
+        # Patching `client._session` *before* `async with` does not work and made this
+        # test hang indefinitely: __aenter__ calls _ensure_session(), which replaces the
+        # session when `_session is None or _session.is_closed` — and a MagicMock's
+        # `.is_closed` is a truthy Mock. The double was therefore discarded, a real
+        # httpx.AsyncClient took its place, and requests went to a localhost:8000 that
+        # is not running, looping through exponential backoff (factor 2.0, 60s ceiling).
+        # Patching `.get` was wrong too: `client.get()` delegates to `_session.request`.
+        async with client:
+            with patch.object(client._session, 'request', new_callable=AsyncMock) as mock_request:
+                mock_request.side_effect = httpx.ConnectError("Connection failed")
 
-            async with client:
                 # First 3 failures should be attempted
                 for i in range(3):
                     with pytest.raises(httpx.ConnectError):
