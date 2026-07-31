@@ -1,8 +1,15 @@
 name: Development CI - Fast Tests
 
+# Pull requests only. A `push` trigger alongside this ran the workflow twice for every
+# push to a branch with an open PR. Deduplicating them via a concurrency group works, but
+# leaves the cancelled run showing as a failed check on the PR (mergeStateStatus
+# UNSTABLE) and still costs a runner start. Not triggering it at all is cleaner and
+# cheaper.
+#
+# Branches with no open PR get no run here by design: the pre-push gate for those is
+# `python scripts/dev_test_runner.py` locally, which is the workflow CLAUDE.md already
+# describes. Use workflow_dispatch to run this against a branch on demand.
 on:
-  push:
-    branches-ignore: [main, master]  # Only run on development branches
   pull_request:
     branches: [main, master]
   workflow_dispatch:
