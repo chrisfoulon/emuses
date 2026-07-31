@@ -76,7 +76,12 @@ jobs:
         # re-resolves and fails, because the lockfile is compiled on one Python version
         # and installed on another, so the environment markers do not line up.
         pip install --no-deps -r requirements-dev.txt
-        pip install -e .
+        # Also --no-deps: the lockfile above already provides every dependency. Without it
+        # pip re-resolves emuses's unpinned requirements against the installed set, and on
+        # a conflict it backtracks through older releases — it walked gpy 1.13.2 -> 1.13.1
+        # -> 1.10.0, which ships only an sdist that cannot compile on Python 3.11
+        # (longintrepr.h moved), failing the whole job.
+        pip install --no-deps -e .
 
     - name: Run tests with coverage
       run: |
