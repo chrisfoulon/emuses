@@ -6,6 +6,8 @@
 #
 acres==0.5.0
     # via bidsschematools
+aiosqlite==0.22.1
+    # via -r requirements.in
 alembic==1.16.4
     # via optuna
 altair==5.5.0
