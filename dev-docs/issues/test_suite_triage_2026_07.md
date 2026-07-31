@@ -107,6 +107,34 @@ contain the blast radius but would be papering over a genuine CLI defect.
 Ranked P1 rather than P2 because it exits the process abnormally, and because a leaked monitor
 thread in the real CLI is a defect users could hit, not merely a test artefact.
 
+**Reproducer** — proves the leak directly rather than inferring it from the crash text. Five threads
+survive a four-test file:
+
+```bash
+python -c "
+import threading, pytest
+code = pytest.main(['tests/flexible-inference-stage/test_explicit_validation_flag.py','-q','--tb=no'])
+alive = [t for t in threading.enumerate() if t is not threading.main_thread()]
+print('pytest exit code:', code)
+print('threads still alive:', len(alive))
+for t in alive: print(f'   {t.name!r} daemon={t.daemon} alive={t.is_alive()}')
+"
+```
+
+```
+pytest exit code: 1                      <- tests completed, 1 failed 3 passed
+threads still alive: 6
+   'Thread-1 (_monitor)' daemon=True alive=True
+   'Thread-2 (_monitor)' daemon=True alive=True
+   'Thread-4 (_monitor)' daemon=True alive=True
+   'Thread-6 (_monitor)' daemon=True alive=True
+   'Thread-7 (_monitor)' daemon=True alive=True
+   'QueueFeederThread'   daemon=True alive=True
+```
+
+Use this to verify any fix: after it, the `_monitor` entries should be gone and the process should
+exit with pytest's own code rather than 134.
+
 ### 5. Two multi-user test directories (P4)
 
 `tests/multi-user-service/` and `tests/multi_user_service/` both exist with different contents.
