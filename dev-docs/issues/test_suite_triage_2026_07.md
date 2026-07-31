@@ -69,11 +69,43 @@ Much of this is real retry/backoff delay being waited out. Injecting the backoff
 marking these `@pytest.mark.slow` and excluding them from the default run, would cut the suite
 substantially. `pytest.ini` already declares a `slow` marker that nothing uses.
 
-### 4. `tests/integration/` and `tests/pipelines/` "dumped core" (P2, unverified)
+### 4. Leaked daemon monitor threads abort the interpreter (P1)
 
-Both reported `timeout: the monitored command dumped core` during the first directory sweep
-(129s and 41s). **This has not been re-checked since the 47 packages were installed**, and some of
-those directories were failing on missing imports at the time. Re-measure before investigating.
+**One root cause behind at least four directories.** Confirmed by capturing the crash:
+
+```
+Fatal Python error: _enter_buffered_busy: could not acquire lock for
+<_io.BufferedWriter name='<stderr>'> at interpreter shutdown,
+possibly due to daemon threads
+Exception in thread Thread-1 (_monitor)   [also Thread-2, -4, -6, -7]
+```
+
+**The tests pass first.** `tests/flexible-inference-stage/test_explicit_validation_flag.py` reports
+`1 failed, 3 passed in 6.61s` and *then* the process aborts with exit code 134 (SIGABRT). So results
+are correct but the exit status is a crash — which any CI system reads as failure. This is why
+several directories reported "dumped core" while apparently having run fine.
+
+Affected: `flexible-inference-stage` and `foundation_fastapi_service` abort outright; `cli` and
+`inference` emit thread tracebacks (same leak, just fewer threads).
+
+**Mechanism**: `ResourceMonitor.start_monitoring()` (`emuses/cli/rich_features.py:1142-1144`) starts
+a `daemon=True` thread. The matching `stop_monitoring()` is called at line 1437 — inside
+`stop_spinner`, **not in a `finally`**. Any path that starts a spinner with memory monitoring and
+does not reach a clean stop leaks a thread that lives until interpreter shutdown, where it races
+the finalizer for the stderr lock.
+
+Tests make it worse but are not the whole story: `tests/foundation_fastapi_service/test_stage_runners.py`
+calls `start_monitoring()` five times and `stop_monitoring()` once. But `flexible-inference-stage`
+starts no monitors of its own — those come from production code paths, so this is a real leak in
+the CLI, not only a test hygiene problem.
+
+**Fix (production code, not a test change)**: guarantee the stop. Wrap the spinner lifecycle in
+`try/finally`, and have `stop_monitoring()` `join()` the thread with a timeout rather than relying
+on daemon semantics. An autouse conftest fixture that stops lingering monitors between tests would
+contain the blast radius but would be papering over a genuine CLI defect.
+
+Ranked P1 rather than P2 because it exits the process abnormally, and because a leaked monitor
+thread in the real CLI is a defect users could hit, not merely a test artefact.
 
 ### 5. Two multi-user test directories (P4)
 
