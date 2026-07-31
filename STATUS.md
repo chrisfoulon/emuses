@@ -72,11 +72,11 @@ contents. Probably unintended.
       `CLAUDE.md` naming a deleted branch as current); the rest of the sweep has not been done.
 - [ ] Decide what to do with `fix/security-dependency-updates` — merge to `main` or split the
       unrelated work out. It is carrying five distinct concerns.
-- [ ] Unhang `tests/enhanced-cli-typer/` and `tests/multi-user-service/`, then triage the ~102
-      failures. `/lad:test-quality` is built for this. Start with the two hangs: no full-suite
-      number exists until they are fixed, and the `subprocess` usage in `enhanced-cli-typer` is the
-      prime suspect.
-- [ ] Work out whether `tests/multi-user-service/` and `tests/multi_user_service/` should both exist.
+- [ ] Test suite triage — full findings in `dev-docs/issues/test_suite_triage_2026_07.md`.
+      One of the two hangs is fixed; the environment was missing 47 pinned packages and now is not.
+      Remaining: the `tests/multi-user-service/` directory-level hang, and 36 `model_registry`
+      failures whose fixtures encode the pre-ADR-§2.1 component model (the code is right, the tests
+      are obsolete — do not "fix" the code to accept them).
 - [ ] `dev-docs/issues/synthetic_test_data_conversion.md` — the 2025 "Phase 3" conversion was never
       executed. 208 `np.random.rand()` instances remain across 27 test files. Triage before bulk
       converting; some are legitimately random.
