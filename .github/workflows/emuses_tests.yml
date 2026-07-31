@@ -1,10 +1,24 @@
 name: Development CI - Fast Tests
 
-on: 
+on:
   push:
     branches-ignore: [main, master]  # Only run on development branches
   pull_request:
     branches: [main, master]
+  workflow_dispatch:
+
+# Two things, both about not paying twice for the same answer:
+#
+# `head_ref || ref` deliberately collapses the push and pull_request events for a branch
+# into ONE group. They carry different refs (refs/heads/x vs refs/pull/N/merge), so
+# keying on `ref` alone would leave them in separate groups and both would still run —
+# which is exactly the duplication seen on PR #5, two identical runs per push.
+#
+# cancel-in-progress then supersedes queued runs when a branch is pushed again, so
+# iterating does not leave a trail of runs whose results nobody will read.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   fast-tests:
