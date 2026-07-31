@@ -23,9 +23,33 @@ no gradio code or dependency anywhere in the tree. Planning lives in `dev-docs/w
 guidelines are in the `lad:lad-standards` skill. The codebase is indexed in codebase-memory-mcp as
 `home-chrisfoulon-neuro_apps-emuses` (14k nodes), with rationale in `.codebase-memory/adr.md`.
 
-**Test suite**: `python scripts/dev_test_runner.py` → 13/13, the pre-push gate. A full `pytest` run
-currently reports 121 *collection* errors from missing analysis dependencies (`hdbscan`) in the
-active interpreter — an environment problem, not repo breakage.
+**Environment**: `conda activate emuses` (it lives in the old `~/miniconda3`, registered in
+`~/.condarc` so it resolves by name). Python 3.11, editable install pointing at this repo.
+
+**Test suite — collects cleanly, does not pass.** 2490 tests collect with 0 errors. A full run has
+never completed: two directories hang indefinitely. Measured per directory on 2026-07-31:
+
+| Directory | Time | Result |
+|---|---|---|
+| `multi-user-service` | **hangs** | killed at 300s |
+| `enhanced-cli-typer` | **hangs** | killed at 300s; 6 files use `subprocess`, which `CLAUDE.md` forbids |
+| `integration` | 129s | **dumped core** |
+| `pipelines` | 41s | **dumped core** |
+| `model_registry` | 96s | 73 failed, 621 passed |
+| `observability` | 5s | 9 failed, 52 passed |
+| `deployment` | 6s | 7 failed, 49 passed |
+| `multi_user_service` | 3s | 4 failed, 4 passed, 7 errors |
+| `analysis_api`, `cicd-pipeline` | <15s | 3 failed each |
+| `security`, `unit`, `compliance` | <20s | 1 failed each |
+| `tools`, `performance` | <13s | all pass |
+
+**~102 known failures plus 7 errors**, all pre-existing. The remaining 14 directories finish in
+under 20s each, so the suite is not inherently slow — two hanging directories are why it never ends.
+
+Note `tests/multi-user-service/` and `tests/multi_user_service/` both exist, with different
+contents. Probably unintended.
+
+`python scripts/dev_test_runner.py` → 13/13 is the pre-push gate and is unaffected by any of this.
 
 ## Decided strategy
 
@@ -48,7 +72,11 @@ active interpreter — an environment problem, not repo breakage.
       `CLAUDE.md` naming a deleted branch as current); the rest of the sweep has not been done.
 - [ ] Decide what to do with `fix/security-dependency-updates` — merge to `main` or split the
       unrelated work out. It is carrying five distinct concerns.
-- [ ] Install the missing analysis dependencies so full `pytest` runs mean something again.
+- [ ] Unhang `tests/enhanced-cli-typer/` and `tests/multi-user-service/`, then triage the ~102
+      failures. `/lad:test-quality` is built for this. Start with the two hangs: no full-suite
+      number exists until they are fixed, and the `subprocess` usage in `enhanced-cli-typer` is the
+      prime suspect.
+- [ ] Work out whether `tests/multi-user-service/` and `tests/multi_user_service/` should both exist.
 - [ ] `dev-docs/issues/synthetic_test_data_conversion.md` — the 2025 "Phase 3" conversion was never
       executed. 208 `np.random.rand()` instances remain across 27 test files. Triage before bulk
       converting; some are legitimately random.
