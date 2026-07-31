@@ -64,9 +64,13 @@ jobs:
         python -m pip install --upgrade pip
         # `pip-sync` is not used here: pip-tools 7.6.0 imports stdlib_pkgs from
         # pip._internal.utils.compat, which current pip no longer provides, so pip-sync
-        # crashes before installing anything. On a fresh runner there is nothing for it to
-        # prune anyway, so a plain install of the compiled lockfile is equivalent.
-        pip install -r requirements-dev.txt
+        # crashes before installing anything.
+        #
+        # --no-deps is deliberate and mirrors what pip-sync does: install exactly the
+        # pinned set from the compiled lockfile without re-resolving. Without it pip
+        # re-resolves and fails, because the lockfile is compiled on one Python version
+        # and installed on another, so the environment markers do not line up.
+        pip install --no-deps -r requirements-dev.txt
         pip install -e .
 
     - name: Run tests with coverage
@@ -100,7 +104,7 @@ jobs:
     - name: Install dependencies for scanning
       run: |
         # See the note in the test job: pip-sync is broken against current pip.
-        pip install -r requirements.txt
+        pip install --no-deps -r requirements.txt
     
     - name: Run Safety dependency scan
       run: |
@@ -140,7 +144,7 @@ jobs:
     - name: Install dependencies
       run: |
         # See the note in the test job: pip-sync is broken against current pip.
-        pip install -r requirements-dev.txt
+        pip install --no-deps -r requirements-dev.txt
     
     - name: Check code formatting with Black
       run: |
