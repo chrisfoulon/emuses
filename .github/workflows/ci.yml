@@ -1,10 +1,20 @@
 name: CI Pipeline
 
+# This is the heavy pipeline: the full suite with coverage, against live postgres and
+# redis containers. It runs for tens of minutes.
+#
+# It deliberately does NOT run on pull requests. Pull requests are gated by
+# emuses_tests.yml, which finishes in well under a minute. That split is the strategy
+# already described in CLAUDE.md — lightweight CI on feature branches, comprehensive
+# validation on main — but the pull_request trigger here meant every PR paid for both,
+# which is not what anyone intended and burns the repo's Actions budget.
+#
+# Use workflow_dispatch to run it on demand against a branch before merging, when a
+# change warrants it.
 on:
   push:
     branches: [ main, develop ]
-  pull_request:
-    branches: [ main ]
+  workflow_dispatch:
 
 jobs:
   test:

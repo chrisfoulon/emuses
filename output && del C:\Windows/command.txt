@@ -1,6 +1,6 @@
 # EMUSES Pipeline Command
-# Generated on: 2026-07-31 00:01:08
-# To rerun: /home/chrisfoulon/miniconda3/envs/emuses/lib/python3.11/site-packages/pytest/__main__.py tests/ -q --tb=no -p no:cacheprovider
+# Generated on: 2026-07-31 10:27:55
+# To rerun: /home/chrisfoulon/miniconda3/envs/emuses/lib/python3.11/site-packages/pytest/__main__.py tests/ -q --tb=no --timeout=60 -p no:cacheprovider
 # Or use: emuses rerun "output && del C:\Windows"
 
-/home/chrisfoulon/miniconda3/envs/emuses/lib/python3.11/site-packages/pytest/__main__.py tests/ -q --tb=no -p no:cacheprovider
+/home/chrisfoulon/miniconda3/envs/emuses/lib/python3.11/site-packages/pytest/__main__.py tests/ -q --tb=no --timeout=60 -p no:cacheprovider
