@@ -7,6 +7,36 @@ guesswork or by weakening an assertion.
 badly from `requirements-dev.txt` — 47 packages the lockfile pins were simply absent. They are now
 installed. Before that, a large share of "failures" were missing imports rather than defects.
 
+## Method notes — traps that cost real time here
+
+Recorded because each one was hit more than once, and each destroyed work that had already been
+done.
+
+**Measuring.** Never pipe a long or hanging pytest run to `tail`/`head` — when the process is killed
+the pipe buffer goes with it and the only output is `Terminated`. Redirect to a file and read the
+file. Two full-suite runs (50 min and 40 min) were lost this way. Likewise
+`faulthandler.dump_traceback_later(..., exit=True)` never flushes a buffered Python file object:
+pass a raw fd from `os.open()`. And `nohup ... &` inside an agent tool call does not outlive the
+call; use the tool's own background mode.
+
+**Attributing.** Four root causes asserted in earlier drafts of this document were wrong, all from
+inferring a cause rather than capturing it:
+
+- a hanging test identified by counting progress dots — the file named was merely slow (22s alone);
+- leaked `_monitor` threads blamed on EMUSES's `ResourceMonitor` because of the name, when they were
+  `logging.handlers.QueueListener._monitor` and `ResourceMonitor` was correct;
+- core dumps attributed to the wrong directories before the fatal traceback was captured;
+- an `EOFError` reported as a regression that does not reproduce (see §4).
+
+Capture the cause directly: `threading.enumerate()` for a thread leak, the fatal traceback for a
+crash, a single-file run for a suspected hang. Distinguish flaky from broken by repeating runs of
+*unchanged* code before blaming an edit, and compare every claimed fix against a `git stash`
+baseline.
+
+**One more:** a requirements regex of `^([A-Za-z0-9_.\-]+)==` silently skips extras syntax, so
+`coverage[toml]==` and `moto[s3]==` were reported as installed when they were not. Use
+`^([A-Za-z0-9_.\-]+)(\[[^\]]+\])?==`.
+
 ## Fixed in this pass
 
 **`test_circuit_breaker_opens_on_failures` no longer hangs.** It patched `client._session` before
@@ -128,11 +158,10 @@ The listener and its atexit registration happen once.
 
 `dev_test_runner.py` remained 13/13 throughout.
 
-**Known side effect, introduced by this fix**: an `EOFError` traceback now appears at shutdown. The
-one surviving listener blocks in `mp.Queue.get()` and sees the pipe close during finalisation;
-previously the process aborted before reaching that point. Exit codes and test results are correct,
-so this is strictly better than SIGABRT, but it is new noise. Silencing it properly means stopping
-the listener before multiprocessing tears the queue down.
+**Retracted**: an earlier draft recorded an `EOFError` traceback at shutdown as a side effect
+introduced by this fix. **It does not reproduce** — zero occurrences across three directories and
+three repeat runs of the same file. It was a one-off race under CPU contention from concurrent jobs,
+not a regression. Left here as a worked example of the attribution trap noted at the top.
 
 **Reproducer** — proves the leak directly rather than inferring it from the crash text. Five threads
 survive a four-test file:
