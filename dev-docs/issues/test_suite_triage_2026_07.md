@@ -183,10 +183,27 @@ The listener and its atexit registration happen once.
 
 `dev_test_runner.py` remained 13/13 throughout.
 
-**Retracted**: an earlier draft recorded an `EOFError` traceback at shutdown as a side effect
-introduced by this fix. **It does not reproduce** — zero occurrences across three directories and
-three repeat runs of the same file. It was a one-off race under CPU contention from concurrent jobs,
-not a regression. Left here as a worked example of the attribution trap noted at the top.
+**Residual side effect, confirmed 2026-08-06**: one `EOFError` traceback at interpreter shutdown.
+The surviving listener blocks in `mp.Queue.get()` and multiprocessing closes the pipe before the
+`atexit` handler stops it:
+
+```
+Exception in thread Thread-1 (_monitor):
+  logging/handlers.py:1573 in _monitor    -> record = self.dequeue(True)
+  multiprocessing/connection.py:399 _recv -> raise EOFError
+```
+
+Exit code is pytest's own (1), not 134, and one listener thread survives rather than five — so this
+is strictly better than the SIGABRT it replaced, and it does not affect results or CI status. Fixing
+it properly means stopping the listener before multiprocessing tears the queue down (ordering, not
+suppression).
+
+Note on how this was nearly missed: an earlier revision of this document retracted the EOFError as
+"does not reproduce", based on grepping stderr across repeat runs and finding zero occurrences.
+That measurement was invalid — shutdown truncates the traceback mid-write, so the string `EOFError`
+never reaches stderr at all, and grep cannot find what was never written. Captured properly by
+installing a `threading.excepthook` that writes to a raw fd. Second worked example of the attribution
+trap at the top of this file, and this time the trap caught the retraction rather than the claim.
 
 **Reproducer** — proves the leak directly rather than inferring it from the crash text. Five threads
 survive a four-test file:

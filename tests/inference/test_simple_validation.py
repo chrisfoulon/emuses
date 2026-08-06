@@ -314,37 +314,51 @@ class TestSimpleNormalizationValidation:
     def test_denormalization_scores_capability(self):
         """Test that scores can be denormalized for interpretability."""
         from bcblib.tools.dataframe_filtering import inverse_normalize_dataframe
-        
-        # Create training scores
-        training_scores = pd.DataFrame({
-            'cognitive_score': np.random.normal(85, 12, 100)  # Mean 85, std 12
-        })
-        
+
+        # Real scores rather than a synthetic draw. The previous version sampled
+        # np.random.normal(85, 12, 100) unseeded and then asserted that the *sample* mean
+        # and standard deviation reproduced the *population* parameters to within 2 units.
+        # A 100-sample draw does not: measured over 2000 draws, that assertion fails 46% of
+        # the time. The test was failing roughly every other run and inverse_normalize_dataframe
+        # was never at fault.
+        project_root = Path(__file__).parent.parent.parent
+        training_scores = pd.read_csv(
+            project_root / 'test_data/regression_scores.csv',
+            header=None,
+            names=['cognitive_score'],
+        )
+
         # Normalize scores
         normalized_scores, scaling_factors = normalize_dataframe(training_scores, method='zscore')
-        
+        mean, std = scaling_factors['cognitive_score']
+
         # Simulate prediction results (in normalized space)
-        predicted_scores_normalized = pd.DataFrame({
-            'cognitive_score': [-1.0, 0.0, 1.0, 2.0]  # Z-scores
-        })
-        
+        z_scores = [-1.0, 0.0, 1.0, 2.0]
+        predicted_scores_normalized = pd.DataFrame({'cognitive_score': z_scores})
+
         # Denormalize for interpretability
         predicted_scores_denormalized = inverse_normalize_dataframe(
             predicted_scores_normalized, scaling_factors, method='zscore'
         )
-        
-        # Verify denormalized scores are in realistic range
         denorm_values = predicted_scores_denormalized['cognitive_score'].values
-        
-        # Z-score of -1.0 should be approximately 85 - 12 = 73
-        # Z-score of 0.0 should be approximately 85
-        # Z-score of 1.0 should be approximately 85 + 12 = 97  
-        # Z-score of 2.0 should be approximately 85 + 24 = 109
-        
-        assert abs(denorm_values[0] - 73) < 2, f"Z-score -1.0 should denormalize to ~73, got {denorm_values[0]}"
-        assert abs(denorm_values[1] - 85) < 2, f"Z-score 0.0 should denormalize to ~85, got {denorm_values[1]}"
-        assert abs(denorm_values[2] - 97) < 2, f"Z-score 1.0 should denormalize to ~97, got {denorm_values[2]}"
-        assert abs(denorm_values[3] - 109) < 2, f"Z-score 2.0 should denormalize to ~109, got {denorm_values[3]}"
+
+        # The contract is that denormalization undoes the z-score using the saved factors,
+        # so assert against those factors — not against the parameters of whatever
+        # distribution the data happened to come from.
+        for z, actual in zip(z_scores, denorm_values):
+            assert actual == pytest.approx(mean + z * std), (
+                f"Z-score {z} should denormalize to {mean + z * std}, got {actual}"
+            )
+
+        # And normalizing then denormalizing the real scores must return them unchanged.
+        recovered = inverse_normalize_dataframe(
+            normalized_scores, scaling_factors, method='zscore'
+        )
+        np.testing.assert_allclose(
+            recovered['cognitive_score'].values,
+            training_scores['cognitive_score'].values,
+            err_msg="zscore normalization round-trip did not recover the original scores",
+        )
 
 
 if __name__ == '__main__':
