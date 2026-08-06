@@ -70,13 +70,22 @@ contents. Probably unintended, but deliberately not merged while one of them han
 - [ ] Run `/lad:converge` — nine months of accumulated claims have not been checked against the
       code. Two were already found and fixed on 2026-07-30 (a stale "ready for merge" banner, and
       `CLAUDE.md` naming a deleted branch as current); the rest of the sweep has not been done.
-- [ ] Decide what to do with `fix/security-dependency-updates` — merge to `main` or split the
-      unrelated work out. It is carrying five distinct concerns.
-- [ ] Test suite triage — full findings in `dev-docs/issues/test_suite_triage_2026_07.md`.
-      One of the two hangs is fixed; the environment was missing 47 pinned packages and now is not.
-      Remaining: the `tests/multi-user-service/` directory-level hang, and 36 `model_registry`
-      failures whose fixtures encode the pre-ADR-§2.1 component model (the code is right, the tests
-      are obsolete — do not "fix" the code to accept them).
+- [ ] Merge PR #5, or split it — it carries tooling migration, CI, dependencies and test repairs.
+- [ ] **Test suite triage** — full findings in `dev-docs/issues/test_suite_triage_2026_07.md`.
+      Remaining, in order:
+      - [ ] `tests/multi-user-service/` hangs as a directory. Not the QueueListener leak (still
+            hangs after that fix), not any single file. A 9-file prefix reproduces it. Root cause
+            unknown. **Measure this on a quiet machine** — a run on 2026-08-06 died with a
+            `MemoryError` while swap was 100% full from unrelated desktop processes, at a different
+            point than the previous run.
+      - [ ] Mark slow tests. `pytest.ini` declares a `slow` marker nothing uses;
+            `enhanced-cli-typer` is 397s. Note `test_performance_stress.py` can hang **forever**,
+            not merely be slow — an orphan from 31 July was found still stuck in `epoll` after
+            6 days, with pytest-timeout's watchdog gone.
+      - [ ] 36 `model_registry` failures whose fixtures encode the pre-ADR-§2.1 component model
+            (`.pkl` files, `prediction_ensemble/`). **The code is right and the tests are obsolete —
+            do not "fix" the code to accept them.** Now unblocked: the session fixture produces a
+            genuine complete folder to derive replacements from.
 - [ ] `dev-docs/issues/synthetic_test_data_conversion.md` — the 2025 "Phase 3" conversion was never
       executed. 208 `np.random.rand()` instances remain across 27 test files. Triage before bulk
       converting; some are legitimately random.

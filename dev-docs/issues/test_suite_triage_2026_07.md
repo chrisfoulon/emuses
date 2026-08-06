@@ -100,9 +100,9 @@ Affected: `test_local_registry_real.py` (8), `test_simplified_installation.py` (
 `test_enhanced_schema.py` (7), `test_storage_optimization.py` (5), `test_hash_indexing.py` (5),
 `test_enhanced_metadata_storage.py` (5), `test_concurrent_access.py` (5), and others.
 
-### 2b. `--prefix` makes a trained model unregisterable (P2, product bug, NOT a test bug)
+### 2b. `--prefix` made a trained model unregisterable — FIXED 2026-08-06 (was P2, product bug)
 
-Found on 2026-08-06 while repairing the session fixture. Not a test defect — it affects real users.
+Found while repairing the session fixture. Not a test defect — it affected real users.
 
 `ModelIOManager._validate_emuses_folder_structure` (`model_io.py:730`) requires two files under
 exactly these names:
@@ -121,9 +121,19 @@ So a run with `--prefix myrun` produces `myrun_embeddings.npy` and `myrun_input_
 prefix-less runs can be registered. Confirmed by running the pipeline both ways: identical
 configuration, `VALIDATES AS COMPLETE EMUSES FOLDER: False` with a prefix and `True` without.
 
-The registry is right to check for the files; it is wrong to assume the default naming. The fix
-belongs in the validator (resolve the prefix from the manifest, or glob `*embeddings.npy`), not in
-the pipeline, and not by dropping the check. Deferred as a code change rather than a debug fix.
+The registry is right to check for the files; it was wrong to assume the default naming.
+
+**Fix applied** in `_validate_emuses_folder_structure`, via a new `_resolve_artifact_prefix()` that
+reads the prefix back from `log/arguments_*.json` — the pipeline saves its arguments there, and the
+manifest does not record the prefix. The check still requires both arrays to exist; only their names
+are resolved.
+
+**Globbing `*embeddings.npy` would have been the wrong fix.** `test_embeddings.npy`,
+`best_embeddings.npy` and `unlabeled_embeddings.npy` are all real EMUSES outputs and none is the
+training embedding matrix, so a glob would accept a folder missing the actual training data.
+`tests/model_registry/test_prefixed_model_validation.py` locks that in as a test.
+
+This does **not** affect the 36 failures in item 2: those fixtures contain no embeddings at all.
 
 ### 3. Slow-but-passing tests (P3)
 
@@ -183,9 +193,9 @@ The listener and its atexit registration happen once.
 
 `dev_test_runner.py` remained 13/13 throughout.
 
-**Residual side effect, confirmed 2026-08-06**: one `EOFError` traceback at interpreter shutdown.
-The surviving listener blocks in `mp.Queue.get()` and multiprocessing closes the pipe before the
-`atexit` handler stops it:
+**Residual `EOFError` at shutdown — also FIXED 2026-08-06.** One traceback survived the singleton
+change. The listener blocked in `mp.Queue.get()` and multiprocessing closed the pipe before anything
+stopped it:
 
 ```
 Exception in thread Thread-1 (_monitor):
@@ -193,10 +203,16 @@ Exception in thread Thread-1 (_monitor):
   multiprocessing/connection.py:399 _recv -> raise EOFError
 ```
 
-Exit code is pytest's own (1), not 134, and one listener thread survives rather than five — so this
-is strictly better than the SIGABRT it replaced, and it does not affect results or CI status. Fixing
-it properly means stopping the listener before multiprocessing tears the queue down (ordering, not
-suppression).
+The real cause was not ordering in the abstract — the registration never happened at all under test.
+`tests/conftest.py::mock_atexit_register` is an **autouse** fixture patching `atexit.register` for
+every test, so `atexit.register(_LOG_LISTENER.stop)` was captured by the mock and discarded.
+
+Fixed by registering through `multiprocessing.util.Finalize(None, _stop_log_listener,
+exitpriority=20)` instead. `LOG_QUEUE` registers its own close at `exitpriority=10` and finalizers
+run in descending order, so the listener stops first; and multiprocessing installs its `atexit` hook
+at import, before any test can patch it. Verified absent by the same `threading.excepthook` capture
+that found it, with `tests/inference`, `tests/flexible-inference-stage` and `tests/pipelines` all
+holding their recorded counts and reporting zero `Exception in thread` on stderr.
 
 Note on how this was nearly missed: an earlier revision of this document retracted the EOFError as
 "does not reproduce", based on grepping stderr across repeat runs and finding zero occurrences.
@@ -248,7 +264,7 @@ pytest specifically, since that both slows runs and escapes `pytest-timeout`.
 
 | Area | Result |
 |---|---|
-| `model_registry` | 65 failed, 645 passed, 7 skipped, 3 errors — 36 are the ADR cluster above |
+| `model_registry` | 61 failed, 656 passed, 7 skipped, 3 errors — 36 are the ADR cluster above |
 | `multi-user-service` | 52 failed across 5 files; directory hangs |
 | `enhanced-cli-typer` | ~11 failed; no longer hangs |
 | `observability` | 9 failed, 52 passed |
@@ -259,3 +275,10 @@ pytest specifically, since that both slows runs and escapes `pytest-timeout`.
 
 Counts for areas other than `model_registry` predate the dependency install and will be lower now.
 Re-measure before acting on them.
+
+The `model_registry` line above was recorded as "65 failed, 645 passed" and re-measured on
+2026-08-06 as **61 failed, 649 passed** on identical code — so four of the documented failures were
+not reproducible. 656 passed once the 7 new prefix-validation tests are included. Treat every count
+in this file as a claim needing re-measurement, not a fact: comparing a fix against a written-down
+baseline rather than a freshly measured one would have credited the prefix fix with clearing four
+failures it had nothing to do with.

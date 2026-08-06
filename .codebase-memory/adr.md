@@ -225,6 +225,29 @@ EMUSES (Embedding-based Multi-target Unified Statistical and Estimation System) 
 
 ---
 
+### 2.8b Artifact Names Carry the Run Prefix; Validation Resolves It
+
+**Decision**: The registry's completeness check resolves the run prefix from
+`log/arguments_*.json` rather than assuming default file names or globbing for them.
+
+**Rationale**:
+- Training applies `--prefix` to its outputs: `myrun_embeddings.npy`, not `embeddings.npy`
+  (`UMAP_utils.py`, `train_and_save_umap_optim`). The validator previously required the
+  unprefixed names, so **every model trained with a prefix was rejected as "not a complete EMUSES
+  training folder" and could not be registered**. Fixed 2026-08-06.
+- The prefix is not recorded in the manifest, and `file_integrity` lists only joblib files. The
+  arguments log is the only place it survives.
+- Globbing `*embeddings.npy` is **not** an acceptable shortcut: `test_embeddings.npy`,
+  `best_embeddings.npy` and `unlabeled_embeddings.npy` are all real outputs and none of them is the
+  training embedding matrix, so a glob would accept a folder that is missing the training data.
+- This resolves names only. It does not weaken what a complete folder must contain, and so does not
+  reopen the §2.1 atomicity constraint.
+
+**Code**: `emuses/tools/model_io.py` (`_resolve_artifact_prefix`,
+`_validate_emuses_folder_structure`), `tests/model_registry/test_prefixed_model_validation.py`
+
+---
+
 ### 2.9 Reproducibility: Hierarchical Random Seeds
 
 **Decision**: Derive component-specific random seeds from a master seed using `numpy.random.default_rng`, and persist all seeds to `random_seeds.json`.
