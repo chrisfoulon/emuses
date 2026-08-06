@@ -1,9 +1,9 @@
 # pipelines/pipeline_config.py
 
 import argparse
-import atexit
 import logging
 import multiprocessing as mp
+from multiprocessing import util as mp_util
 import sys
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -33,6 +33,21 @@ LOG_QUEUE = mp.Queue(-1)
 #      whichever listener dequeues it first, so output was being split arbitrarily between
 #      them rather than duplicated — quietly losing lines from any given handler.
 _LOG_LISTENER = None
+
+
+def _stop_log_listener():
+    """
+    Stop the shared QueueListener, if one is running.
+
+    Idempotent: QueueListener.stop() joins self._thread and then sets it to None, so a
+    second call would raise AttributeError. The global is cleared before stopping so a
+    repeat call is a no-op.
+    """
+    global _LOG_LISTENER
+
+    listener, _LOG_LISTENER = _LOG_LISTENER, None
+    if listener is not None:
+        listener.stop()
 
 
 @dataclass
@@ -237,9 +252,22 @@ class PipelineConfig:
             )
             _LOG_LISTENER.start()
 
-            # make sure everything is flushed on shutdown. Registered once, with the
+            # Make sure everything is flushed on shutdown. Registered once, with the
             # listener, so repeated PipelineConfig construction does not stack handlers.
-            atexit.register(_LOG_LISTENER.stop)
+            #
+            # Registered as a multiprocessing finalizer rather than with atexit.register,
+            # for two reasons:
+            #
+            #   1. Ordering. LOG_QUEUE registers its own close as a Finalize with
+            #      exitpriority=10 (multiprocessing/queues.py), and finalizers run in
+            #      descending priority. At 20 the listener is stopped before the queue's
+            #      pipe is closed under it. The other way round, the monitor thread is
+            #      still blocked in Queue.get() when the pipe goes away and raises
+            #      EOFError at interpreter shutdown.
+            #   2. It survives the test suite. tests/conftest.py patches atexit.register
+            #      with an autouse fixture, so a registration made during any test is
+            #      swallowed and the listener is never stopped at all.
+            mp_util.Finalize(None, _stop_log_listener, exitpriority=20)
 
         # Don't clear handlers - let observability logging coexist
         # Only add QueueHandler if not already present

@@ -8,9 +8,8 @@ registry with peer review for the wider community.
 
 ## State of play
 
-**Branch**: `fix/security-dependency-updates`, 13 commits ahead of `main`, not yet merged. Despite
-the name it is a grab-bag: dependabot fixes, NIfTI affine correction, the workshop poster figure,
-ADR tracking, and this session's LAD v2 migration.
+**Branch**: `chore/tooling-migration-and-fixes`, PR #5 open against `main`. Carries the LAD v2
+migration, CI trigger/concurrency fixes, dependency declarations, and the test-suite repairs below.
 
 **Core system is built and merged.** Model registry (all three deployment modes), scientific
 pipeline, inference, multi-user auth, observability and CI/CD are all on `main`.
@@ -26,28 +25,29 @@ guidelines are in the `lad:lad-standards` skill. The codebase is indexed in code
 **Environment**: `conda activate emuses` (it lives in the old `~/miniconda3`, registered in
 `~/.condarc` so it resolves by name). Python 3.11, editable install pointing at this repo.
 
-**Test suite — collects cleanly, does not pass.** 2490 tests collect with 0 errors. A full run has
-never completed: two directories hang indefinitely. Measured per directory on 2026-07-31:
+**Test suite — collects cleanly, does not pass, but no longer crashes.** 2490 tests collect with 0
+errors. Repaired since 2026-07-31:
 
-| Directory | Time | Result |
-|---|---|---|
-| `multi-user-service` | **hangs** | killed at 300s |
-| `enhanced-cli-typer` | **hangs** | killed at 300s; 6 files use `subprocess`, which `CLAUDE.md` forbids |
-| `integration` | 129s | **dumped core** |
-| `pipelines` | 41s | **dumped core** |
-| `model_registry` | 96s | 73 failed, 621 passed |
-| `observability` | 5s | 9 failed, 52 passed |
-| `deployment` | 6s | 7 failed, 49 passed |
-| `multi_user_service` | 3s | 4 failed, 4 passed, 7 errors |
-| `analysis_api`, `cicd-pipeline` | <15s | 3 failed each |
-| `security`, `unit`, `compliance` | <20s | 1 failed each |
-| `tools`, `performance` | <13s | all pass |
+- **No more core dumps.** All three were one root cause: `PipelineConfig.__post_init__` built a new
+  `logging.handlers.QueueListener` on every instantiation, so listener threads accumulated and raced
+  for stderr at shutdown, aborting the process (exit 134) *after* tests had already passed. Fixed by
+  a module-level singleton. Residual: one benign `EOFError` traceback at shutdown; exit codes are
+  correct.
+- **Environment was missing 47 pinned packages**, plus undeclared `aiosqlite` and a `bcblib` pin
+  three versions stale. A large share of "failures" were missing imports.
+- **`enhanced-cli-typer` no longer hangs** — one test patched a mock session that `__aenter__`
+  discarded, so it retried a dead port forever.
+- **Session pipeline fixture repaired** (2026-08-06). It set `args.scores_dataset` where the
+  pipeline reads `args.scores`, never called `add_stage()`, and used a prefix that renames the files
+  the registry looks for. Its test passed throughout because it tolerated the fixture failing.
+- **One flaky test fixed** — it asserted that a 100-sample unseeded draw reproduced its population
+  parameters, which fails 46% of the time.
 
-**~102 known failures plus 7 errors**, all pre-existing. The remaining 14 directories finish in
-under 20s each, so the suite is not inherently slow — two hanging directories are why it never ends.
+Still open: `tests/multi-user-service/` hangs **as a directory** (no single file does), and ~100
+pre-existing failures, of which 36 in `model_registry` are one cluster — see the triage doc.
 
 Note `tests/multi-user-service/` and `tests/multi_user_service/` both exist, with different
-contents. Probably unintended.
+contents. Probably unintended, but deliberately not merged while one of them hangs.
 
 `python scripts/dev_test_runner.py` → 13/13 is the pre-push gate and is unaffected by any of this.
 
