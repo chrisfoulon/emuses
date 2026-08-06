@@ -100,6 +100,31 @@ Affected: `test_local_registry_real.py` (8), `test_simplified_installation.py` (
 `test_enhanced_schema.py` (7), `test_storage_optimization.py` (5), `test_hash_indexing.py` (5),
 `test_enhanced_metadata_storage.py` (5), `test_concurrent_access.py` (5), and others.
 
+### 2b. `--prefix` makes a trained model unregisterable (P2, product bug, NOT a test bug)
+
+Found on 2026-08-06 while repairing the session fixture. Not a test defect — it affects real users.
+
+`ModelIOManager._validate_emuses_folder_structure` (`model_io.py:730`) requires two files under
+exactly these names:
+
+```python
+required_data = ["embeddings.npy", "input_matrix.npy"]
+```
+
+But the pipeline writes them with the run prefix applied:
+
+- `umap_stage.py:74` — `f"{prefix}embeddings.npy"`
+- `UMAP_utils.py:420` — `f"{pref}_input_matrix.npy" if pref else "input_matrix.npy"`
+
+So a run with `--prefix myrun` produces `myrun_embeddings.npy` and `myrun_input_matrix.npy`, and
+`install_model()` then rejects the folder with "Not a complete EMUSES training folder". Only
+prefix-less runs can be registered. Confirmed by running the pipeline both ways: identical
+configuration, `VALIDATES AS COMPLETE EMUSES FOLDER: False` with a prefix and `True` without.
+
+The registry is right to check for the files; it is wrong to assume the default naming. The fix
+belongs in the validator (resolve the prefix from the manifest, or glob `*embeddings.npy`), not in
+the pipeline, and not by dropping the check. Deferred as a code change rather than a debug fix.
+
 ### 3. Slow-but-passing tests (P3)
 
 Not broken, but they dominate runtime. `enhanced-cli-typer` alone:

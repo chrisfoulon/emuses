@@ -199,7 +199,13 @@ def emuses_pipeline_results():
             args = type('Args', (), {})()
             args.input_dataset = config['features']
             args.output_folder = str(config['output'])
-            args.scores_dataset = config['scores']
+            # `scores`, not `scores_dataset`. The latter is the FastAPI service-layer name,
+            # translated to args.scores in pipeline_runner.py before the pipeline sees it
+            # (see pipeline_runner.py:133). Setting the service name here left
+            # PipelineConfig.scores at its default of None, so no scores were ever loaded and
+            # split_dataset() raised TypeError on a None. PipelineConfig copies unknown
+            # attributes verbatim, so the wrong name failed silently rather than erroring.
+            args.scores = config['scores']
             args.columns_are_features = True
             args.input_normalization = 'robust'
             args.scores_header = None
@@ -214,7 +220,13 @@ def emuses_pipeline_results():
             args.n_jobs = 4
             args.random_state = 42
             args.inference_mode = False
-            args.prefix = f"SessionTest_{mode}"
+            # Deliberately empty. UMAPStage writes f"{prefix}embeddings.npy" and UMAP_utils
+            # writes f"{pref}_input_matrix.npy", while the registry's completeness check
+            # (ModelIOManager._validate_emuses_folder_structure) looks for exactly
+            # "embeddings.npy" and "input_matrix.npy". A prefix therefore produces a folder
+            # the registry rejects. The two modes already write to separate output folders,
+            # so the prefix bought nothing here.
+            args.prefix = ""
             
             # Additional required attributes based on PipelineConfig
             args.interactive_plot = False
@@ -226,10 +238,24 @@ def emuses_pipeline_results():
             
             # Imported here rather than at module scope — see the note by the imports.
             from emuses.pipelines.emuses_pipeline import EMUSESPipeline
+            from emuses.pipelines.heatmap_stage import HeatmapStage
+            from emuses.pipelines.umap_stage import UMAPStage
 
             # Create and run pipeline
             pipeline = EMUSESPipeline(args)
-            
+
+            # Stages are the caller's responsibility: EMUSESPipeline.run() iterates
+            # self.stages, which add_stage() populates and nothing else does. Without this
+            # the fixture ran an empty stage list and produced no model. Wiring mirrors
+            # PipelineRunner._run_pipeline_in_process (pipeline_runner.py:~424), which is
+            # what the service uses to produce a complete training folder.
+            pipeline.add_stage(UMAPStage(pipeline.config))
+            pipeline.add_stage(
+                HeatmapStage(
+                    pipeline.config, pipeline.context.get("output_format_info")
+                )
+            )
+
             # Run the full pipeline - this is the key method
             pipeline.run()
             
