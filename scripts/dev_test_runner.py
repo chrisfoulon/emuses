@@ -12,6 +12,7 @@ Usage:
     python scripts/dev_test_runner.py --time
 """
 
+import shlex
 import subprocess
 import sys
 import time
@@ -49,16 +50,23 @@ def main():
     
     all_passed = True
     
+    # Use the interpreter this script was started with, not whatever "python" and
+    # "pytest" happen to be first on PATH. Those were resolving to a different
+    # installation entirely (miniforge3 / Python 3.12 / pytest 9), so the pre-push gate
+    # was validating an environment the test suite never runs in — and reporting a
+    # serene 13/13 while doing it.
+    py = shlex.quote(sys.executable)
+
     # Test 1: Syntax validation (very fast)
     if not run_command(
-        "python -m py_compile emuses/cli/main.py emuses/tools/parallelism_utils.py emuses/__init__.py",
+        f"{py} -m py_compile emuses/cli/main.py emuses/tools/parallelism_utils.py emuses/__init__.py",
         "Syntax and Import Validation"
     ):
         all_passed = False
     
     # Test 2: Fast unit tests
     if not run_command(
-        "pytest tests/tools/test_parallelism_utils.py -v --maxfail=2 -x --tb=short",
+        f"{py} -m pytest tests/tools/test_parallelism_utils.py -v --maxfail=2 -x --tb=short",
         "Fast Development Tests"
     ):
         all_passed = False

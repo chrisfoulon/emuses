@@ -1,5 +1,5 @@
 # STATUS — EMUSES
-_Last touched: 2026-07-30_
+_Last touched: 2026-08-19_
 
 ## Goal
 A predictive modelling tool for neuroimaging research, usable at three scales: local model
@@ -31,8 +31,9 @@ errors. Repaired since 2026-07-31:
 - **No more core dumps.** All three were one root cause: `PipelineConfig.__post_init__` built a new
   `logging.handlers.QueueListener` on every instantiation, so listener threads accumulated and raced
   for stderr at shutdown, aborting the process (exit 134) *after* tests had already passed. Fixed by
-  a module-level singleton. Residual: one benign `EOFError` traceback at shutdown; exit codes are
-  correct.
+  a module-level singleton, plus a `multiprocessing.util.Finalize` that stops the listener before
+  the queue's pipe closes — `conftest.py` patches `atexit.register` autouse, which had been silently
+  swallowing the shutdown registration.
 - **Environment was missing 47 pinned packages**, plus undeclared `aiosqlite` and a `bcblib` pin
   three versions stale. A large share of "failures" were missing imports.
 - **`enhanced-cli-typer` no longer hangs** — one test patched a mock session that `__aenter__`
@@ -40,6 +41,11 @@ errors. Repaired since 2026-07-31:
 - **Session pipeline fixture repaired** (2026-08-06). It set `args.scores_dataset` where the
   pipeline reads `args.scores`, never called `add_stage()`, and used a prefix that renames the files
   the registry looks for. Its test passed throughout because it tolerated the fixture failing.
+- **The suite no longer pollutes the repo** (2026-08-19). Nine directories with shell-injection
+  payloads for names (`` `cat /etc/passwd` ``, `$(whoami)_output`, …) were found *tracked in git*,
+  created by running the CLI security tests from the repo root. Removed; the CLI now validates
+  output paths before creating them; and two autouse fixtures run every test in `tmp_path` and fail
+  the session if anything appears in the repo root.
 - **One flaky test fixed** — it asserted that a 100-sample unseeded draw reproduced its population
   parameters, which fails 46% of the time.
 
@@ -49,7 +55,10 @@ pre-existing failures, of which 36 in `model_registry` are one cluster — see t
 Note `tests/multi-user-service/` and `tests/multi_user_service/` both exist, with different
 contents. Probably unintended, but deliberately not merged while one of them hangs.
 
-`python scripts/dev_test_runner.py` → 13/13 is the pre-push gate and is unaffected by any of this.
+`python scripts/dev_test_runner.py` → 13/13 is the pre-push gate. **It was running against the wrong
+interpreter until 2026-08-19** — bare `python`/`pytest` on `PATH` resolved to miniforge3 (Python
+3.12, pytest 9), not the `emuses` env the suite uses. It now runs `sys.executable -m pytest`. Both
+environments pass 13/13, so nothing was hidden, but the gate was not testing what it claimed to.
 
 ## Decided strategy
 
@@ -78,10 +87,12 @@ contents. Probably unintended, but deliberately not merged while one of them han
             unknown. **Measure this on a quiet machine** — a run on 2026-08-06 died with a
             `MemoryError` while swap was 100% full from unrelated desktop processes, at a different
             point than the previous run.
-      - [ ] Mark slow tests. `pytest.ini` declares a `slow` marker nothing uses;
-            `enhanced-cli-typer` is 397s. Note `test_performance_stress.py` can hang **forever**,
-            not merely be slow — an orphan from 31 July was found still stuck in `epoll` after
-            6 days, with pytest-timeout's watchdog gone.
+      - [x] `test_performance_stress.py` — now 16 passed (was 2 failed/14 passed), ~163s, exits
+            cleanly. The 6-day `epoll` orphan does **not** reproduce and its cause was not
+            identified; `pytest.ini` now carries a global `timeout = 600` net so a future hang
+            fails the same day instead of running for a week.
+      - [ ] Mark the remaining slow tests. `enhanced-cli-typer` is still the bulk of the runtime;
+            only `test_performance_stress.py` is marked `slow` so far.
       - [ ] 36 `model_registry` failures whose fixtures encode the pre-ADR-§2.1 component model
             (`.pkl` files, `prediction_ensemble/`). **The code is right and the tests are obsolete —
             do not "fix" the code to accept them.** Now unblocked: the session fixture produces a

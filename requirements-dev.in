@@ -5,6 +5,10 @@
 pytest
 pytest-asyncio
 pytest-cov
+# Enforces pytest.ini's global `timeout = 600`. Without it that ini key is silently
+# ignored, so the safety net would be absent on CI — the one place a wedged run is
+# least likely to be noticed.
+pytest-timeout
 black
 isort
 flake8

@@ -248,6 +248,32 @@ EMUSES (Embedding-based Multi-target Unified Statistical and Estimation System) 
 
 ---
 
+### 2.8c Output Paths Are Validated Before the Directory Is Created
+
+**Decision**: The CLI validates a user-supplied output folder with `validate_path` at the single
+point where it would create it, and refuses rather than sanitising.
+
+**Rationale**:
+- `save_command_to_output_folder` calls `output_folder.mkdir(parents=True, exist_ok=True)` and was
+  the first statement of `full()`. The CLI therefore created any directory it was handed. Running
+  the security test suite produced directories literally named `$(whoami)_output` and
+  ``` `cat /etc/passwd` ``` in the working directory, nine of which reached git.
+- Nothing was executed — those names are inert on disk — but they are hostile to any later unquoted
+  shell expansion, and a Windows checkout cannot represent several of them.
+- The guard lives at the creation site, not at each of the four command entry points, so a new
+  command cannot forget it.
+- **Refuse, don't sanitise.** Silently rewriting a researcher's output path would put results
+  somewhere they did not ask for, which is worse than an error for a scientific tool.
+
+**Constraint**: `validate_path` rejects `;`, `&&`, `||`, `|`, `&`, backticks, `$(`, traversal, and
+sensitive system directories. None appear in legitimate research paths, but `/root/` is among them,
+so running as root with an output folder under `/root/` is now refused.
+
+**Code**: `emuses/cli/main.py` (`validate_output_folder`), `emuses/cli/security.py`
+(`validate_path`), `tests/enhanced-cli-typer/test_security_validation.py`
+
+---
+
 ### 2.9 Reproducibility: Hierarchical Random Seeds
 
 **Decision**: Derive component-specific random seeds from a master seed using `numpy.random.default_rng`, and persist all seeds to `random_seeds.json`.

