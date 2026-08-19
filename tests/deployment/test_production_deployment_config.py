@@ -4,9 +4,18 @@ Test suite for production deployment configurations.
 Tests validate that production deployment configurations are complete,
 secure, and follow best practices for EMUSES production deployment.
 """
+import pytest
 import yaml
 from pathlib import Path
 
+@pytest.fixture(autouse=True)
+def _run_from_repo_root(repo_cwd):
+    """These tests assert on repo-relative paths (docker/, .github/, emuses/).
+
+    The autouse `_isolate_cwd` fixture in tests/conftest.py runs every test in a
+    throwaway directory, which is right for tests that write files but wrong for
+    tests that inspect the repository's own layout. `repo_cwd` opts back in.
+    """
 
 class TestProductionDeploymentConfig:
     """Test production deployment configuration completeness and security."""

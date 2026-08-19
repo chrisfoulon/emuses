@@ -285,6 +285,49 @@ so running as root with an output folder under `/root/` is now refused.
 
 **Code**: `emuses/pipelines/emuses_pipeline.py` (`__init__`)
 
+### 2.10 Core / Extras Boundary: Parked Features Stay, But Cost Nothing
+
+**Decision**: EMUSES has a declared **core** and a set of **parked (extras)** features. Parked code
+stays in the tree and remains importable and testable, but is excluded from the default test run and
+must not be imported by core at module level. The boundary is enforced mechanically by
+`tests/test_architecture_boundary.py`.
+
+**Core**: `pipelines/`, `cli/` (except `cloud_validation.py`), `config/`, `utils/`, `observability/`
+(every pipeline stage imports it), `foundation_fastapi_service/` (except the orphaned
+`stage_runners.py`), and in `tools/` the science modules plus `model_io`, `local_model_registry`,
+`base_model_registry`, `storage_manager`, `model_registry_factory`, `model_registry_metrics`,
+`model_registry_health`.
+
+**Parked**: the model marketplace (`advanced_search`, `model_analytics`, `personalized_ranking`,
+`model_benchmarking`, `community_model_manager`, `streaming_analytics`, `usage_alerts`,
+`model_compression`, `model_migration`, `registry_config`), the publication/compliance scaffolding
+(`academic_features`, `academic_compliance`, `gdpr_compliance`), the cloud and database registry
+backends, and `multi_user_service/` in full.
+
+**Rationale**:
+- Measured 2026-08-19: 16,585 LOC (22% of the package) was unreachable from *every* entry point, and
+  1,071 of 2,499 tests exercised it. The registry those features would serve holds one model.
+- The maintenance cost was real and the benefit was zero, but the work is not worthless — it is
+  unfinished. Deleting it would discard genuine effort; leaving it in the default path made the
+  suite too large to keep trustworthy. Parking resolves both.
+- `model_analytics` had 32 references and still looked alive; every one came from another parked
+  module. A self-referential cluster cannot be spotted by counting references, which is why the
+  boundary must be declared rather than inferred.
+- The seam already existed: `DeploymentMode` and `is_service_mode_enabled()`, with
+  `foundation_fastapi_service/app.py` wiring the multi-user endpoints behind
+  `try/except ImportError`. This decision makes that existing pattern explicit and enforced.
+
+**The rule**: core must not import parked code *at module level*. Lazy imports — inside a function,
+or behind `try/except ImportError` — are the sanctioned way to wire an optional feature, and
+`model_registry_factory.py` already loads the cloud and database backends that way.
+
+**Do not** relax the boundary to make a test pass. If a parked feature turns out to be genuinely
+core, move it out of `EXTRAS_MODULES` deliberately and record why here. The declaration is a product
+decision, not a graph property — deriving it from reachability would make the test circular and
+unable to fail.
+
+**Code**: `tests/test_architecture_boundary.py`, `tests/extras/conftest.py`, `pytest.ini`
+
 ---
 
 ## 3. Known Constraints and Open Issues
