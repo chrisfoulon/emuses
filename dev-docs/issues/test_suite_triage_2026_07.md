@@ -146,8 +146,24 @@ Nine directories were found **tracked in git**, each holding a `command.txt`:
 ```
 
 Created 2026-07-31 by running `tests/enhanced-cli-typer/` from the repo root, committed in
-`9327b6a` (branch-only, so a squash-merge of PR #5 keeps them out of `main`). A Windows checkout
-would likely fail on those names outright.
+`9327b6a`. A Windows checkout would likely fail on those names outright.
+
+**Correction (2026-08-19), recorded because the original claim above was wrong.** `9327b6a` was
+branch-only, and PR #5 was duly squash-merged to keep it out of `main`. But checking `main`'s
+history *after* that merge found the same directories already there, from two earlier commits that
+had nothing to do with PR #5:
+
+- `a2efba1` (2025-08-24) — one of them
+- `d732977` (2025-09-01) — the other nine
+
+They were removed again by `7eb99c9` / `d23145e` (2025-09-02) and `46033ca` (2025-10-08). So the
+current tree is clean, and has been for months, but the paths have been in `main`'s public history
+since **September 2025**. The squash was still the right call — it avoided re-adding them — it just
+did not achieve what it was believed to achieve.
+
+Getting them out of history now would mean `git filter-repo` plus a force-push over public history.
+Not obviously worth it: these are directory names, not secrets, and nothing reads them. Left as a
+recorded decision rather than a silent omission.
 
 Three separate defects, all fixed:
 
