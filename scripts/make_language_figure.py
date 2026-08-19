@@ -8,6 +8,7 @@ Output: ~/Téléchargements/language_figure/
 """
 
 import json
+import os
 import sys
 import warnings
 from pathlib import Path
@@ -25,9 +26,25 @@ warnings.filterwarnings("ignore")
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 # ── paths ──────────────────────────────────────────────────────────────────────
-BASTION  = Path("/home/chrisfoulon/remote_folders/bastion/DSD_repro/june_2026")
+# External dataset, so it comes from the environment rather than a hardcoded mount.
+# The defaults reproduce the original author's layout; override on another machine:
+#   EMUSES_DSD_ROOT=/path/to/june_2026 EMUSES_FIGURE_OUT=/path/to/out python scripts/make_language_figure.py
+BASTION  = Path(os.environ.get(
+    "EMUSES_DSD_ROOT",
+    Path.home() / "remote_folders/bastion/DSD_repro/june_2026",
+))
 TARGET4  = BASTION / "target_4"
-OUT_DIR  = Path("/home/chrisfoulon/Téléchargements/language_figure")
+OUT_DIR  = Path(os.environ.get(
+    "EMUSES_FIGURE_OUT",
+    Path.home() / "Téléchargements/language_figure",
+))
+
+if not BASTION.is_dir():
+    sys.exit(
+        f"Dataset root not found: {BASTION}\n"
+        "Set EMUSES_DSD_ROOT to the directory containing target_4/."
+    )
+
 OUT_DIR.mkdir(parents=True, exist_ok=True)
 
 # ── cluster definitions (re-cluster IDs from high-sig region) ─────────────────
