@@ -81,19 +81,29 @@ class EMUSESPipeline:
             f"Initializing pipeline with master random seed: {master_seed}"
         )
 
-        # Create root random number generator
-        root_rng = default_rng(master_seed)
-
-        # Create component-specific seeds for reproducibility
-        random_seeds = {
-            "master_seed": master_seed,
-            "split_seed": root_rng.integers(0, 2**32),
-            "umap_seed": root_rng.integers(0, 2**32),
-            "clustering_seed": root_rng.integers(0, 2**32),
-            "prediction_seed": root_rng.integers(0, 2**32),
-            "cv_seed": root_rng.integers(0, 2**32),
-            "optuna_seed": root_rng.integers(0, 2**32),
-        }
+        # Create component-specific seeds. When master_seed is None, all component seeds
+        # are also None so UMAP receives random_state=None and can run with n_jobs > 1.
+        if master_seed is not None:
+            root_rng = default_rng(master_seed)
+            random_seeds = {
+                "master_seed": master_seed,
+                "split_seed": int(root_rng.integers(0, 2**32)),
+                "umap_seed": int(root_rng.integers(0, 2**32)),
+                "clustering_seed": int(root_rng.integers(0, 2**32)),
+                "prediction_seed": int(root_rng.integers(0, 2**32)),
+                "cv_seed": int(root_rng.integers(0, 2**32)),
+                "optuna_seed": int(root_rng.integers(0, 2**32)),
+            }
+        else:
+            random_seeds = {
+                "master_seed": None,
+                "split_seed": None,
+                "umap_seed": None,
+                "clustering_seed": None,
+                "prediction_seed": None,
+                "cv_seed": None,
+                "optuna_seed": None,
+            }
 
         # Store seeds in config for persistence
         self.config.random_seeds = random_seeds

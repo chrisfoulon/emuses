@@ -74,7 +74,7 @@ emuses/
 
 1. Wait for `feature/analysis-api-enhancement` branch to be merged
 2. Create new `feature/web-gui` branch
-3. Use LAD Phase 1: Context Gathering (`.lad/claude_prompts/01_autonomous_context_planning.md`)
+3. Use LAD Phase 1: Context Gathering (the `lad:plan-feature` skill)
 4. Create detailed technical plan
 5. Begin implementation with Phase 0 (setup)
 

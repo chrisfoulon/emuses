@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__codebase-memory-mcp__search_graph",
+      "mcp__codebase-memory-mcp__get_code_snippet",
+      "mcp__codebase-memory-mcp__search_code",
+      "mcp__codebase-memory-mcp__get_architecture",
+      "mcp__tashigram__check_llm_speak",
+      "mcp__tashigram__check_overstatements",
+      "mcp__ilmelion__zotero_search",
+      "mcp__ilmelion__zotero_get_annotations",
+      "mcp__ilmelion__zotero_get_paper",
+      "Bash(qdbus *)",
+      "Bash(xdg-open *)",
+      "Bash(mamba env list)",
+      "Bash(pdftotext *)"
+    ]
+  }
+}

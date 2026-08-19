@@ -116,7 +116,7 @@ python scripts/test_runners/category_test_runner.py --category model_registry
 
 ## 📋 LAD Framework Compliance
 
-### **Testing Guidelines from .lad/CLAUDE.md**
+### **Testing Guidelines** (see the `lad:lad-standards` skill)
 - ✅ **API Endpoints**: Integration testing (real app + mocked external deps)
 - ✅ **Research Logic**: Unit testing (complete isolation + mocks)  
 - ✅ **Data Processing**: Unit testing (minimal deps + test fixtures)

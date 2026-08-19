@@ -34,6 +34,10 @@ fastapi-users[sqlalchemy,oauth]
 uvicorn
 slowapi
 python-multipart
+# Async SQLite driver. Required, not optional: multi_user_service/database.py falls back
+# to "sqlite+aiosqlite:///:memory:" whenever DATABASE_URL is unset, which is the default
+# local-mode path. It was previously undeclared, so local mode raised ModuleNotFoundError.
+aiosqlite
 
 # CLI packages (Critical for CLI)
 typer

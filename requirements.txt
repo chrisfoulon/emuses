@@ -6,6 +6,8 @@
 #
 acres==0.5.0
     # via bidsschematools
+aiosqlite==0.22.1
+    # via -r requirements.in
 alembic==1.16.4
     # via optuna
 altair==5.5.0
@@ -28,7 +30,7 @@ azure-core==1.38.3
     # via azure-storage-blob
 azure-storage-blob==12.26.0
     # via -r requirements.in
-bcblib==0.4.0
+bcblib==0.6.1
     # via -r requirements.in
 bcrypt==4.3.0
     # via pwdlib

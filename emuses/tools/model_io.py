@@ -698,6 +698,47 @@ class ModelIOManager:
             
         return ". ".join(description_parts)
 
+    def _resolve_artifact_prefix(self, model_path: Path) -> str:
+        """
+        Recover the run prefix that training applied to output file names.
+
+        A run started with ``--prefix myrun`` writes ``myrun_embeddings.npy`` and
+        ``myrun_input_matrix.npy``; a run without one writes ``embeddings.npy`` and
+        ``input_matrix.npy`` (see ``UMAP_utils.py``, ``train_and_save_umap_optim``).
+        Assuming the unprefixed names made every prefixed model fail validation and so
+        impossible to register.
+
+        The prefix is not recorded in the manifest, but the pipeline saves its arguments
+        to ``log/arguments_<timestamp>.json``. Globbing for ``*embeddings.npy`` instead
+        would be wrong: ``test_embeddings.npy``, ``best_embeddings.npy`` and
+        ``unlabeled_embeddings.npy`` are all real EMUSES outputs and none of them is the
+        training embedding matrix.
+
+        Parameters
+        ----------
+        model_path : Path
+            Path to the model folder
+
+        Returns
+        -------
+        str
+            The prefix without its trailing separator, or "" if the run used none or
+            the arguments log is missing or unreadable.
+        """
+        arg_files = sorted(model_path.glob("log/arguments_*.json"))
+        if not arg_files:
+            return ""
+
+        try:
+            with open(arg_files[-1], "r") as f:
+                saved_args = json.load(f)
+        except (json.JSONDecodeError, OSError) as e:
+            logger.debug(f"Could not read training arguments from {arg_files[-1]}: {e}")
+            return ""
+
+        prefix = saved_args.get("prefix") or ""
+        return prefix.strip().rstrip("_")
+
     def _validate_emuses_folder_structure(self, model_path: Path) -> bool:
         """
         Validate that folder contains complete EMUSES training output structure.
@@ -726,10 +767,14 @@ class ModelIOManager:
         if len(model_files) < 2:  # At least UMAP and HDBSCAN
             return False
 
-        # EMUSES folders contain embeddings and training data
-        required_data = ["embeddings.npy", "input_matrix.npy"]
-        for data_file in required_data:
-            if not (model_path / data_file).exists():
+        # EMUSES folders contain embeddings and training data. Training applies the run
+        # prefix to these names, so resolve it rather than assuming the default.
+        prefix = self._resolve_artifact_prefix(model_path)
+        for stem in ("embeddings.npy", "input_matrix.npy"):
+            candidates = [stem]
+            if prefix:
+                candidates.insert(0, f"{prefix}_{stem}")
+            if not any((model_path / name).exists() for name in candidates):
                 return False
 
         # EMUSES folders contain target prediction directories

@@ -15,9 +15,9 @@ example validation has been successfully completed.
 #    - Service responds to API requests
 
 # 2. ✅ HCP Dataset Availability: PASSED
-#    - HCP files accessible at expected paths
-#    - features_file: /gamma/GIN Dropbox/Chris Foulon/EMUSE/HCP_psy/selected_columns_data.csv
-#    - scores_file: /gamma/GIN Dropbox/Chris Foulon/EMUSE/HCP_psy/fluid_int_adj.csv
+#    - HCP files accessible at expected paths, resolved from EMUSES_TEST_DATA_ROOT
+#    - features_file: $EMUSES_TEST_DATA_ROOT/HCP_psy/selected_columns_data.csv
+#    - scores_file: $EMUSES_TEST_DATA_ROOT/HCP_psy/fluid_int_adj.csv
 
 # 3. ✅ Pipeline Job Submission: PASSED
 #    - Job submission via POST /api/v1/jobs/pipeline/full returns 201 Created

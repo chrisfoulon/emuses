@@ -360,10 +360,19 @@ class TestMaliciousCLIInputs:
     """Test malicious CLI inputs and shell metacharacters (Task 4.5)."""
 
     def test_typer_command_injection_prevention(self):
-        """Test that Typer commands reject injection attempts."""
+        """
+        A malicious output folder must be rejected, and must not be created.
+
+        The "not created" assertion is the one that matters. This test previously
+        asserted only ``result.exit_code != 0 or "error" in result.output.lower()``,
+        which passed because the command failed for an unrelated reason (a missing input
+        file, or an HTTP error) while the CLI happily created a directory named
+        ``$(whoami)_output``. Nine such directories were committed to the repository
+        before anyone noticed. The old assertion would pass with path validation
+        removed entirely; this one will not.
+        """
         runner = CliRunner()
 
-        # Test malicious output folder paths
         malicious_outputs = [
             "/tmp; rm -rf /",
             "output && del C:\\Windows",
@@ -373,11 +382,24 @@ class TestMaliciousCLIInputs:
         ]
 
         for malicious_output in malicious_outputs:
-            # Try to run the full command with malicious input
-            result = runner.invoke(app, ["full", malicious_output, "test_input.csv"])
+            with runner.isolated_filesystem() as sandbox:
+                result = runner.invoke(
+                    app, ["full", malicious_output, "test_input.csv"]
+                )
 
-            # Should either fail gracefully or reject the input
-            assert result.exit_code != 0 or "error" in result.output.lower()
+                assert result.exit_code == 2, (
+                    f"{malicious_output!r} should be rejected with exit code 2, "
+                    f"got {result.exit_code}. Output: {result.output}"
+                )
+                assert "rejected output folder" in result.output, (
+                    f"{malicious_output!r} produced no rejection message. "
+                    f"Output: {result.output}"
+                )
+
+                leftovers = sorted(q.name for q in Path(sandbox).iterdir())
+                assert leftovers == [], (
+                    f"{malicious_output!r} was rejected but still created {leftovers}"
+                )
 
     def test_special_characters_in_arguments(self):
         """Test handling of special characters in CLI arguments."""
@@ -457,7 +479,13 @@ class TestMaliciousCLIInputs:
         assert "`whoami`" not in result.output
 
     def test_argument_parsing_with_quotes(self):
-        """Test argument parsing with various quote combinations."""
+        """
+        Quoted injection payloads must be rejected too, and create nothing.
+
+        Same history as test_typer_command_injection_prevention: the previous assertion
+        tolerated any non-zero exit, so it never noticed that the directory was being
+        created.
+        """
         runner = CliRunner()
 
         quoted_inputs = [
@@ -469,10 +497,18 @@ class TestMaliciousCLIInputs:
         ]
 
         for quoted_input in quoted_inputs:
-            result = runner.invoke(app, ["full", quoted_input, "test_input.csv"])
+            with runner.isolated_filesystem() as sandbox:
+                result = runner.invoke(app, ["full", quoted_input, "test_input.csv"])
 
-            # Should not execute the quoted commands
-            assert result.exit_code != 0 or "error" in result.output.lower()
+                assert result.exit_code == 2, (
+                    f"{quoted_input!r} should be rejected with exit code 2, "
+                    f"got {result.exit_code}. Output: {result.output}"
+                )
+
+                leftovers = sorted(q.name for q in Path(sandbox).iterdir())
+                assert leftovers == [], (
+                    f"{quoted_input!r} was rejected but still created {leftovers}"
+                )
 
 
 @pytest.mark.integration

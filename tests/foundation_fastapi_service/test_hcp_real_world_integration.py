@@ -9,22 +9,27 @@ import asyncio
 import pytest
 import httpx
 import time
-import platform
 from pathlib import Path
 from typing import Dict, Any, Optional
+
+from tests.conftest import EXTERNAL_DATA_ROOT
 
 
 @pytest.fixture
 def hcp_file_paths():
-    """Get HCP dataset file paths based on operating system."""
-    system = platform.system().lower()
+    """
+    Locate the HCP dataset files.
 
-    if system == "windows":
-        base_path = Path("S:/GIN Dropbox/Chris Foulon/EMUSE/HCP_psy")
-    elif system == "linux" or system == "darwin":
-        base_path = Path("/gamma/GIN Dropbox/Chris Foulon/EMUSE/HCP_psy")
-    else:
-        pytest.skip(f"Unsupported operating system: {system}")
+    The HCP data lives outside the repo and its location differs per machine, so
+    it is configured via the EMUSES_TEST_DATA_ROOT environment variable rather
+    than hardcoded. Point it at the directory containing ``HCP_psy``.
+    """
+    if EXTERNAL_DATA_ROOT is None:
+        pytest.skip("EMUSES_TEST_DATA_ROOT is not set; HCP integration test skipped")
+
+    base_path = EXTERNAL_DATA_ROOT / "HCP_psy"
+    if not base_path.is_dir():
+        pytest.skip(f"HCP dataset directory not found: {base_path}")
 
     return {
         "features_file": base_path / "selected_columns_data.csv",

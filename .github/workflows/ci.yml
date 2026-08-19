@@ -1,17 +1,32 @@
 name: CI Pipeline
 
+# This is the heavy pipeline: the full suite with coverage, against live postgres and
+# redis containers. It runs for tens of minutes.
+#
+# It deliberately does NOT run on pull requests. Pull requests are gated by
+# emuses_tests.yml, which finishes in well under a minute. That split is the strategy
+# already described in CLAUDE.md — lightweight CI on feature branches, comprehensive
+# validation on main — but the pull_request trigger here meant every PR paid for both,
+# which is not what anyone intended and burns the repo's Actions budget.
+#
+# Use workflow_dispatch to run it on demand against a branch before merging, when a
+# change warrants it.
 on:
   push:
     branches: [ main, develop ]
-  pull_request:
-    branches: [ main ]
+  workflow_dispatch:
 
 jobs:
   test:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: [3.9, "3.10", "3.11"]
+        # 3.11 only. The 3.9 and 3.10 legs never passed: the compiled lockfiles pin
+        # packages that publish no distribution for them (contourpy==1.3.3 requires
+        # >=3.11), so those jobs failed at the install step and never ran a test.
+        # Every other signal in the repo already says 3.11 — the Dockerfile, the other
+        # three workflows, this file's own security and quality jobs, and README.md.
+        python-version: ["3.11"]
     
     services:
       postgres:
@@ -59,13 +74,25 @@ jobs:
         restore-keys: |
           ${{ runner.os }}-pip-
     
-    - name: Install pip-tools and dependencies
+    - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install pip-tools
-        pip-sync requirements-dev.txt
-        pip install -e .
-    
+        # `pip-sync` is not used here: pip-tools 7.6.0 imports stdlib_pkgs from
+        # pip._internal.utils.compat, which current pip no longer provides, so pip-sync
+        # crashes before installing anything.
+        #
+        # --no-deps is deliberate and mirrors what pip-sync does: install exactly the
+        # pinned set from the compiled lockfile without re-resolving. Without it pip
+        # re-resolves and fails, because the lockfile is compiled on one Python version
+        # and installed on another, so the environment markers do not line up.
+        pip install --no-deps -r requirements-dev.txt
+        # Also --no-deps: the lockfile above already provides every dependency. Without it
+        # pip re-resolves emuses's unpinned requirements against the installed set, and on
+        # a conflict it backtracks through older releases — it walked gpy 1.13.2 -> 1.13.1
+        # -> 1.10.0, which ships only an sdist that cannot compile on Python 3.11
+        # (longintrepr.h moved), failing the whole job.
+        pip install --no-deps -e .
+
     - name: Run tests with coverage
       run: |
         pytest --cov=emuses --cov-report=xml --cov-report=html --cov-report=term-missing
@@ -92,11 +119,12 @@ jobs:
     - name: Install security tools
       run: |
         python -m pip install --upgrade pip
-        pip install pip-tools safety bandit
-    
+        pip install safety bandit
+
     - name: Install dependencies for scanning
       run: |
-        pip-sync requirements.txt
+        # See the note in the test job: pip-sync is broken against current pip.
+        pip install --no-deps -r requirements.txt
     
     - name: Run Safety dependency scan
       run: |
@@ -131,11 +159,12 @@ jobs:
     - name: Install quality tools
       run: |
         python -m pip install --upgrade pip
-        pip install pip-tools black isort flake8 mypy
-    
+        pip install black isort flake8 mypy
+
     - name: Install dependencies
       run: |
-        pip-sync requirements-dev.txt
+        # See the note in the test job: pip-sync is broken against current pip.
+        pip install --no-deps -r requirements-dev.txt
     
     - name: Check code formatting with Black
       run: |

@@ -6,6 +6,8 @@
 #
 acres==0.5.0
     # via bidsschematools
+aiosqlite==0.22.1
+    # via -r requirements.in
 alembic==1.16.4
     # via optuna
 altair==5.5.0
@@ -21,7 +23,7 @@ attrs==25.3.0
     # via
     #   jsonschema
     #   referencing
-bcblib==0.4.0
+bcblib==0.6.1
     # via -r requirements.in
 bids-validator==1.14.7.post0
     # via pybids

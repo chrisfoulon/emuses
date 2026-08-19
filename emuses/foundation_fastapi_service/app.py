@@ -19,6 +19,7 @@ import time
 import python_multipart
 import uvicorn
 from fastapi import Depends, FastAPI, File, HTTPException, Request, UploadFile
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from slowapi import Limiter, _rate_limit_exceeded_handler
@@ -358,9 +359,25 @@ def get_pipeline_runner():
 
 
 # Exception handlers
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    """Handle Pydantic validation errors with a uniform error shape."""
+    logger.error("Request validation error", extra={"errors": exc.errors(), "path": str(request.url.path)})
+    return JSONResponse(
+        status_code=422,
+        content={
+            "error_code": "PYDANTIC_VALIDATION_ERROR",
+            "message": "Request validation failed",
+            "details": exc.errors(),
+            "timestamp": datetime.now(timezone.utc).isoformat() + "Z",
+        },
+    )
+
+
 @app.exception_handler(ValueError)
 async def value_error_handler(request: Request, exc: ValueError):
     """Handle ValueError exceptions as 400 Bad Request."""
+    logger.error("ValueError in request handler", extra={"error": str(exc), "path": str(request.url.path)})
     return JSONResponse(
         status_code=400,
         content={

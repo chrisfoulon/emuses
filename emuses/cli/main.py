@@ -50,7 +50,7 @@ from emuses import __version__
 from .interactive_mode import InteractiveWorkflowManager
 from .rich_features import ProgressTracker, StatusRenderer
 # Import security functions
-from .security import validate_path
+from .security import SecurityError, validate_path
 # Import service client and rich features
 from .service_client import ServiceClientError, ServiceHTTPClient
 
@@ -86,6 +86,43 @@ class ScoresNormalization(str, Enum):
     robust = "robust"
 
 
+def validate_output_folder(output_folder: Path) -> Path:
+    """
+    Reject an output folder path that fails security validation.
+
+    Called before the folder is created. Without this the CLI created whatever
+    directory it was handed: running `full '$(whoami)_output' data.csv` produced a
+    directory literally named ``$(whoami)_output`` containing command.txt. Nothing was
+    executed — the name is inert on disk — but nine such directories, including
+    ``` `cat /etc/passwd` ``` and ``output && del C:\\Windows``, were created by the
+    security test suite and committed to the repository. On a shell that later expands an
+    unquoted glob over them, inert stops being the right word.
+
+    Parameters
+    ----------
+    output_folder : Path
+        Candidate output folder, as supplied on the command line
+
+    Returns
+    -------
+    Path
+        The same path, once validated
+
+    Raises
+    ------
+    typer.Exit
+        With code 2 if the path contains injection patterns, directory traversal, or
+        points at a sensitive system directory
+    """
+    try:
+        validate_path(str(output_folder))
+    except (ValueError, SecurityError) as e:
+        typer.echo(f"Error: rejected output folder {str(output_folder)!r}: {e}", err=True)
+        raise typer.Exit(code=2) from e
+
+    return output_folder
+
+
 def save_command_to_output_folder(output_folder: Path) -> None:
     """
     Save the executed command to the output folder for easy rerun.
@@ -95,6 +132,11 @@ def save_command_to_output_folder(output_folder: Path) -> None:
     output_folder : Path
         Output folder path
     """
+    # Validate before creating anything. This is the single point where the CLI turns a
+    # user-supplied string into a directory on disk, so the check belongs here rather
+    # than being repeated at each of the four command call sites.
+    validate_output_folder(output_folder)
+
     try:
         # Ensure output folder exists
         output_folder.mkdir(parents=True, exist_ok=True)
@@ -769,9 +811,9 @@ def full(
         ),
     ] = "optim_dict_predict",
     random_state: Annotated[
-        int,
-        typer.Option("--random_state", help="Master random seed for reproducibility. Note: Setting this will disable UMAP parallel processing (n_jobs=1) to ensure reproducible results. For faster UMAP training at the cost of reproducibility, consider using different seeds for different runs."),
-    ] = 42,
+        Optional[int],
+        typer.Option("--random_state", help="Master random seed. When set, all component seeds are derived from this value for full reproducibility, but UMAP parallelism is disabled (n_jobs forced to 1). Omit for parallel UMAP (faster on multi-core machines) with non-reproducible runs."),
+    ] = None,
     umap_jobs: Annotated[
         Optional[int],
         typer.Option(
@@ -1699,7 +1741,7 @@ async def _execute_inference_locally(config: dict, status_renderer) -> None:
         args = type('Args', (), {})()
         args.input_dataset = str(config["data"])  # Still needed for PipelineConfig
         args.output_folder = str(config["output"])
-        args.random_state = 42
+        args.random_state = None
         args.load_embeddings = None
         args.bids_filters = None
 

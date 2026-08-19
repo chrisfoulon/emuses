@@ -2,19 +2,28 @@
 
 ## Status Maintenance Instructions
 
-**IMPORTANT**: Always read and update `PROJECT_STATUS.md` when:
+**IMPORTANT**: Always read and update `STATUS.md` when:
 - Starting new development sessions
 - Completing major tasks or features  
 - Moving between development phases
 - Adding new pending work
+
+## Codebase Knowledge Graph & ADR (codebase-memory-mcp)
+
+This project is indexed in codebase-memory-mcp (project name `home-chrisfoulon-neuro_apps-emuses`). Use it as the primary way to explore and modify code, not just Grep/Read:
+- **Explore structure**: `search_graph`, `trace_path`, `get_code_snippet`, `get_architecture` before falling back to Grep/Read.
+- **Explore rationale**: `manage_adr(project, mode="get"|"sections")` (backed by `.codebase-memory/adr.md`, tracked in git) records *why*, not *what* — algorithm choices (UMAP/HDBSCAN/Optuna/etc.), architectural decisions (atomic model folders, context-dict stage communication, dual-dataset mode, etc.), and known open issues. **Read the relevant section before changing anything in the areas it covers** — several constraints there (e.g., models are atomic folders, not separable components) were previously violated and had to be reverted.
+- **Keep the ADR current**: when you make a new architectural/algorithmic decision, or resolve one of the "Known Constraints and Open Issues" entries, update it via `manage_adr(mode="update")` in the same session — it drifts stale exactly like undocumented code if left untouched.
+- **Keep the graph current**: after non-trivial edits (new/renamed/moved functions or files), re-index (`index_repository` or `detect_changes`) so `search_graph`/`trace_path` don't return stale results for the rest of the session.
 
 ## Quick Status for New Sessions
 
 **Current Status**: Analysis API Enhancement Foundation Complete - Statistical Analysis + Model Registry + Pipeline Consolidation ✅
 
 **Key Status Files**:
-- **PROJECT_STATUS.md** - Central project status
-- **.lad/CLAUDE.md** - Static development guidelines and patterns
+- **STATUS.md** - Current state of play (short; read this first)
+- **`lad:lad-standards` skill** - Static development guidelines and patterns (LAD v2 plugin, loaded automatically)
+- **dev-docs/test_quality_conventions.md** - EMUSES-specific testing conventions
 - **dev-docs/analysis-api/** - Current feature development context
 
 ## Project Mission
@@ -65,8 +74,8 @@
 
 ## Active Development Context
 
-**Current Branch**: `feature/analysis-api-enhancement`
-**Active Phase**: Analysis API Enhancement development
+**Current branch and active work**: see `STATUS.md` — do not duplicate it here, it goes stale.
+The `feature/analysis-api-enhancement` branch this section once named no longer exists.
 
 ### **COMPLETED**: Analysis API Enhancement - Model Registry Redesign Phase 1 ✅
 - **Sub-Plan**: 0A-Extended (Complete EMUSES Model Registry Redesign)  
@@ -171,4 +180,4 @@
 
 ---
 *Last Updated: 2025-08-31 - Analysis API Enhancement Foundation Complete: Statistical Analysis + Model Registry + Pipeline Consolidation*
-*Static guidelines in `.lad/CLAUDE.md` | Historical details in `dev-docs/project-history/`*
+*Static guidelines in the `lad:lad-standards` skill | Historical details in `dev-docs/project-history/`*

@@ -1,3 +1,16 @@
+# Detailed Status Archive — 2026-07-30
+
+*Superseded long-form content of the former `PROJECT_STATUS.md`, archived when the project moved to
+the short-form `STATUS.md` convention (a 30-second current-state file) on 2026-07-30.*
+
+*Read this for historical detail only. `STATUS.md` at the repo root is the current state of play.*
+
+*Note: the "CURRENT FOCUS (Updated 2025-10-09)" section below was already stale when archived —
+`feature/web-gui-gradio` had since been merged into main, so its "READY FOR MERGE" banner no longer
+described reality.*
+
+---
+
 # EMUSES Project Status
 
 ## 🎯 PROJECT VISION
@@ -5,6 +18,44 @@
 - **Individual Researchers**: Local model development and analysis
 - **Research Labs**: Collaborative model sharing with workspace isolation
 - **Scientific Community**: Public model registry with peer review and benchmarking
+
+## 🔧 TOOLING (Updated 2026-07-30)
+
+### **LAD v2 Plugin Migration** ✅ COMPLETE
+The `.lad/` subtree has been removed. LAD is now a Claude Code plugin (`lad@lad`), installed via
+`/plugin`, exposing `lad:feature-kickoff`, `lad:plan-feature`, `lad:implement-feature`,
+`lad:finalize-feature`, `lad:consolidate-feature`, `lad:test-quality`, `lad:maintenance-session`
+and `lad:lad-standards`. Static development guidelines that used to live in `.lad/CLAUDE.md` are
+now in the `lad:lad-standards` skill, loaded automatically.
+
+EMUSES work product that had been written into `.lad/` was rescued to
+`dev-docs/project-history/phase-implementations/`, with the still-current testing conventions
+distilled into `dev-docs/test_quality_conventions.md`.
+
+**Opened by this migration**: `dev-docs/issues/synthetic_test_data_conversion.md` — the 2025
+"Phase 3" synthetic-to-real test data conversion was never executed; 208 `np.random.rand()`
+instances remain across 27 test files.
+
+### **Hardcoded Test Paths Removed** ✅ COMPLETE (2026-07-30)
+Machine-specific absolute paths were removed from the test suite. `tests/conftest.py` had resolved
+the session fixture's inputs against a dead Windows PyCharm directory, so `emuses_pipeline_results`
+could never find its data. Two conventions now apply, documented in
+`dev-docs/test_quality_conventions.md`:
+
+- **In-repo paths** derive from `PROJECT_ROOT` (exported by `tests/conftest.py`).
+- **External datasets** (HCP etc.) come from the `EMUSES_TEST_DATA_ROOT` environment variable,
+  exported as `EXTERNAL_DATA_ROOT`; tests skip when it is unset.
+
+```bash
+export EMUSES_TEST_DATA_ROOT="/gamma/GIN Dropbox/Chris Foulon/EMUSE"   # contains HCP_psy
+```
+
+Path-traversal payloads in `tests/security/` and the network-drive detection fixtures keep their
+literal strings; those are test input, not filesystem locations.
+
+**Still open**: the full suite reports 121 collection errors from missing analysis dependencies
+(`hdbscan` and friends) in the active interpreter. Install them before reading anything into a full
+`pytest` run. `python scripts/dev_test_runner.py` (13/13) is unaffected.
 
 ## 🎯 CURRENT FOCUS (Updated 2025-10-09)
 

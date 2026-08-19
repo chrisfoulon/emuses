@@ -1,15 +1,15 @@
 # pipelines/pipeline_config.py
 
 import argparse
-import atexit
 import logging
 import multiprocessing as mp
+from multiprocessing import util as mp_util
 import sys
 from dataclasses import dataclass, field
 from datetime import datetime
 from logging.handlers import QueueHandler, QueueListener
 from pathlib import Path
-from typing import Union
+from typing import Optional, Union
 
 import optuna
 from bcblib.tools.general_utils import save_json
@@ -18,6 +18,36 @@ from emuses.observability.logging import setup_structured_logging
 
 # create ONE queue at module load, so children can see it
 LOG_QUEUE = mp.Queue(-1)
+
+# The single QueueListener draining LOG_QUEUE in the main process.
+#
+# There must be exactly one. _configure_logging() runs from PipelineConfig.__post_init__,
+# so it fires on every PipelineConfig instantiation; creating a listener there unguarded
+# started a new thread each time. Two consequences, and the second is the worse one:
+#
+#   1. The threads were never joined. Each also registered its own atexit handler, and at
+#      interpreter shutdown they raced for the stderr lock, aborting the process with
+#      "Fatal Python error: _enter_buffered_busy" (exit 134) *after* tests had already
+#      passed. Five listeners accumulated over a single four-test file.
+#   2. Multiple listeners consuming one queue compete for records. Each log record goes to
+#      whichever listener dequeues it first, so output was being split arbitrarily between
+#      them rather than duplicated — quietly losing lines from any given handler.
+_LOG_LISTENER = None
+
+
+def _stop_log_listener():
+    """
+    Stop the shared QueueListener, if one is running.
+
+    Idempotent: QueueListener.stop() joins self._thread and then sets it to None, so a
+    second call would raise AttributeError. The global is cleared before stopping so a
+    repeat call is a no-op.
+    """
+    global _LOG_LISTENER
+
+    listener, _LOG_LISTENER = _LOG_LISTENER, None
+    if listener is not None:
+        listener.stop()
 
 
 @dataclass
@@ -80,7 +110,7 @@ class PipelineConfig:
     n_jobs: int = -1  # Number of parallel jobs for model training
     model_selection: list = None  # List of models to try
     prediction_optim_dict: str = "optim_dict_predict"  # Prediction optim_dict name
-    random_state: int = 42  # Master random seed
+    random_state: Optional[int] = None  # Master random seed (None = parallel UMAP, int = reproducible but single-threaded UMAP)
 
     # Additional required fields
     input_dataset: str = None  # Input dataset path
@@ -213,18 +243,36 @@ class PipelineConfig:
 
         # ➌ MAIN process: create listener & real handlers
         # Use only console handler for QueueListener since file logging is handled by observability
-        stream = logging.StreamHandler(sys.stdout)
+        global _LOG_LISTENER
+        if _LOG_LISTENER is None:
+            stream = logging.StreamHandler(sys.stdout)
 
-        listener = QueueListener(LOG_QUEUE, stream, respect_handler_level=True)
-        listener.start()
+            _LOG_LISTENER = QueueListener(
+                LOG_QUEUE, stream, respect_handler_level=True
+            )
+            _LOG_LISTENER.start()
+
+            # Make sure everything is flushed on shutdown. Registered once, with the
+            # listener, so repeated PipelineConfig construction does not stack handlers.
+            #
+            # Registered as a multiprocessing finalizer rather than with atexit.register,
+            # for two reasons:
+            #
+            #   1. Ordering. LOG_QUEUE registers its own close as a Finalize with
+            #      exitpriority=10 (multiprocessing/queues.py), and finalizers run in
+            #      descending priority. At 20 the listener is stopped before the queue's
+            #      pipe is closed under it. The other way round, the monitor thread is
+            #      still blocked in Queue.get() when the pipe goes away and raises
+            #      EOFError at interpreter shutdown.
+            #   2. It survives the test suite. tests/conftest.py patches atexit.register
+            #      with an autouse fixture, so a registration made during any test is
+            #      swallowed and the listener is never stopped at all.
+            mp_util.Finalize(None, _stop_log_listener, exitpriority=20)
 
         # Don't clear handlers - let observability logging coexist
         # Only add QueueHandler if not already present
         if not any(isinstance(h, QueueHandler) for h in root.handlers):
             root.addHandler(QueueHandler(LOG_QUEUE))
-
-        # make sure everything is flushed on shutdown
-        atexit.register(listener.stop)
 
         opt_file = logging.FileHandler(
             log_dir / "optuna.log", mode="a", encoding="utf-8"

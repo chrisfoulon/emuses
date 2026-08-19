@@ -10,6 +10,7 @@ from pathlib import Path
 from unittest.mock import Mock
 
 from emuses.tools.local_model_registry import LocalModelRegistry
+from tests.conftest import EXTERNAL_DATA_ROOT
 
 
 class TestRegistryPathResolution:
@@ -54,10 +55,14 @@ class TestRegistryPathResolution:
 
     def test_get_model_path_integration_with_real_folder(self, tmp_path):
         """Test registry path resolution with real EMUSES folder (critical integration)."""
-        # Use real EMUSES folder for integration test
-        real_folder = Path("/mnt/s/GIN Dropbox/Chris Foulon/EMUSE/HCP_psy/model_registry_final")
+        # Real EMUSES model folder, located outside the repo. Configured via
+        # EMUSES_TEST_DATA_ROOT rather than hardcoded to one machine's layout.
+        if EXTERNAL_DATA_ROOT is None:
+            pytest.skip("EMUSES_TEST_DATA_ROOT is not set; integration test skipped")
+
+        real_folder = EXTERNAL_DATA_ROOT / "HCP_psy" / "model_registry_final"
         if not real_folder.exists():
-            pytest.skip("Real EMUSES folder not available for integration test")
+            pytest.skip(f"Real EMUSES folder not available: {real_folder}")
             
         # Create temporary registry
         registry = LocalModelRegistry(registry_path=tmp_path / "test_registry")

@@ -1,6 +1,6 @@
 # EMUSES Documentation Summary
 
-This document provides a comprehensive overview of all documentation created for the EMUSES core pipeline and its utilities. The documentation follows the `.lad/` toolkit conventions with a three-level nested structure for progressive disclosure.
+This document provides a comprehensive overview of all documentation created for the EMUSES core pipeline and its utilities. The documentation follows the LAD toolkit conventions with a three-level nested structure for progressive disclosure.
 
 ## Documentation Structure
 
@@ -92,7 +92,7 @@ This document provides a comprehensive overview of all documentation created for
 
 ### Three-Level Structure
 
-Each documentation file follows the `.lad/` toolkit conventions with progressive disclosure:
+Each documentation file follows the LAD toolkit conventions with progressive disclosure:
 
 #### Level 1: Visible Summary
 - Overview paragraph with purpose and key capabilities

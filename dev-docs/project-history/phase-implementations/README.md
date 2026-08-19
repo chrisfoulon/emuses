@@ -18,6 +18,20 @@ This directory contains historical implementation notes and analysis documents f
 - **`phase_3_5_implementation_summary.md`** - Phase 3.5 completion summary
 - **`phase_4_2_model_migration.md`** - Model migration implementation analysis
 
+### Test Quality Framework (2025-08/09)
+Archived 2026-07-30 from the former `.lad/` subtree during the LAD v2 plugin migration. These are
+EMUSES work product, not LAD framework content.
+
+- **`test_quality_framework.md`** - Strategic methodology (PDCA cycles, real data conversion)
+- **`test_quality_implementation_guide.md`** - Tactical procedures and quality gates
+- **`test_quality_coverage_analysis_phase2.md`** - Coverage gap analysis and priority matrix
+- **`test_quality_phase2_to_phase3_handover.md`** - Phase 2 results (InferenceStage 44% → 83%) and
+  the Phase 3 plan that was never executed
+
+The still-current conventions from the first two were distilled into
+`dev-docs/test_quality_conventions.md`. The unfinished Phase 3 work is tracked in
+`dev-docs/issues/synthetic_test_data_conversion.md`.
+
 ## Document Purpose
 
 These documents serve as:
@@ -31,8 +45,8 @@ These documents serve as:
 For current development documentation, see:
 - `/docs/model-registry/` - Current model registry documentation
 - `/docs/project-history/` - Project status archives
-- `PROJECT_STATUS.md` - Current project status
-- `.lad/CLAUDE.md` - Current development context
+- `STATUS.md` - Current state of play (formerly `PROJECT_STATUS.md`)
+- `CLAUDE.md` and the `lad:lad-standards` skill - Current development context
 
 ## Archive Policy
 

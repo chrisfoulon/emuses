@@ -14,7 +14,91 @@ from unittest.mock import patch
 import logging
 import time
 import numpy as np
-from emuses.pipelines.emuses_pipeline import EMUSESPipeline
+# NOTE: EMUSESPipeline is deliberately NOT imported here. It pulls in nibabel and the rest
+# of the scientific stack, and conftest.py is loaded for *every* pytest invocation — including
+# the `fast-tests` CI job, which installs a minimal dependency set on purpose
+# (`pip install -e . --no-deps`, see .github/workflows/emuses_tests.yml). A module-level import
+# made that job fail at collection with ModuleNotFoundError: nibabel, so no test ran at all.
+# It is imported lazily inside the one fixture that needs it.
+
+# Repo root, derived from this file's location (tests/conftest.py -> repo root).
+# Never hardcode absolute paths: they break on every machine but the author's.
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+
+# Root of the large external research datasets (HCP and similar) that a few
+# integration tests use. These are not in the repo; point EMUSES_TEST_DATA_ROOT at
+# them to enable those tests, otherwise they skip.
+EXTERNAL_DATA_ROOT = (
+    Path(os.environ["EMUSES_TEST_DATA_ROOT"]).expanduser()
+    if os.environ.get("EMUSES_TEST_DATA_ROOT")
+    else None
+)
+
+
+@pytest.fixture(autouse=True)
+def _isolate_cwd(tmp_path, monkeypatch):
+    """
+    Run every test in a throwaway directory instead of the repo root.
+
+    Tests that invoke the CLI create whatever output folder they are given, relative to
+    the current working directory. Run from the repo root, that litters the tree — and on
+    2026-07-31 nine such directories were committed by accident, with names like
+    ``$(whoami)_output`` and ``` `cat /etc/passwd` ``` because the security tests pass
+    shell-injection payloads as output paths.
+
+    Safe to apply globally: no test refers to ``test_data/`` by bare relative path (they
+    all derive from PROJECT_ROOT or __file__), and the handful that touch the cwd either
+    save and restore it themselves or patch ``Path.cwd``.
+
+    A test that genuinely needs the real repo root can opt out with
+    ``@pytest.mark.usefixtures("repo_cwd")``.
+    """
+    monkeypatch.chdir(tmp_path)
+
+
+@pytest.fixture
+def repo_cwd(monkeypatch):
+    """Opt back in to running from the repo root, for tests that require it."""
+    monkeypatch.chdir(PROJECT_ROOT)
+    return PROJECT_ROOT
+
+
+# Entries that legitimately appear in the repo root during a test run.
+_POLLUTION_ALLOWLIST = {
+    ".pytest_cache",
+    ".coverage",
+    "htmlcov",
+    ".hypothesis",
+    "__pycache__",
+}
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _no_repo_pollution():
+    """
+    Fail the session if tests leave new files in the repo root.
+
+    The backstop behind _isolate_cwd. Silent litter is how nine injection-named
+    directories ended up tracked in git without anyone noticing; this makes the next
+    occurrence a visible test failure instead.
+    """
+    before = set(os.listdir(PROJECT_ROOT))
+
+    yield
+
+    new = {
+        name for name in os.listdir(PROJECT_ROOT)
+        if name not in before
+        and name not in _POLLUTION_ALLOWLIST
+        and not name.startswith(".coverage")
+    }
+    if new:
+        pytest.fail(
+            "Tests polluted the repo root with: "
+            + ", ".join(sorted(repr(n) for n in new))
+            + ". Write to tmp_path instead of the working directory.",
+            pytrace=False,
+        )
 
 
 @pytest.fixture(autouse=True)
@@ -154,8 +238,8 @@ def emuses_pipeline_results():
     session_temp_dir = Path(tempfile.mkdtemp(prefix="emuses_session_test_"))
     print(f"📁 Session temp directory: {session_temp_dir}")
     
-    # Define test data configurations with absolute paths
-    project_root = Path('/mnt/c/Users/Tolhsadum/PycharmProjects/emuses')
+    # Resolve the repo root from this file's location so the fixture works on any machine
+    project_root = PROJECT_ROOT
     test_configs = {
         'regression': {
             'features': str(project_root / 'test_data/features.csv'),
@@ -181,7 +265,13 @@ def emuses_pipeline_results():
             args = type('Args', (), {})()
             args.input_dataset = config['features']
             args.output_folder = str(config['output'])
-            args.scores_dataset = config['scores']
+            # `scores`, not `scores_dataset`. The latter is the FastAPI service-layer name,
+            # translated to args.scores in pipeline_runner.py before the pipeline sees it
+            # (see pipeline_runner.py:133). Setting the service name here left
+            # PipelineConfig.scores at its default of None, so no scores were ever loaded and
+            # split_dataset() raised TypeError on a None. PipelineConfig copies unknown
+            # attributes verbatim, so the wrong name failed silently rather than erroring.
+            args.scores = config['scores']
             args.columns_are_features = True
             args.input_normalization = 'robust'
             args.scores_header = None
@@ -196,7 +286,13 @@ def emuses_pipeline_results():
             args.n_jobs = 4
             args.random_state = 42
             args.inference_mode = False
-            args.prefix = f"SessionTest_{mode}"
+            # Deliberately empty. UMAPStage writes f"{prefix}embeddings.npy" and UMAP_utils
+            # writes f"{pref}_input_matrix.npy", while the registry's completeness check
+            # (ModelIOManager._validate_emuses_folder_structure) looks for exactly
+            # "embeddings.npy" and "input_matrix.npy". A prefix therefore produces a folder
+            # the registry rejects. The two modes already write to separate output folders,
+            # so the prefix bought nothing here.
+            args.prefix = ""
             
             # Additional required attributes based on PipelineConfig
             args.interactive_plot = False
@@ -206,9 +302,26 @@ def emuses_pipeline_results():
             args.test_size = 0.2  # Required for dataset splitting
             args.outer_folds = 5   # Required for cross-validation
             
+            # Imported here rather than at module scope — see the note by the imports.
+            from emuses.pipelines.emuses_pipeline import EMUSESPipeline
+            from emuses.pipelines.heatmap_stage import HeatmapStage
+            from emuses.pipelines.umap_stage import UMAPStage
+
             # Create and run pipeline
             pipeline = EMUSESPipeline(args)
-            
+
+            # Stages are the caller's responsibility: EMUSESPipeline.run() iterates
+            # self.stages, which add_stage() populates and nothing else does. Without this
+            # the fixture ran an empty stage list and produced no model. Wiring mirrors
+            # PipelineRunner._run_pipeline_in_process (pipeline_runner.py:~424), which is
+            # what the service uses to produce a complete training folder.
+            pipeline.add_stage(UMAPStage(pipeline.config))
+            pipeline.add_stage(
+                HeatmapStage(
+                    pipeline.config, pipeline.context.get("output_format_info")
+                )
+            )
+
             # Run the full pipeline - this is the key method
             pipeline.run()
             

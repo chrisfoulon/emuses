@@ -1,10 +1,34 @@
 name: Development CI - Fast Tests
 
-on: 
-  push:
-    branches-ignore: [main, master]  # Only run on development branches
+# Pull requests only. A `push` trigger alongside this ran the workflow twice for every
+# push to a branch with an open PR. Deduplicating them via a concurrency group works, but
+# leaves the cancelled run showing as a failed check on the PR (mergeStateStatus
+# UNSTABLE) and still costs a runner start. Not triggering it at all is cleaner and
+# cheaper.
+#
+# Branches with no open PR get no run here by design: the pre-push gate for those is
+# `python scripts/dev_test_runner.py` locally, which is the workflow CLAUDE.md already
+# describes. Use workflow_dispatch to run this against a branch on demand.
+on:
   pull_request:
     branches: [main, master]
+  workflow_dispatch:
+
+# Two things, both about not paying twice for the same answer:
+#
+# The key must collapse the push and pull_request events for a branch into ONE group.
+# That needs `ref_name`, not `ref`, as the fallback: on push, `head_ref` is empty and
+# `github.ref` expands to `refs/heads/<branch>`, while a pull_request gives the bare
+# `<branch>` — different strings, different groups, and both runs proceed. `ref_name` is
+# the bare branch name for push events, so the two events land in the same group and the
+# second supersedes the first. (Keying on `ref` was tried and demonstrably did not
+# dedupe: runs 30621762849 and 30621765690 both ran for the same commit.)
+#
+# cancel-in-progress then supersedes queued runs when a branch is pushed again, so
+# iterating does not leave a trail of runs whose results nobody will read.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
 
 jobs:
   fast-tests:

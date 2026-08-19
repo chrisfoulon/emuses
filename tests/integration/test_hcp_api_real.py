@@ -15,25 +15,31 @@ file upload endpoints are not yet implemented in the API.
 import asyncio
 import httpx
 import json
-import platform
 import sys
 import time
 from pathlib import Path
 from typing import Dict, Any, Optional
 
+from tests.conftest import EXTERNAL_DATA_ROOT
+
 
 def detect_and_convert_paths() -> Dict[str, Path]:
-    """Detect OS and convert paths from the original Linux command to appropriate format."""
-    system = platform.system().lower()
-    
-    if system == "windows":
-        base_path = Path("S:/GIN Dropbox/Chris Foulon/EMUSE/HCP_psy")
-    elif system == "linux" or system == "darwin":
-        base_path = Path("/gamma/GIN Dropbox/Chris Foulon/EMUSE/HCP_psy")
-    else:
-        raise OSError(f"Unsupported operating system: {system}")
-    
+    """
+    Locate the HCP dataset files.
+
+    The dataset lives outside the repo and its mount point differs per machine and
+    OS, so it is configured via the EMUSES_TEST_DATA_ROOT environment variable
+    rather than hardcoded. Point it at the directory containing ``HCP_psy``.
+    """
+    if EXTERNAL_DATA_ROOT is None:
+        raise OSError(
+            "EMUSES_TEST_DATA_ROOT is not set; cannot locate the HCP dataset"
+        )
+
+    base_path = EXTERNAL_DATA_ROOT / "HCP_psy"
+
     return {
+        'base_path': base_path,
         'features_file': base_path / "selected_columns_data.csv",
         'scores_file': base_path / "fluid_int_adj.csv"
     }
@@ -66,8 +72,8 @@ async def validate_files(paths: Dict[str, Path]) -> Dict[str, str]:
 async def submit_pipeline_job(client: httpx.AsyncClient, file_paths: Dict[str, str]) -> str:
     """Submit a full pipeline job via API."""
     
-    # Use absolute path for output folder
-    output_folder = str(Path("/gamma/GIN Dropbox/Chris Foulon/EMUSE/HCP_psy/is_it_running2_api").resolve())
+    # Output folder sits alongside the dataset, under the configured data root
+    output_folder = str((detect_and_convert_paths()['base_path'] / "is_it_running2_api").resolve())
     
     job_request = {
         "pipeline_config": {

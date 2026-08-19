@@ -6,7 +6,6 @@ omit =
     */test_*
     */__pycache__/*
     */.*
-    .lad/*
     setup.py
     */venv/*
     */env/*

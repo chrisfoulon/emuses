@@ -1,0 +1,68 @@
+version: 2
+
+# Why this file exists
+#
+# Dependency patches were being applied by hand, in occasional large sweeps. That does not
+# work: a March 2026 sweep closed 62 alerts across 17 packages, and within weeks new CVEs
+# had superseded several of the versions it pinned (tornado 6.5.5 -> 6.5.6 -> 6.5.7,
+# cryptography 46.0.5 -> 46.0.6 -> 46.0.7 -> 48.0.1). By July the backlog was larger than
+# before the sweep. Continuous small updates are the only version of this that stays green.
+#
+# Note on alert counts: this file controls update *pull requests*, not security *alerts*.
+# Alerts come from the dependency graph and are raised once per manifest, so a single
+# advisory in a shared transitive package appears three times — once each for
+# requirements.txt, requirements-dev.txt and requirements-prod.txt. That triple-counting is
+# inherent to keeping three compiled lockfiles, and all three are load-bearing: CI runs
+# `pip-sync` against them (.github/workflows/ci.yml). Divide the headline number by three
+# for the count of distinct advisories.
+#
+# The lockfiles are compiled by pip-tools from the .in files. Dependabot edits the .txt
+# files directly, so after a batch of its PRs lands it is worth re-running
+# `pip-compile` on each .in to keep the two in step.
+
+updates:
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+    commit-message:
+      prefix: "chore(deps)"
+      prefix-development: "chore(deps-dev)"
+    groups:
+      # One PR for routine patch/minor bumps. Without grouping this is dozens of
+      # single-package PRs a week, which is how the backlog got ignored in the first place.
+      routine:
+        patterns:
+          - "*"
+        update-types:
+          - "patch"
+          - "minor"
+      # Majors separately — they need a human to read the changelog.
+      major:
+        patterns:
+          - "*"
+        update-types:
+          - "major"
+    ignore:
+      # Pinned deliberately: numba requires NumPy <= 2.3, and GPy/paramz still import
+      # numpy.linalg.linalg, removed in NumPy 2.x. Moving off 1.26 breaks test collection
+      # until both are resolved upstream. See dev-docs/test_quality_conventions.md.
+      - dependency-name: "numpy"
+        versions: [">=2.0"]
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+    labels:
+      - "dependencies"
+    commit-message:
+      prefix: "chore(ci)"
+    groups:
+      actions:
+        patterns:
+          - "*"
