@@ -15,10 +15,15 @@ import json
 import argparse
 import multiprocessing
 
+# Repo root, derived from this file's location: scripts/coverage/<this>.py
+# Previously three subprocess calls hardcoded a /mnt/c Windows path this repo
+# has not lived on for years, so the script could not run anywhere.
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+
 def find_test_files():
     """Find all test files in the project."""
     test_files = []
-    test_dirs = ['tests']
+    test_dirs = [str(PROJECT_ROOT / 'tests')]
     
     for test_dir in test_dirs:
         if os.path.exists(test_dir):
@@ -90,7 +95,7 @@ def run_coverage_chunk(chunk_info):
         
         # Run coverage on the test files with NO timeout
         cmd = [
-            'python', '-m', 'coverage', 'run',
+            sys.executable, '-m', 'coverage', 'run',
             '--data-file=' + coverage_file,
             '--append',
             '-m', 'pytest',
@@ -106,7 +111,7 @@ def run_coverage_chunk(chunk_info):
             capture_output=True, 
             text=True, 
             # NO TIMEOUT - let it run as long as needed
-            cwd='/mnt/c/Users/Tolhsadum/PycharmProjects/emuses'
+            cwd=PROJECT_ROOT
         )
         
         success = os.path.exists(coverage_file) and os.path.getsize(coverage_file) > 0
@@ -296,12 +301,12 @@ def main():
         final_coverage = '.coverage_final'
         
         # Combine all coverage files
-        combine_cmd = ['python', '-m', 'coverage', 'combine'] + coverage_files
+        combine_cmd = [sys.executable, '-m', 'coverage', 'combine'] + coverage_files
         combine_result = subprocess.run(
             combine_cmd, 
             capture_output=True, 
             text=True,
-            cwd='/mnt/c/Users/Tolhsadum/PycharmProjects/emuses'
+            cwd=PROJECT_ROOT
         )
         
         if combine_result.returncode == 0:
@@ -309,12 +314,12 @@ def main():
             
             # Generate comprehensive report
             print("\n📋 Generating comprehensive coverage report...")
-            report_cmd = ['python', '-m', 'coverage', 'report', '--show-missing']
+            report_cmd = [sys.executable, '-m', 'coverage', 'report', '--show-missing']
             report_result = subprocess.run(
                 report_cmd,
                 capture_output=True,
                 text=True,
-                cwd='/mnt/c/Users/Tolhsadum/PycharmProjects/emuses'
+                cwd=PROJECT_ROOT
             )
             
             if report_result.returncode == 0:
@@ -323,7 +328,7 @@ def main():
                 print(report_result.stdout)
                 
                 # Generate JSON report for parsing
-                json_cmd = ['python', '-m', 'coverage', 'json']
+                json_cmd = [sys.executable, '-m', 'coverage', 'json']
                 json_result = subprocess.run(json_cmd, capture_output=True, text=True)
                 if json_result.returncode == 0:
                     with open('coverage.json', 'r') as f:

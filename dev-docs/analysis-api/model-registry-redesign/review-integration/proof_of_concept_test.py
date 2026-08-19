@@ -12,8 +12,10 @@ import sys
 from pathlib import Path
 from typing import Dict, Optional
 
-# Add EMUSES to path for testing
-sys.path.insert(0, "/mnt/c/Users/Tolhsadum/PycharmProjects/emuses")
+# Add EMUSES to path for testing. Derived from this file's location
+# (dev-docs/analysis-api/model-registry-redesign/review-integration/) rather than
+# the /mnt/c path this previously hardcoded, which has not existed for years.
+sys.path.insert(0, str(Path(__file__).resolve().parents[4]))
 
 try:
     from emuses.pipelines.inference_stage import InferenceStage

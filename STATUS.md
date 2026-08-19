@@ -8,8 +8,20 @@ registry with peer review for the wider community.
 
 ## State of play
 
-**Branch**: `chore/tooling-migration-and-fixes`, PR #5 open against `main`. Carries the LAD v2
-migration, CI trigger/concurrency fixes, dependency declarations, and the test-suite repairs below.
+**Branch**: work from `main`. PR #5 was squash-merged on 2026-08-19 (`015a307`), carrying the LAD
+v2 migration, CI trigger/concurrency fixes, dependency declarations, and the test-suite repairs
+below. Squash was required: that branch's history contained the injection-named directories.
+
+**Branches pruned to three** (2026-08-19). Nine local and twelve remote branches were deleted after
+checking each with `git rev-list --count main..<branch>` — all were genuinely contained in `main`.
+What remains on the remote: `main`, `gh-pages` (vestigial; Pages runs on `build_type: workflow` via
+`docs.yml`, not from the branch), and whatever dependabot currently has open. `origin/fix/app-validation-and-error-handlers`
+went too: PR #4 was closed as superseded and its content is on `main` (`app.py:362`, `app.py:499`).
+
+**Repo root holds four `.md` files** (2026-08-19): `CHANGELOG`, `CLAUDE`, `README`, `STATUS`. Nineteen
+files of session working notes were deleted and two still-live documents moved into `dev-docs/`. The
+practice that generated them is fixed at source: `test_quality_implementation_guide.md` instructed
+sessions to append PDCA results to the repo root, and now points at `dev-docs/`.
 
 **Core system is built and merged.** Model registry (all three deployment modes), scientific
 pipeline, inference, multi-user auth, observability and CI/CD are all on `main`.
@@ -74,8 +86,12 @@ environments pass 13/13, so nothing was hidden, but the gate was not testing wha
   `test_data/` fixtures took that suite from 44% to 83% passing — the failures were the synthetic
   data, not the code. See `dev-docs/test_quality_conventions.md`.
 - **Never hardcode absolute paths.** In-repo paths derive from `PROJECT_ROOT`; external datasets come
-  from `EMUSES_TEST_DATA_ROOT`. A hardcoded Windows path had silently broken the session pipeline
-  fixture for months.
+  from the environment (`EMUSES_TEST_DATA_ROOT`, and `EMUSES_DSD_ROOT` / `EMUSES_FIGURE_OUT` for the
+  figure script). A hardcoded Windows path had silently broken the session pipeline fixture for
+  months, and on 2026-08-19 three more live files were found still pinning
+  `/mnt/c/Users/Tolhsadum/PycharmProjects/emuses` — including the coverage script `CLAUDE.md`
+  advertises, which therefore could not run at all. All fixed. Bare `python` in a subprocess is the
+  same class of bug: it resolves to whatever is first on `PATH`, not the running interpreter.
 - **Documentation split**: `docs/` is user-facing, `dev-docs/` is for contributors and sessions.
 
 ## Open questions / next
@@ -83,7 +99,7 @@ environments pass 13/13, so nothing was hidden, but the gate was not testing wha
 - [ ] Run `/lad:converge` — nine months of accumulated claims have not been checked against the
       code. Two were already found and fixed on 2026-07-30 (a stale "ready for merge" banner, and
       `CLAUDE.md` naming a deleted branch as current); the rest of the sweep has not been done.
-- [ ] Merge PR #5, or split it — it carries tooling migration, CI, dependencies and test repairs.
+- [x] ~~Merge PR #5~~ — squash-merged 2026-08-19 as `015a307`.
 - [ ] **Test suite triage** — full findings in `dev-docs/issues/test_suite_triage_2026_07.md`.
       Remaining, in order:
       - [ ] `tests/multi-user-service/` hangs as a directory. Not the QueueListener leak (still
