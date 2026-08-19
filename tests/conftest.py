@@ -36,6 +36,72 @@ EXTERNAL_DATA_ROOT = (
 
 
 @pytest.fixture(autouse=True)
+def _isolate_cwd(tmp_path, monkeypatch):
+    """
+    Run every test in a throwaway directory instead of the repo root.
+
+    Tests that invoke the CLI create whatever output folder they are given, relative to
+    the current working directory. Run from the repo root, that litters the tree — and on
+    2026-07-31 nine such directories were committed by accident, with names like
+    ``$(whoami)_output`` and ``` `cat /etc/passwd` ``` because the security tests pass
+    shell-injection payloads as output paths.
+
+    Safe to apply globally: no test refers to ``test_data/`` by bare relative path (they
+    all derive from PROJECT_ROOT or __file__), and the handful that touch the cwd either
+    save and restore it themselves or patch ``Path.cwd``.
+
+    A test that genuinely needs the real repo root can opt out with
+    ``@pytest.mark.usefixtures("repo_cwd")``.
+    """
+    monkeypatch.chdir(tmp_path)
+
+
+@pytest.fixture
+def repo_cwd(monkeypatch):
+    """Opt back in to running from the repo root, for tests that require it."""
+    monkeypatch.chdir(PROJECT_ROOT)
+    return PROJECT_ROOT
+
+
+# Entries that legitimately appear in the repo root during a test run.
+_POLLUTION_ALLOWLIST = {
+    ".pytest_cache",
+    ".coverage",
+    "htmlcov",
+    ".hypothesis",
+    "__pycache__",
+}
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _no_repo_pollution():
+    """
+    Fail the session if tests leave new files in the repo root.
+
+    The backstop behind _isolate_cwd. Silent litter is how nine injection-named
+    directories ended up tracked in git without anyone noticing; this makes the next
+    occurrence a visible test failure instead.
+    """
+    before = set(os.listdir(PROJECT_ROOT))
+
+    yield
+
+    new = {
+        name for name in os.listdir(PROJECT_ROOT)
+        if name not in before
+        and name not in _POLLUTION_ALLOWLIST
+        and not name.startswith(".coverage")
+    }
+    if new:
+        pytest.fail(
+            "Tests polluted the repo root with: "
+            + ", ".join(sorted(repr(n) for n in new))
+            + ". Write to tmp_path instead of the working directory.",
+            pytrace=False,
+        )
+
+
+@pytest.fixture(autouse=True)
 def setup_test_environment():
     """Set up test environment variables for all tests."""
     # Set environment variables for testing

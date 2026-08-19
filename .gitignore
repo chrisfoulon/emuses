@@ -211,6 +211,13 @@ coverage_html/
 */new_cli_test/
 */HCP_psy/*
 
+# Test artefacts from CLI security tests, which feed shell-injection payloads as
+# output paths. Nine such directories were committed by accident in 9327b6a; the
+# tests now run in an isolated cwd, and these patterns are the backstop.
+# No legitimate path in this repo contains a shell metacharacter.
+*[;&|`$]*/
+/command.txt
+
 # =============================================================================
 # EMUSES Multi-User Service Security
 # =============================================================================
