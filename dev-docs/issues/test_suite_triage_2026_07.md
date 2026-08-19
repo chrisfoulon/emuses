@@ -215,7 +215,61 @@ declares is finally used by something and `-m "not slow"` cuts the worst 163s. N
 output paths instead of taking them through the whole service-client path (§2c). The remaining
 files are unmarked.
 
+### 3d. The hang DOES reproduce — in full-suite context only (2026-08-19, evening)
+
+Supersedes the "does not reproduce" conclusion in §3b below. That conclusion was drawn from running
+`test_performance_stress.py` **on its own**, where it completes in ~163s. It was true as far as it
+went and wrong as a general claim: the first full run of the tiered core suite hung on
+`TestConcurrentJobSubmissions::test_concurrent_job_submissions`.
+
+pytest-timeout named it and dumped the stack:
+
+```
+test_performance_stress.py:420  in submit_job   -> await _full_async(...)
+emuses/cli/main.py:1107         in _full_async  -> await _execute_via_unified_service(...)
+emuses/cli/main.py:1396         in _execute_via_unified_service
+                                -> if not _wait_for_service_ready(service_url, timeout=30):
+emuses/cli/main.py:1624         in _wait_for_service_ready -> time.sleep(0.5)
+```
+
+**Mechanism.** The test patches `emuses.cli.main.ServiceHTTPClient` and sets
+`check_service_health.return_value = True`. But `_wait_for_service_ready` does not go through
+`ServiceHTTPClient` — it polls with raw `requests.get` in a loop with a blocking `time.sleep(0.5)`.
+The mock therefore does not cover the path the test actually takes. The test submits five jobs and
+asserts `execution_time < 60`, so its own intent is that the service is fully mocked out.
+
+Two defects, and they are different in kind:
+1. **Test**: the mock is incomplete — it stops at the client and misses the readiness check.
+2. **Code**: `_wait_for_service_ready` performs blocking I/O and `time.sleep` inside an async call
+   chain, so five "concurrent" submissions serialise into 5 × 30 s.
+
+**Why only in full-suite context** is not established. The three tests pass in ~40 s when the class
+runs alone. Something earlier in the suite leaves state behind that makes the readiness poll block
+rather than fail fast — a leaked uvicorn is the obvious suspect (see §3c, where the service-spawn
+leak was confirmed real but believed unreached). That is a hypothesis, not a finding, and it is the
+next thing to test. Do not record it as the cause until a run demonstrates it.
+
+**This is very likely the six-day orphan from 2026-07-31.** Same file, and a readiness poll against
+a socket is exactly the `ep_poll` signature that orphan showed. §3b guessed at interpreter shutdown
+instead; on this evidence that guess was probably wrong.
+
+### 3e. `timeout_method = thread` kills the entire run (2026-08-19)
+
+Worth separating out, because it cost a full measurement. pytest-timeout's thread method cannot
+interrupt a stuck test: it dumps stacks and terminates the process. One hang therefore aborts
+everything, and no other result is ever reported — the run above died at 27% with 828 of 1431 tests
+executed and no summary.
+
+Changed to `timeout_method = signal`. SIGALRM interrupts the test and the run continues. The
+trade-off is real and recorded in `pytest.ini`: SIGALRM fires only on the main thread and cannot
+interrupt a block inside a C extension, so a hang of that kind still needs the thread method to
+diagnose. Losing every other result by default costs more than that.
+
 ### 3b. `test_performance_stress.py` — hang not reproducible; net installed anyway (2026-08-19)
+
+**Superseded in part by §3d above — the hang does reproduce, in full-suite context.** Kept for the
+orphan's forensic detail and the two real test fixes.
+
 
 An orphaned run of this file from 2026-07-31 was found still alive on 2026-08-06, blocked in
 `ep_poll` after **6 days 11 hours** — despite having been started with
