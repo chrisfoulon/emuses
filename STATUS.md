@@ -25,7 +25,7 @@ guidelines are in the `lad:lad-standards` skill. The codebase is indexed in code
 **Environment**: `conda activate emuses` (it lives in the old `~/miniconda3`, registered in
 `~/.condarc` so it resolves by name). Python 3.11, editable install pointing at this repo.
 
-**Test suite — collects cleanly, does not pass, but no longer crashes.** 2490 tests collect with 0
+**Test suite — collects cleanly, does not pass, but no longer crashes.** 2499 tests collect with 0
 errors. Repaired since 2026-07-31:
 
 - **No more core dumps.** All three were one root cause: `PipelineConfig.__post_init__` built a new
@@ -46,6 +46,10 @@ errors. Repaired since 2026-07-31:
   created by running the CLI security tests from the repo root. Removed; the CLI now validates
   output paths before creating them; and two autouse fixtures run every test in `tmp_path` and fail
   the session if anything appears in the repo root.
+- **Repo root cleaned** (2026-08-19). Nine injection-named directories plus ~14 stale test-output
+  files were removed, most of them tracked. Several referenced
+  `/mnt/c/Users/Tolhsadum/PycharmProjects/emuses` — a machine this repo has not lived on for a long
+  time. `test_name_logic.py` went with them, closing that open question.
 - **One flaky test fixed** — it asserted that a 100-sample unseeded draw reproduced its population
   parameters, which fails 46% of the time.
 
@@ -105,7 +109,6 @@ environments pass 13/13, so nothing was hidden, but the gate was not testing wha
 - [ ] Multi-user admin endpoints (`emuses/multi_user_service/admin_endpoints.py`) are mock
       implementations returning fake data. Documented in
       `docs/multi_user_service_implementation_gap_analysis.md`. Non-blocking for single-user use.
-- [ ] Delete or keep `test_name_logic.py` at the repo root — a print-only demo with no assertions.
 
 ---
 *Long-form history: `dev-docs/project-history/detailed-status-archive-2026-07-30.md`*
