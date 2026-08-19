@@ -185,8 +185,10 @@ pytest [affected_tests] -v --tb=short
 # Regression prevention
 python scripts/dev_test_runner.py
 
-# Results documentation
-echo "PDCA Cycle [N] Results:" >> pdca_cycle_[N]_results.md
+# Results documentation — write under dev-docs/, never the repo root.
+# This line previously wrote to the root; following it produced 19 stray .md files
+# that were deleted on 2026-08-19.
+echo "PDCA Cycle [N] Results:" >> dev-docs/issues/pdca_cycle_[N]_results.md
 ```
 
 ### SOP 2: Real Data Conversion Implementation

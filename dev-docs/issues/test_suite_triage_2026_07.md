@@ -354,6 +354,29 @@ threads still alive: 6
 Use this to verify any fix: after it, the `_monitor` entries should be gone and the process should
 exit with pytest's own code rather than 134.
 
+### 4b. `test_bcrypt_password_hashing` is flaky under load, not failing (P3, 2026-08-19)
+
+Carried over from `unfixed_test_analysis.md` before that file was deleted — **with its diagnosis
+corrected**. That note described the test as expecting "bcrypt hashing to complete in < 0.5 seconds"
+against an actual 0.73 s. That is not what it asserts. The assertion
+(`tests/security/test_encryption_data_protection.py`) is a timing-attack-resistance check:
+
+```python
+time_ratio = abs(correct_time - incorrect_time) / max(correct_time, incorrect_time)
+assert time_ratio < 0.5  # Allow some variance
+```
+
+It compares two `bcrypt.checkpw` calls against each other. The 0.73 in the old baseline was that
+*ratio*, not a duration. Nothing is being held to a wall-clock budget.
+
+The test passes on a quiet machine (verified 2026-08-19, 4.69 s). It fails when scheduler noise
+makes two ~250 ms operations differ by more than half their maximum, which is why it appeared in a
+run taken while swap was full. So it belongs with the flaky tests in item 0, not with real failures.
+
+A ratio comparison of two short wall-clock samples cannot distinguish a timing side-channel from
+ordinary scheduling jitter. If it is worth keeping, it needs repeated trials and a comparison of
+medians; the current form will keep producing occasional red.
+
 ### 5. Two multi-user test directories (P4)
 
 `tests/multi-user-service/` and `tests/multi_user_service/` both exist with different contents.
