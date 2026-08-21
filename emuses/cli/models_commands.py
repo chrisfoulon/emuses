@@ -156,14 +156,18 @@ def install(
 
         # Try installing with deduplication (Phase 2 functionality) first
         if hasattr(registry, 'install_model_with_deduplication'):
+            # skip_duplicates, not force: the method takes no `force` parameter, so
+            # passing one sent it into **kwargs and dropped it, leaving
+            # skip_duplicates at its default of True. --force silently did nothing.
             result = registry.install_model_with_deduplication(
-                model_path=model_path, 
+                model_path=model_path,
                 model_name=name,
-                force=force
+                skip_duplicates=not force,
             )
         else:
-            # Fallback to standard installation for backward compatibility
-            result = registry.install_model(model_path, name=name)
+            # Fallback to standard installation for backward compatibility.
+            # model_name, not name: install_model does not read **kwargs.
+            result = registry.install_model(model_path, model_name=name)
 
         if result["status"] == "success":
             model_name = result.get('name', 'Unknown')
@@ -203,11 +207,13 @@ def install(
                 console.print(f"   Similar to: [cyan]{similar['model_id']}[/cyan] ({similarity*100:.1f}% similar)")
             
             if not force and typer.confirm("Install anyway?"):
-                # Retry with force=True
+                # Retry bypassing duplicate detection. Previously passed force=True,
+                # which the method does not accept, so answering "yes" here hit the
+                # same duplicate check again and the model was never installed.
                 result = registry.install_model_with_deduplication(
                     model_path=model_path,
                     model_name=name,
-                    force=True
+                    skip_duplicates=False,
                 )
                 if result["status"] == "success":
                     model_name = result.get('name', 'Unknown')

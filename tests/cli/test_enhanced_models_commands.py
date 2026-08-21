@@ -318,7 +318,22 @@ class TestEnhancedModelsCommands:
 
         assert result.exit_code == 0
         assert "forced_model_v1_xyz789" in result.stdout
-        # Should have called with force=True parameter
+
+        # --force must reach the parameter that actually disables the check.
+        #
+        # This previously asserted `force is True` was passed, which the CLI did do -
+        # but install_model_with_deduplication takes (model_path, skip_duplicates,
+        # transaction, **kwargs) and has no `force` parameter, so the argument landed
+        # in **kwargs and was discarded. skip_duplicates stayed at its default of
+        # True and --force silently did nothing. Because the mock accepts any
+        # keyword, the old assertion passed against the broken behaviour: it checked
+        # the shape of the call rather than whether the flag had any effect.
         mock_registry.install_model_with_deduplication.assert_called_once()
-        call_args = mock_registry.install_model_with_deduplication.call_args
-        assert call_args[1].get('force') is True or any('force' in str(arg) for arg in call_args)
+        kwargs = mock_registry.install_model_with_deduplication.call_args.kwargs
+        assert kwargs.get("skip_duplicates") is False, (
+            f"--force must translate to skip_duplicates=False, got {kwargs}"
+        )
+        assert "force" not in kwargs, (
+            "force= is not a parameter of install_model_with_deduplication; passing "
+            "it means it is being silently dropped again"
+        )

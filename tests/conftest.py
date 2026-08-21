@@ -345,3 +345,65 @@ def emuses_pipeline_results():
         print("🧹 Session fixture cleanup completed")
     except Exception as e:
         print(f"⚠️ Session cleanup warning: {e}")
+
+
+@pytest.fixture(scope="session")
+def real_emuses_model_source(emuses_pipeline_results):
+    """Path to a genuine complete EMUSES output folder, produced by a real run.
+
+    Registry fixtures used to hand-build a directory holding a bare sklearn
+    ``Pipeline`` and call it a model. ADR 2.1 is explicit that an EMUSES model is
+    an *entire output folder* - UMAP, HDBSCAN, prediction pipelines, scalers and
+    metadata, trained together - and that components are not separable. The
+    registry was right to reject those directories; the fixtures were wrong.
+
+    Guardrail G009 says not to invent what real data looks like, so this does not
+    assemble a folder by hand to satisfy the validator. It takes the folder a
+    real pipeline run produced and asserts it validates, which means the check
+    and the pipeline are held to each other rather than to a fixture author's
+    guess about the format.
+
+    Session-scoped: the pipeline runs once. Use ``real_emuses_model`` for a
+    writable per-test copy.
+    """
+    folder = emuses_pipeline_results.get("regression")
+    if folder is None:
+        pytest.fail(
+            "The session pipeline fixture did not produce a regression model. It "
+            "logs the pipeline traceback to stdout and stores None on failure, so "
+            "run with -s to see why.",
+            pytrace=False,
+        )
+
+    folder = Path(folder)
+    if not folder.is_dir():
+        pytest.fail(f"Pipeline reported success but {folder} is not a directory.",
+                    pytrace=False)
+
+    from emuses.tools.model_io import ModelIOManager
+
+    # base_path is where the manager keeps its own metadata, not the model under
+    # test; give it a scratch dir so validation does not write into the fixture.
+    manager = ModelIOManager(base_path=folder.parent / "_io_manager_scratch")
+    validation = manager.validate_model(folder)
+    if not validation.is_complete_model:
+        pytest.fail(
+            f"A real pipeline run produced {folder}, but the registry does not "
+            f"accept it as a complete EMUSES model: {validation.validation_errors}. "
+            "That is a genuine disagreement between what the pipeline writes and "
+            "what the registry requires - fix that, do not relax the validator.",
+            pytrace=False,
+        )
+    return folder
+
+
+@pytest.fixture
+def real_emuses_model(real_emuses_model_source, tmp_path):
+    """A writable per-test copy of a genuine complete EMUSES model folder.
+
+    Tests install, mutate and delete these, so each gets its own copy rather
+    than sharing the session's folder.
+    """
+    destination = tmp_path / "emuses_model"
+    shutil.copytree(real_emuses_model_source, destination)
+    return destination
