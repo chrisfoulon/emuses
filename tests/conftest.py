@@ -407,3 +407,30 @@ def real_emuses_model(real_emuses_model_source, tmp_path):
     destination = tmp_path / "emuses_model"
     shutil.copytree(real_emuses_model_source, destination)
     return destination
+
+
+@pytest.fixture(scope="session")
+def real_emuses_model_alt_source(emuses_pipeline_results):
+    """A second, genuinely different complete EMUSES model.
+
+    The session fixture trains a single-target and a multi-target run. Using the
+    multi-target one here means tests needing two models get two that really
+    differ, rather than two copies of one folder - which the registry would
+    correctly identify as duplicates and refuse.
+    """
+    folder = emuses_pipeline_results.get("multi_target_regression")
+    if folder is None or not Path(folder).is_dir():
+        pytest.fail(
+            "The session pipeline fixture did not produce a multi_target_regression "
+            "model. Run with -s to see the pipeline traceback.",
+            pytrace=False,
+        )
+    return Path(folder)
+
+
+@pytest.fixture
+def real_emuses_model_alt(real_emuses_model_alt_source, tmp_path):
+    """A writable per-test copy of the second complete EMUSES model."""
+    destination = tmp_path / "emuses_model_alt"
+    shutil.copytree(real_emuses_model_alt_source, destination)
+    return destination

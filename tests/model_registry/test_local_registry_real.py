@@ -36,99 +36,32 @@ class TestLocalModelRegistryIntegration:
         return LocalModelRegistry(registry_path=temp_registry_dir)
 
     @pytest.fixture
-    def sklearn_model_dir(self):
-        """Create a complete sklearn model directory with all required files."""
-        temp_dir = Path(tempfile.mkdtemp())
-        model_dir = temp_dir / "sklearn_model"
-        model_dir.mkdir()
+    def sklearn_model_dir(self, real_emuses_model):
+        """A genuine complete EMUSES model folder.
 
-        # Create a realistic sklearn pipeline
-        try:
-            from sklearn.ensemble import RandomForestClassifier
-            from sklearn.pipeline import Pipeline
-            from sklearn.preprocessing import StandardScaler
-            import numpy as np
+        Named for what it used to be. It previously built a directory holding a
+        bare sklearn ``Pipeline`` and one manifest, and every test that tried to
+        install it failed with ``assert 'error' == 'success'``. That was correct
+        behaviour: ADR 2.1 states an EMUSES model is an entire output folder -
+        UMAP, HDBSCAN, prediction pipelines, scalers and metadata trained
+        together - and that components are not separable. A lone sklearn
+        pipeline is a component, and the registry is supposed to refuse it.
 
-            # Create and train a simple model
-            pipeline = Pipeline([
-                ('scaler', StandardScaler()),
-                ('classifier', RandomForestClassifier(n_estimators=10, random_state=42))
-            ])
-
-            # Generate dummy data and train
-            X = np.random.random((100, 10))
-            y = np.random.randint(0, 2, 100)
-            pipeline.fit(X, y)
-
-            # Save the trained model
-            joblib.dump(pipeline, model_dir / "model.joblib")
-
-        except ImportError:
-            # If sklearn is not available, create a mock model
-            mock_pipeline = {"type": "sklearn_pipeline", "fitted": True}
-            joblib.dump(mock_pipeline, model_dir / "model.joblib")
-
-        # Create comprehensive manifest
-        manifest = {
-            "name": "test_sklearn_model",
-            "version": "1.0.0",
-            "model_type": "sklearn_pipeline",
-            "description": "Test sklearn pipeline for integration testing",
-            "created_at": datetime.now(timezone.utc).isoformat() + "Z",
-            "framework": "sklearn",
-            "tags": ["test", "classification", "pipeline"]
-        }
-
-        with open(model_dir / "model_manifest.json", 'w') as f:
-            json.dump(manifest, f, indent=2)
-
-        # Add additional metadata files
-        (model_dir / "training_metrics.json").write_text(json.dumps({
-            "accuracy": 0.95,
-            "precision": 0.93,
-            "recall": 0.94,
-            "f1_score": 0.935
-        }))
-
-        (model_dir / "feature_info.txt").write_text("Feature names: feature_0, feature_1, ..., feature_9")
-
-        yield model_dir
-        shutil.rmtree(temp_dir, ignore_errors=True)
+        Now supplied by ``real_emuses_model`` (tests/conftest.py), a copy of a
+        folder a real pipeline run produced. Per G009 it is not assembled by
+        hand to satisfy the validator.
+        """
+        return real_emuses_model
 
     @pytest.fixture
-    def umap_model_dir(self):
-        """Create a UMAP model directory."""
-        temp_dir = Path(tempfile.mkdtemp())
-        model_dir = temp_dir / "umap_model"
-        model_dir.mkdir()
+    def umap_model_dir(self, real_emuses_model_alt):
+        """A second, genuinely different complete EMUSES model.
 
-        # Create mock UMAP model
-        try:
-            import umap
-            import numpy as np
-            # Create a simple UMAP model
-            mapper = umap.UMAP(n_neighbors=5, n_components=2, random_state=42)
-            X = np.random.random((100, 20))
-            mapper.fit(X)
-            joblib.dump(mapper, model_dir / "umap_model.pkl")
-        except ImportError:
-            mock_umap = {"type": "umap", "n_components": 2, "fitted": True}
-            joblib.dump(mock_umap, model_dir / "umap_model.pkl")
-
-        # Create manifest
-        manifest = {
-            "name": "test_umap_model",
-            "version": "1.1.0",
-            "model_type": "umap",
-            "description": "UMAP dimensionality reduction model",
-            "created_at": datetime.now(timezone.utc).isoformat() + "Z"
-        }
-
-        with open(model_dir / "model_manifest.json", 'w') as f:
-            json.dump(manifest, f)
-
-        yield model_dir
-        shutil.rmtree(temp_dir, ignore_errors=True)
+        Was a lone fitted UMAP mapper - again a component, again correctly
+        rejected. Now the multi-target run, so tests needing two models get two
+        that actually differ rather than duplicates.
+        """
+        return real_emuses_model_alt
 
     def test_complete_model_installation_workflow(self, registry, sklearn_model_dir):
         """Test complete end-to-end model installation using real ModelIOManager."""
@@ -138,7 +71,10 @@ class TestLocalModelRegistryIntegration:
         # Verify successful installation
         assert result["status"] == "success"
         assert "model_id" in result
-        assert result["name"] == "test_sklearn_model"
+        # Name comes from the folder. A complete EMUSES model's own manifest
+        # carries component metadata (often "hdbscan_model"), so the registry
+        # deliberately prefers the descriptive folder name over it.
+        assert result["name"] == sklearn_model_dir.name
         
         model_id = result["model_id"]
         
@@ -153,8 +89,8 @@ class TestLocalModelRegistryIntegration:
                 break
                 
         assert installed_model is not None
-        assert installed_model["name"] == "test_sklearn_model"
-        assert installed_model["type"] == "sklearn_pipeline"
+        assert installed_model["name"] == sklearn_model_dir.name
+        assert installed_model["type"] == "emuses_model"
         assert installed_model["version"] == "1.0.0"
 
     def test_model_validation_integration(self, registry, sklearn_model_dir, temp_registry_dir):
@@ -163,17 +99,39 @@ class TestLocalModelRegistryIntegration:
         model_io = ModelIOManager(temp_registry_dir / "models")
         
         # This should work without errors using the real validate_model method
-        manifest = model_io.validate_model(sklearn_model_dir)
-        
-        assert manifest["name"] == "test_sklearn_model"
-        assert manifest["version"] == "1.0.0"
-        assert manifest["type"] == "sklearn_pipeline"
-        assert manifest["description"] == "Test sklearn pipeline for integration testing"
+        validation = model_io.validate_model(sklearn_model_dir)
+
+        # validate_model returns a CompleteModelValidation, not a dict.
+        assert validation.is_complete_model, validation.validation_errors
+
+        # Read the version off the folder rather than hardcoding "1.0.0". The
+        # pipeline's manifest version is not a constant, and pinning it here was
+        # asserting a fixture detail rather than the behaviour under test: that
+        # validate_model reports what the folder actually says.
+        on_disk = json.loads(
+            (sklearn_model_dir / "model_manifest.json").read_text()
+        )
+        assert validation.version == on_disk.get("version", "1.0.0")
+
+        # Deliberately not asserting validation.name == the folder name.
+        # validate_model reports the name from the folder's own manifest, which for
+        # a real EMUSES run is component metadata ("hdbscan_model"). install_model
+        # overrides it with the folder name, so the two disagree about what a model
+        # is called. Recorded in dev-docs/issues/test_suite_triage_2026_07.md rather
+        # than asserted either way here.
+        assert validation.name
+        # One type, not a component type. Per ADR 2.1 a complete folder is an
+        # atomic emuses_model; "sklearn_pipeline" described a component, which is
+        # the model this suite was written against and which was reverted.
+        assert validation.type == "emuses_model"
+        assert validation.description
 
     def test_model_installation_with_custom_name(self, registry, sklearn_model_dir):
         """Test model installation with custom naming."""
         custom_name = "my_custom_classifier"
-        result = registry.install_model(sklearn_model_dir, name=custom_name)
+        # model_name, not name: install_model does not read **kwargs, so `name=`
+        # is silently discarded and the folder name is used instead.
+        result = registry.install_model(sklearn_model_dir, model_name=custom_name)
         
         assert result["status"] == "success"
         assert result["name"] == custom_name
@@ -196,9 +154,11 @@ class TestLocalModelRegistryIntegration:
         models = registry.list_models()
         assert len(models) == 2
         
-        model_types = [model["type"] for model in models]
-        assert "sklearn_pipeline" in model_types
-        assert "umap" in model_types
+        # Both are complete EMUSES folders, so both are emuses_model. The real
+        # assertion is that two genuinely different models coexist - which the
+        # old component-type check never made.
+        assert all(model["type"] == "emuses_model" for model in models)
+        assert len({model["model_id"] for model in models}) == 2
 
     def test_model_directory_structure_validation(self, registry, temp_registry_dir):
         """Test installation with models that need manifest generation."""
@@ -213,15 +173,23 @@ class TestLocalModelRegistryIntegration:
         joblib.dump({"scaler": "standard"}, model_dir / "preprocessor.joblib")
         
         try:
-            # This should work - ModelIOManager should generate a manifest
+            # Inverted deliberately. This asserted that a directory of loose model
+            # files installs successfully once a manifest is generated for it -
+            # the separable-component model that ADR 2.1 records as a violation
+            # since corrected. The registry now refuses anything that is not a
+            # complete EMUSES output folder, and that refusal is the contract
+            # worth testing. Do not "fix" this by relaxing the validator.
             result = registry.install_model(model_dir, model_name="no_manifest_test")
-            assert result["status"] == "success"
-            
-            # Verify the model was installed with generated metadata
-            model_info = registry.get_model_info(result["model_id"])
-            assert model_info["name"] == "no_manifest_test"
-            assert model_info["version"] == "1.0.0"  # Default version
-            
+
+            assert result["status"] == "error", (
+                f"A directory of loose model files is not a complete EMUSES "
+                f"folder and must be refused, got: {result}"
+            )
+            assert "complete" in result["message"].lower() or \
+                   "emuses" in result["message"].lower(), (
+                f"Rejection should say why, got: {result['message']}"
+            )
+
         finally:
             shutil.rmtree(temp_dir, ignore_errors=True)
 
@@ -283,9 +251,8 @@ class TestLocalModelRegistryIntegration:
         assert len(all_models) >= 2
         
         # Verify we have both model types
-        model_types = [model.get("type") for model in all_models]
-        assert "sklearn_pipeline" in model_types
-        assert "umap" in model_types
+        assert all(model.get("type") == "emuses_model" for model in all_models)
+        assert len({model.get("model_id") for model in all_models}) >= 2
 
     def test_concurrent_model_operations(self, registry, sklearn_model_dir):
         """Test that model operations work correctly when performed in sequence."""
