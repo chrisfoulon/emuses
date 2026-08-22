@@ -215,6 +215,23 @@ def setup_test_session():
 # No test requested the fixture.
 
 
+# Python's multiprocessing and joblib's loky each run a `resource_tracker` daemon that
+# deliberately outlives individual worker pools - it exists to clean up shared memory and
+# semaphores at interpreter exit. These are infrastructure, not leaks, and killing them causes
+# the very problem they prevent ("resource_tracker: process died unexpectedly, relaunching.
+# Some folders/semaphores might leak"). Everything else is still reported.
+_INFRASTRUCTURE_MARKERS = ("resource_tracker", "semaphore_tracker")
+
+
+def _is_resource_tracker(proc):
+    """True if `proc` is a multiprocessing/loky resource tracker rather than a leaked process."""
+    try:
+        cmdline = " ".join(proc.cmdline())
+    except Exception:
+        return False
+    return any(marker in cmdline for marker in _INFRASTRUCTURE_MARKERS)
+
+
 def _describe(proc):
     """One-line description of a process for leak reporting."""
     try:
@@ -249,7 +266,26 @@ def _fail_on_leaked_child_processes():
 
     yield
 
-    leaked = [c for c in me.children(recursive=True) if c.pid not in before]
+    # joblib's loky backend keeps an idle worker pool alive between calls on purpose, and
+    # would otherwise be reported here as a leak on every run that touched create_safe_parallel.
+    # Shutting it down explicitly is better than excluding it by name: a genuine leak from
+    # inside a joblib worker still gets caught, and the check keeps its teeth.
+    try:
+        from joblib.externals.loky import reusable_executor
+
+        # Only shut down a pool that already exists. get_reusable_executor() *creates* one
+        # when there is none, so calling it unconditionally would spawn a worker pool at
+        # teardown purely in order to shut it down.
+        if reusable_executor._executor is not None:
+            reusable_executor._executor.shutdown(wait=True)
+    except Exception:  # joblib absent, or the internal name moved
+        pass
+
+    leaked = [
+        c
+        for c in me.children(recursive=True)
+        if c.pid not in before and not _is_resource_tracker(c)
+    ]
     if not leaked:
         return
 

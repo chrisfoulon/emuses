@@ -24,6 +24,7 @@ from emuses.foundation_fastapi_service.job_manager import JobManager
 from emuses.observability import get_logger, track_scientific_operation
 from emuses.pipelines.emuses_pipeline import EMUSESPipeline
 from emuses.pipelines.pipeline_config import PipelineConfig
+from emuses.tools.parallelism_utils import parallelism_backend
 
 
 class PipelineRunner:
@@ -417,15 +418,29 @@ class PipelineRunner:
                 "dataset": dataset_name,
                 "execution_method": "pipeline_runner",
             },
-        ) as obs_ctx:
+        ) as obs_ctx, parallelism_backend("threading"):
+            # Pipeline work runs on the threading backend, scoped to this call.
+            #
+            # This was previously an unconditional
+            # `configure_parallelism_backend(force_backend="threading")` justified by
+            # "service workers run in subprocess context". Two problems with that: it set a
+            # module-level global nothing restored, so the choice leaked into everything
+            # sharing the interpreter (a pipeline test demonstrably changed the outcome of an
+            # unrelated test that ran afterwards); and the justification stops being true when
+            # the pipeline runs in the main process, which both the local CLI path and the
+            # tests do.
+            #
+            # Letting context detection choose instead is wrong here for a reason that only
+            # showed up when measured: in the main process it selects loky, which spawns a
+            # worker pool that re-imports the scientific stack per worker. For the small,
+            # short tasks this pipeline distributes that is pure overhead - it turned a ~110 s
+            # test into one still running after 300 s with eight LokyProcess workers alive.
+            #
+            # So the backend choice is kept, and only its scope is fixed. Whether loky is
+            # worth it for realistic workloads is a performance question with its own
+            # measurement, deliberately left to the parallelism arm of the reproducibility
+            # work rather than changed as a side effect here.
             try:
-                # Configure parallelism context for service worker environment
-                from emuses.tools.parallelism_utils import \
-                    configure_parallelism_backend
-
-                # Service workers run in subprocess context - use threading backend
-                configure_parallelism_backend(force_backend="threading")
-
                 # Convert context to EMUSESPipeline arguments
                 args = self._context_to_emuses_args(context)
 
