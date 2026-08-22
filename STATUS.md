@@ -8,10 +8,20 @@ registry with peer review for the wider community.
 
 ## State of play
 
-**Current work: `chore/core-boundary`, 8 commits ahead of `main`, no upstream configured — never
-pushed, so it exists only on this machine.** Driving toward a tool that can be trusted to run and to
-publish from; plan at `~/.claude/plans/playful-watching-naur.md`, findings in
-`dev-docs/issues/phase0_cli_runnability_2026_08.md`.
+**Current work: `chore/core-boundary`, pushed, 13 commits ahead of `main`.** Driving toward a tool
+that can be trusted to run and to publish from; plan at
+`~/.claude/plans/playful-watching-naur.md`, findings in
+`dev-docs/issues/phase0_cli_runnability_2026_08.md` and
+`dev-docs/issues/parallelism_backend_analysis_2026_08.md`.
+
+**Reproducibility is broken in the prediction stage, and the fix is small** (Phase 1D). Two
+identical runs at `--random_state 42` give identical UMAP/HDBSCAN output and *different* prediction
+scores. `optuna_cv.py:168` creates its study with no `sampler`, so it uses `TPESampler(seed=None)`;
+every other Optuna study in the codebase seeds explicitly. Separately, `_optimise_target` never
+passes `random_state` to `nested_optuna_cv` (`heatmap_stage.py:388`), so prediction CV folds always
+use the hardcoded default of 42. The master-seed derivation in `emuses_pipeline.py:87` already
+produces an `optuna_seed` — **it has zero consumers**. Do not invent a second seeding scheme; wire
+this one up.
 
 **`emuses full` runs (verified 2026-08-22).** ~26 s on `test_data/`, single- and multi-target, output
 validates via `ModelIOManager.validate_model()`. `inference` works. This was genuinely open: the
@@ -68,8 +78,9 @@ errors. Repaired since 2026-07-31:
   `logging.handlers.QueueListener` on every instantiation, so listener threads accumulated and raced
   for stderr at shutdown, aborting the process (exit 134) *after* tests had already passed. Fixed by
   a module-level singleton, plus a `multiprocessing.util.Finalize` that stops the listener before
-  the queue's pipe closes — `conftest.py` patches `atexit.register` autouse, which had been silently
-  swallowing the shutdown registration.
+  the queue's pipe closes. `conftest.py` used to patch `atexit.register` autouse, which silently
+  swallowed that registration; that patch was removed on 2026-08-22 (`31546b5`) once its cause was
+  fixed — it had also been disabling the CLI's own service-cleanup safety net during tests.
 - **Environment was missing 47 pinned packages**, plus undeclared `aiosqlite` and a `bcblib` pin
   three versions stale. A large share of "failures" were missing imports.
 - **`enhanced-cli-typer` no longer hangs** — one test patched a mock session that `__aenter__`
