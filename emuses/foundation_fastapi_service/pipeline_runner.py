@@ -180,9 +180,6 @@ class PipelineRunner:
         )
 
         # Additional EMUSESPipeline parameters that might be needed
-        args.recursive_input_file_search = bool(
-            config_dict.get("recursive_input_file_search", False)
-        )
         args.input_file_types = config_dict.get("input_file_types")
         args.arg_separator = str(config_dict.get("arg_separator", ","))
         args.bids_filters = config_dict.get("bids_filters", {})
@@ -192,6 +189,45 @@ class PipelineRunner:
         args.scores_column = config_dict.get("scores_column", None)
         args.load_embeddings = config_dict.get("load_embeddings", None)
         args.label_dataset = config_dict.get("label_dataset", None)
+
+        # ------------------------------------------------------------------
+        # Options the CLI accepts but this mapping used to drop on the floor.
+        #
+        # Every `emuses full` option travels through here on its way to
+        # PipelineConfig. Anything not assigned below never reaches the
+        # pipeline at all - it silently falls back to the PipelineConfig
+        # dataclass default, so the run quietly ignores the flag instead of
+        # failing. These four have real consumers and were being lost:
+        #
+        #   hdbscan_core_dist_n_jobs     -> umap_stage.py:112
+        #   hdbscan_approx_min_span_tree -> umap_stage.py:110
+        #   input_file_list              -> emuses_pipeline.py:265
+        #   recursive_input_file_search  -> emuses_pipeline.py:327 (see below)
+        #
+        # tests/test_cli_option_mapping.py fails if a new CLI option is added
+        # without either being mapped here or declared as deliberately unmapped.
+        # ------------------------------------------------------------------
+        args.hdbscan_core_dist_n_jobs = int(
+            config_dict.get("hdbscan_core_dist_n_jobs", -1)
+        )
+        args.hdbscan_approx_min_span_tree = bool(
+            config_dict.get("hdbscan_approx_min_span_tree", True)
+        )
+        args.input_file_list = bool(config_dict.get("input_file_list", False))
+
+        # The CLI flag --recursive-input-file-search binds to the Python
+        # parameter `recursive_search`, so it arrives under that key - but the
+        # only consumer, emuses_pipeline.py:327, reads
+        # `args.recursive_input_file_search`. The flag was therefore always
+        # False no matter what the user passed. PipelineConfig declares both
+        # names (pipeline_config.py:80 and :97); `recursive_input_file_search`
+        # is the live one, so accept either key and feed that attribute.
+        args.recursive_input_file_search = bool(
+            config_dict.get(
+                "recursive_input_file_search",
+                config_dict.get("recursive_search", False),
+            )
+        )
 
         # Store data references for access during pipeline execution
         # We'll store them as attributes but they won't be used by EMUSESPipeline directly
