@@ -434,3 +434,31 @@ def real_emuses_model_alt(real_emuses_model_alt_source, tmp_path):
     destination = tmp_path / "emuses_model_alt"
     shutil.copytree(real_emuses_model_alt_source, destination)
     return destination
+
+
+@pytest.fixture
+def make_real_emuses_model(real_emuses_model_source, tmp_path):
+    """Factory for independent copies of a real complete EMUSES model.
+
+    Deduplication tests need several models and care whether they are identical.
+    Call with ``distinct=False`` for a byte-identical copy the registry should
+    detect as a duplicate, or leave the default for one it should accept as new.
+
+    Distinctness comes from adding a small marker file. Content hashing covers
+    the whole folder, so that is enough to make it a different model, and an
+    extra file does not stop the folder validating - which is what makes this
+    honest rather than a fixture that games the hash.
+    """
+    counter = {"n": 0}
+
+    def _make(name: str = None, *, distinct: bool = True) -> Path:
+        counter["n"] += 1
+        destination = tmp_path / (name or f"emuses_model_{counter['n']}")
+        shutil.copytree(real_emuses_model_source, destination)
+        if distinct:
+            (destination / "run_id.txt").write_text(
+                f"{destination.name}\n", encoding="utf-8"
+            )
+        return destination
+
+    return _make

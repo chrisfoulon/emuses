@@ -215,6 +215,46 @@ declares is finally used by something and `-m "not slow"` cuts the worst 163s. N
 output paths instead of taking them through the whole service-client path (§2c). The remaining
 files are unmarked.
 
+### 2d. The ADR-2.1 fixture cluster, mostly cleared (2026-08-22)
+
+The 36-plus `assert 'error' == 'success'` failures in item 2 were exactly what that item said:
+fixtures encoding the separable-component model. Rebuilt against real pipeline output via
+`real_emuses_model` / `make_real_emuses_model` in `tests/conftest.py`, which copy a folder a real run
+produced rather than assembling one to satisfy the validator (G009).
+
+- `test_local_registry_real.py` 8 failing -> 0
+- `test_simplified_installation.py` 7 -> 0
+- `test_enhanced_schema.py` 7 -> 3
+- `test_enhanced_metadata_storage.py` 5 -> 2
+
+Beyond the fixtures, the assertions themselves encoded the old model and were corrected: component
+types (`sklearn_pipeline`, `umap`) became the single atomic `emuses_model`; `len(components_found)
+== 3` became `"emuses_folder" in components_found`; the `umap_model.pkl` / `prediction_ensemble/`
+layout checks became "the folder round-trips and still validates". One test was inverted on purpose
+— it asserted a directory of loose model files installs once a manifest is generated for it, and now
+asserts the rejection, which is the real contract.
+
+**Verified, not a bug**: content hashing is filesystem-independent. Two folders with identical
+contents and different names produce the same content hash. The suspicion that Phase 2C had
+regressed was wrong — those tests failed because their stub folders never validated, so both hashes
+came from an early-exit path rather than from folder contents.
+
+**Two unresolved, left failing rather than skipped** (`test_enhanced_metadata_storage.py`):
+editing a real model's manifest does not change its `configuration_hash`, even after setting all
+four sources `_extract_configuration_hash` merges (`pipeline_config`, `config`, `training_config`,
+`parameters`) and after writing to whichever of `manifest.json` / `model_manifest.json`
+`_load_or_generate_manifest` prefers. Either the edit is not reaching the loader or something
+downstream re-derives the hash. Not chased further; it needs someone to instrument
+`_extract_configuration_hash` on a real folder. Recorded because a configuration hash that does not
+respond to configuration changes would defeat duplicate detection, which is worth knowing either way.
+
+**Found while doing this** (fixed): `emuses models install --force` never bypassed duplicate
+detection - see the CLI commit. `--name` was unaffected.
+
+**Also noted, unfixed**: `validate_model` reports the name from the folder's own manifest, which for
+a real run is component metadata ("hdbscan_model"), while `install_model` overrides it with the
+folder name. The two disagree about what a model is called.
+
 ### 3d. The hang DOES reproduce — in full-suite context only (2026-08-19, evening)
 
 Supersedes the "does not reproduce" conclusion in §3b below. That conclusion was drawn from running

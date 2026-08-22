@@ -23,31 +23,17 @@ class TestAtomicTransactionFramework:
         return LocalModelRegistry(registry_path)
     
     @pytest.fixture
-    def sample_model_dir(self, tmp_path):
-        """Create a sample model directory for testing."""
-        model_dir = tmp_path / "sample_model"
-        model_dir.mkdir()
-        
-        # Create manifest
-        manifest = {
-            "name": "test_model",
-            "version": "1.0.0",
-            "model_type": "emuses_model",
-            "description": "Test model for atomic operations"
-        }
-        with open(model_dir / "manifest.json", 'w') as f:
-            json.dump(manifest, f, indent=2)
-        
-        # Create model components
-        (model_dir / "umap_model.pkl").touch()
-        (model_dir / "hdbscan_model.pkl").touch()
-        
-        pred_dir = model_dir / "prediction_ensemble"
-        pred_dir.mkdir()
-        (pred_dir / "model_1.pkl").touch()
-        (pred_dir / "model_2.pkl").touch()
-        
-        return model_dir
+    def sample_model_dir(self, real_emuses_model):
+        """A real complete EMUSES model folder.
+
+        Previously built a manifest plus empty umap_model.pkl, hdbscan_model.pkl
+        and a prediction_ensemble/ directory. That is the separable-component
+        layout ADR 2.1 records as a violation since corrected, so the registry
+        refused it and every install here returned 'error'.
+
+        Now a copy of what a real pipeline run produces (tests/conftest.py).
+        """
+        return real_emuses_model
     
     def test_begin_transaction_creates_transaction(self, temp_registry):
         """Test that begin_transaction creates a valid transaction object."""
