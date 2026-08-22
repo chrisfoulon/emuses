@@ -395,8 +395,22 @@ class TestConcurrentJobSubmissions:
             
             datasets.append((dataset_path, scores_path, output_path))
         
-        # Mock service client with unique job IDs
-        with patch('emuses.cli.main.ServiceHTTPClient') as mock_client:
+        # Mocking ServiceHTTPClient alone is not enough. _full_async in local mode goes
+        # through _execute_via_unified_service, which calls the *real* _start_local_service
+        # and forks an actual uvicorn process - five of them, once per concurrent job. The
+        # client mock only intercepts what happens after the service is up.
+        #
+        # Those forks are how a service escaped this test and served HTTP on port 8000 for
+        # three days. This test is about concurrent submission, not about whether uvicorn
+        # boots, so the process starter is mocked too and no real service is ever spawned.
+        with patch('emuses.cli.main.ServiceHTTPClient') as mock_client, \
+             patch('emuses.cli.main._start_local_service') as mock_start_service, \
+             patch('emuses.cli.main._stop_local_service') as mock_stop_service, \
+             patch('emuses.cli.main._wait_for_service_ready', return_value=True):
+            fake_service_process = MagicMock()
+            fake_service_process.is_alive.return_value = True
+            mock_start_service.return_value = fake_service_process
+
             mock_instance = AsyncMock()
             mock_client.return_value = mock_instance
             

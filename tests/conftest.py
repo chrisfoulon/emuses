@@ -197,17 +197,104 @@ def setup_test_session():
     pass
 
 
-@pytest.fixture(autouse=True)
-def mock_atexit_register():
-    """Mock atexit.register to prevent pytest hanging issues.
-    
-    This fixture automatically mocks atexit.register calls during tests
-    to prevent multiprocessing logging listeners from preventing clean
-    pytest exit. This is a cleaner approach than adding TESTING_MODE
-    checks in production code.
+# An autouse fixture used to patch `atexit.register` into a Mock for every test in the
+# suite, to stop multiprocessing logging listeners blocking pytest exit. It was added
+# 2025-07-10 (17525d5); the listener leak it worked around was fixed properly on 2026-08-19
+# (015a307) with a module-level singleton plus a multiprocessing.util.Finalize, so the
+# workaround outlived its cause by thirteen months.
+#
+# Leaving it in was not harmless. `_start_local_service` (cli/main.py) registers an
+# `emergency_cleanup` atexit handler described in its own comment as the safety net that
+# "ensures cleanup even if finally block doesn't run". Under test that registration went
+# into a Mock and was discarded, so the safety net was disabled in exactly the environment
+# that needed it most - and a FastAPI service process leaked out of
+# test_concurrent_job_submissions and ran for three days holding port 8000.
+#
+# Removed after measuring: tests/pipelines + tests/foundation_fastapi_service + tests/tools
+# give 23 failed / 314 passed / 2 skipped both with and without it, and neither run hangs.
+# No test requested the fixture.
+
+
+def _describe(proc):
+    """One-line description of a process for leak reporting."""
+    try:
+        return f"pid={proc.pid} age={int(time.time() - proc.create_time())}s cmd={' '.join(proc.cmdline())[:110]}"
+    except Exception:  # process vanished, or we cannot read it
+        return f"pid={getattr(proc, 'pid', '?')} <no longer inspectable>"
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _fail_on_leaked_child_processes():
+    """Fail the session if a test leaves a child process running, and reap it.
+
+    A test that starts a real service and does not stop it does not fail - it succeeds, and
+    the process outlives the run. One escaped this suite and served HTTP on port 8000 for
+    three days; because the service is a *fork* of the pytest process its argv still read
+    `python -m pytest`, so `pgrep -af uvicorn` reported nothing and it stayed invisible.
+
+    Anything still alive at session end is a leak by definition: pytest is finished, so
+    nothing it started has any reason to still be running. Reaping here is a backstop, not
+    the fix - a SIGKILLed session runs no fixtures at all, which is how the three-day orphan
+    escaped. The fix is that tests should not start real services (mock the starter), and
+    that production cleanup paths are left intact.
     """
-    with patch('atexit.register') as mock_register:
-        yield mock_register
+    try:
+        import psutil
+    except ImportError:  # psutil absent in the minimal fast-tests CI env
+        yield
+        return
+
+    me = psutil.Process()
+    before = {child.pid for child in me.children(recursive=True)}
+
+    yield
+
+    leaked = [c for c in me.children(recursive=True) if c.pid not in before]
+    if not leaked:
+        return
+
+    details = [_describe(c) for c in leaked]
+    for child in leaked:
+        try:
+            child.terminate()
+        except psutil.Error:
+            pass
+    _, still_alive = psutil.wait_procs(leaked, timeout=5)
+    for child in still_alive:
+        try:
+            child.kill()
+        except psutil.Error:
+            pass
+
+    pytest.fail(
+        f"{len(leaked)} child process(es) survived the test session and were killed:\n  "
+        + "\n  ".join(details)
+        + "\n\nA test started a process and did not stop it. Find it and mock the thing that "
+        "starts the process rather than relying on this cleanup, which cannot run if the "
+        "session is killed.",
+        pytrace=False,
+    )
+
+
+@pytest.fixture(autouse=True)
+def _reset_parallelism_backend():
+    """Undo the process-wide parallelism override that production code sets.
+
+    `configure_parallelism_backend` writes a module-level global `_force_backend`, and
+    `PipelineRunner._run_pipeline_in_process` sets it to "threading" unconditionally. Nothing
+    resets it, so once any test runs a pipeline, every later test in that process sees a
+    forced backend.
+
+    That is not hypothetical: tests/tools/test_parallelism_utils.py passes 13/13 on its own,
+    and `test_enhanced_backend_selection_by_depth` fails if a single pipeline test runs
+    first. Restoring the previous value keeps the failure attributable to the test that
+    causes it.
+    """
+    from emuses.tools import parallelism_utils
+
+    previous = parallelism_utils._force_backend
+    yield
+    parallelism_utils._force_backend = previous
 
 
 @pytest.fixture(scope="session")
