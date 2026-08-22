@@ -1,5 +1,5 @@
 # STATUS — EMUSES
-_Last touched: 2026-08-19_
+_Last touched: 2026-08-22_
 
 ## Goal
 A predictive modelling tool for neuroimaging research, usable at three scales: local model
@@ -8,7 +8,31 @@ registry with peer review for the wider community.
 
 ## State of play
 
-**Branch**: work from `main`. PR #5 was squash-merged on 2026-08-19 (`015a307`), carrying the LAD
+**Current work: `chore/core-boundary`, 8 commits ahead of `main`, no upstream configured — never
+pushed, so it exists only on this machine.** Driving toward a tool that can be trusted to run and to
+publish from; plan at `~/.claude/plans/playful-watching-naur.md`, findings in
+`dev-docs/issues/phase0_cli_runnability_2026_08.md`.
+
+**`emuses full` runs (verified 2026-08-22).** ~26 s on `test_data/`, single- and multi-target, output
+validates via `ModelIOManager.validate_model()`. `inference` works. This was genuinely open: the
+session test fixture drives the *Python API*, while the CLI goes out over HTTP to an auto-started
+FastAPI service, and only the first had ever been checked.
+
+**`emuses umap` and `emuses heatmap` do not run.** Three compounding defects: they declare no options
+at all (`main.py:1861`, `:1901`); the fallback recovers the pipeline type via
+`config.get("command", "full")` (`main.py:1405`) but nothing sets `"command"`, so `umap` becomes
+`full` and is rejected for having no scores; and the client builds `/api/v1/jobs/pipeline/umap`
+(`service_client.py:746`), which the server does not define. Fixing this is Phase 1B/1C.
+
+**Four CLI options were silently discarded** and are now fixed (`9c1ce71`).
+`--hdbscan_core_dist_n_jobs`, `--hdbscan_approx_min_span_tree`, `--input_file_list` and
+`--recursive-input-file-search` were accepted, dropped in `_context_to_emuses_args`, and replaced by
+`PipelineConfig` defaults with no warning. Five more (`--min_cluster_size`, `--model_selection`,
+`--use_enhanced_pipeline`, `--parallel_models`, `--inspect_data_state`) are advertised but read by
+nothing — they need implementing or removing, which is a product decision, and are declared as
+`NOT_IMPLEMENTED` in `tests/test_cli_option_mapping.py` so they stay visible.
+
+PR #5 was squash-merged on 2026-08-19 (`015a307`), carrying the LAD
 v2 migration, CI trigger/concurrency fixes, dependency declarations, and the test-suite repairs
 below. Squash was required: that branch's history contained the injection-named directories.
 
@@ -95,6 +119,33 @@ environments pass 13/13, so nothing was hidden, but the gate was not testing wha
 - **Documentation split**: `docs/` is user-facing, `dev-docs/` is for contributors and sessions.
 
 ## Open questions / next
+
+**Current sequence** (plan: `~/.claude/plans/playful-watching-naur.md`):
+
+- [x] ~~Phase 0 — does `emuses full` still run from the CLI?~~ Yes. `umap`/`heatmap` do not.
+- [x] ~~Phase 1A — reconnect the dropped CLI options~~ (`9c1ce71`).
+- [ ] **Phase 1B — restore in-process local execution.** ADR §4 defines local mode as "CLI,
+      file-based storage, in-process execution", but `_full_async` (`main.py:1107`) always forks a
+      FastAPI service and submits over HTTP. Reuse `PipelineRunner._run_pipeline_in_process`. Two
+      things to decide rather than drift into: keep the endpoint's path validation on the local path,
+      and pick a parallelism backend deliberately — the CLI sets loky (`main.py:1044`) and the runner
+      then forces threading (`pipeline_runner.py:391`); keep threading initially so results match
+      today's, since Phase 2's baseline depends on it.
+- [ ] Phase 1C — give `umap`/`heatmap` a real option set, sharing one declaration with `full`.
+- [ ] Phase 2 — measure run-to-run variation, then state a tolerance. Unblocked by 1A: both arms
+      would previously have run at `core_dist_n_jobs=-1`. UMAP is already deterministic when seeded
+      (it forces single-threaded), so HDBSCAN is the remaining suspect.
+- [ ] Phase 3 — numerical regression suite. Phase 4 — the ~33 science-path test failures.
+      Phase 5 — finish the extras move.
+
+**A stale service process holds port 8000.** A pytest run from 2026-08-19 (PID 755279, orphaned to
+systemd, cwd `/tmp/pytest-of-chrisfoulon/pytest-28/test_concurrent_job_submission0`, deleted) is
+still listening and answering HTTP with 500. `_execute_via_remote_service` defaults to
+`localhost:8000` (`main.py:1173`), so every CLI run contacts it first; had it answered 200, a real
+job would have gone into a test fixture's service. `kill 755279` clears it;
+`test_concurrent_job_submission` is where the leak comes from. Note **`pgrep -af uvicorn` does not
+detect these** — the service is a fork of the CLI process, so its argv still reads
+`python -m emuses.cli full`. Use `ss -ltnp | awk '$4 ~ /:80[0-9][0-9]$/'`.
 
 - [ ] Run `/lad:converge` — nine months of accumulated claims have not been checked against the
       code. Two were already found and fixed on 2026-07-30 (a stale "ready for merge" banner, and
