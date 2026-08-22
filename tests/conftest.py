@@ -347,6 +347,23 @@ def emuses_pipeline_results():
         print(f"⚠️ Session cleanup warning: {e}")
 
 
+# Rendered figures are the bulk of a pipeline output folder and have nothing to do
+# with what the registry validates or stores. Copying them for every test filled
+# /tmp and turned the registry suite into 40 "No space left on device" errors.
+# Everything the completeness check looks at is kept: the root manifest, the
+# .joblib models, embeddings.npy / input_matrix.npy, and each target_*/ with its
+# manifest and models.
+_MODEL_COPY_IGNORE = shutil.ignore_patterns(
+    "*.png", "*.html", "*.svg", "*.pdf", "plots", "cluster_visualizations"
+)
+
+
+def _copy_model_folder(source: Path, destination: Path) -> Path:
+    """Copy a model folder without the rendered figures."""
+    shutil.copytree(source, destination, ignore=_MODEL_COPY_IGNORE)
+    return destination
+
+
 @pytest.fixture(scope="session")
 def real_emuses_model_source(emuses_pipeline_results):
     """Path to a genuine complete EMUSES output folder, produced by a real run.
@@ -405,7 +422,7 @@ def real_emuses_model(real_emuses_model_source, tmp_path):
     than sharing the session's folder.
     """
     destination = tmp_path / "emuses_model"
-    shutil.copytree(real_emuses_model_source, destination)
+    _copy_model_folder(real_emuses_model_source, destination)
     return destination
 
 
@@ -432,7 +449,7 @@ def real_emuses_model_alt_source(emuses_pipeline_results):
 def real_emuses_model_alt(real_emuses_model_alt_source, tmp_path):
     """A writable per-test copy of the second complete EMUSES model."""
     destination = tmp_path / "emuses_model_alt"
-    shutil.copytree(real_emuses_model_alt_source, destination)
+    _copy_model_folder(real_emuses_model_alt_source, destination)
     return destination
 
 
@@ -454,7 +471,7 @@ def make_real_emuses_model(real_emuses_model_source, tmp_path):
     def _make(name: str = None, *, distinct: bool = True) -> Path:
         counter["n"] += 1
         destination = tmp_path / (name or f"emuses_model_{counter['n']}")
-        shutil.copytree(real_emuses_model_source, destination)
+        _copy_model_folder(real_emuses_model_source, destination)
         if distinct:
             (destination / "run_id.txt").write_text(
                 f"{destination.name}\n", encoding="utf-8"
