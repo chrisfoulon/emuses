@@ -10,7 +10,13 @@ hard override that papers over the broken one. That is the fingerprint of layere
 who wrote them.
 
 The important finding is not the untidiness. It is that **Phase 1B would silently switch on
-parallelism that is currently disabled**, which changes results.
+parallelism that is currently disabled** — `--n_jobs` does nothing today.
+
+> **Read the second half of this document before acting on the first.** The initial analysis assumed
+> enabling parallelism would move the numbers. Measurement afterwards showed it largely does not on
+> the `full` path, and that reproducibility is already broken by an unseeded Optuna sampler in the
+> prediction stage. The recommendations below still hold, but for weaker reasons than originally
+> written; the sampler seed is the higher priority.
 
 ## The intended design
 
@@ -152,3 +158,99 @@ a later discrepancy.
   caller was sure what the helper does.
 - The comment at `pipeline_runner.py:426` ("Service workers run in subprocess context") becomes false
   under Phase 1B and should not survive the move unedited.
+
+---
+
+# Does enabling n_jobs break reproducibility? (measured 2026-08-22)
+
+Short answer: **no, not on the `full` pipeline path — and reproducibility is already broken by
+something else entirely.**
+
+## Site-by-site, for everything n_jobs touches on the `full` path
+
+| Site | What is parallelised | Changes results? |
+|---|---|---|
+| `cross_val_score(..., n_jobs=)` (`optuna_cv.py:63`) | CV folds | **No.** Folds are independent and joblib returns results in submission order. |
+| `RandomForest{Regressor,Classifier}(n_jobs=)` (`models_utils.py`) | tree fitting | **No.** Each tree's RNG is drawn deterministically from `random_state=42` and averaging order is fixed. Documented sklearn behaviour. |
+| `LogisticRegression(n_jobs=)` | one-vs-rest classes | **No.** Independent per-class problems. |
+| `create_safe_parallel` over targets (`heatmap_stage.py:385`), feature sets (`optim_utils.py:793`), columns (`stats_utils.py:169`, `:1909`) | whole independent tasks | **No.** Embarrassingly parallel, order preserved, and none of `_optimise_target`, `process_column` or `optimize_train_model` touches the global numpy RNG (checked). |
+| Optuna trials | search | **No.** `nested_optuna_cv` calls `study.optimize(...)` **without** `n_jobs`, so trials are sequential regardless. The one function that does parallelise trials, `optuna_model_selection` (`optim_utils.py:576`), is not reachable from `emuses/pipelines/` — the pipeline's only prediction entry point is `nested_optuna_cv`. |
+
+The genuine residual risk is indirect: loky worker processes get `OMP_NUM_THREADS` reduced to avoid
+oversubscription, so BLAS thread count changes, and multi-threaded BLAS reductions are not
+float-associative. That shifts matrix-heavy results at roughly relative 1e-12, which an optimiser can
+in principle amplify. It is worth including as an arm in the Phase 2 measurement, not worth worrying
+about in advance.
+
+**So the n_jobs decision is mostly a performance decision, not a correctness one.** That is a weaker
+reason to be cautious in Phase 1B than assumed — but the advice stands, because changing runtime and
+numbers in one commit still destroys attribution, and the change is free to defer.
+
+## The actual reproducibility breaker
+
+`optuna_cv.py:168` creates the prediction study with no `sampler` argument:
+
+```python
+study = optuna.create_study(
+    study_name=study_name,
+    storage=storage_str,
+    direction="maximize",
+    load_if_exists=True,
+)
+```
+
+so it gets the default `TPESampler(seed=None)` — seeded from system entropy on every run. **Every
+other Optuna study in the codebase seeds its sampler explicitly**: `UMAP_utils.py:633` and `:998`,
+`clustering_utils.py:206`, `optim_utils.py:571`, `stats_utils.py:1663`. This one and
+`ae_optuna.py:145` are the exceptions, and this one sits in the prediction stage — the part that
+produces the numbers you would publish.
+
+### Measured
+
+Two identical invocations, same `--random_state 42`, `--umap_trials 2 --hdbscan_trials 2
+--optuna_trials 12`:
+
+| Stage | Sampler | run 1 | run 2 |
+|---|---|---|---|
+| UMAP/HDBSCAN composite score | seeded | `0.5315862811291192` | `0.5315862811291192` |
+| Prediction `Mean_Score` | **unseeded** | `-0.5575` | `-0.5829` |
+| Prediction `Median_Score` | **unseeded** | `-0.0630` | `-0.0711` |
+| Prediction `Q1_Score` | **unseeded** | `-0.6004` | `-0.7190` |
+
+The seeded stage is bit-identical; the unseeded stage moves by 4.6% of the mean. Because both stages
+run inside the *same* invocation, this is a controlled experiment: everything else — data, seed,
+machine, thread counts, library versions — is held constant, so the sampler seed is the only
+remaining explanation.
+
+`Min_Score`, `Max_Score` and `Range_Score` are identical across the two runs, so some folds land on
+the same hyperparameters and others do not. That is what TPE exploring a different path looks like.
+
+### The fix
+
+One argument. `nested_optuna_cv` already accepts `random_state: int = 42` and uses it for the KFold
+splits; it simply never passes it on:
+
+```python
+sampler=optuna.samplers.TPESampler(seed=random_state),
+```
+
+Two caveats to write down with it:
+
+- `load_if_exists=True` with RDB storage means a *resumed* study still diverges, because the sampler
+  is re-seeded while the trial history is not. Related to the known
+  `optim_dict_resume_conflict.md` issue.
+- Seeding makes the search **reproducible**, not **better**. A seeded TPE run is one sample from the
+  distribution of searches; pinning it removes run-to-run noise but does not remove the dependence of
+  the result on that one arbitrary path. With `--optuna_trials 12` on 50 samples, the spread above is
+  telling you the search is under-converged, and that is a separate, scientific problem.
+
+### Phase placement
+
+**Fix the sampler seed before Phase 2 measures anything.** Phase 2 exists to quantify run-to-run
+variation so tolerances can cite it. Measured against today's code, it would mostly be quantifying
+unseeded TPE noise — a number that becomes meaningless the moment the seed is added, and that would
+set tolerances far too wide.
+
+Suggested order: seed the sampler as its own commit; re-run the three-run measurement; the residual
+variation is what Phase 3's tolerances should be built on. Keep one unseeded run in the record as
+evidence of what the seed was hiding.
