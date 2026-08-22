@@ -124,7 +124,16 @@ environments pass 13/13, so nothing was hidden, but the gate was not testing wha
 
 - [x] ~~Phase 0 — does `emuses full` still run from the CLI?~~ Yes. `umap`/`heatmap` do not.
 - [x] ~~Phase 1A — reconnect the dropped CLI options~~ (`9c1ce71`).
-- [ ] **Phase 1B — restore in-process local execution.** ADR §4 defines local mode as "CLI,
+- [x] ~~Phase 1B1 — repair the parallelism layer~~ (`512aad8`). `get_process_hierarchy_depth()`
+      had never worked (walked a `.parent` attribute `multiprocessing.Process` lacks), so backend
+      selection always returned `loky`, including in workers. Its tests mocked `current_process`
+      with a `MagicMock`, which fabricates the missing attribute — they asserted against an object
+      model that does not exist. The `force_backend="threading"` override is kept but now scoped
+      via a `parallelism_backend()` context manager, because removing it let detection pick `loky`
+      in the main process and spawn eight worker processes for millisecond tasks.
+      **Machine timing is unusable for decisions here**: identical code measured 138s/196s/256s for
+      the same test.
+- [ ] **Phase 1B2 — restore in-process local execution.** ADR §4 defines local mode as "CLI,
       file-based storage, in-process execution", but `_full_async` (`main.py:1107`) always forks a
       FastAPI service and submits over HTTP. Reuse `PipelineRunner._run_pipeline_in_process`. Two
       things to decide rather than drift into: keep the endpoint's path validation on the local path,
