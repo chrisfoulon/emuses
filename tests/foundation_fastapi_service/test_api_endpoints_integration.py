@@ -689,8 +689,12 @@ class TestStageSpecificEndpoints:
             "message": "Stage job submitted for processing"
         }
         
-        # Test valid stage names
-        valid_stages = ["umap", "heatmap", "prediction"]
+        # Test valid stage names.
+        # "prediction" was removed on 2026-08-23: PredictionStage is retired (prediction is
+        # produced by HeatmapStage), so the endpoint no longer accepts a stage the pipeline
+        # has no class for. The rejection is pinned by
+        # test_stage_specific_endpoint_invalid_stage_names below.
+        valid_stages = ["umap", "heatmap"]
         
         for stage_name in valid_stages:
             config = {
@@ -716,7 +720,9 @@ class TestStageSpecificEndpoints:
             # Check that only the specified stage is enabled
             assert created_config["umap_stage_enabled"] == (stage_name == "umap")
             assert created_config["heatmap_stage_enabled"] == (stage_name == "heatmap")
-            assert created_config["prediction_stage_enabled"] == (stage_name == "prediction")
+            # Always False now that PredictionStage is retired; the key remains because
+            # pipeline_runner still reads it and warns if anything sets it True.
+            assert created_config["prediction_stage_enabled"] is False
 
     @patch('emuses.foundation_fastapi_service.app.get_remote_address')
     def test_stage_specific_endpoint_invalid_stage_names(self, mock_get_remote_address):
@@ -725,7 +731,9 @@ class TestStageSpecificEndpoints:
         mock_get_remote_address.return_value = "192.168.2.2"
         
         # Test invalid stage names (excluding empty string which causes routing issues)
-        invalid_stages = ["invalid_stage", "UMAP", "Heatmap", "preprocessing"]
+        # "prediction" belongs here now: PredictionStage is retired, so asking for it must
+        # be rejected outright rather than accepted and then failing at run time.
+        invalid_stages = ["invalid_stage", "UMAP", "Heatmap", "preprocessing", "prediction"]
         
         for stage_name in invalid_stages:
             config = {

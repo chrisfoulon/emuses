@@ -1182,7 +1182,9 @@ async def submit_stage_specific_job(
         400: Invalid stage name or configuration
         500: Internal server error during job creation
     """
-    valid_stages = ["umap", "heatmap", "prediction"]
+    # PredictionStage was retired (pipeline_runner.py: prediction is produced by
+    # HeatmapStage). Advertising it here accepted a stage the pipeline cannot run.
+    valid_stages = ["umap", "heatmap"]
     if stage_name not in valid_stages:
         raise HTTPException(
             status_code=400,
@@ -1198,19 +1200,25 @@ async def submit_stage_specific_job(
         config = job_request.pipeline_config.copy()
         config["umap_stage_enabled"] = stage_name == "umap"
         config["heatmap_stage_enabled"] = stage_name == "heatmap"
-        config["prediction_stage_enabled"] = stage_name == "prediction"
+        # PredictionStage is retired, so this is always False - but the key stays in the
+        # config because consumers still read it (pipeline_runner warns if it is ever True).
+        config["prediction_stage_enabled"] = False
 
         # Validate required fields
         if "input_dataset" not in config:
             raise ValueError("input_dataset is required")
-        if "scores" not in config:
-            raise ValueError("scores is required")
         if "output_folder" not in config:
             raise ValueError("output_folder is required")
+        # UMAP training is unsupervised - it needs no scores. Requiring them here is
+        # what rejected every `emuses umap` run before 2026-08-23. Stages that do fit
+        # models against a target still require them.
+        if stage_name != "umap" and "scores" not in config:
+            raise ValueError("scores is required")
 
         # Validate file paths exist
         validate_file_path(config["input_dataset"])
-        validate_file_path(config["scores"])
+        if config.get("scores"):
+            validate_file_path(config["scores"])
 
         # Create job
         job_id = get_job_manager().create_job(
@@ -1244,6 +1252,29 @@ async def submit_stage_specific_job(
                 "timestamp": datetime.utcnow().isoformat() + "Z",
             },
         )
+
+
+# The CLI's `umap` and `heatmap` commands submit to /api/v1/jobs/pipeline/<name>
+# (service_client.py, `submit_pipeline_job`). Only /full existed, so those two commands
+# got a 404 and fell through to a local path that then mistook them for `full`. These are
+# thin aliases onto the stage endpoint rather than copies of its body - the stage gating,
+# validation and job creation must not drift between the two ways in.
+@app.post("/api/v1/jobs/pipeline/umap", status_code=201)
+@conditional_rate_limit("100/hour")
+async def submit_umap_pipeline_job(
+    request: Request, job_request: JobSubmissionRequest
+) -> JobStatusResponse:
+    """Submit a UMAP-only pipeline job. Alias of the ``umap`` stage endpoint."""
+    return await submit_stage_specific_job(request, "umap", job_request)
+
+
+@app.post("/api/v1/jobs/pipeline/heatmap", status_code=201)
+@conditional_rate_limit("100/hour")
+async def submit_heatmap_pipeline_job(
+    request: Request, job_request: JobSubmissionRequest
+) -> JobStatusResponse:
+    """Submit a heatmap-only pipeline job. Alias of the ``heatmap`` stage endpoint."""
+    return await submit_stage_specific_job(request, "heatmap", job_request)
 
 
 # Job Management Endpoints

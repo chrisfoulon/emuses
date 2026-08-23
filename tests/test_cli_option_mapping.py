@@ -203,3 +203,138 @@ def test_the_checker_has_teeth():
         "the rule does not notice a dropped option, so it cannot detect the regression "
         "it exists to prevent"
     )
+
+
+# ---------------------------------------------------------------------------------------
+# Phase 1C: the three pipeline commands share ONE option declaration.
+#
+# `umap` and `heatmap` used to declare only output_folder and input_dataset, so every
+# option above was accepted by `full` and rejected by the other two. Copying `full`'s
+# block twice would have fixed the symptom and recreated the bug this file exists for -
+# three hand-maintained lists that drift silently. They are stamped from one signature
+# instead, and these tests pin that relationship rather than trusting it.
+# ---------------------------------------------------------------------------------------
+
+from emuses.cli.main import heatmap, umap  # noqa: E402
+from emuses.cli.pipeline_options import (  # noqa: E402
+    SHARED_PIPELINE_SIGNATURE,
+    shared_option_names,
+)
+
+PIPELINE_COMMANDS = {"full": full, "umap": umap, "heatmap": heatmap}
+
+
+@pytest.mark.parametrize("name", sorted(PIPELINE_COMMANDS))
+def test_pipeline_commands_share_one_option_declaration(name):
+    """All three commands must expose exactly the shared option set.
+
+    Not "roughly the same" - identical. A command that gains an option the others lack is
+    the Phase 1A failure mode returning: the flag works on one command and is silently
+    unavailable on another.
+    """
+    command = PIPELINE_COMMANDS[name]
+    actual = set(inspect.signature(command).parameters)
+
+    assert actual == shared_option_names(), (
+        f"`emuses {name}` does not expose the shared option set. "
+        f"Only in {name}: {sorted(actual - shared_option_names())}. "
+        f"Missing from {name}: {sorted(shared_option_names() - actual)}. "
+        "All three pipeline commands must be stamped from "
+        "emuses.cli.pipeline_options.SHARED_PIPELINE_SIGNATURE."
+    )
+
+
+@pytest.mark.parametrize("name", sorted(PIPELINE_COMMANDS))
+def test_pipeline_commands_are_not_option_starved(name):
+    """The specific regression: a command declaring only its two positional arguments.
+
+    Written as an absolute floor rather than an equality so it keeps failing for the
+    original reason even if the shared declaration is later restructured.
+    """
+    params = set(inspect.signature(PIPELINE_COMMANDS[name]).parameters)
+
+    assert params > {"output_folder", "input_dataset"}, (
+        f"`emuses {name}` accepts only {sorted(params)}. Before 2026-08-23 this was true "
+        "of umap and heatmap, and it is one of the three reasons neither could run."
+    )
+    assert len(params) > 20, (
+        f"`emuses {name}` exposes {len(params)} options; the shared declaration has "
+        f"{len(shared_option_names())}. Something is stamping a reduced signature."
+    )
+
+
+def test_the_shared_declaration_is_the_only_copy():
+    """The declaration function must be the sole source, not one list among several.
+
+    If someone re-inlines the options into a command, that command's signature object
+    stops being the shared one and this fails - which is the drift the whole file guards.
+    """
+    for name, command in PIPELINE_COMMANDS.items():
+        assert inspect.signature(command) == SHARED_PIPELINE_SIGNATURE, (
+            f"`emuses {name}` no longer uses the shared signature object. Decorate it with "
+            "@with_pipeline_options instead of declaring its options inline."
+        )
+
+
+# ---------------------------------------------------------------------------------------
+# Phase 1C: a command must stay itself on the service-fallback path.
+#
+# `_umap_async` passes "umap" to the remote service explicitly, but when the service is
+# unavailable it falls back to a local path that recovers the pipeline type from
+# `config.get("command", "full")`. Nothing set "command", so the fallback silently ran the
+# FULL pipeline for `emuses umap` - and then rejected it for having no scores. The bug was
+# invisible on the happy path, which is why it needs its own guard.
+# ---------------------------------------------------------------------------------------
+
+from emuses.cli.main import _convert_typer_args_to_service_config  # noqa: E402
+
+
+@pytest.mark.parametrize("command", ["full", "umap", "heatmap"])
+def test_config_records_which_command_produced_it(command):
+    config = _convert_typer_args_to_service_config(
+        command, output_folder=Path("/tmp/out"), input_dataset=Path("/tmp/in")
+    )
+
+    assert config["command"] == command, (
+        f"config for `emuses {command}` reports command={config.get('command')!r}. "
+        "The service-fallback path reads this key to decide which pipeline to run."
+    )
+
+
+@pytest.mark.parametrize("command", ["umap", "heatmap"])
+def test_fallback_does_not_turn_a_stage_command_into_full(command):
+    """Reproduces the recovery step exactly, on a real config."""
+    config = _convert_typer_args_to_service_config(
+        command, output_folder=Path("/tmp/out"), input_dataset=Path("/tmp/in")
+    )
+
+    # This is the line the fallback executes (emuses/cli/main.py, _execute_via_unified_service).
+    pipeline_type = config.get("command", "full")
+
+    assert pipeline_type == command, (
+        f"falling back from `emuses {command}` resolves to {pipeline_type!r}, so the "
+        "wrong pipeline runs whenever the service is unavailable."
+    )
+
+
+def test_retired_prediction_stage_is_not_advertised():
+    """PredictionStage no longer exists; three places used to offer it anyway.
+
+    Accepting a stage name nothing can run turns a typo into a confusing runtime failure
+    instead of an immediate, accurate rejection.
+    """
+    offenders = {
+        "emuses/foundation_fastapi_service/app.py": 'valid_stages = ["umap", "heatmap"]',
+        "emuses/cli/service_client.py": 'valid_types = ["full", "umap", "clustering", "heatmap"]',
+    }
+    for relative, expected in offenders.items():
+        source = (PROJECT_ROOT / relative).read_text()
+        assert expected in source, (
+            f"{relative} no longer declares the stage list as {expected!r}. If the list "
+            "legitimately changed, update this test - but do not re-add \"prediction\"."
+        )
+
+    main_source = (PROJECT_ROOT / "emuses/cli/main.py").read_text()
+    assert '"prediction": "PredictionStage"' not in main_source, (
+        "emuses/cli/main.py maps a stage name onto PredictionStage, which is retired."
+    )

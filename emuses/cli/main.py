@@ -32,7 +32,6 @@ import sys
 import time
 import urllib.parse
 import warnings
-from enum import Enum
 from multiprocessing import Process
 from pathlib import Path
 from typing import Annotated, List, Optional, Union
@@ -58,32 +57,21 @@ from .service_client import ServiceClientError, ServiceHTTPClient
 logger = logging.getLogger(__name__)
 
 
-class InputNormalization(str, Enum):
-    """Input normalization options."""
+# The option enums live with the option declaration they are used by. Re-exported here
+# because they have long been importable from this module.
+from .pipeline_options import (  # noqa: E402
+    CorrelationMethod,
+    InputNormalization,
+    ScoresNormalization,
+    with_pipeline_options,
+)
 
-    none = "none"
-    zscore = "zscore"
-    min_max = "min-max"
-    zero_max = "zero-max"
-    robust = "robust"
-
-
-class CorrelationMethod(str, Enum):
-    """Correlation calculation methods."""
-
-    pearson = "pearson"
-    spearman = "spearman"
-    pointbiserial = "pointbiserial"
-
-
-class ScoresNormalization(str, Enum):
-    """Scores normalization options."""
-
-    none = "none"
-    zscore = "zscore"
-    min_max = "min-max"
-    zero_max = "zero-max"
-    robust = "robust"
+__all__ = [
+    "app",
+    "CorrelationMethod",
+    "InputNormalization",
+    "ScoresNormalization",
+]
 
 
 def validate_output_folder(output_folder: Path) -> Path:
@@ -564,399 +552,17 @@ app.name = "emuses"
 
 
 @app.command(help="Run the full pipeline")
-def full(
-    output_folder: Annotated[Path, typer.Argument(help="Output folder")],
-    input_dataset: Annotated[
-        Path, typer.Argument(help="Input dataset of images (jpg), NIfTI, or MNIST")
-    ],
-    # Optional arguments start here
-    input_file_list: Annotated[
-        bool,
-        typer.Option(
-            "--input_file_list",
-            help="Treat input_dataset as a file (CSV/Excel/TXT) containing paths to data files"
-        ),
-    ] = False,
-    scores: Annotated[
-        Optional[Path],
-        typer.Option(help="Path to scores file associated with the dataset"),
-    ] = None,
-    label_dataset: Annotated[
-        Optional[Path], typer.Option("--label_dataset", help="Path to a separate labelled dataset")
-    ] = None,
-    recursive_search: Annotated[
-        bool,
-        typer.Option(
-            "--recursive-input-file-search",
-            help="Search recursively in the input dataset folder",
-        ),
-    ] = False,
-    input_file_types: Annotated[
-        Optional[List[str]],
-        typer.Option(
-            "--input_file_types",
-            help="File types to search for in the input dataset folder",
-        ),
-    ] = None,
-    arg_separator: Annotated[
-        str,
-        typer.Option("--arg_separator", help="Separator for the input dataset list"),
-    ] = ",",
-    input_header: Annotated[
-        Optional[int],
-        typer.Option("--input_header", help="Header for the spreadsheet input dataset"),
-    ] = None,
-    inputs_columns: Annotated[
-        Optional[List[str]],
-        typer.Option(
-            "--inputs_columns", help="List of columns for inputs in the scores file"
-        ),
-    ] = None,
-    input_index_column: Annotated[
-        Optional[int],
-        typer.Option(
-            "--input_index_column",
-            help="Index column for the spreadsheet input dataset",
-        ),
-    ] = None,
-    columns_are_features: Annotated[
-        bool,
-        typer.Option(
-            "--columns_are_features",
-            help="Columns are features in the spreadsheet input dataset",
-        ),
-    ] = False,
-    bids_filters: Annotated[
-        Optional[List[str]], typer.Option(help="BIDS filters for the input dataset")
-    ] = None,
-    input_normalization: Annotated[
-        InputNormalization,
-        typer.Option(
-            "-inorm",
-            "--input_normalization",
-            help="Normalization method for input data",
-        ),
-    ] = InputNormalization.none,
-    scores_header: Annotated[
-        Optional[int],
-        typer.Option("--scores_header", help="Header for the scores spreadsheet"),
-    ] = None,
-    scores_index_column: Annotated[
-        Optional[int],
-        typer.Option(
-            "--scores_index_column", help="Index column for the scores spreadsheet"
-        ),
-    ] = None,
-    scores_are_rows: Annotated[
-        bool,
-        typer.Option(
-            "--scores_are_rows",
-            help="Scores are in the columns of the spreadsheet input dataset",
-        ),
-    ] = False,
-    scores_column: Annotated[
-        Optional[List[str]],
-        typer.Option("--scores_column", help="Column(s) for scores in the scores file"),
-    ] = None,
-    classification: Annotated[
-        bool, typer.Option(help="Scores are integer classes in one column")
-    ] = False,
-    correlation_method: Annotated[
-        CorrelationMethod,
-        typer.Option(
-            "--correlation_method", help="Method to use for correlation calculation"
-        ),
-    ] = CorrelationMethod.pearson,
-    scores_normalization: Annotated[
-        ScoresNormalization,
-        typer.Option(
-            "-snorm",
-            "--scores_normalization",
-            help="Normalization method for scores data",
-        ),
-    ] = ScoresNormalization.none,
-    filter_labelled_by_scores: Annotated[
-        bool,
-        typer.Option(
-            "--filter_labelled_by_scores",
-            help="Filter the labelled dataset to only keep files referenced in the scores file",
-        ),
-    ] = False,
-    load_umap: Annotated[
-        Optional[str], typer.Option(help="Path to a pre-trained UMAP model")
-    ] = None,
-    load_embeddings: Annotated[
-        Optional[str], typer.Option(help="Path to precomputed embeddings")
-    ] = None,
-    test_size: Annotated[
-        float, typer.Option("--test_size", help="Test size for splitting the dataset")
-    ] = 0.2,
-    prefix: Annotated[str, typer.Option(help="Prefix for the output path names")] = "",
-    optim_dict: Annotated[
-        str,
-        typer.Option("--optim_dict", help="Name of an optim_dict in optim_configs.py"),
-    ] = "optim_dict_default",
-    umap_trials: Annotated[
-        int,
-        typer.Option(
-            "--umap_trials", help="Number of outer (UMAP) optimization trials"
-        ),
-    ] = 50,
-    hdbscan_trials: Annotated[
-        int,
-        typer.Option(
-            "--hdbscan_trials", help="Number of inner (HDBSCAN) optimization trials"
-        ),
-    ] = 20,
-    load_hdbscan: Annotated[
-        Optional[str], typer.Option(help="Path to a pre-trained HDBSCAN model")
-    ] = None,
-    min_cluster_size: Annotated[
-        int, typer.Option("--min_cluster_size", help="Minimum cluster size")
-    ] = 5,
-    interactive_plot: Annotated[
-        bool,
-        typer.Option(
-            "--interactive_plot", help="Option to create interactive clustering plots"
-        ),
-    ] = False,
-    hdbscan_approx_min_span_tree: Annotated[
-        bool,
-        typer.Option(
-            "--hdbscan_approx_min_span_tree",
-            help="When set to False, ensures reproducibility but with much longer runtime",
-        ),
-    ] = True,
-    hdbscan_core_dist_n_jobs: Annotated[
-        int,
-        typer.Option(
-            "--hdbscan_core_dist_n_jobs",
-            help="Number of parallel jobs for core distance computation in HDBSCAN",
-        ),
-    ] = -1,
-    inspect_data_state: Annotated[
-        bool,
-        typer.Option(
-            "--inspect_data_state",
-            help="Inspect data state before model training (for debugging)",
-        ),
-    ] = False,
-    use_enhanced_pipeline: Annotated[
-        bool,
-        typer.Option(
-            "--use_enhanced_pipeline",
-            help="Use the enhanced pipeline with Optuna optimization for model selection",
-        ),
-    ] = False,
-    optuna_trials: Annotated[
-        int,
-        typer.Option(
-            "--optuna_trials",
-            help="Number of trials for Optuna optimization per model/feature set",
-        ),
-    ] = 60,
-    parallel_models: Annotated[
-        bool,
-        typer.Option(
-            "--parallel_models",
-            help="Train models in parallel across different feature sets",
-        ),
-    ] = False,
-    n_jobs: Annotated[
-        int,
-        typer.Option(
-            "--n_jobs",
-            help="Number of parallel jobs for model training (-1 uses all cores)",
-        ),
-    ] = -1,
-    service_timeout: Annotated[
-        float,
-        typer.Option(
-            "--service-timeout",
-            help="Service request timeout in seconds (0 for unlimited)",
-        ),
-    ] = 0.0,
-    umap_timeout: Annotated[
-        float,
-        typer.Option(
-            "--umap-timeout", help="UMAP stage timeout in seconds (0 for unlimited)"
-        ),
-    ] = 0.0,
-    heatmap_timeout: Annotated[
-        float,
-        typer.Option(
-            "--heatmap-timeout",
-            help="Heatmap stage timeout in seconds (0 for unlimited)",
-        ),
-    ] = 0.0,
-    prediction_timeout: Annotated[
-        float,
-        typer.Option(
-            "--prediction-timeout",
-            help="Prediction stage timeout in seconds (0 for unlimited)",
-        ),
-    ] = 0.0,
-    model_selection: Annotated[
-        Optional[List[str]],
-        typer.Option(
-            "--model_selection",
-            help="List of models to try. Options: gp, rf, gb, kr, xgb, lgb, et, svr",
-        ),
-    ] = None,
-    prediction_optim_dict: Annotated[
-        str,
-        typer.Option(
-            "--prediction_optim_dict",
-            help="Name of a prediction optim_dict in optim_configs_predict.py",
-        ),
-    ] = "optim_dict_predict",
-    random_state: Annotated[
-        Optional[int],
-        typer.Option(
-            "--random_state",
-            help=(
-                "Master random seed. All component seeds derive from it. It does "
-                "not change --umap_jobs: a parallel search is nondeterministic "
-                "whatever the seed."
-            ),
-        ),
-    ] = None,
-    umap_jobs: Annotated[
-        Optional[int],
-        typer.Option(
-            "--umap_jobs",
-            help=(
-                "Parallel jobs for the UMAP/HDBSCAN search. Default 1. Anything "
-                "above 1 makes the run NON-REPRODUCIBLE: optuna schedules trials "
-                "concurrently, so the search depends on thread timing."
-            ),
-        ),
-    ] = None,
-    hdbscan_jobs: Annotated[
-        Optional[int],
-        typer.Option(
-            "--hdbscan_jobs",
-            help=(
-                "Parallel jobs for the inner (HDBSCAN) search. Currently has no "
-                "effect: that search always runs serially."
-            ),
-        ),
-    ] = None,
-    interactive: Annotated[
-        bool, typer.Option("--interactive", help="Run in interactive mode")
-    ] = False,
-    use_service: Annotated[
-        bool, typer.Option("--service", help="Use remote service for execution")
-    ] = False,
-    service_url: Annotated[
-        Optional[str],
-        typer.Option(
-            "--service-url",
-            help="URL of the remote service (auto-detected in multi-user mode)",
-        ),
-    ] = None,
-    token: Annotated[
-        Optional[str],
-        typer.Option("--token", help="Authentication token for multi-user mode"),
-    ] = None,
-) -> None:
+@with_pipeline_options
+def full(**kwargs) -> None:
     """
     Run the full pipeline.
 
     This command executes the complete EMUSES pipeline including UMAP training,
     clustering, heatmap generation, and prediction model training.
 
-    Parameters
-    ----------
-    output_folder : Path
-        Output folder for results
-    input_dataset : Path
-        Input dataset of images (jpg), NIfTI, or MNIST
-    scores : Optional[Path], optional
-        Path to scores file associated with the dataset
-    label_dataset : Optional[Path], optional
-        Path to a separate labelled dataset
-    recursive_search : bool, optional
-        Search recursively in the input dataset folder, by default False
-    input_file_types : Optional[List[str]], optional
-        File types to search for in the input dataset folder
-    arg_separator : str, optional
-        Separator for the input dataset list, by default ","
-    input_header : Optional[int], optional
-        Header for the spreadsheet input dataset
-    inputs_columns : Optional[List[str]], optional
-        List of columns for inputs in the scores file
-    input_index_column : Optional[int], optional
-        Index column for the spreadsheet input dataset
-    columns_are_features : bool, optional
-        Columns are features in the spreadsheet input dataset, by default False
-    bids_filters : Optional[List[str]], optional
-        BIDS filters for the input dataset
-    input_normalization : InputNormalization, optional
-        Normalization method for input data, by default InputNormalization.none
-    scores_header : Optional[int], optional
-        Header for the scores spreadsheet
-    scores_index_column : Optional[int], optional
-        Index column for the scores spreadsheet
-    scores_are_rows : bool, optional
-        Scores are in the columns of the spreadsheet input dataset, by default False
-    scores_column : Optional[List[str]], optional
-        Column(s) for scores in the scores file
-    classification : bool, optional
-        Scores are integer classes in one column, by default False
-    correlation_method : CorrelationMethod, optional
-        Method to use for correlation calculation, by default CorrelationMethod.pearson
-    scores_normalization : ScoresNormalization, optional
-        Normalization method for scores data, by default ScoresNormalization.none
-    filter_labelled_by_scores : bool, optional
-        Filter the labelled dataset to only keep files referenced in the scores file, by default False
-    load_umap : Optional[str], optional
-        Path to a pre-trained UMAP model
-    load_embeddings : Optional[str], optional
-        Path to precomputed embeddings
-    test_size : float, optional
-        Test size for splitting the dataset, by default 0.2
-    prefix : str, optional
-        Prefix for the output path names, by default ""
-    optim_dict : str, optional
-        Name of an optim_dict in optim_configs.py, by default "optim_dict_default"
-    umap_trials : int, optional
-        Number of outer (UMAP) optimization trials, by default 50
-    hdbscan_trials : int, optional
-        Number of inner (HDBSCAN) optimization trials, by default 20
-    load_hdbscan : Optional[str], optional
-        Path to a pre-trained HDBSCAN model
-    min_cluster_size : int, optional
-        Minimum cluster size, by default 5
-    interactive_plot : bool, optional
-        Option to create interactive clustering plots, by default False
-    hdbscan_approx_min_span_tree : bool, optional
-        When set to False, ensures reproducibility but with much longer runtime, by default True
-    hdbscan_core_dist_n_jobs : int, optional
-        Number of parallel jobs for core distance computation in HDBSCAN, by default -1
-    inspect_data_state : bool, optional
-        Inspect data state before model training (for debugging), by default False
-    use_enhanced_pipeline : bool, optional
-        Use the enhanced pipeline with Optuna optimization for model selection, by default False
-    optuna_trials : int, optional
-        Number of trials for Optuna optimization per model/feature set, by default 60
-    parallel_models : bool, optional
-        Train models in parallel across different feature sets, by default False
-    n_jobs : int, optional
-        Number of parallel jobs for model training (-1 uses all cores), by default -1
-    model_selection : Optional[List[str]], optional
-        List of models to try. Options: gp, rf, gb, kr, xgb, lgb, et, svr
-    prediction_optim_dict : str, optional
-        Name of a prediction optim_dict in optim_configs_predict.py, by default "optim_dict_predict"
-    random_state : int, optional
-        Master random seed; every component seed derives from it. It does not
-        change umap_jobs.
-    umap_jobs : Optional[int], optional
-        Parallel jobs for the UMAP/HDBSCAN search, by default 1. Above 1 the run
-        is not reproducible (ADR 2.9c).
-    hdbscan_jobs : Optional[int], optional
-        Parallel jobs for the inner (HDBSCAN) search. Currently inert: that
-        search always runs serially.
+    Accepts the shared pipeline option set (see ``emuses.cli.pipeline_options``),
+    stamped onto this function by ``@with_pipeline_options``. That declaration is
+    shared with ``umap`` and ``heatmap`` so the three commands cannot drift apart.
 
     Returns
     -------
@@ -970,74 +576,18 @@ def full(
         If security constraints are violated
     """
     # Save command for easy rerun
-    save_command_to_output_folder(output_folder)
+    save_command_to_output_folder(kwargs["output_folder"])
 
     # Log arguments for debugging (preserve legacy behavior)
     logger.info("Arguments:")
     logger.info("command: full")
-    logger.info(f"output_folder: {output_folder}")
-    logger.info(f"input_dataset: {input_dataset}")
-    logger.info(f"scores: {scores}")
-    # ... log other arguments as needed
+    logger.info(f"output_folder: {kwargs['output_folder']}")
+    logger.info(f"input_dataset: {kwargs['input_dataset']}")
+    logger.info(f"scores: {kwargs.get('scores')}")
 
     # Run the async implementation
     try:
-        asyncio.run(
-            _full_async(
-                output_folder=output_folder,
-                input_dataset=input_dataset,
-                input_file_list=input_file_list,
-                scores=scores,
-                label_dataset=label_dataset,
-                recursive_search=recursive_search,
-                input_file_types=input_file_types,
-                arg_separator=arg_separator,
-                input_header=input_header,
-                inputs_columns=inputs_columns,
-                input_index_column=input_index_column,
-                columns_are_features=columns_are_features,
-                bids_filters=bids_filters,
-                input_normalization=input_normalization,
-                scores_header=scores_header,
-                scores_index_column=scores_index_column,
-                scores_are_rows=scores_are_rows,
-                scores_column=scores_column,
-                classification=classification,
-                correlation_method=correlation_method,
-                scores_normalization=scores_normalization,
-                filter_labelled_by_scores=filter_labelled_by_scores,
-                load_umap=load_umap,
-                load_embeddings=load_embeddings,
-                test_size=test_size,
-                prefix=prefix,
-                optim_dict=optim_dict,
-                umap_trials=umap_trials,
-                hdbscan_trials=hdbscan_trials,
-                load_hdbscan=load_hdbscan,
-                min_cluster_size=min_cluster_size,
-                interactive_plot=interactive_plot,
-                hdbscan_approx_min_span_tree=hdbscan_approx_min_span_tree,
-                hdbscan_core_dist_n_jobs=hdbscan_core_dist_n_jobs,
-                inspect_data_state=inspect_data_state,
-                use_enhanced_pipeline=use_enhanced_pipeline,
-                optuna_trials=optuna_trials,
-                parallel_models=parallel_models,
-                n_jobs=n_jobs,
-                service_timeout=service_timeout,
-                umap_timeout=umap_timeout,
-                heatmap_timeout=heatmap_timeout,
-                prediction_timeout=prediction_timeout,
-                model_selection=model_selection,
-                prediction_optim_dict=prediction_optim_dict,
-                random_state=random_state,
-                umap_jobs=umap_jobs,
-                hdbscan_jobs=hdbscan_jobs,
-                interactive=interactive,
-                use_service=use_service,
-                service_url=service_url,
-                token=token,
-            )
-        )
+        asyncio.run(_full_async(**kwargs))
     except KeyboardInterrupt:
         typer.echo("\n🛑 Operation cancelled by user", err=True)
         raise typer.Exit(code=130)
@@ -1105,7 +655,7 @@ async def _full_async(**kwargs) -> None:
     print(status_renderer.render_status("info", "Starting EMUSES Full Pipeline..."))
 
     # Convert arguments to service API format
-    pipeline_config = _convert_typer_args_to_service_config(**kwargs)
+    pipeline_config = _convert_typer_args_to_service_config("full", **kwargs)
 
     # Determine service URL based on deployment mode and parameters
     if service_url is None:
@@ -1146,12 +696,18 @@ async def _full_async(**kwargs) -> None:
         raise e
 
 
-def _convert_typer_args_to_service_config(**kwargs) -> dict:
+def _convert_typer_args_to_service_config(command: str = "full", **kwargs) -> dict:
     """
     Convert Typer command arguments to service API configuration format.
 
     Parameters
     ----------
+    command : str
+        Which pipeline command produced these arguments - ``full``, ``umap`` or
+        ``heatmap``. Recorded in the config because the service-fallback path recovers
+        the pipeline type from it (``config.get("command", "full")``). Before 2026-08-23
+        nothing set it, so a fallback from ``emuses umap`` silently ran the *full*
+        pipeline and was then rejected for having no scores.
     **kwargs
         Command line arguments from Typer
 
@@ -1160,7 +716,7 @@ def _convert_typer_args_to_service_config(**kwargs) -> dict:
     dict
         Configuration dictionary suitable for service API
     """
-    config = {}
+    config = {"command": command}
 
     for key, value in kwargs.items():
         if value is None:
@@ -1655,7 +1211,7 @@ async def _umap_async(**kwargs) -> None:
 
     print(status_renderer.render_status("info", "Starting UMAP training..."))
 
-    pipeline_config = _convert_typer_args_to_service_config(**kwargs)
+    pipeline_config = _convert_typer_args_to_service_config("umap", **kwargs)
 
     try:
         await _execute_via_remote_service(
@@ -1690,7 +1246,7 @@ async def _heatmap_async(**kwargs) -> None:
 
     print(status_renderer.render_status("info", "Starting heatmap generation..."))
 
-    pipeline_config = _convert_typer_args_to_service_config(**kwargs)
+    pipeline_config = _convert_typer_args_to_service_config("heatmap", **kwargs)
 
     try:
         await _execute_via_remote_service(
@@ -1848,11 +1404,12 @@ async def _execute_stage_locally(
         Progress tracking component
     """
     try:
+        # PredictionStage is retired - prediction is produced by HeatmapStage. Listing it
+        # here accepted a stage name the pipeline has no class for.
         stage_classes = {
             "umap": "UMAPStage",
             "clustering": "ClusteringStage",
             "heatmap": "HeatmapStage",
-            "prediction": "PredictionStage",
         }
 
         if stage not in stage_classes:
@@ -1876,37 +1433,25 @@ async def _execute_stage_locally(
 
 
 @app.command(help="Train the UMAP and get the embeddings")
-def umap(
-    output_folder: Annotated[Path, typer.Argument(help="Output folder")],
-    input_dataset: Annotated[
-        Path, typer.Argument(help="Input dataset of images (jpg), NIfTI, or MNIST")
-    ],
-) -> None:
+@with_pipeline_options
+def umap(**kwargs) -> None:
     """
     Train the UMAP and get the embeddings.
 
-    Parameters
-    ----------
-    output_folder : Path
-        Output folder for results
-    input_dataset : Path
-        Input dataset of images (jpg), NIfTI, or MNIST
+    Accepts the shared pipeline option set (see
+    ``emuses.cli.pipeline_options``), stamped onto this function by
+    ``@with_pipeline_options``. Only the UMAP stage is enabled.
 
     Returns
     -------
     None
     """
     # Save command for easy rerun
-    save_command_to_output_folder(output_folder)
+    save_command_to_output_folder(kwargs["output_folder"])
 
     # Run the async implementation
     try:
-        asyncio.run(
-            _umap_async(
-                output_folder=output_folder,
-                input_dataset=input_dataset,
-            )
-        )
+        asyncio.run(_umap_async(**kwargs))
     except KeyboardInterrupt:
         typer.echo("\n🛑 Operation cancelled by user", err=True)
         raise typer.Exit(code=130)
@@ -1914,46 +1459,32 @@ def umap(
         typer.echo(f"Error: {e}", err=True)
         raise typer.Exit(code=1)
 
-
 @app.command(help="Create a heatmap")
-def heatmap(
-    output_folder: Annotated[Path, typer.Argument(help="Output folder")],
-    input_dataset: Annotated[
-        Path, typer.Argument(help="Input dataset of images (jpg), NIfTI, or MNIST")
-    ],
-) -> None:
+@with_pipeline_options
+def heatmap(**kwargs) -> None:
     """
     Create a heatmap.
 
-    Parameters
-    ----------
-    output_folder : Path
-        Output folder for results
-    input_dataset : Path
-        Input dataset of images (jpg), NIfTI, or MNIST
+    Accepts the shared pipeline option set (see
+    ``emuses.cli.pipeline_options``), stamped onto this function by
+    ``@with_pipeline_options``. Only the heatmap stage is enabled.
 
     Returns
     -------
     None
     """
     # Save command for easy rerun
-    save_command_to_output_folder(output_folder)
+    save_command_to_output_folder(kwargs["output_folder"])
 
     # Run the async implementation
     try:
-        asyncio.run(
-            _heatmap_async(
-                output_folder=output_folder,
-                input_dataset=input_dataset,
-            )
-        )
+        asyncio.run(_heatmap_async(**kwargs))
     except KeyboardInterrupt:
         typer.echo("\n🛑 Operation cancelled by user", err=True)
         raise typer.Exit(code=130)
     except Exception as e:
         typer.echo(f"Error: {e}", err=True)
         raise typer.Exit(code=1)
-
 
 @app.command(help="Run inference on trained model")
 def inference(
