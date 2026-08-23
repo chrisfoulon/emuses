@@ -8,7 +8,7 @@ registry with peer review for the wider community.
 
 ## State of play
 
-**Current work: `chore/core-boundary`, 16 commits ahead of `main`.** Driving toward a tool
+**Current work: `chore/core-boundary`, 18 commits ahead of `main`.** Driving toward a tool
 that can be trusted to run and to publish from; plan at
 `~/.claude/plans/playful-watching-naur.md`, findings in
 `dev-docs/issues/phase0_cli_runnability_2026_08.md` and
@@ -38,6 +38,28 @@ strongest is "no `optuna.create_study` in `emuses/` without an explicit sampler"
 exemptions. The seed-audit test ("every key in `random_seeds.json` is read") is deliberately labelled
 weak in its own docstring: it would **not** have caught this bug, because `prediction_seed` and
 `cv_seed` already had readers in `robust_ood_evaluation` while the main path ignored them.
+
+**Reproducibility is not finished: `optuna.optimize(n_jobs>1)` is nondeterministic** (Phase 2,
+`b28e664`). Phase 1D fixed the prediction path; the UMAP/HDBSCAN *search* still varies run to run at
+a fixed seed whenever there is something to search. Optuna's parallel mode runs trials concurrently,
+so TPE's suggestion depends on which trials have finished when each one asks — thread timing, which
+no seed controls. The sampler *is* seeded (`UMAP_utils.py:633`); that is not enough. Three repeats at
+seed 42, one variable changed:
+
+| `umap_jobs` / `hdbscan_jobs` | metrics identical |
+|---|---|
+| 4 | 10 of 20 |
+| 1 | 20 of 20 |
+
+**CLI runs are reproducible today only by accident** — the fork clamps jobs to 1. **Phase 1B2 removes
+that clamp and must not land before this is decided.** Numbers and the rest of the arms in
+`dev-docs/issues/reproducibility_tolerances_2026_08.md`.
+
+Two traps recorded there, each of which cost a wrong conclusion or nearly did: `optim_dict_hcp` (the
+fixture's dict) has **all parameters fixed**, so `UMAP_utils.py:430` collapses it to a single trial
+and raising `umap_trials` against it does nothing; and `noise_ratio` in `best_trial_info.json` holds
+`1 − noise_ratio`, so **0.0 means every point is noise**. At the fixture config HDBSCAN returns zero
+clusters, all 40 points noise — so the regression suite cannot pin cluster structure from it.
 
 **`emuses full` runs (verified 2026-08-22).** ~26 s on `test_data/`, single- and multi-target, output
 validates via `ModelIOManager.validate_model()`. `inference` works. This was genuinely open: the
@@ -161,11 +183,14 @@ environments pass 13/13, so nothing was hidden, but the gate was not testing wha
       **Machine timing is unusable for decisions here**: identical code measured 138s/196s/256s for
       the same test.
 - [x] ~~Phase 1D — finish the seed derivation wiring~~ (`687f7a9`, `4152635`). See above.
-- [ ] **Phase 2 — measure run-to-run variation, then state a tolerance.** Now unblocked. Two
-      caveats to carry in: the `--n_jobs` arm is **inert on the CLI path** until 1B2 lands (the fork
-      clamps n_jobs to 1 regardless of the flag), so run it through the Python API; and the
-      seed-sensitivity arm is only honest now that the estimators and PCA transformers take the
-      derived seed.
+- [x] ~~Phase 2 — measure run-to-run variation~~ (`b28e664`). Harness:
+      `scripts/measure_reproducibility.py`. Found the remaining nondeterminism (see above).
+      `n_jobs` (model training) and `hdbscan_core_dist_n_jobs` both changed nothing — but the
+      latter was measured on a degenerate zero-cluster result, so it is weak evidence.
+- [ ] **Decide the `umap_jobs` / `hdbscan_jobs` default.** Reproducible search and parallel search
+      are in direct conflict and only one can be the default. Blocks 1B2.
+- [ ] Give the regression suite a config that actually clusters, before Phase 3 pins anything about
+      cluster structure.
 - [ ] Phase 3 — numerical regression suite, with tolerances from Phase 2.
 - [ ] **Phase 1B2 — restore in-process local execution.** Deliberately sequenced *after* Phase 3, so
       that switching real parallelism on happens with a suite able to detect whether it moved
