@@ -638,9 +638,12 @@ async def _full_async(**kwargs) -> None:
 
     # Handle interactive mode
     interactive = kwargs.pop("interactive", False)
-    kwargs.pop("use_service", False)  # Remove unused parameter
+    # Both of these used to be popped and thrown away. --service now forces the old
+    # fork-a-service path, and --service-url opts into a remote service from local mode.
+    use_service = kwargs.pop("use_service", False)
     service_url = kwargs.pop("service_url", None)
     token = kwargs.pop("token", None)
+    explicit_service_url = service_url is not None
 
     if interactive:
         print(status_renderer.render_status("info", "Starting Interactive Mode..."))
@@ -670,8 +673,18 @@ async def _full_async(**kwargs) -> None:
 
     # Execution logic based on deployment mode
     try:
-        if deployment_config.mode.value == "local":
-            # Local mode - auto-start local service
+        if deployment_config.mode.value == "local" and not (
+            use_service or explicit_service_url
+        ):
+            # ADR §4: local mode is in-process. No forked service, no HTTP round trip
+            # to ourselves.
+            await _execute_locally_in_process(
+                pipeline_config, status_renderer, progress_tracker
+            )
+        elif deployment_config.mode.value == "local" and use_service:
+            # --service: keep the previous behaviour of auto-starting a local service.
+            # Retained as an escape hatch rather than removed, since it is the path the
+            # multi-user modes exercise and is useful for reproducing service-only bugs.
             await _execute_via_unified_service(
                 pipeline_config, status_renderer, progress_tracker
             )
@@ -915,6 +928,65 @@ def create_fastapi_app():
         return create_app()
     except ImportError as e:
         raise ServiceClientError(f"FastAPI service not available: {e}")
+
+
+async def _execute_locally_in_process(
+    config: dict, status_renderer, progress_tracker
+) -> None:
+    """Run the pipeline in this process - no forked service, no HTTP.
+
+    ADR §4 defines local mode as "CLI, file-based storage, in-process execution". Until
+    2026-08-23 the CLI forked a FastAPI service, waited for it to become healthy, and
+    submitted its own job over HTTP to localhost. That cost a process, a port and a
+    readiness poll per run, and it silently changed behaviour: the pipeline then ran in a
+    ``multiprocessing.Process`` child, where ``is_subprocess_context()`` is True and
+    ``get_safe_n_jobs()`` clamps ``n_jobs`` to 1 - so ``--n_jobs`` was inert on the CLI
+    while doing nothing of the sort through the Python API.
+
+    Removing the fork un-clamps ``n_jobs``. That was verified not to move the numbers
+    before the change was made: at the regression config, a CLI run reproduced the
+    API-produced baseline on all 18 scalar metrics *while clamped to 1*, and again after
+    un-clamping. See ``dev-docs/issues/reproducibility_tolerances_2026_08.md``.
+
+    Validation is not skipped by taking the shorter path: ``prepare_pipeline_context``
+    is the same function the HTTP endpoint calls, so required-field checks, special
+    dataset handling and the output-path checks added after the shell-injection cleanup
+    all still run.
+    """
+    from emuses.foundation_fastapi_service.app import prepare_pipeline_context
+    from emuses.foundation_fastapi_service.pipeline_runner import run_pipeline_locally
+
+    print(status_renderer.render_status("info", "Running pipeline in-process..."))
+
+    pipeline_context = prepare_pipeline_context(config)
+
+    # ProgressTracker has no generic update(); its API is stage-index based
+    # (set_stages/next_stage/update_stage_progress) and the runner reports free-form
+    # stage names. Printing is what the service path effectively did too, via polling.
+    last_reported = {}
+
+    def _on_progress(stage_name, progress, message):
+        try:
+            pct = int(float(progress) * 100)
+            # Report each stage once per 10% so a long run shows movement without
+            # flooding the terminal.
+            bucket = pct // 10
+            if last_reported.get(stage_name) == bucket:
+                return
+            last_reported[stage_name] = bucket
+            print(
+                status_renderer.render_status(
+                    "info", f"{stage_name}: {pct}% - {message}"
+                )
+            )
+        except Exception:  # pragma: no cover - progress display must never break a run
+            logger.debug("progress callback failed", exc_info=True)
+
+    # The pipeline is CPU-bound and synchronous; run it off the event loop so the
+    # coroutine stays responsive and Ctrl-C is still delivered.
+    await asyncio.to_thread(
+        run_pipeline_locally, pipeline_context, 0.75, _on_progress
+    )
 
 
 async def _execute_via_unified_service(
