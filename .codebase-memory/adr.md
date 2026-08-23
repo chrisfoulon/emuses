@@ -326,6 +326,30 @@ the sampler is re-seeded while the trial history is not. Related to §3.2.
 (`_seeds_from`, `_optimise_target`), `emuses/tools/optuna_cv.py`, `emuses/tools/models_utils.py`,
 `emuses/tools/features_utils.py`, `emuses/tools/ae_optuna.py`
 
+### 2.9c Optuna Parallel Search Forfeits Reproducibility; Serial Is the Default
+
+**Decision**: `umap_jobs` / `hdbscan_jobs` default to **1**. Parallel Optuna search is available as
+an explicit opt-in that warns it forfeits reproducibility.
+
+**Rationale**: `optuna.study.optimize(n_jobs>1)` runs trials concurrently, so TPE's suggestion
+depends on which trials have completed when each one asks — thread timing. Seeding the sampler does
+not help, and EMUSES does seed it (`UMAP_utils.py:633`). Measured 2026-08-23, three repeats at seed
+42 with one variable changed: jobs=4 gave 10 of 20 metrics identical, jobs=1 gave 20 of 20
+(`dev-docs/issues/reproducibility_tolerances_2026_08.md`).
+
+Reproducibility wins because EMUSES exists to produce results people publish. A faster search that
+cannot be rerun is worth less than a slower one that can.
+
+**Trap worth knowing**: CLI runs were reproducible before this decision *by accident* — the CLI forks
+a service, so `is_subprocess_context()` is True and `get_safe_n_jobs()` clamps jobs to 1. Moving
+local execution in-process (§4, Phase 1B2) removes that clamp and would have silently made CLI runs
+nondeterministic.
+
+**Related trap**: `optim_dict_hcp` and `optim_dict_test` have every parameter fixed, and
+`UMAP_utils.py:430` deliberately collapses to a single trial in that case. Raising `umap_trials`
+against them changes nothing, and a config built on them cannot exhibit search nondeterminism at
+all — which is why the test fixture showed perfect reproducibility while the problem was live.
+
 ### 2.9b Bitwise Reproducibility Is Out of Scope
 
 **Decision**: EMUSES targets reproducibility within a machine and environment, verified against

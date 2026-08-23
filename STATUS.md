@@ -187,10 +187,13 @@ environments pass 13/13, so nothing was hidden, but the gate was not testing wha
       `scripts/measure_reproducibility.py`. Found the remaining nondeterminism (see above).
       `n_jobs` (model training) and `hdbscan_core_dist_n_jobs` both changed nothing — but the
       latter was measured on a degenerate zero-cluster result, so it is weak evidence.
-- [ ] **Decide the `umap_jobs` / `hdbscan_jobs` default.** Reproducible search and parallel search
-      are in direct conflict and only one can be the default. Blocks 1B2.
-- [ ] Give the regression suite a config that actually clusters, before Phase 3 pins anything about
-      cluster structure.
+- [ ] **Default `umap_jobs` / `hdbscan_jobs` to 1** (decided 2026-08-23). Reproducibility wins over
+      parallel search, because this is a tool people publish from; parallel stays an opt-in that
+      warns it forfeits reproducibility. Do it **before 1B2**, which removes the clamp masking the
+      problem. The fixture sets `umap_jobs=4` explicitly, so it is unaffected.
+- [ ] **Phase 3 gets its own fixture** (decided 2026-08-23): `optim_dict_default` with jobs=1 —
+      measured 20/20 reproducible, produces 2–3 real clusters. `emuses_pipeline_results` stays
+      untouched so no existing test changes behaviour.
 - [ ] Phase 3 — numerical regression suite, with tolerances from Phase 2.
 - [ ] **Phase 1B2 — restore in-process local execution.** Deliberately sequenced *after* Phase 3, so
       that switching real parallelism on happens with a suite able to detect whether it moved
