@@ -334,8 +334,14 @@ def train_and_save_umap_optim_with_nested_clustering(
     inner_n_jobs=4,
     random_state=42,
     clusterer_random_state=None,
-    approx_min_span_tree=True,  # For reproducibility (False = reproducible but 10-100x slower)
-    core_dist_n_jobs=-1,  # For reproducibility (1 = reproducible)
+    approx_min_span_tree=True,  # False is exact but 10-100x slower
+    # Measured 2026-08-23: core_dist_n_jobs 1 vs -1 changed nothing across 4 runs
+    # (dev-docs/issues/reproducibility_tolerances_2026_08.md). The old comment
+    # here claimed "1 = reproducible" while defaulting to -1, which read as an
+    # admission that the default was wrong. It is not the reproducibility
+    # problem; optuna's optimize(n_jobs>1) below is. Caveat: that measurement ran
+    # on a clustering that returned zero clusters, so it is weak evidence.
+    core_dist_n_jobs=-1,
     **kwargs,
 ):
     """

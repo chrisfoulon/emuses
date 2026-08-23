@@ -212,3 +212,45 @@ def test_pca_seed_reaches_the_fitted_sklearn_estimator():
     X = np.random.default_rng(0).normal(size=(20, 2))
     union.fit(X)
     assert dict(union.transformer_list)["pca"].pca_.random_state == 7
+
+
+def test_pca_nondeterminism_is_real_above_sklearn_threshold():
+    """The unseeded PCAGWD defect, reproduced rather than argued.
+
+    sklearn's ``svd_solver="auto"`` picks the *randomized* solver once
+    ``max(X.shape) > 500``. The GWD matrix is n x n in the samples, so below
+    that threshold an unseeded PCAGWD is perfectly reproducible and above it is
+    not -- which is why 48-sample ``test_data`` cannot show this and a real
+    cohort can. Marked slow-ish but cheap: three fits on 600 points.
+
+    The differences are small (~1e-10) but they are differences, and they feed
+    GWD features into a nested CV that selects hyperparameters on the result.
+    """
+    import numpy as np
+
+    from emuses.tools.features_utils import PCAGWD
+
+    rng = np.random.default_rng(0)
+
+    below = rng.normal(size=(50, 2))
+    a = PCAGWD(sigma=0.5, n_comp=5).fit(below).transform(below)
+    b = PCAGWD(sigma=0.5, n_comp=5).fit(below).transform(below)
+    assert np.array_equal(a, b), (
+        "unseeded PCAGWD varied below sklearn's randomized-solver threshold; "
+        "the premise of this test no longer holds"
+    )
+
+    above = rng.normal(size=(600, 2))
+    u = PCAGWD(sigma=0.5, n_comp=5).fit(above).transform(above)
+    v = PCAGWD(sigma=0.5, n_comp=5).fit(above).transform(above)
+    assert not np.array_equal(u, v), (
+        "unseeded PCAGWD is now deterministic above the threshold -- either "
+        "sklearn changed its solver selection, or a default seed crept in. "
+        "Check before assuming the seeding below still buys anything."
+    )
+
+    seeded_1 = PCAGWD(sigma=0.5, n_comp=5, random_state=7).fit(above).transform(above)
+    seeded_2 = PCAGWD(sigma=0.5, n_comp=5, random_state=7).fit(above).transform(above)
+    assert np.array_equal(seeded_1, seeded_2), (
+        "seeding PCAGWD did not make it reproducible where it matters"
+    )
