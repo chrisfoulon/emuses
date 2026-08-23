@@ -416,6 +416,38 @@ pinned, rather than guessed.
 
 **Do not re-litigate this.** It was decided deliberately after the alternative was considered.
 
+### 2.11 Pipeline Commands Share One Option Declaration; `heatmap` Cannot Run Standalone
+
+**Decision (2026-08-23, Phase 1C).** `full`, `umap` and `heatmap` take their CLI options from a
+single declaration in `emuses/cli/pipeline_options.py`, stamped onto each command by
+`@with_pipeline_options`. Typer builds its CLI from `inspect.signature()` and honours a
+programmatically assigned `__signature__` (verified against typer 0.19.2), so the options stay
+ordinary readable Python in one place rather than three lists that drift.
+
+**Why not three copies.** `umap` and `heatmap` previously declared only `output_folder` and
+`input_dataset` — every other flag worked on `full` and did not exist on the other two. Copying
+`full`'s block twice would have fixed the symptom and reproduced the Phase 1A defect (options
+accepted and silently discarded) in three places instead of one. `tests/test_cli_option_mapping.py`
+pins that all three commands expose exactly the shared set, and that each command's signature *is*
+the shared object.
+
+**`emuses heatmap` standalone is unsupported, by architecture rather than omission.** `HeatmapStage`
+fits prediction models against UMAP embedding coordinates (`prediction_train_coords`), which only
+`UMAPStage` produces. `--load_umap` and `--load_embeddings` are both read by `UMAPStage`, so a
+heatmap-only run cannot obtain its input by any route. It fails fast with a message naming the
+missing context key, the stage that produces it, and `emuses full` as the working command. Do not
+"fix" this by loosening the check — the correct resolutions are to make `heatmap` imply UMAP, to
+teach HeatmapStage to load a trained model, or to remove the command. That is a product decision and
+is deliberately still open.
+
+**Consequences.** Unsupervised runs are now a real path: `split_dataset` no longer passes
+`self.scores` into `train_test_split` when there are no scores, and `InferenceStage` is only added
+when `HeatmapStage` ran, since it exists to validate that stage's models. `PredictionStage` is
+retired and no longer advertised anywhere (`app.py` `valid_stages`, `service_client.py`
+`valid_types`, `main.py` `stage_classes`); requesting it is rejected rather than accepted and failed
+at run time. The service defines `/api/v1/jobs/pipeline/{umap,heatmap}` as thin aliases onto the
+stage endpoint, not copies of it.
+
 ### 2.10 Core / Extras Boundary: Parked Features Stay, But Cost Nothing
 
 **Decision**: EMUSES has a declared **core** and a set of **parked (extras)** features. Parked code

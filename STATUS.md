@@ -86,11 +86,35 @@ validates via `ModelIOManager.validate_model()`. `inference` works. This was gen
 session test fixture drives the *Python API*, while the CLI goes out over HTTP to an auto-started
 FastAPI service, and only the first had ever been checked.
 
-**`emuses umap` and `emuses heatmap` do not run.** Three compounding defects: they declare no options
-at all (`main.py:1861`, `:1901`); the fallback recovers the pipeline type via
-`config.get("command", "full")` (`main.py:1405`) but nothing sets `"command"`, so `umap` becomes
-`full` and is rejected for having no scores; and the client builds `/api/v1/jobs/pipeline/umap`
-(`service_client.py:746`), which the server does not define. Fixing this is Phase 1B/1C.
+**`emuses umap` now runs; `emuses heatmap` cannot, and that is architectural** (Phase 1C). The three
+CLI defects are fixed: `umap`/`heatmap` declared no options at all, nothing set the `"command"` key
+the service-fallback path reads (so `umap` silently became `full`), and the client posted to
+`/api/v1/jobs/pipeline/umap` which the server never defined. All three commands are now stamped from
+**one** option declaration (`emuses/cli/pipeline_options.py`) — Typer honours a programmatically
+assigned `__signature__`, so the options stay ordinary readable Python in a single place instead of
+three copies that drift. `full --help` is byte-identical to before; `umap`/`heatmap` went from 13 to
+67 lines of help.
+
+**The CLI wiring was the smaller half.** Fixing it only got the run as far as the pipeline, where
+three further defects appeared — none of them findable by reading, each surfaced by running the
+command:
+
+- `split_dataset` passed `self.scores` straight into `train_test_split`; unsupervised runs have no
+  scores, so sklearn indexed `None`.
+- `InferenceStage` was added whenever `test_size > 0`, including to a UMAP-only job that has no
+  prediction models for it to validate.
+- `HeatmapStage` consumed `prediction_train_coords` unchecked, dying as `TypeError: 'NoneType'
+  object is not subscriptable` four frames inside a joblib worker.
+
+**Standalone `heatmap` is unsupported by design, not merely unwired.** HeatmapStage fits against
+UMAP embedding coordinates, and `--load_umap`/`--load_embeddings` are read by UMAPStage — which a
+heatmap-only run does not execute. There is no route by which it can obtain its input. It now fails
+fast naming the missing context key, the stage that produces it, and `emuses full` as the command
+that works. Whether `heatmap` should imply UMAP, require a trained model, or be removed is a product
+decision, deliberately not taken.
+
+`PredictionStage` is retired but was still advertised in three places (`app.py` `valid_stages`,
+`service_client.py` `valid_types`, `main.py` `stage_classes`); all three corrected.
 
 **Four CLI options were silently discarded** and are now fixed (`9c1ce71`).
 `--hdbscan_core_dist_n_jobs`, `--hdbscan_approx_min_span_tree`, `--input_file_list` and
@@ -223,10 +247,12 @@ environments pass 13/13, so nothing was hidden, but the gate was not testing wha
       and pick a parallelism backend deliberately — the CLI sets loky (`main.py:1044`) and the runner
       then forces threading (`pipeline_runner.py:391`); keep threading initially so results match
       today's, since Phase 2's baseline depends on it.
-- [ ] Phase 1C — give `umap`/`heatmap` a real option set, sharing one declaration with `full`.
+- [x] ~~Phase 1C — give `umap`/`heatmap` a real option set, sharing one declaration with `full`.~~
+      Done. `umap` runs; `heatmap` cannot without UMAP embeddings and now says so. See above.
+      Guards: `tests/test_cli_option_mapping.py` 8 -> 20 tests, new `tests/test_stage_only_commands.py`.
 - [ ] Phase 4 — the ~33 science-path test failures. Phase 5 — finish the extras move.
 
-Order is **1D → 2 → 3 → 1C → 1B2 → 4 → 5** (decided 2026-08-23): build the detector before the event
+Order is **1D → 2 → 3 → 1C → 1B2 → 4 → 2C-bis → 5** (decided 2026-08-23): build the detector before the event
 it exists to detect.
 
 **Leaked test services: fixed and guarded** (`31546b5`). `test_concurrent_job_submission` spawned
