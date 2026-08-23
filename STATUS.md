@@ -86,6 +86,29 @@ validates via `ModelIOManager.validate_model()`. `inference` works. This was gen
 session test fixture drives the *Python API*, while the CLI goes out over HTTP to an auto-started
 FastAPI service, and only the first had ever been checked.
 
+**Local mode is now actually in-process** (Phase 1B2). ADR §4 has always said local mode is "CLI,
+file-based storage, in-process execution"; the CLI in fact forked a FastAPI service with
+`multiprocessing.Process`, waited for it to become healthy, and posted its own job over HTTP to
+localhost. That cost a process, a port and a readiness poll per run — and silently made **`--n_jobs`
+inert on the CLI**, because the pipeline then ran in a subprocess where `get_safe_n_jobs()` clamps it
+to 1. Measured directly: `get_safe_n_jobs(4)` returns 4 in the main process and 1 in a forked child.
+
+**Un-clamping it was verified not to move the numbers, before the change shipped.** At the regression
+config, one variable at a time: the forked CLI (clamped to 1) already reproduced the API-produced
+baseline (n_jobs=4) on all 18 scalar metrics; the in-process CLI reproduces the forked CLI on all 18
+with cluster ARI 1.0 and embedding distance correlation 1.0; and it reproduces the API baseline. So
+**the CLI and Python API agree exactly** — the check Phase 1B was waiting on — and `n_jobs` genuinely
+does not affect results on this config. Numbers in
+`dev-docs/issues/reproducibility_tolerances_2026_08.md`.
+
+Validation is shared rather than re-implemented: the endpoint's required-field checks,
+special-dataset handling and post-shell-injection output-path checks now live in
+`prepare_pipeline_context`, called by both the HTTP endpoint and the CLI — security checks must not
+be reachable only over HTTP. `--service` and `--service-url`, both previously popped and discarded,
+now mean something: `--service` forces the old fork-a-service path as an escape hatch, `--service-url`
+opts into a remote service. `umap`/`heatmap` still take the service path; moving them is a separate
+commit.
+
 **`emuses umap` now runs; `emuses heatmap` cannot, and that is architectural** (Phase 1C). The three
 CLI defects are fixed: `umap`/`heatmap` declared no options at all, nothing set the `"command"` key
 the service-fallback path reads (so `umap` silently became `full`), and the client posted to
@@ -237,7 +260,9 @@ environments pass 13/13, so nothing was hidden, but the gate was not testing wha
       whole-suite collection: `tests/integration/test_cli_api_parallelism.py` still imported
       `get_process_hierarchy_depth`, deleted in 1B1, which failed collection for the entire run.
 - [x] ~~Phase 3 — numerical regression suite~~ (`9108107`), on its own config. See above.
-- [ ] **Phase 1B2 — restore in-process local execution.** Deliberately sequenced *after* Phase 3, so
+- [x] ~~**Phase 1B2 — restore in-process local execution.**~~ Done — see above. `--n_jobs` was
+      inert on the CLI and now works; un-clamping it measured 18/18 identical against both the
+      forked CLI and the API baseline. Guards in `tests/test_local_execution.py`. Original note: Deliberately sequenced *after* Phase 3, so
       that switching real parallelism on happens with a suite able to detect whether it moved
       anything. Open decision when it comes up: `--service` / `--service-url` in local mode is
       currently popped and ignored (`main.py:1071`, `:1074`) — wire it or remove it. ADR §4 defines local mode as "CLI,

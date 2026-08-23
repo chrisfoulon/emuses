@@ -543,3 +543,33 @@ Three deployment modes share the same pipeline core:
 - **Cloud-native**: Kubernetes, distributed job queue, cloud object storage
 
 Models created in any mode are portable to any other mode. No deployment-specific model formats.
+
+**Local mode really is in-process, since 2026-08-23 (Phase 1B2).** It previously was not: the CLI
+forked a FastAPI service with `multiprocessing.Process`, waited for it to become healthy, and posted
+its own job over HTTP to localhost. Two consequences, one of them silent:
+
+- A process, a port and a readiness poll per run, for a service with exactly one client.
+- The pipeline ran in a `multiprocessing.Process` child, so `is_subprocess_context()` was True and
+  `get_safe_n_jobs()` clamped `n_jobs` to 1. **`--n_jobs` was inert on the CLI** while working
+  normally through the Python API - measured directly: `get_safe_n_jobs(4)` returns 4 in the main
+  process and 1 in a forked child.
+
+`run_pipeline_locally` (`pipeline_runner.py`) now calls the same `_run_pipeline_in_process` the
+service uses. `job_manager` is `None`, not a stub, because that method touches only
+`_context_to_emuses_args`, `_create_emuses_progress_adapter`, `logger` and `_merge_pipeline_context`;
+`tests/test_local_execution.py` asserts that rather than trusting the comment.
+
+**Validation is shared, not re-implemented.** The required-field checks, special-dataset handling and
+the output-path checks added after the shell-injection cleanup live in `prepare_pipeline_context`
+(`app.py`), which the HTTP endpoint and the CLI local path both call. Security checks must not be
+reachable only over HTTP, and a second hand-maintained copy is the failure this codebase has already
+hit in Phase 1A and Phase 1C.
+
+**Un-clamping `n_jobs` was verified not to move the numbers before it shipped.** At the regression
+config, an in-process CLI run reproduced both the forked CLI run and the API-produced baseline on all
+18 scalar metrics, with cluster ARI 1.0 and embedding distance correlation 1.0. This is the CLI-vs-API
+agreement check the reproducibility work called for, and it is what made the change safe.
+
+`--service` and `--service-url` were both accepted and discarded. They now mean something: `--service`
+forces the previous fork-a-local-service behaviour (kept as an escape hatch for reproducing
+service-only bugs), and `--service-url` opts into a remote service from local mode.

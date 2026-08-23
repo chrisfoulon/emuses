@@ -189,8 +189,38 @@ would have missed a real change to the science. See `tests/regression/README.md`
   pins the `midbudget-serial` arm, and `test_baseline_is_not_degenerate` fails if
   it ever drifts back to an all-noise labelling where an ARI assertion cannot fail.
 
+## CLI vs Python API, measured (2026-08-23, Phase 1B2)
+
+Phase 1B2 moved local CLI execution in-process, which removes the fork and with it
+the `get_safe_n_jobs()` clamp. The clamp is real and was measured directly:
+
+| context | `is_subprocess_context()` | `get_safe_n_jobs(4)` |
+|---|---|---|
+| main process (in-process CLI, Python API) | False | 4 |
+| `multiprocessing.Process` child (forked service) | True | **1** |
+
+So `--n_jobs` was **inert on the CLI** and worked normally through the API. Removing
+the fork changes it from 1 to whatever was asked for.
+
+**Measured before the change shipped**, at the regression config
+(`optim_dict_default`, 10/5/15 trials, `umap_jobs=1`, `hdbscan_jobs=1`, `n_jobs=4`,
+seed 42, `test_size=0.2`), one variable at a time:
+
+| comparison | scalar metrics identical | cluster ARI | distance corr |
+|---|---|---|---|
+| CLI forked (`n_jobs` clamped to 1) vs API baseline (`n_jobs=4`) | 18 / 18 | — | — |
+| CLI in-process (`n_jobs=4`) vs CLI forked | 18 / 18 | 1.0 | 1.0 |
+| CLI in-process vs API baseline | 18 / 18 | — | — |
+
+Two things follow. The **CLI and Python API agree exactly**, so the two paths have not
+silently diverged — the check Phase 1B was waiting on. And **`n_jobs` does not affect
+the numbers** on this config, now confirmed on the CLI-vs-API axis as well as within
+the API, so un-clamping it was safe.
+
+Caveat, stated rather than assumed: this is 48 samples. `n_jobs` parallelises
+independent work with order preserved on this path, but a config that reduces across
+workers differently at larger n is not covered by this measurement.
+
 Still open:
 
-- **Phase 1B2 must not land carelessly.** It removes the fork clamp that is
-  currently the only reason CLI runs are reproducible. The serial default now
-  covers that, but the clamp also masks `n_jobs` in model training.
+- Nothing from Phase 1B2. The clamp is gone and its removal is measured.
