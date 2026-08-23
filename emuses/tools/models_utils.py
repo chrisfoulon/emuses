@@ -19,7 +19,7 @@ from emuses.tools.kernel_regression_utils import (KernelLogisticRegressor,
 logger = logging.getLogger(__name__)
 
 
-def build_feature_union(feat_cfg: dict, pretrained_ae=None):
+def build_feature_union(feat_cfg: dict, pretrained_ae=None, random_state=None):
     """
     Build feature union from configuration with enhanced flexibility for feature combinations.
 
@@ -42,6 +42,10 @@ def build_feature_union(feat_cfg: dict, pretrained_ae=None):
         - Other feature-specific parameters as needed
     pretrained_ae : AETransformer, optional
         Pre-fitted AE transformer to use instead of training new one
+    random_state : int, optional
+        Seed for the transformers that draw on the RNG (PCAGWD, KernelPCAGWD).
+        Their solvers only become randomized on larger inputs, so leaving this
+        None is reproducible on small data and not on real data.
 
     Returns
     -------
@@ -108,7 +112,12 @@ def build_feature_union(feat_cfg: dict, pretrained_ae=None):
             steps.append(
                 (
                     "pca",
-                    PCAGWD(sigma=feat_cfg["sigma_gwd"], n_comp=n_comp, var_thr=var_thr),
+                    PCAGWD(
+                        sigma=feat_cfg["sigma_gwd"],
+                        n_comp=n_comp,
+                        var_thr=var_thr,
+                        random_state=random_state,
+                    ),
                 )
             )
         elif feat_type == "kpca_gwd":
@@ -125,6 +134,7 @@ def build_feature_union(feat_cfg: dict, pretrained_ae=None):
                         sigma=feat_cfg["sigma_gwd"],
                         n_comp=feat_cfg.get("n_comp"),
                         kpca_gamma=kpca_gamma,
+                        random_state=random_state,
                     ),
                 )
             )
@@ -149,7 +159,7 @@ def build_feature_union(feat_cfg: dict, pretrained_ae=None):
     return FeatureUnion(steps)
 
 
-def build_estimator(model_cfg: dict, task: str, n_jobs: int = -1):
+def build_estimator(model_cfg: dict, task: str, n_jobs: int = -1, random_state: int = 42):
     """
     Parameters
     ----------
@@ -165,6 +175,11 @@ def build_estimator(model_cfg: dict, task: str, n_jobs: int = -1):
 
     task : {"reg", "clf"}
         Regression or classification.
+
+    random_state : int, default=42
+        Seed for estimators that draw on the RNG. The default reproduces the
+        value this used to hardcode, so callers that do not pass a seed keep
+        their previous results.
 
     Returns
     -------
@@ -202,7 +217,7 @@ def build_estimator(model_cfg: dict, task: str, n_jobs: int = -1):
             "n_estimators": n,
             "max_depth": md,
             "n_jobs": safe_n_jobs,
-            "random_state": 42,
+            "random_state": random_state,
         }
 
         # Add additional parameters if present
@@ -231,6 +246,10 @@ def build_estimator(model_cfg: dict, task: str, n_jobs: int = -1):
                 l1_ratio=model_cfg["l1_ratio"],
                 max_iter=model_cfg.get("max_iter", 1000),  # Default 1000, configurable via optim_dict
                 tol=model_cfg.get("tol", 1e-4),            # Default sklearn tol, configurable via optim_dict
+                # Ignored under the default selection="cyclic", but the optim
+                # dict is user-supplied and selection="random" would otherwise
+                # make this silently irreproducible.
+                random_state=random_state,
             )
         # classification path
         return LogisticRegression(
@@ -240,6 +259,9 @@ def build_estimator(model_cfg: dict, task: str, n_jobs: int = -1):
             max_iter=10000,
             n_jobs=safe_n_jobs,
             multi_class="auto",  # Handle both binary and multi-class automatically
+            # saga shuffles the data, so this is a live source of run-to-run
+            # variation in the classification path, not a formality.
+            random_state=random_state,
         )
 
     # ─── Unknown type ───────────────────────────────────────────────

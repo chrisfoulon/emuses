@@ -42,10 +42,23 @@ class GWD(BaseEstimator, TransformerMixin):
 
 # ───────────────────────────────────────────────────────────────
 class PCAGWD(BaseEstimator, TransformerMixin):
-    def __init__(self, sigma=0.1, n_comp=None, var_thr=None):
+    """PCA on a Gaussian-Weighted Distance kernel.
+
+    ``random_state`` matters here even though PCA is often thought of as
+    deterministic: ``svd_solver="auto"`` switches to the *randomized* solver
+    once ``max(X.shape) > 500``. The GWD matrix is n x n in the number of
+    samples, so small datasets take the deterministic branch and large ones do
+    not -- meaning an unseeded PCAGWD is reproducible on test data and
+    irreproducible on a real cohort. Seeding is the fix rather than pinning
+    ``svd_solver="full"``, which would cost O(n^3) on exactly the large inputs
+    that made the randomized solver worth having.
+    """
+
+    def __init__(self, sigma=0.1, n_comp=None, var_thr=None, random_state=None):
         self.sigma = sigma
         self.n_comp = n_comp  # ignored if var_thr is not None
         self.var_thr = var_thr  # float in (0,1) or None
+        self.random_state = random_state
 
     def fit(self, X, y=None):
         # Store training data for inference mode
@@ -56,7 +69,7 @@ class PCAGWD(BaseEstimator, TransformerMixin):
         W = np.exp(-d2 / (2 * self.sigma**2))
 
         n_comp = self.n_comp if self.var_thr is None else None
-        self.pca_ = PCA(n_components=n_comp).fit(W)
+        self.pca_ = PCA(n_components=n_comp, random_state=self.random_state).fit(W)
 
         if self.var_thr is not None:
             k = (
@@ -65,7 +78,9 @@ class PCAGWD(BaseEstimator, TransformerMixin):
                 )
                 + 1
             )
-            self.pca_ = PCA(n_components=k).fit(W)  # refit with chosen k
+            self.pca_ = PCA(
+                n_components=k, random_state=self.random_state
+            ).fit(W)  # refit with chosen k
         return self
 
     def transform(self, X):
@@ -82,10 +97,13 @@ class KernelPCAGWD(BaseEstimator, TransformerMixin):
     via Kernel PCA on a precomputed RBF kernel.
     """
 
-    def __init__(self, sigma=0.1, n_comp=30, kpca_gamma=None):
+    def __init__(self, sigma=0.1, n_comp=30, kpca_gamma=None, random_state=None):
         self.sigma = sigma
         self.n_comp = n_comp
         self.kpca_gamma = kpca_gamma  # unused when kernel='precomputed'
+        # eigen_solver="auto" can select a randomized or ARPACK path on larger
+        # kernels; both draw on the RNG. See the note on PCAGWD.
+        self.random_state = random_state
 
     def fit(self, X, y=None):
         """
@@ -104,6 +122,7 @@ class KernelPCAGWD(BaseEstimator, TransformerMixin):
             kernel="precomputed",
             eigen_solver="auto",
             remove_zero_eig=True,
+            random_state=self.random_state,
         ).fit(K)
 
         return self

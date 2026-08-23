@@ -102,7 +102,12 @@ def ae_objective_factory(X, cv_folds=5, random_state=42, optim_dict=None):
 
 
 def optimize_ae_pretraining(
-    X, n_trials=200, output_folder=None, random_state=42, model_name="best_ae_model"
+    X,
+    n_trials=200,
+    output_folder=None,
+    random_state=42,
+    model_name="best_ae_model",
+    optuna_seed=None,
 ):
     """
     Run Optuna optimization for AE/VAE pretraining.
@@ -117,6 +122,9 @@ def optimize_ae_pretraining(
         Directory to save optimization results
     random_state : int, optional
         Random seed for reproducibility
+    optuna_seed : int, optional
+        Seed for the TPE sampler. Falls back to ``random_state`` when None,
+        matching the convention used by nested_optuna_cv and optim_utils.
     model_name : str, optional
         Name to use when saving the model
 
@@ -142,11 +150,15 @@ def optimize_ae_pretraining(
             "ae_pretraining", output_folder
         )
 
+    if optuna_seed is None:
+        optuna_seed = random_state
+
     study = optuna.create_study(
         direction="minimize",  # Minimize reconstruction error
         storage=storage_str,
         study_name="ae_pretraining",
         load_if_exists=True,
+        sampler=optuna.samplers.TPESampler(seed=optuna_seed),
     )
 
     # Load AE optimization dictionary
