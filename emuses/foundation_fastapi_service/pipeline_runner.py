@@ -493,7 +493,12 @@ class PipelineRunner:
 
                 # InferenceStage for classic mode validation when test_size > 0
                 # Automatically added after HeatmapStage for held-out test set validation
-                if (config_dict.get("inference_stage_enabled", True) and 
+                # InferenceStage validates the prediction models HeatmapStage produces, so
+                # it cannot run without them. A UMAP-only job (`emuses umap`) has no
+                # prediction stage and no scores, and adding inference to it failed with
+                # "No inference features found in context".
+                if ("heatmap" in enabled_stages and
+                    config_dict.get("inference_stage_enabled", True) and 
                     config_dict.get("test_size", 0.0) > 0.0 and 
                     config_dict.get("label_dataset") is None):  # Classic mode only
                     

@@ -126,6 +126,27 @@ class HeatmapStage(PipelineStage):
         # Get prediction labels (scores for prediction)
         prediction_train_labels = context.get("prediction_train_labels")
 
+        # HeatmapStage fits prediction models against UMAP embedding coordinates, so it
+        # cannot run without them. Without this check the None travels into a joblib
+        # worker and surfaces as "TypeError: 'NoneType' object is not subscriptable" from
+        # inside filter_nan_rows, which says nothing about what the user did wrong.
+        #
+        # Note --load_umap / --load_embeddings do not help here: both are read by
+        # UMAPStage, which a heatmap-only run does not execute.
+        if prediction_train_coords is None:
+            raise ValueError(
+                "HeatmapStage has no UMAP embedding coordinates to fit against "
+                "(context key 'prediction_train_coords' is empty). HeatmapStage consumes "
+                "the output of UMAPStage, so it cannot run standalone. Use `emuses full` "
+                "to run both stages - add --load_umap <model> to reuse an already trained "
+                "UMAP model instead of retraining it."
+            )
+        if prediction_train_labels is None:
+            raise ValueError(
+                "HeatmapStage has no scores to fit against (context key "
+                "'prediction_train_labels' is empty). Pass --scores <file>."
+            )
+
         # Get embedding coordinates (UMAP embeddings for unlabelled data used for UMAP training)
         # embedding_train_coords = context.get("embedding_train_coords")  # Unused
 
