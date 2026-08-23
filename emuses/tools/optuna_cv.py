@@ -85,6 +85,7 @@ def nested_optuna_cv(
     n_outer: int = 5,
     n_trials: int = 50,
     random_state: int = 42,
+    optuna_seed: Optional[int] = None,
     target_tag: str = "target",
     output_folder: str = None,
     optim_dict=None,
@@ -109,7 +110,12 @@ def nested_optuna_cv(
     n_trials : int, default=50
         Number of Optuna trials per inner CV.
     random_state : int, default=42
-        Random state for reproducibility.
+        Seed for the outer and inner CV splits.
+    optuna_seed : int, optional
+        Seed for the TPE sampler. Falls back to ``random_state`` when None,
+        matching the convention in ``optim_utils.run_optuna_optimization``.
+        Each outer fold gets its own derived seed so the folds search
+        independently rather than replaying the same startup trials.
     target_tag : str, default="target"
         Tag for target variable, used in output file naming.
     output_folder : str, default=None
@@ -134,6 +140,17 @@ def nested_optuna_cv(
     # Use provided optim_dict or fall back to default
     if optim_dict is None:
         optim_dict = optim_dict_predict
+
+    # Fall back to the CV seed so a caller that only knows about random_state
+    # still gets a deterministic search.
+    if optuna_seed is None:
+        optuna_seed = random_state
+    # One sampler seed per outer fold, derived from the single master value.
+    # Reusing one seed across folds would make every fold replay the same TPE
+    # startup trials, correlating the outer scores that are meant to be
+    # independent estimates.
+    fold_seed_rng = np.random.default_rng(optuna_seed)
+    fold_optuna_seeds = [int(fold_seed_rng.integers(0, 2**32)) for _ in range(n_outer)]
 
     outer_cv = (StratifiedKFold if task == "clf" else KFold)(
         n_splits=n_outer, shuffle=True, random_state=random_state
@@ -170,6 +187,7 @@ def nested_optuna_cv(
             storage=storage_str,
             direction="maximize",
             load_if_exists=True,
+            sampler=optuna.samplers.TPESampler(seed=fold_optuna_seeds[fold]),
         )
 
         optimization_start = time.time()

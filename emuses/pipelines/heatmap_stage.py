@@ -61,12 +61,25 @@ def _optimise_target(
         logger.warning("%s skipped – only %d non-NaN rows", tag, len(yi))
         return tag, np.array([]), []  # skip optimisation
 
+    # Seeds derived from --random_state by EMUSESPipeline and stored on the
+    # config (emuses_pipeline.py). getattr keeps HeatmapStage usable when it is
+    # driven outside EMUSESPipeline (tests, PipelineRunner), where the fallback
+    # of 42 reproduces the previous hardcoded behaviour.
+    # A key present but set to None means master_seed was None, i.e. the user
+    # deliberately asked for an unseeded run - keep it None rather than
+    # substituting 42, matching heatmap_stage.robust_ood_evaluation.
+    random_seeds = getattr(cfg, "random_seeds", None) or {}
+    cv_seed = random_seeds.get("cv_seed", 42)
+    optuna_seed = random_seeds.get("optuna_seed", cv_seed)
+
     scores, pipes = nested_optuna_cv(
         Xi,
         yi,
         task=task,
         n_outer=cfg.outer_folds,
         n_trials=cfg.optuna_trials,
+        random_state=cv_seed,
+        optuna_seed=optuna_seed,
         target_tag=tag,
         output_folder=out_dir,
         optim_dict=optim_dict,
