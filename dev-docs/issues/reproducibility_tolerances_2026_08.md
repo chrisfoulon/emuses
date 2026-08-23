@@ -189,20 +189,25 @@ would have missed a real change to the science. See `tests/regression/README.md`
   pins the `midbudget-serial` arm, and `test_baseline_is_not_degenerate` fails if
   it ever drifts back to an all-noise labelling where an ARI assertion cannot fail.
 
-## CLI vs Python API, measured (2026-08-23, Phase 1B2)
+## CLI vs Python API, measured (2026-08-23)
 
-Phase 1B2 moved local CLI execution in-process, which removes the fork and with it
-the `get_safe_n_jobs()` clamp. The clamp is real and was measured directly:
+Local CLI execution was briefly moved in-process and then **reverted** the same day
+(the architectural decision is one execution path through the service — ADR §4). The
+measurements below were taken across that change and still stand; only the conclusion
+about the clamp changed.
+
+The `get_safe_n_jobs()` clamp is real and was measured directly:
 
 | context | `is_subprocess_context()` | `get_safe_n_jobs(4)` |
 |---|---|---|
 | main process (in-process CLI, Python API) | False | 4 |
 | `multiprocessing.Process` child (forked service) | True | **1** |
 
-So `--n_jobs` was **inert on the CLI** and worked normally through the API. Removing
-the fork changes it from 1 to whatever was asked for.
+So `--n_jobs` is **inert on the CLI** and works normally through the API. The CLI runs
+its pipeline inside an auto-started service, which is a forked process — so the clamp
+applies. **This is still true**: it was not fixed by the reverted work, and it is open.
 
-**Measured before the change shipped**, at the regression config
+**Measured**, at the regression config
 (`optim_dict_default`, 10/5/15 trials, `umap_jobs=1`, `hdbscan_jobs=1`, `n_jobs=4`,
 seed 42, `test_size=0.2`), one variable at a time:
 
@@ -212,10 +217,12 @@ seed 42, `test_size=0.2`), one variable at a time:
 | CLI in-process (`n_jobs=4`) vs CLI forked | 18 / 18 | 1.0 | 1.0 |
 | CLI in-process vs API baseline | 18 / 18 | — | — |
 
-Two things follow. The **CLI and Python API agree exactly**, so the two paths have not
-silently diverged — the check Phase 1B was waiting on. And **`n_jobs` does not affect
-the numbers** on this config, now confirmed on the CLI-vs-API axis as well as within
-the API, so un-clamping it was safe.
+Two things follow, both independent of the revert. The **CLI and Python API agree
+exactly**, so the two paths have not silently diverged — the check that was outstanding
+since Phase 1B. And **`n_jobs` does not affect the numbers** on this config, now
+confirmed on the CLI-vs-API axis as well as within the API. That means un-clamping it,
+when it is eventually done properly, is not expected to move results — but it should be
+re-measured at that point rather than assumed from here.
 
 Caveat, stated rather than assumed: this is 48 samples. `n_jobs` parallelises
 independent work with order preserved on this path, but a config that reduces across
@@ -223,4 +230,10 @@ workers differently at larger n is not covered by this measurement.
 
 Still open:
 
-- Nothing from Phase 1B2. The clamp is gone and its removal is measured.
+- **`--n_jobs` is inert on the CLI.** The clamp is doing what it was written to do — the
+  CLI's pipeline genuinely runs in a forked process — but it is over-broad: its
+  documented hazard is spawning *loky* workers from an already-forked process, and
+  `_run_pipeline_in_process` forces the **threading** backend, where that hazard does
+  not apply. Making the clamp backend-aware is the fix. It needs its own measurement:
+  the numbers above say n_jobs does not change results at 48 samples on the threading
+  backend, which is suggestive but not the same claim.

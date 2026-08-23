@@ -86,28 +86,40 @@ validates via `ModelIOManager.validate_model()`. `inference` works. This was gen
 session test fixture drives the *Python API*, while the CLI goes out over HTTP to an auto-started
 FastAPI service, and only the first had ever been checked.
 
-**Local mode is now actually in-process** (Phase 1B2). ADR §4 has always said local mode is "CLI,
-file-based storage, in-process execution"; the CLI in fact forked a FastAPI service with
-`multiprocessing.Process`, waited for it to become healthy, and posted its own job over HTTP to
-localhost. That cost a process, a port and a readiness poll per run — and silently made **`--n_jobs`
-inert on the CLI**, because the pipeline then ran in a subprocess where `get_safe_n_jobs()` clamps it
-to 1. Measured directly: `get_safe_n_jobs(4)` returns 4 in the main process and 1 in a forked child.
+**One execution path: every mode goes through the service** (decided 2026-08-23, ADR §4). Local mode
+auto-starts a service and submits to it, rather than calling the pipeline directly. ADR §4 used to say
+local was "in-process execution"; that was never true, was briefly implemented, and was **reverted the
+same day** once the cost was concrete.
 
-**Un-clamping it was verified not to move the numbers, before the change shipped.** At the regression
-config, one variable at a time: the forked CLI (clamped to 1) already reproduced the API-produced
-baseline (n_jobs=4) on all 18 scalar metrics; the in-process CLI reproduces the forked CLI on all 18
-with cluster ARI 1.0 and embedding distance correlation 1.0; and it reproduces the API baseline. So
-**the CLI and Python API agree exactly** — the check Phase 1B was waiting on — and `n_jobs` genuinely
-does not affect results on this config. Numbers in
-`dev-docs/issues/reproducibility_tolerances_2026_08.md`.
+The reason is maintenance. A separate local path means logging, progress reporting, job status and
+error handling all have to be changed twice. Measured, not predicted: moving `full` in-process took
+~40 lines and immediately produced a **third** progress mechanism (service writes to the job record,
+CLI polls and prints, local path printed directly) with no interrupt handling; a leaked temp scores
+file, because `_cleanup_temp_scores_file` lives in `execute_pipeline`'s `finally`; no timeout, applied
+in the same place; and a CLI where `full` behaved differently from `umap`/`heatmap`.
 
-Validation is shared rather than re-implemented: the endpoint's required-field checks,
-special-dataset handling and post-shell-injection output-path checks now live in
-`prepare_pipeline_context`, called by both the HTTP endpoint and the CLI — security checks must not
-be reachable only over HTTP. `--service` and `--service-url`, both previously popped and discarded,
-now mean something: `--service` forces the old fork-a-service path as an escape hatch, `--service-url`
-opts into a remote service. `umap`/`heatmap` still take the service path; moving them is a separate
-commit.
+Going over HTTP locally also catches real bugs — Phase 1C's missing `/api/v1/jobs/pipeline/umap` route
+was found on a laptop precisely because the CLI submits over HTTP. It does **not** catch config errors:
+`JobSubmissionRequest.pipeline_config` is an untyped `dict`.
+
+**Known cost, accepted:** the pipeline runs in a forked process, so `get_safe_n_jobs()` clamps and
+**`--n_jobs` does nothing on the CLI** (measured: `get_safe_n_jobs(4)` → 4 in the main process, 1 in a
+forked child). The fix is to make the clamp backend-aware — its documented hazard is loky-specific and
+the pipeline runs on threading — not to bypass the service. Open, needs its own measurement.
+
+**The CLI and Python API agree exactly** — 18/18 scalar metrics at the regression config, the check
+outstanding since Phase 1B. Numbers in `dev-docs/issues/reproducibility_tolerances_2026_08.md`.
+
+Kept from the reverted work: `prepare_pipeline_context` holds the required-field checks,
+special-dataset handling and post-shell-injection output-path checks as a named, testable function
+instead of a route body. `--service-url` now opts into a remote service; `--service` is redundant and
+warns rather than silently doing nothing.
+
+**`emuses inference` already breaks this rule** and predates the decision: `_execute_inference_locally`
+builds an `EMUSESPipeline` and runs `InferenceStage` directly in the CLI process, never touching the
+service. Declared in `tests/test_single_execution_path.py` so it stays visible. **It is the first thing
+to fix if server-side inference matters** — the "one person trains, many run inference on a server"
+case needs inference to go through the service, and today it does not.
 
 **`emuses umap` now runs; `emuses heatmap` cannot, and that is architectural** (Phase 1C). The three
 CLI defects are fixed: `umap`/`heatmap` declared no options at all, nothing set the `"command"` key
@@ -260,9 +272,9 @@ environments pass 13/13, so nothing was hidden, but the gate was not testing wha
       whole-suite collection: `tests/integration/test_cli_api_parallelism.py` still imported
       `get_process_hierarchy_depth`, deleted in 1B1, which failed collection for the entire run.
 - [x] ~~Phase 3 — numerical regression suite~~ (`9108107`), on its own config. See above.
-- [x] ~~**Phase 1B2 — restore in-process local execution.**~~ Done — see above. `--n_jobs` was
-      inert on the CLI and now works; un-clamping it measured 18/18 identical against both the
-      forked CLI and the API baseline. Guards in `tests/test_local_execution.py`. Original note: Deliberately sequenced *after* Phase 3, so
+- [x] ~~**Phase 1B2 — restore in-process local execution.**~~ **Attempted and deliberately reverted**
+      (2026-08-23). One execution path through the service is the decision — see above and ADR §4.
+      Guards in `tests/test_single_execution_path.py`. Original note: Deliberately sequenced *after* Phase 3, so
       that switching real parallelism on happens with a suite able to detect whether it moved
       anything. Open decision when it comes up: `--service` / `--service-url` in local mode is
       currently popped and ignored (`main.py:1071`, `:1074`) — wire it or remove it. ADR §4 defines local mode as "CLI,

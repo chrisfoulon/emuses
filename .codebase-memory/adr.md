@@ -538,38 +538,52 @@ unable to fail.
 ## 4. Deployment Architecture
 
 Three deployment modes share the same pipeline core:
-- **Local**: CLI, file-based storage, in-process execution
+- **Local**: CLI, file-based storage, auto-started local service (see below — this bullet used to
+  say "in-process execution", which was never true and is no longer the intent)
 - **Lab (multi-user)**: FastAPI service, SQLite/PostgreSQL job persistence, background workers
 - **Cloud-native**: Kubernetes, distributed job queue, cloud object storage
 
 Models created in any mode are portable to any other mode. No deployment-specific model formats.
 
-**Local mode really is in-process, since 2026-08-23 (Phase 1B2).** It previously was not: the CLI
-forked a FastAPI service with `multiprocessing.Process`, waited for it to become healthy, and posted
-its own job over HTTP to localhost. Two consequences, one of them silent:
+**Every deployment mode executes through the EMUSES service, including local (decided 2026-08-23).**
+Local mode auto-starts a service and submits to it rather than calling the pipeline directly. The
+bullet above once read "in-process execution"; that was aspirational, never true, and after being
+briefly implemented it was reverted the same day.
 
-- A process, a port and a readiness poll per run, for a service with exactly one client.
-- The pipeline ran in a `multiprocessing.Process` child, so `is_subprocess_context()` was True and
-  `get_safe_n_jobs()` clamped `n_jobs` to 1. **`--n_jobs` was inert on the CLI** while working
-  normally through the Python API - measured directly: `get_safe_n_jobs(4)` returns 4 in the main
-  process and 1 in a forked child.
+**Why one path, and not a direct local call.** The reason is maintenance, not purity. A local path
+means every change to logging, progress reporting, job status or error handling has to be made twice.
+That was measured rather than predicted: moving `full` in-process took about forty lines and
+immediately produced a **third** progress mechanism (the service writes into the job record, the CLI
+polls and prints, the local path printed directly), with no interrupt handling and no job record; a
+leaked temp scores file, because `_cleanup_temp_scores_file` lives in `execute_pipeline`'s `finally`
+and a direct call to `_run_pipeline_in_process` bypasses it; no timeout, applied in the same place;
+and a CLI where `full` behaved one way and `umap`/`heatmap` another.
 
-`run_pipeline_locally` (`pipeline_runner.py`) now calls the same `_run_pipeline_in_process` the
-service uses. `job_manager` is `None`, not a stub, because that method touches only
-`_context_to_emuses_args`, `_create_emuses_progress_adapter`, `logger` and `_merge_pipeline_context`;
-`tests/test_local_execution.py` asserts that rather than trusting the comment.
+**Going over HTTP locally also catches real bugs.** Phase 1C: `/api/v1/jobs/pipeline/umap` did not
+exist on the server. The CLI built that URL, got a 404, and the defect was found on a laptop. Executed
+in-process, a missing route stays invisible until someone deploys. What HTTP does *not* catch is
+configuration errors - `JobSubmissionRequest.pipeline_config` is an untyped `dict`, so Pydantic
+validates nothing about its contents. It catches transport bugs: route existence, JSON
+serializability, error-to-status mapping.
 
-**Validation is shared, not re-implemented.** The required-field checks, special-dataset handling and
-the output-path checks added after the shell-injection cleanup live in `prepare_pipeline_context`
-(`app.py`), which the HTTP endpoint and the CLI local path both call. Security checks must not be
-reachable only over HTTP, and a second hand-maintained copy is the failure this codebase has already
-hit in Phase 1A and Phase 1C.
+**Known cost, accepted deliberately.** The pipeline runs in a `multiprocessing.Process` child, so
+`is_subprocess_context()` is True and `get_safe_n_jobs()` clamps `n_jobs` to 1: **`--n_jobs` does
+nothing on the CLI** while working normally through the Python API. Measured directly -
+`get_safe_n_jobs(4)` returns 4 in the main process and 1 in a forked child. The fix is to make the
+clamp precise, not to bypass the service: its documented hazard is spawning *loky* workers from an
+already-forked process, while `_run_pipeline_in_process` forces the **threading** backend, where that
+hazard does not apply. That needs its own measurement and is tracked as open.
 
-**Un-clamping `n_jobs` was verified not to move the numbers before it shipped.** At the regression
-config, an in-process CLI run reproduced both the forked CLI run and the API-produced baseline on all
-18 scalar metrics, with cluster ARI 1.0 and embedding distance correlation 1.0. This is the CLI-vs-API
-agreement check the reproducibility work called for, and it is what made the change safe.
+**Validation is a named function, not a route body.** `prepare_pipeline_context` (`app.py`) holds the
+required-field checks, special-dataset handling and the output-path checks added after the
+shell-injection cleanup. Kept from the reverted work because it is right regardless: those checks
+should be callable and testable rather than reachable only by making an HTTP request.
 
-`--service` and `--service-url` were both accepted and discarded. They now mean something: `--service`
-forces the previous fork-a-local-service behaviour (kept as an escape hatch for reproducing
-service-only bugs), and `--service-url` opts into a remote service from local mode.
+`tests/test_single_execution_path.py` guards this decision, and declares the one function that
+already breaks it: `_execute_inference_locally` builds an `EMUSESPipeline` and runs `InferenceStage`
+directly in the CLI process. That predates this decision. **It is the first thing to fix if
+server-side inference matters** - a lab where one person trains a model and others run inference
+against it on a server needs inference to go through the service, and today it does not.
+
+`--service-url` opts into a remote service. `--service` is redundant now that every mode uses one, so
+it warns instead of sitting there looking wired.
