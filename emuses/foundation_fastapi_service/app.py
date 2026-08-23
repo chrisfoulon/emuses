@@ -1036,6 +1036,94 @@ async def cancel_task(task_id: str) -> Dict[str, Any]:
 
 
 # Pipeline Execution Endpoints
+
+
+def prepare_pipeline_context(config: dict) -> dict:
+    """Validate a pipeline config and build the context the runner consumes.
+
+    Shared by the HTTP endpoints and by the CLI's in-process local path (ADR §4). It was
+    previously inline in ``submit_full_pipeline_job`` only, so moving local execution
+    in-process would have meant a second hand-maintained copy of the required-field
+    checks, the special-dataset handling and the path validation - the failure mode this
+    codebase has already hit twice (Phase 1A's dropped options, Phase 1C's option lists).
+    The security checks in particular must not be reachable only through HTTP.
+
+    Parameters
+    ----------
+    config : dict
+        Pipeline configuration. Mutated in place for special datasets, matching the
+        previous endpoint behaviour.
+
+    Returns
+    -------
+    dict
+        ``{"config": ..., "input_dataset": ..., "scores_dataset": ...}``.
+
+    Raises
+    ------
+    ValueError
+        If a required field is missing or a path fails validation.
+    """
+    # Validate required fields
+    if "input_dataset" not in config:
+        raise ValueError("input_dataset is required")
+    if "output_folder" not in config:
+        raise ValueError("output_folder is required")
+
+    # Handle special datasets that provide their own labels (e.g., MNIST)
+    # This must be done BEFORE validation so we can inject the scores path
+    temp_scores_file = _handle_special_dataset_scores(config, config["output_folder"])
+
+    if temp_scores_file:
+        # Special dataset detected: inject scores path into config
+        config["scores"] = temp_scores_file
+        config["scores_header"] = 0
+        config["scores_index_column"] = None
+        config["_temp_scores_file"] = temp_scores_file  # Mark for cleanup
+
+        # For MNIST, default to classification mode if not specified
+        if config.get("input_dataset", "").lower() == "mnist" and "classification" not in config:
+            config["classification"] = True
+            logger.info("Auto-enabled classification mode for MNIST dataset")
+
+        # Skip path validation for input_dataset (it's a keyword, not a filesystem path)
+        # Only validate label_dataset if provided
+        if config.get("label_dataset"):
+            validate_path_exists(config["label_dataset"])
+    else:
+        # Normal dataset: validate all paths
+        if "scores" not in config:
+            raise ValueError("scores is required (unless using special datasets like 'mnist')")
+
+        validate_path_exists(config["input_dataset"])
+        validate_file_path(config["scores"])
+        if config.get("label_dataset"):
+            validate_path_exists(config["label_dataset"])
+
+    # Create a converted copy of config for pipeline execution only
+    pipeline_config = config.copy()
+    pipeline_config["input_dataset"] = _convert_windows_path_to_wsl(
+        config["input_dataset"]
+    )
+    pipeline_config["scores"] = _convert_windows_path_to_wsl(config["scores"])
+    if pipeline_config.get("output_folder"):
+        pipeline_config["output_folder"] = _convert_windows_path_to_wsl(
+            config["output_folder"]
+        )
+    if pipeline_config.get("label_dataset"):
+        pipeline_config["label_dataset"] = _convert_windows_path_to_wsl(
+            config["label_dataset"]
+        )
+
+    # Wrap converted config in the expected structure for pipeline runner
+    pipeline_context = {
+        "config": pipeline_config,  # Use converted paths for pipeline
+        "input_dataset": pipeline_config.get("input_dataset"),
+        "scores_dataset": pipeline_config.get("scores"),
+    }
+    return pipeline_context
+
+
 @app.post("/api/v1/jobs/pipeline/full", status_code=201)
 @conditional_rate_limit(
     "50/hour"
@@ -1066,73 +1154,19 @@ async def submit_full_pipeline_job(
         500: Internal server error during job creation
     """
     try:
-        # Validate pipeline configuration
         config = job_request.pipeline_config
 
-        # Validate required fields
-        if "input_dataset" not in config:
-            raise ValueError("input_dataset is required")
-        if "output_folder" not in config:
-            raise ValueError("output_folder is required")
+        # Validation, special-dataset handling and context building are shared with the
+        # CLI's in-process local path so the two cannot drift (ADR §4).
+        pipeline_context = prepare_pipeline_context(config)
 
-        # Handle special datasets that provide their own labels (e.g., MNIST)
-        # This must be done BEFORE validation so we can inject the scores path
-        temp_scores_file = _handle_special_dataset_scores(config, config["output_folder"])
-
-        if temp_scores_file:
-            # Special dataset detected: inject scores path into config
-            config["scores"] = temp_scores_file
-            config["scores_header"] = 0
-            config["scores_index_column"] = None
-            config["_temp_scores_file"] = temp_scores_file  # Mark for cleanup
-
-            # For MNIST, default to classification mode if not specified
-            if config.get("input_dataset", "").lower() == "mnist" and "classification" not in config:
-                config["classification"] = True
-                logger.info("Auto-enabled classification mode for MNIST dataset")
-
-            # Skip path validation for input_dataset (it's a keyword, not a filesystem path)
-            # Only validate label_dataset if provided
-            if config.get("label_dataset"):
-                validate_path_exists(config["label_dataset"])
-        else:
-            # Normal dataset: validate all paths
-            if "scores" not in config:
-                raise ValueError("scores is required (unless using special datasets like 'mnist')")
-
-            validate_path_exists(config["input_dataset"])
-            validate_file_path(config["scores"])
-            if config.get("label_dataset"):
-                validate_path_exists(config["label_dataset"])
-
-        # Create job with original config (for logging/tracking)
+        # Create job with the original config (for logging/tracking)
         job_id = get_job_manager().create_job(
             config=config,
             job_name=job_request.job_name,
             description=job_request.description,
         )
 
-        # Create a converted copy of config for pipeline execution only
-        pipeline_config = config.copy()
-        pipeline_config["input_dataset"] = _convert_windows_path_to_wsl(
-            config["input_dataset"]
-        )
-        pipeline_config["scores"] = _convert_windows_path_to_wsl(config["scores"])
-        if pipeline_config.get("output_folder"):
-            pipeline_config["output_folder"] = _convert_windows_path_to_wsl(
-                config["output_folder"]
-            )
-        if pipeline_config.get("label_dataset"):
-            pipeline_config["label_dataset"] = _convert_windows_path_to_wsl(
-                config["label_dataset"]
-            )
-
-        # Wrap converted config in the expected structure for pipeline runner
-        pipeline_context = {
-            "config": pipeline_config,  # Use converted paths for pipeline
-            "input_dataset": pipeline_config.get("input_dataset"),
-            "scores_dataset": pipeline_config.get("scores"),
-        }
 
         # Submit for background execution
         asyncio.create_task(
