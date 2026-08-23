@@ -8,7 +8,7 @@ registry with peer review for the wider community.
 
 ## State of play
 
-**Current work: `chore/core-boundary`, 18 commits ahead of `main`.** Driving toward a tool
+**Current work: `chore/core-boundary`, 22 commits ahead of `main`.** Driving toward a tool
 that can be trusted to run and to publish from; plan at
 `~/.claude/plans/playful-watching-naur.md`, findings in
 `dev-docs/issues/phase0_cli_runnability_2026_08.md` and
@@ -51,9 +51,29 @@ seed 42, one variable changed:
 | 4 | 10 of 20 |
 | 1 | 20 of 20 |
 
-**CLI runs are reproducible today only by accident** — the fork clamps jobs to 1. **Phase 1B2 removes
-that clamp and must not land before this is decided.** Numbers and the rest of the arms in
-`dev-docs/issues/reproducibility_tolerances_2026_08.md`.
+**Fixed** (`bec42c9`): `umap_jobs`/`hdbscan_jobs` now default to 1, declared in `PipelineConfig`
+and decided in one place (`umap_stage._resolve_search_jobs`). Parallel search stays an opt-in that
+warns. Three things surfaced doing it: `umap_jobs` was *already* serial by an undeclared `None -> 1`
+mapping; **`hdbscan_jobs` is inert** (`parallel_mode="umap"` is never overridden, so the inner search
+always runs serially — documented and guarded, not wired, same treatment as the five
+`NOT_IMPLEMENTED` options); and `--help` told users a seed forces `n_jobs` to 1, which nothing does.
+UMAP's *own* `n_jobs` is overridden when seeded, which is where the confusion came from — optuna's
+is not, and optuna's is the one that decides the search.
+
+**CLI runs were reproducible before that only by accident** — the fork clamps jobs to 1, and Phase
+1B2 removes that clamp. Numbers and the rest of the arms in
+`dev-docs/issues/reproducibility_tolerances_2026_08.md`. `hdbscan_core_dist_n_jobs` was re-measured
+on a properly clustering config (20/20 across 1 vs −1); its earlier weak-evidence caveat is closed.
+
+**Numbers are pinned** (Phase 3, `9108107`). `tests/regression/` compares prediction scores, composite
+score, the UMAP/HDBSCAN metrics, cluster count, cluster structure (adjusted Rand index — ids are
+arbitrary) and embedding geometry (pairwise distances — UMAP is fixed only up to rotation and
+reflection) against stored baselines. ~80 s, its own config, `--regen-baselines` to regenerate
+deliberately. **Proven to fail**: a one-line production change (UMAP model seed shifted by one)
+failed composite score, cluster structure and embedding geometry — while prediction scores and
+cluster count did *not* move, so pinning only "the number that matters" would have missed it. Every
+float tolerance is *chosen*, not measured: local variation is exactly zero, so they are cross-machine
+allowances for CI. The first CI run is the real test of them.
 
 Two traps recorded there, each of which cost a wrong conclusion or nearly did: `optim_dict_hcp` (the
 fixture's dict) has **all parameters fixed**, so `UMAP_utils.py:430` collapses it to a single trial
@@ -109,8 +129,10 @@ guidelines are in the `lad:lad-standards` skill. The codebase is indexed in code
 **Environment**: `conda activate emuses` (it lives in the old `~/miniconda3`, registered in
 `~/.condarc` so it resolves by name). Python 3.11, editable install pointing at this repo.
 
-**Test suite — collects cleanly, does not pass, but no longer crashes.** 2499 tests collect with 0
-errors. Repaired since 2026-07-31:
+**Test suite — collects cleanly, does not pass, but no longer crashes.** 2563 tests collect with 0
+errors. That was briefly untrue and unnoticed: from Phase 1B1 until 2026-08-23,
+`tests/integration/test_cli_api_parallelism.py` imported a function 1B1 had deleted, which failed
+collection for the **whole** run. Fixed in `bec42c9`. Repaired since 2026-07-31:
 
 - **No more core dumps.** All three were one root cause: `PipelineConfig.__post_init__` built a new
   `logging.handlers.QueueListener` on every instantiation, so listener threads accumulated and raced
@@ -187,14 +209,10 @@ environments pass 13/13, so nothing was hidden, but the gate was not testing wha
       `scripts/measure_reproducibility.py`. Found the remaining nondeterminism (see above).
       `n_jobs` (model training) and `hdbscan_core_dist_n_jobs` both changed nothing — but the
       latter was measured on a degenerate zero-cluster result, so it is weak evidence.
-- [ ] **Default `umap_jobs` / `hdbscan_jobs` to 1** (decided 2026-08-23). Reproducibility wins over
-      parallel search, because this is a tool people publish from; parallel stays an opt-in that
-      warns it forfeits reproducibility. Do it **before 1B2**, which removes the clamp masking the
-      problem. The fixture sets `umap_jobs=4` explicitly, so it is unaffected.
-- [ ] **Phase 3 gets its own fixture** (decided 2026-08-23): `optim_dict_default` with jobs=1 —
-      measured 20/20 reproducible, produces 2–3 real clusters. `emuses_pipeline_results` stays
-      untouched so no existing test changes behaviour.
-- [ ] Phase 3 — numerical regression suite, with tolerances from Phase 2.
+- [x] ~~Default `umap_jobs` / `hdbscan_jobs` to 1~~ (`bec42c9`). See above. Also unblocked
+      whole-suite collection: `tests/integration/test_cli_api_parallelism.py` still imported
+      `get_process_hierarchy_depth`, deleted in 1B1, which failed collection for the entire run.
+- [x] ~~Phase 3 — numerical regression suite~~ (`9108107`), on its own config. See above.
 - [ ] **Phase 1B2 — restore in-process local execution.** Deliberately sequenced *after* Phase 3, so
       that switching real parallelism on happens with a suite able to detect whether it moved
       anything. Open decision when it comes up: `--service` / `--service-url` in local mode is

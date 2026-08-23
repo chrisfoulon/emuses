@@ -350,6 +350,59 @@ nondeterministic.
 against them changes nothing, and a config built on them cannot exhibit search nondeterminism at
 all — which is why the test fixture showed perfect reproducibility while the problem was live.
 
+**Implemented 2026-08-23** (`bec42c9`). Three things surfaced while doing it:
+
+- `umap_jobs` was *already* serial, by a `None -> 1` mapping inside `UMAPStage` rather than by
+  declaration. A default nothing declares is a default nothing guards. There is now one place that
+  decides search parallelism, `umap_stage._resolve_search_jobs`.
+- **`hdbscan_jobs` is inert.** `train_and_save_umap_optim_with_nested_clustering` takes
+  `parallel_mode="umap"` and no caller overrides it, so `inner_n_jobs` is only read in the
+  `"hdbscan"` branch; the inner search always runs at `inner_optimize_hdbscan`'s own `n_jobs=1`.
+  Decided to document and guard it rather than wire or remove it — the same treatment as the five
+  `NOT_IMPLEMENTED` CLI options. `tests/test_search_jobs_default.py` fails if anyone wires
+  `parallel_mode`, so the decision gets revisited rather than drifted past.
+- **`--help` claimed the opposite of the truth.** The `--random_state` help text, the
+  `PipelineConfig` comment and the `UMAP_utils` docstring all said that setting a seed forces UMAP
+  `n_jobs` to 1. Nothing does. The confusion is understandable — UMAP's *own* `n_jobs` is overridden
+  when seeded, and it warns so — but optuna's is not, and optuna's is the one that decides the
+  search.
+
+**`hdbscan_core_dist_n_jobs` is exonerated** (re-measured 2026-08-23 at the regression config, 3
+clusters, 20/20 identical across 1 vs −1). The first measurement ran on an all-noise clustering and
+was recorded as weak evidence; that caveat is closed.
+
+### 2.9d What Is Pinned Numerically, and at What Tolerance
+
+**Decision**: `tests/regression/` pins prediction scores, composite score, the UMAP/HDBSCAN metrics,
+cluster count, cluster structure and embedding geometry, on **its own config**
+(`tests/regression/regression_config.py`) rather than the shared `emuses_pipeline_results` fixture.
+
+**Rationale for the separate config**: the shared fixture runs `optim_dict_hcp`, which returns zero
+clusters with all 40 points labelled noise. An adjusted Rand index between two all-noise labellings
+is 1.0 by construction, so a cluster assertion there could never fail. The regression config is the
+`midbudget-serial` arm — the only measured config that is both reproducible (20/20 over three
+repeats) and non-degenerate (3 clusters, `noise_fraction` 0.1). `test_baseline_is_not_degenerate`
+fails if it ever drifts back.
+
+**Rationale for the comparison forms**: cluster ids are arbitrary, so structure is compared by
+adjusted Rand index rather than label equality. UMAP is defined only up to rotation and reflection,
+so embeddings are compared through pairwise distances, never coordinates.
+
+**Where the tolerances come from**: `dev-docs/issues/reproducibility_tolerances_2026_08.md`. Local
+run-to-run variation is exactly **zero** on every metric, so every float tolerance is a *chosen*
+cross-machine allowance (per §2.9b), not a measured one, and each is labelled as such in the test
+file. `rtol=1e-3` on prediction scores (the CSVs are written to 4 dp), `rtol=1e-6` on the search
+metrics, ARI ≥ 0.95, distance correlation ≥ 0.999, cluster count exact.
+
+**Regenerating a baseline is a deliberate act** recorded in the commit message. A missing baseline
+fails rather than being written silently, otherwise the suite ratchets to whatever the code
+currently does. Each baseline records the config that produced it and fails if the two drift apart.
+
+**Worth knowing before trusting a pass**: a one-line production change (UMAP model seed shifted by
+one) failed the composite score, cluster structure and embedding geometry — while prediction scores
+and cluster count did **not** move. Pinning only "the number that matters" would have missed a real
+change to the science.
+
 ### 2.9b Bitwise Reproducibility Is Out of Scope
 
 **Decision**: EMUSES targets reproducibility within a machine and environment, verified against
