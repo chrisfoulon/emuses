@@ -276,14 +276,68 @@ so running as root with an output folder under `/root/` is now refused.
 
 ### 2.9 Reproducibility: Hierarchical Random Seeds
 
-**Decision**: Derive component-specific random seeds from a master seed using `numpy.random.default_rng`, and persist all seeds to `random_seeds.json`.
+**Decision**: Derive component-specific random seeds from a master seed (`--random_state`) using
+`numpy.random.default_rng`, and persist all seeds to `random_seeds.json`. **This is the only seeding
+mechanism in EMUSES.** Anything that needs randomness takes its seed from this derivation; do not
+introduce a second scheme, and do not hardcode a seed at a call site.
 
 **Rationale**:
-- Full reproducibility is required for scientific publication.
-- Separate seeds per component (UMAP, clustering, prediction, CV, Optuna) allow individual component reproduction.
+- Reproducibility is required for scientific publication. *Bitwise* reproducibility across machines
+  is explicitly out of scope (see §2.9b); reproducibility of a rerun on one machine is not.
+- Separate seeds per component (UMAP, clustering, prediction, CV, Optuna) allow individual component
+  reproduction.
 - Persisting seeds to a JSON file makes them citable and inspectable by reviewers.
 
-**Code**: `emuses/pipelines/emuses_pipeline.py` (`__init__`)
+**The decision was made in 2025 but only implemented for the UMAP and clustering stages.** On
+2026-08-23 the prediction path was found disconnected from it at five points, which is why two
+identical invocations at `--random_state 42` produced identical embeddings and different prediction
+scores. Fixed in `687f7a9` and `4152635`:
+
+1. `nested_optuna_cv` created its Optuna study with no `sampler`, so it got `TPESampler(seed=None)`.
+   Each outer fold now takes its own seed derived from `optuna_seed` — a single shared seed would
+   make every fold replay the same TPE startup trials, correlating outer scores that are supposed to
+   be independent estimates.
+2. `_optimise_target` never passed `random_state` to `nested_optuna_cv`, so CV folds always used the
+   hardcoded default of 42 and `--random_state` did not reach them.
+3. `build_estimator` hardcoded `random_state=42`; `LogisticRegression(solver="saga")` shuffles.
+4. `PCAGWD` / `KernelPCAGWD` were unseeded.
+5. `optimize_ae_pretraining` had an unseeded study and a caller passing `random_state=42`.
+
+**The PCA case is the one to remember.** `PCA(svd_solver="auto")` only switches to the *randomized*
+solver once `max(X.shape) > 500`, and the GWD kernel matrix is n×n in the number of samples. An
+unseeded `PCAGWD` is therefore perfectly reproducible on `test_data`'s 50 samples and irreproducible
+on a real cohort — the defect is invisible to the test data by construction and appears first on the
+runs worth publishing. It is fixed by seeding, not by pinning `svd_solver="full"`, which would cost
+O(n³) on exactly the large inputs the randomized solver exists for.
+
+**Enforced invariant**: no `optuna.create_study` anywhere in `emuses/` without an explicit `sampler`.
+No exemptions — a study whose result is only logged still costs one line to seed. Guarded by
+`tests/test_seed_wiring.py::test_no_unseeded_optuna_study`.
+
+A weaker companion guard checks that every key in `random_seeds.json` is read somewhere. It is
+documented as weak in its own docstring, because it would **not** have caught the above:
+`prediction_seed` and `cv_seed` already had readers in `robust_ood_evaluation` while the main
+prediction path ignored them. Only `optuna_seed` was derived and read by nothing.
+
+**Known residual**: `load_if_exists=True` with RDB storage means a *resumed* study still diverges —
+the sampler is re-seeded while the trial history is not. Related to §3.2.
+
+**Code**: `emuses/pipelines/emuses_pipeline.py` (`__init__`), `emuses/pipelines/heatmap_stage.py`
+(`_seeds_from`, `_optimise_target`), `emuses/tools/optuna_cv.py`, `emuses/tools/models_utils.py`,
+`emuses/tools/features_utils.py`, `emuses/tools/ae_optuna.py`
+
+### 2.9b Bitwise Reproducibility Is Out of Scope
+
+**Decision**: EMUSES targets reproducibility within a machine and environment, verified against
+*measured* tolerances, not bitwise identity across platforms.
+
+**Rationale**: parallel floating-point reductions are not associative, so results legitimately differ
+with thread count and BLAS build. Chasing bitwise identity would mean forcing single-threaded
+execution everywhere, at a large and permanent performance cost, to remove differences that are below
+scientific significance. Tolerances are to be derived from measurement and cited where they are
+pinned, rather than guessed.
+
+**Do not re-litigate this.** It was decided deliberately after the alternative was considered.
 
 ### 2.10 Core / Extras Boundary: Parked Features Stay, But Cost Nothing
 

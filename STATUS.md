@@ -1,5 +1,5 @@
 # STATUS — EMUSES
-_Last touched: 2026-08-22_
+_Last touched: 2026-08-23_
 
 ## Goal
 A predictive modelling tool for neuroimaging research, usable at three scales: local model
@@ -8,20 +8,36 @@ registry with peer review for the wider community.
 
 ## State of play
 
-**Current work: `chore/core-boundary`, pushed, 13 commits ahead of `main`.** Driving toward a tool
+**Current work: `chore/core-boundary`, 16 commits ahead of `main`.** Driving toward a tool
 that can be trusted to run and to publish from; plan at
 `~/.claude/plans/playful-watching-naur.md`, findings in
 `dev-docs/issues/phase0_cli_runnability_2026_08.md` and
 `dev-docs/issues/parallelism_backend_analysis_2026_08.md`.
 
-**Reproducibility is broken in the prediction stage, and the fix is small** (Phase 1D). Two
-identical runs at `--random_state 42` give identical UMAP/HDBSCAN output and *different* prediction
-scores. `optuna_cv.py:168` creates its study with no `sampler`, so it uses `TPESampler(seed=None)`;
-every other Optuna study in the codebase seeds explicitly. Separately, `_optimise_target` never
-passes `random_state` to `nested_optuna_cv` (`heatmap_stage.py:388`), so prediction CV folds always
-use the hardcoded default of 42. The master-seed derivation in `emuses_pipeline.py:87` already
-produces an `optuna_seed` — **it has zero consumers**. Do not invent a second seeding scheme; wire
-this one up.
+**Prediction is now reproducible** (Phase 1D, `687f7a9` + `4152635`). Two identical
+`emuses full` invocations at `--random_state 42` produce bitwise identical prediction scores,
+`best_trial_info.json` and `embeddings.npy`. Previously the scores differed (`Mean_Score` −0.5575 vs
+−0.5829) while UMAP/HDBSCAN matched. **Prediction numbers moved** relative to any run before
+2026-08-23, because the CV folds no longer use the hardcoded 42.
+
+Five disconnections, all in the prediction path, all now fed by the master-seed derivation that
+already existed in `emuses_pipeline.py:87` — **there is one seeding mechanism, do not add a second**:
+
+- `nested_optuna_cv` created its study with no `sampler` → `TPESampler(seed=None)`. Each outer fold
+  now gets its own derived sampler seed; one shared seed would make every fold replay the same TPE
+  startup trials.
+- `_optimise_target` never passed `random_state`, so CV folds always used the default 42.
+- `build_estimator` hardcoded `random_state=42`, and `LogisticRegression(solver="saga")` shuffles.
+- `PCAGWD`/`KernelPCAGWD` were unseeded. **This was invisible on `test_data` by construction**:
+  `svd_solver="auto"` only switches to the randomized solver once `max(X.shape) > 500`, and the GWD
+  matrix is n×n in the samples. Reproducible on 50 samples, irreproducible on a real cohort.
+- `optimize_ae_pretraining` had an unseeded study and a hardcoded `random_state=42` caller.
+
+Guarded by `tests/test_seed_wiring.py`, each guard confirmed to fail when its fix is reverted. The
+strongest is "no `optuna.create_study` in `emuses/` without an explicit sampler", which admits no
+exemptions. The seed-audit test ("every key in `random_seeds.json` is read") is deliberately labelled
+weak in its own docstring: it would **not** have caught this bug, because `prediction_seed` and
+`cv_seed` already had readers in `robust_ood_evaluation` while the main path ignored them.
 
 **`emuses full` runs (verified 2026-08-22).** ~26 s on `test_data/`, single- and multi-target, output
 validates via `ModelIOManager.validate_model()`. `inference` works. This was genuinely open: the
@@ -144,7 +160,17 @@ environments pass 13/13, so nothing was hidden, but the gate was not testing wha
       in the main process and spawn eight worker processes for millisecond tasks.
       **Machine timing is unusable for decisions here**: identical code measured 138s/196s/256s for
       the same test.
-- [ ] **Phase 1B2 — restore in-process local execution.** ADR §4 defines local mode as "CLI,
+- [x] ~~Phase 1D — finish the seed derivation wiring~~ (`687f7a9`, `4152635`). See above.
+- [ ] **Phase 2 — measure run-to-run variation, then state a tolerance.** Now unblocked. Two
+      caveats to carry in: the `--n_jobs` arm is **inert on the CLI path** until 1B2 lands (the fork
+      clamps n_jobs to 1 regardless of the flag), so run it through the Python API; and the
+      seed-sensitivity arm is only honest now that the estimators and PCA transformers take the
+      derived seed.
+- [ ] Phase 3 — numerical regression suite, with tolerances from Phase 2.
+- [ ] **Phase 1B2 — restore in-process local execution.** Deliberately sequenced *after* Phase 3, so
+      that switching real parallelism on happens with a suite able to detect whether it moved
+      anything. Open decision when it comes up: `--service` / `--service-url` in local mode is
+      currently popped and ignored (`main.py:1071`, `:1074`) — wire it or remove it. ADR §4 defines local mode as "CLI,
       file-based storage, in-process execution", but `_full_async` (`main.py:1107`) always forks a
       FastAPI service and submits over HTTP. Reuse `PipelineRunner._run_pipeline_in_process`. Two
       things to decide rather than drift into: keep the endpoint's path validation on the local path,
@@ -152,20 +178,20 @@ environments pass 13/13, so nothing was hidden, but the gate was not testing wha
       then forces threading (`pipeline_runner.py:391`); keep threading initially so results match
       today's, since Phase 2's baseline depends on it.
 - [ ] Phase 1C — give `umap`/`heatmap` a real option set, sharing one declaration with `full`.
-- [ ] Phase 2 — measure run-to-run variation, then state a tolerance. Unblocked by 1A: both arms
-      would previously have run at `core_dist_n_jobs=-1`. UMAP is already deterministic when seeded
-      (it forces single-threaded), so HDBSCAN is the remaining suspect.
-- [ ] Phase 3 — numerical regression suite. Phase 4 — the ~33 science-path test failures.
-      Phase 5 — finish the extras move.
+- [ ] Phase 4 — the ~33 science-path test failures. Phase 5 — finish the extras move.
 
-**A stale service process holds port 8000.** A pytest run from 2026-08-19 (PID 755279, orphaned to
-systemd, cwd `/tmp/pytest-of-chrisfoulon/pytest-28/test_concurrent_job_submission0`, deleted) is
-still listening and answering HTTP with 500. `_execute_via_remote_service` defaults to
-`localhost:8000` (`main.py:1173`), so every CLI run contacts it first; had it answered 200, a real
-job would have gone into a test fixture's service. `kill 755279` clears it;
-`test_concurrent_job_submission` is where the leak comes from. Note **`pgrep -af uvicorn` does not
-detect these** — the service is a fork of the CLI process, so its argv still reads
-`python -m emuses.cli full`. Use `ss -ltnp | awk '$4 ~ /:80[0-9][0-9]$/'`.
+Order is **1D → 2 → 3 → 1C → 1B2 → 4 → 5** (decided 2026-08-23): build the detector before the event
+it exists to detect.
+
+**Leaked test services: fixed and guarded** (`31546b5`). `test_concurrent_job_submission` spawned
+real services and left them running; one from 2026-08-19 held port 8000 for days, answering HTTP
+with 500. Since `_execute_via_remote_service` defaults to `localhost:8000` (`main.py:1173`), every
+CLI run contacted it first — had it answered 200, a real job would have gone into a test fixture's
+service. The test now patches the service lifecycle, and a session-scoped autouse fixture in
+`tests/conftest.py` fails the session on leaked children. Nothing is listening on 8000–8010 as of
+2026-08-23. **`pgrep -af uvicorn` does not detect these** — the service is a fork of the CLI
+process, so its argv still reads `python -m emuses.cli full`. Use
+`ss -ltnp | awk '$4 ~ /:80[0-9][0-9]$/'`.
 
 - [ ] Run `/lad:converge` — nine months of accumulated claims have not been checked against the
       code. Two were already found and fixed on 2026-07-30 (a stale "ready for merge" banner, and
