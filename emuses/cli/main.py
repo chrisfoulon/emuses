@@ -812,19 +812,34 @@ def full(
     ] = "optim_dict_predict",
     random_state: Annotated[
         Optional[int],
-        typer.Option("--random_state", help="Master random seed. When set, all component seeds are derived from this value for full reproducibility, but UMAP parallelism is disabled (n_jobs forced to 1). Omit for parallel UMAP (faster on multi-core machines) with non-reproducible runs."),
+        typer.Option(
+            "--random_state",
+            help=(
+                "Master random seed. All component seeds derive from it. It does "
+                "not change --umap_jobs: a parallel search is nondeterministic "
+                "whatever the seed."
+            ),
+        ),
     ] = None,
     umap_jobs: Annotated[
         Optional[int],
         typer.Option(
-            "--umap_jobs", help="Number of parallel jobs for outer (UMAP) optimization"
+            "--umap_jobs",
+            help=(
+                "Parallel jobs for the UMAP/HDBSCAN search. Default 1. Anything "
+                "above 1 makes the run NON-REPRODUCIBLE: optuna schedules trials "
+                "concurrently, so the search depends on thread timing."
+            ),
         ),
     ] = None,
     hdbscan_jobs: Annotated[
         Optional[int],
         typer.Option(
             "--hdbscan_jobs",
-            help="Number of parallel jobs for inner (HDBSCAN) optimization",
+            help=(
+                "Parallel jobs for the inner (HDBSCAN) search. Currently has no "
+                "effect: that search always runs serially."
+            ),
         ),
     ] = None,
     interactive: Annotated[
@@ -934,11 +949,14 @@ def full(
     prediction_optim_dict : str, optional
         Name of a prediction optim_dict in optim_configs_predict.py, by default "optim_dict_predict"
     random_state : int, optional
-        Master random seed for reproducibility, by default 42
+        Master random seed; every component seed derives from it. It does not
+        change umap_jobs.
     umap_jobs : Optional[int], optional
-        Number of parallel jobs for outer (UMAP) optimization
+        Parallel jobs for the UMAP/HDBSCAN search, by default 1. Above 1 the run
+        is not reproducible (ADR 2.9c).
     hdbscan_jobs : Optional[int], optional
-        Number of parallel jobs for inner (HDBSCAN) optimization
+        Parallel jobs for the inner (HDBSCAN) search. Currently inert: that
+        search always runs serially.
 
     Returns
     -------

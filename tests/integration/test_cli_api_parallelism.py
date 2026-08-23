@@ -20,10 +20,9 @@ project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 from emuses.tools.parallelism_utils import (
-    get_safe_parallel_backend, 
+    get_safe_parallel_backend,
     get_safe_n_jobs,
     configure_parallelism_backend,
-    get_process_hierarchy_depth
 )
 
 
@@ -117,13 +116,16 @@ class TestServiceParallelismIntegration:
 
     def test_pipeline_runner_configures_worker_context(self):
         """Test that PipelineRunner configures worker process parallelism context."""
+        import contextlib
+
+        from emuses.foundation_fastapi_service import pipeline_runner as pipeline_runner_module
         from emuses.foundation_fastapi_service.pipeline_runner import PipelineRunner
-        
+
         # Mock dependencies
         job_manager = Mock()
-        
+
         runner = PipelineRunner(job_manager)
-        
+
         # Mock the EMUSESPipeline to avoid actual execution
         with patch('emuses.foundation_fastapi_service.pipeline_runner.EMUSESPipeline') as mock_pipeline:
             mock_pipeline_instance = Mock()
@@ -131,24 +133,44 @@ class TestServiceParallelismIntegration:
             mock_pipeline_instance.run.return_value = {'status': 'completed'}
             mock_pipeline.return_value = mock_pipeline_instance
             
-            # Mock parallelism configuration
-            with patch('emuses.tools.parallelism_utils.configure_parallelism_backend') as mock_config:
-                
+            # Phase 1B1 replaced the process-wide
+            # `configure_parallelism_backend(force_backend="threading")` call with a
+            # scoped `parallelism_backend("threading")` context manager, because the
+            # old one wrote global state that production never restored. This test
+            # still asserted the old call and was invisible: a stale import in this
+            # module broke its collection entirely. It now checks both halves of that
+            # change -- the backend chosen, and that it is put back afterwards.
+            from emuses.tools import parallelism_utils
+
+            real_backend = parallelism_utils.parallelism_backend
+            requested = []
+            inside = []
+
+            @contextlib.contextmanager
+            def spy(backend):
+                requested.append(backend)
+                with real_backend(backend):
+                    inside.append(parallelism_utils._force_backend)
+                    yield
+
+            before = parallelism_utils._force_backend
+            with patch.object(pipeline_runner_module, 'parallelism_backend', spy):
                 context = {
                     'config': {
                         'output_folder': '/tmp/test',
                         'n_jobs': 4
                     }
                 }
-                
-                # Run pipeline in process
-                result = runner._run_pipeline_in_process(context, 0.75)
-                
-                # Verify parallelism backend was configured for threading
-                mock_config.assert_called_once_with(force_backend="threading")
-                
-                # Verify EMUSESPipeline was created
-                mock_pipeline.assert_called_once()
+
+                runner._run_pipeline_in_process(context, 0.75)
+
+            assert requested == ["threading"]
+            assert inside == ["threading"], "the backend was not in force inside the scope"
+            assert parallelism_utils._force_backend == before, (
+                "parallelism_backend leaked process-wide state, which is exactly "
+                "what the context manager exists to prevent"
+            )
+            mock_pipeline.assert_called_once()
 
     def test_context_to_emuses_args_preserves_n_jobs(self):
         """Test that context conversion preserves n_jobs parameters."""
@@ -173,23 +195,16 @@ class TestServiceParallelismIntegration:
         assert args.umap_jobs == 2
         assert str(args.output_folder) == '/tmp/test'
 
-    def test_process_hierarchy_detection_in_service(self):
-        """Test process hierarchy detection in service worker context."""
-        # This test simulates the subprocess context
-        original_depth = get_process_hierarchy_depth()
-        
-        # Mock being in a subprocess by setting current_process parent
-        with patch('multiprocessing.current_process') as mock_process:
-            mock_parent = Mock()
-            mock_parent.parent = None
-            
-            mock_current = Mock()
-            mock_current.parent = mock_parent
-            mock_process.return_value = mock_current
-            
-            # Should detect subprocess context
-            depth = get_process_hierarchy_depth()
-            assert depth >= 1, f"Expected depth >= 1 in subprocess, got {depth}"
+    # test_process_hierarchy_detection_in_service was removed (2026-08-23), not
+    # skipped. It called get_process_hierarchy_depth(), which Phase 1B1 deleted
+    # because it walked `multiprocessing.current_process().parent` -- an
+    # attribute multiprocessing.Process does not have, so it always returned 0
+    # and backend detection never worked. The test could not have caught that:
+    # it mocked current_process with a Mock, which fabricates the missing
+    # attribute, so it asserted against an object model that does not exist.
+    # Its stale import was breaking collection of the whole suite.
+    # Replaced by tests/tools/test_parallelism_utils.py, which calls
+    # is_subprocess_context() in a real subprocess.
 
 
 class TestEndToEndParallelism:

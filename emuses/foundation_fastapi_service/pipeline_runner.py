@@ -97,13 +97,14 @@ class PipelineRunner:
         args.test_size = float(config_dict.get("test_size", 0.2))
         args.interactive_plot = bool(config_dict.get("interactive_plot", False))
         args.optim_dict = str(config_dict.get("optim_dict", "optim_dict_hcp"))
-        args.hdbscan_jobs = int(config_dict.get("hdbscan_jobs", 4))
+        # 1, not 4: serial Optuna search is the reproducible default (ADR 2.9c).
+        args.hdbscan_jobs = int(config_dict.get("hdbscan_jobs", 1))
         args.n_jobs = int(config_dict.get("n_jobs", -1))
         args.sigma = config_dict.get("sigma", None)
         args.fwhm = config_dict.get("fwhm", None)
         args.outer_folds = int(config_dict.get("outer_folds", 5))
         args.model_version = str(config_dict.get("model_version", "1.0.0"))
-        args.umap_jobs = config_dict.get("umap_jobs", None)
+        args.umap_jobs = int(config_dict.get("umap_jobs", 1))
 
         # Dataset and input configuration
         # Support both file-based (HCP-style) and direct data (API-style) execution
