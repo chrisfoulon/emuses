@@ -57,12 +57,20 @@ and reflection); and every field of the prediction summary CSVs.
 | `midbudget` (`optim_dict_default`, 10/5/15) | 3 | **10/20 identical** |
 | `midbudget-serial` (as above, jobs=1) | 3 | 20/20 identical |
 
-**`hdbscan_core_dist_n_jobs` is exonerated — with a caveat that matters.** It was
-the leading suspect (parallel core-distance reductions are not float-associative).
-It changed nothing. But at this config HDBSCAN returns **zero clusters, every one
-of the 40 points labelled noise**, so there is very little for a reduction-order
-difference to change. This is weak evidence, not a clean bill of health. Re-measure
-on a config that produces real clusters before relying on it.
+**`hdbscan_core_dist_n_jobs` is exonerated.** It was the leading suspect
+(parallel core-distance reductions are not float-associative). It changed
+nothing — but the first measurement ran at a config where HDBSCAN returns zero
+clusters with all 40 points labelled noise, leaving very little for a
+reduction-order difference to change. That was recorded as weak evidence and
+**re-measured on 2026-08-23** at the regression config, which produces 3 clusters
+at `noise_fraction` 0.1:
+
+| arm | runs | result |
+|---|---|---|
+| `regression-coredist` (1 vs −1, 3 real clusters) | 4 | 20/20 identical |
+
+`composite_score` was 0.491357 in all four. The caveat is now closed: this is a
+clean bill of health, not an artefact of a degenerate clustering.
 
 `n_jobs` (model training) also changed nothing. That is a stronger result: those
 runs did produce varying prediction scores across seeds, so the metric was live.
@@ -158,14 +166,31 @@ below is therefore labelled.
 
 **Do not pin cluster structure from the fixture config.** It yields zero clusters
 with everything labelled noise, so an ARI between two baselines is 1.0 by
-construction and would never fail. Either give the regression suite its own config
-that produces real clusters, or pin only what is non-degenerate and say so.
+construction and would never fail. `tests/regression/` therefore has its own
+config (`regression_config.py`), the `midbudget-serial` arm, which produces 3
+clusters at `noise_fraction` 0.1.
 
-## Open items this raises
+**These tolerances were proven to fail.** A one-line change to production code
+(`UMAP_utils`, model seed shifted by one, no config touched) failed the composite
+score, the cluster structure and the embedding geometry — while **prediction
+scores and cluster count did not move**. Pinning only "the number that matters"
+would have missed a real change to the science. See `tests/regression/README.md`.
 
-- Decide what `umap_jobs`/`hdbscan_jobs` should default to. Reproducibility and
-  parallel search are in direct conflict here and only one can be the default.
-- Phase 1B2 must not land before that decision — it removes the clamp that is
-  currently hiding the problem.
-- Re-measure `hdbscan_core_dist_n_jobs` on a non-degenerate clustering.
-- The regression suite needs a config that actually clusters.
+## What was done about it
+
+- **`umap_jobs`/`hdbscan_jobs` default to 1** (`bec42c9`). Reproducibility beats
+  parallel search for a tool people publish from; parallel stays an opt-in that
+  warns it forfeits reproducibility. That commit also found that `umap_jobs` was
+  already serial *by accident* (a `None -> 1` mapping inside `UMAPStage`, declared
+  nowhere), that `hdbscan_jobs` is inert entirely, and that `--help` was telling
+  users a seed forces `n_jobs` to 1 — the exact claim measured false above.
+- **`hdbscan_core_dist_n_jobs` re-measured** on a clustering config, above. Closed.
+- **The regression suite got a config that actually clusters**: `tests/regression/`
+  pins the `midbudget-serial` arm, and `test_baseline_is_not_degenerate` fails if
+  it ever drifts back to an all-noise labelling where an ARI assertion cannot fail.
+
+Still open:
+
+- **Phase 1B2 must not land carelessly.** It removes the fork clamp that is
+  currently the only reason CLI runs are reproducible. The serial default now
+  covers that, but the clamp also masks `n_jobs` in model training.

@@ -36,15 +36,13 @@ from __future__ import annotations
 
 import argparse
 import ast
+import importlib.util
 import json
 import shutil
-import statistics
 import sys
 import tempfile
 import time
 from pathlib import Path
-
-import numpy as np
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 CONFTEST = PROJECT_ROOT / "tests" / "conftest.py"
@@ -182,133 +180,31 @@ def run_once(dataset, out_dir, overrides=None):
 
 
 # ---------------------------------------------------------------------------
-# Metric extraction
+# Metric extraction and comparison
 # ---------------------------------------------------------------------------
 
-
-def _first(root, name):
-    hits = sorted(root.rglob(name))
-    return hits[0] if hits else None
-
-
-def extract_metrics(out_dir):
-    """Everything we compare, pulled out before the folder is deleted."""
-    out_dir = Path(out_dir)
-    metrics = {}
-
-    info_path = _first(out_dir, "best_trial_info.json")
-    if info_path:
-        info = json.loads(info_path.read_text())
-        metrics["composite_score"] = info.get("composite_score")
-        metrics["trial_number"] = info.get("trial_number")
-        metrics["umap_params"] = info.get("param", {}).get("umap")
-        metrics["hdbscan_params"] = info.get("param", {}).get("hdbscan")
-        for family in ("umap", "hdbscan"):
-            for key, value in (info.get("metrics", {}).get(family) or {}).items():
-                metrics[f"metric_{family}_{key}"] = value
-
-    labels_path = _first(out_dir, "cluster_labels.npy")
-    if labels_path:
-        labels = np.load(labels_path)
-        metrics["_cluster_labels"] = labels.tolist()
-        metrics["n_clusters"] = int(len(set(labels.tolist()) - {-1}))
-        metrics["noise_fraction"] = float((labels == -1).mean())
-
-    emb_path = _first(out_dir, "embeddings.npy")
-    if emb_path:
-        emb = np.load(emb_path)
-        metrics["_embedding_distances"] = _pairwise_distances(emb).tolist()
-        metrics["embedding_shape"] = list(emb.shape)
-
-    # The statistics filename carries a timestamp, so it must be globbed.
-    scores = {}
-    for csv_path in sorted(out_dir.rglob("performance_summary_statistics_*.csv")):
-        rows = [line.split(",") for line in csv_path.read_text().splitlines() if line]
-        if len(rows) < 2:
-            continue
-        header = rows[0]
-        for row in rows[1:]:
-            record = dict(zip(header, row))
-            target = record.get("Target", "?")
-            for field in ("Mean_Score", "Std_Score", "Min_Score", "Max_Score",
-                          "Median_Score", "Q1_Score", "Q3_Score", "Range_Score"):
-                if field in record:
-                    try:
-                        scores[f"{target}_{field}"] = float(record[field])
-                    except ValueError:
-                        pass
-    metrics.update(scores)
-    return metrics
+# Loaded from the regression suite by path rather than duplicated here. Two
+# hand-maintained copies of the metric set would let the tolerances measured by
+# this script drift away from what tests/regression/ actually pins -- the Phase
+# 1A bug in a new place. Loaded by path because tests/ is not an import package.
+def _load_by_path(name, relative):
+    spec = importlib.util.spec_from_file_location(name, PROJECT_ROOT / relative)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
-def _pairwise_distances(points):
-    diff = points[:, None, :] - points[None, :, :]
-    return np.sqrt((diff**2).sum(-1))
+_metrics = _load_by_path(
+    "emuses_regression_metrics", "tests/regression/regression_metrics.py"
+)
+extract_metrics = _metrics.extract_metrics
+compare = _metrics.compare
 
-
-# ---------------------------------------------------------------------------
-# Comparison
-# ---------------------------------------------------------------------------
-
-
-def compare(runs):
-    """Summarise variation across runs. Returns {metric: summary}."""
-    from sklearn.metrics import adjusted_rand_score
-
-    summary = {}
-    scalar_keys = sorted(
-        {
-            k
-            for run in runs
-            for k, v in run.items()
-            if not k.startswith("_") and isinstance(v, (int, float))
-        }
-    )
-    for key in scalar_keys:
-        values = [run.get(key) for run in runs if run.get(key) is not None]
-        if len(values) < 2:
-            continue
-        spread = max(values) - min(values)
-        summary[key] = {
-            "values": values,
-            "identical": spread == 0.0,
-            "abs_spread": spread,
-            "rel_spread": (
-                spread / abs(statistics.fmean(values))
-                if statistics.fmean(values) != 0
-                else None
-            ),
-        }
-
-    label_sets = [run["_cluster_labels"] for run in runs if "_cluster_labels" in run]
-    if len(label_sets) >= 2:
-        aris = [
-            adjusted_rand_score(label_sets[0], other) for other in label_sets[1:]
-        ]
-        summary["cluster_ari_vs_first"] = {
-            "values": aris,
-            "identical": all(a == 1.0 for a in aris),
-            "min": min(aris),
-        }
-
-    dist_sets = [
-        np.asarray(run["_embedding_distances"])
-        for run in runs
-        if "_embedding_distances" in run
-    ]
-    if len(dist_sets) >= 2:
-        base = dist_sets[0].ravel()
-        corrs = [
-            float(np.corrcoef(base, other.ravel())[0, 1]) for other in dist_sets[1:]
-        ]
-        maxdiff = [float(np.abs(dist_sets[0] - other).max()) for other in dist_sets[1:]]
-        summary["embedding_distance_corr_vs_first"] = {
-            "values": corrs,
-            "identical": all(c == 1.0 for c in corrs),
-            "min": min(corrs),
-            "max_abs_distance_diff": max(maxdiff),
-        }
-    return summary
+# The regression suite's own config, so an arm measured here applies to what the
+# suite actually pins.
+REGRESSION_CONFIG = _load_by_path(
+    "emuses_regression_config", "tests/regression/regression_config.py"
+).REGRESSION_CONFIG
 
 
 # ---------------------------------------------------------------------------
@@ -362,6 +258,18 @@ def arm_specs(arm, repeats):
                 f"mid_serial_repeat_{i}",
                 {**MID_BUDGET, "umap_jobs": 1, "hdbscan_jobs": 1},
             )
+            for i in range(repeats)
+        ]
+    if arm == "regression-coredist":
+        # Re-measures hdbscan_core_dist_n_jobs on a config that actually clusters.
+        # Phase 2 exonerated it on a degenerate result where all 40 points were
+        # noise, which is very little for a reduction-order difference to change.
+        return [
+            (
+                f"regression_core_dist={c}_repeat_{i}",
+                {**REGRESSION_CONFIG, "hdbscan_core_dist_n_jobs": c},
+            )
+            for c in (1, -1)
             for i in range(repeats)
         ]
     if arm == "midbudget-seeds":

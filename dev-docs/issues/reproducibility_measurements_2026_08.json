@@ -2919,5 +2919,397 @@
         "max_abs_distance_diff": 0.0
       }
     }
+  },
+  "regression-coredist/regression": {
+    "arm": "regression-coredist",
+    "dataset": "regression",
+    "labels": [
+      "regression_core_dist=1_repeat_0",
+      "regression_core_dist=1_repeat_1",
+      "regression_core_dist=-1_repeat_0",
+      "regression_core_dist=-1_repeat_1"
+    ],
+    "seconds": [
+      41.62327814102173,
+      25.749308824539185,
+      25.731032609939575,
+      24.66132640838623
+    ],
+    "config": {
+      "columns_are_features": true,
+      "input_normalization": "robust",
+      "umap_trials": 1,
+      "hdbscan_trials": 1,
+      "optim_dict": "optim_dict_hcp",
+      "prediction_optim_dict": "quick_train_dict",
+      "optuna_trials": 2,
+      "n_jobs": 4,
+      "random_state": 42,
+      "inference_mode": false,
+      "prefix": "",
+      "interactive_plot": false,
+      "load_embeddings": false,
+      "hdbscan_jobs": 4,
+      "umap_jobs": 4,
+      "test_size": 0.2,
+      "outer_folds": 5
+    },
+    "per_run": [
+      {
+        "composite_score": 0.4913566121582059,
+        "trial_number": 1,
+        "umap_params": {
+          "min_dist": 0.09069967515473176,
+          "n_neighbors": 15,
+          "n_components": 2,
+          "metric": "euclidean"
+        },
+        "hdbscan_params": {
+          "hdbscan_min_cluster_size": 5,
+          "hdbscan_min_samples": 1
+        },
+        "metric_umap_eigen_spread": 0.02503029191604649,
+        "metric_umap_density_variability": 0.5338301046137452,
+        "metric_umap_entropy": 0.5581401006775211,
+        "metric_hdbscan_noise_ratio": 0.9,
+        "metric_hdbscan_dbcv": 0.7943562457121236,
+        "metric_hdbscan_cluster_persistence": 0.22313118063209622,
+        "n_clusters": 3,
+        "noise_fraction": 0.1,
+        "embedding_shape": [
+          40,
+          2
+        ],
+        "target_0_Mean_Score": -0.3554,
+        "target_0_Std_Score": 0.3367,
+        "target_0_Min_Score": -0.9809,
+        "target_0_Max_Score": -0.0049,
+        "target_0_Median_Score": -0.2953,
+        "target_0_Q1_Score": -0.3622,
+        "target_0_Q3_Score": -0.1336,
+        "target_0_Range_Score": 0.9759
+      },
+      {
+        "composite_score": 0.4913566121582059,
+        "trial_number": 1,
+        "umap_params": {
+          "min_dist": 0.09069967515473176,
+          "n_neighbors": 15,
+          "n_components": 2,
+          "metric": "euclidean"
+        },
+        "hdbscan_params": {
+          "hdbscan_min_cluster_size": 5,
+          "hdbscan_min_samples": 1
+        },
+        "metric_umap_eigen_spread": 0.02503029191604649,
+        "metric_umap_density_variability": 0.5338301046137452,
+        "metric_umap_entropy": 0.5581401006775211,
+        "metric_hdbscan_noise_ratio": 0.9,
+        "metric_hdbscan_dbcv": 0.7943562457121236,
+        "metric_hdbscan_cluster_persistence": 0.22313118063209622,
+        "n_clusters": 3,
+        "noise_fraction": 0.1,
+        "embedding_shape": [
+          40,
+          2
+        ],
+        "target_0_Mean_Score": -0.3554,
+        "target_0_Std_Score": 0.3367,
+        "target_0_Min_Score": -0.9809,
+        "target_0_Max_Score": -0.0049,
+        "target_0_Median_Score": -0.2953,
+        "target_0_Q1_Score": -0.3622,
+        "target_0_Q3_Score": -0.1336,
+        "target_0_Range_Score": 0.9759
+      },
+      {
+        "composite_score": 0.4913566121582059,
+        "trial_number": 1,
+        "umap_params": {
+          "min_dist": 0.09069967515473176,
+          "n_neighbors": 15,
+          "n_components": 2,
+          "metric": "euclidean"
+        },
+        "hdbscan_params": {
+          "hdbscan_min_cluster_size": 5,
+          "hdbscan_min_samples": 1
+        },
+        "metric_umap_eigen_spread": 0.02503029191604649,
+        "metric_umap_density_variability": 0.5338301046137452,
+        "metric_umap_entropy": 0.5581401006775211,
+        "metric_hdbscan_noise_ratio": 0.9,
+        "metric_hdbscan_dbcv": 0.7943562457121236,
+        "metric_hdbscan_cluster_persistence": 0.22313118063209622,
+        "n_clusters": 3,
+        "noise_fraction": 0.1,
+        "embedding_shape": [
+          40,
+          2
+        ],
+        "target_0_Mean_Score": -0.3554,
+        "target_0_Std_Score": 0.3367,
+        "target_0_Min_Score": -0.9809,
+        "target_0_Max_Score": -0.0049,
+        "target_0_Median_Score": -0.2953,
+        "target_0_Q1_Score": -0.3622,
+        "target_0_Q3_Score": -0.1336,
+        "target_0_Range_Score": 0.9759
+      },
+      {
+        "composite_score": 0.4913566121582059,
+        "trial_number": 1,
+        "umap_params": {
+          "min_dist": 0.09069967515473176,
+          "n_neighbors": 15,
+          "n_components": 2,
+          "metric": "euclidean"
+        },
+        "hdbscan_params": {
+          "hdbscan_min_cluster_size": 5,
+          "hdbscan_min_samples": 1
+        },
+        "metric_umap_eigen_spread": 0.02503029191604649,
+        "metric_umap_density_variability": 0.5338301046137452,
+        "metric_umap_entropy": 0.5581401006775211,
+        "metric_hdbscan_noise_ratio": 0.9,
+        "metric_hdbscan_dbcv": 0.7943562457121236,
+        "metric_hdbscan_cluster_persistence": 0.22313118063209622,
+        "n_clusters": 3,
+        "noise_fraction": 0.1,
+        "embedding_shape": [
+          40,
+          2
+        ],
+        "target_0_Mean_Score": -0.3554,
+        "target_0_Std_Score": 0.3367,
+        "target_0_Min_Score": -0.9809,
+        "target_0_Max_Score": -0.0049,
+        "target_0_Median_Score": -0.2953,
+        "target_0_Q1_Score": -0.3622,
+        "target_0_Q3_Score": -0.1336,
+        "target_0_Range_Score": 0.9759
+      }
+    ],
+    "summary": {
+      "composite_score": {
+        "values": [
+          0.4913566121582059,
+          0.4913566121582059,
+          0.4913566121582059,
+          0.4913566121582059
+        ],
+        "identical": true,
+        "abs_spread": 0.0,
+        "rel_spread": 0.0
+      },
+      "metric_hdbscan_cluster_persistence": {
+        "values": [
+          0.22313118063209622,
+          0.22313118063209622,
+          0.22313118063209622,
+          0.22313118063209622
+        ],
+        "identical": true,
+        "abs_spread": 0.0,
+        "rel_spread": 0.0
+      },
+      "metric_hdbscan_dbcv": {
+        "values": [
+          0.7943562457121236,
+          0.7943562457121236,
+          0.7943562457121236,
+          0.7943562457121236
+        ],
+        "identical": true,
+        "abs_spread": 0.0,
+        "rel_spread": 0.0
+      },
+      "metric_hdbscan_noise_ratio": {
+        "values": [
+          0.9,
+          0.9,
+          0.9,
+          0.9
+        ],
+        "identical": true,
+        "abs_spread": 0.0,
+        "rel_spread": 0.0
+      },
+      "metric_umap_density_variability": {
+        "values": [
+          0.5338301046137452,
+          0.5338301046137452,
+          0.5338301046137452,
+          0.5338301046137452
+        ],
+        "identical": true,
+        "abs_spread": 0.0,
+        "rel_spread": 0.0
+      },
+      "metric_umap_eigen_spread": {
+        "values": [
+          0.02503029191604649,
+          0.02503029191604649,
+          0.02503029191604649,
+          0.02503029191604649
+        ],
+        "identical": true,
+        "abs_spread": 0.0,
+        "rel_spread": 0.0
+      },
+      "metric_umap_entropy": {
+        "values": [
+          0.5581401006775211,
+          0.5581401006775211,
+          0.5581401006775211,
+          0.5581401006775211
+        ],
+        "identical": true,
+        "abs_spread": 0.0,
+        "rel_spread": 0.0
+      },
+      "n_clusters": {
+        "values": [
+          3,
+          3,
+          3,
+          3
+        ],
+        "identical": true,
+        "abs_spread": 0,
+        "rel_spread": 0.0
+      },
+      "noise_fraction": {
+        "values": [
+          0.1,
+          0.1,
+          0.1,
+          0.1
+        ],
+        "identical": true,
+        "abs_spread": 0.0,
+        "rel_spread": 0.0
+      },
+      "target_0_Max_Score": {
+        "values": [
+          -0.0049,
+          -0.0049,
+          -0.0049,
+          -0.0049
+        ],
+        "identical": true,
+        "abs_spread": 0.0,
+        "rel_spread": 0.0
+      },
+      "target_0_Mean_Score": {
+        "values": [
+          -0.3554,
+          -0.3554,
+          -0.3554,
+          -0.3554
+        ],
+        "identical": true,
+        "abs_spread": 0.0,
+        "rel_spread": 0.0
+      },
+      "target_0_Median_Score": {
+        "values": [
+          -0.2953,
+          -0.2953,
+          -0.2953,
+          -0.2953
+        ],
+        "identical": true,
+        "abs_spread": 0.0,
+        "rel_spread": 0.0
+      },
+      "target_0_Min_Score": {
+        "values": [
+          -0.9809,
+          -0.9809,
+          -0.9809,
+          -0.9809
+        ],
+        "identical": true,
+        "abs_spread": 0.0,
+        "rel_spread": 0.0
+      },
+      "target_0_Q1_Score": {
+        "values": [
+          -0.3622,
+          -0.3622,
+          -0.3622,
+          -0.3622
+        ],
+        "identical": true,
+        "abs_spread": 0.0,
+        "rel_spread": 0.0
+      },
+      "target_0_Q3_Score": {
+        "values": [
+          -0.1336,
+          -0.1336,
+          -0.1336,
+          -0.1336
+        ],
+        "identical": true,
+        "abs_spread": 0.0,
+        "rel_spread": 0.0
+      },
+      "target_0_Range_Score": {
+        "values": [
+          0.9759,
+          0.9759,
+          0.9759,
+          0.9759
+        ],
+        "identical": true,
+        "abs_spread": 0.0,
+        "rel_spread": 0.0
+      },
+      "target_0_Std_Score": {
+        "values": [
+          0.3367,
+          0.3367,
+          0.3367,
+          0.3367
+        ],
+        "identical": true,
+        "abs_spread": 0.0,
+        "rel_spread": 0.0
+      },
+      "trial_number": {
+        "values": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "identical": true,
+        "abs_spread": 0,
+        "rel_spread": 0.0
+      },
+      "cluster_ari_vs_first": {
+        "values": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "identical": true,
+        "min": 1.0
+      },
+      "embedding_distance_corr_vs_first": {
+        "values": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "identical": true,
+        "min": 1.0,
+        "max_abs_distance_diff": 0.0
+      }
+    }
   }
 }
