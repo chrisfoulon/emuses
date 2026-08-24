@@ -618,14 +618,50 @@ required-field checks, special-dataset handling and the output-path checks added
 shell-injection cleanup. Kept from the reverted work because it is right regardless: those checks
 should be callable and testable rather than reachable only by making an HTTP request.
 
-`tests/test_single_execution_path.py` guards this decision, and declares the one function that
-already breaks it: `_execute_inference_locally` builds an `EMUSESPipeline` and runs `InferenceStage`
-directly in the CLI process. That predates this decision. **It is the first thing to fix if
-server-side inference matters** - a lab where one person trains a model and others run inference
-against it on a server needs inference to go through the service, and today it does not.
+`tests/test_single_execution_path.py` guards this decision. Its list of declared exceptions
+(`KNOWN_LOCAL_EXECUTION`) is **empty as of 2026-08-24**: `_execute_inference_locally` was the last
+entry and is gone.
 
 `--service-url` opts into a remote service. `--service` is redundant now that every mode uses one, so
 it warns instead of sitting there looking wired.
+
+**Inference is a job, not a special case (decided 2026-08-24, Phase 1F).** `emuses inference` submits
+to `/api/v1/jobs/pipeline/inference`, so it inherits the job record, progress polling, timeout and
+interrupt handling the other commands already had. It used to build an `EMUSESPipeline` and run
+`InferenceStage` in the CLI process, which is what stopped a lab from having one person train a model
+and others run inference against it on a server.
+
+Three things worth knowing about how it was done:
+
+- **The pre-existing `/api/v1/inference` endpoints could never have worked**, so "the endpoints
+  already exist, this is just wiring" was wrong. They built a bare `PipelineConfig` and handed
+  `InferenceStage` a context containing only `verify_integrity` and `output_format`; nothing in that
+  path ever loaded the data file. Measured 2026-08-24: every request returned **422 "No inference
+  features found in context"**. Nothing caught it because nothing exercised them - the endpoint test
+  asserted a 422 and got one.
+- **There is now one implementation**, `emuses/pipelines/inference_runner.py::run_inference`. The
+  inference job, `/api/v1/inference` and `/api/v1/inference/async` all call it. Data preparation is
+  not incidental to inference: the stage applies the model's *saved* scaler, so the features it
+  receives must be raw input in the training input's space, which is what
+  `EMUSESPipeline(inference_mode=True)` produces. An endpoint that skips it produces an empty result
+  at best and a silently wrong one at worst (§3.1b).
+- **Inference cannot reuse `prepare_pipeline_context`**: that requires `scores`, and inference on new
+  data has no ground truth. What it requires instead is a model, so the inference endpoint has its
+  own validation and explicitly disables the training stages - without that, the runner's defaults
+  (`umap_stage_enabled` and `heatmap_stage_enabled` both default to True) would have an inference
+  request retrain the model it was asked to apply.
+
+**The response was empty and said 200.** Both endpoints read `results["predictions"]` and
+`results["prediction_details"]`, neither of which `InferenceStage` returns - predictions nest per
+target under `target_results`. So a completed run answered with `predictions: []` and
+`confidence_scores: null` alongside a correct sample count. Shaping now goes through
+`_inference_results_to_response`, which carries every target and converts numpy **recursively** (a
+shallow conversion still returned 400 "Unable to serialize unknown type", because each target holds
+per-fold arrays of its own).
+
+Verified not to move results: the same command through the CLI before and after the change produced
+**bitwise identical** prediction and confidence CSVs on `test_data/` (50 samples, 8 columns, maximum
+absolute difference 0.0); only timestamps and timings differ.
 
 **The service is its own interpreter, not a fork (decided 2026-08-24, Phase 1E).**
 `_start_local_service` launches `python -m emuses.cli.service_process --port N` via

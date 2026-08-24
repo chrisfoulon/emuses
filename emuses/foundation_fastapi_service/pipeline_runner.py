@@ -442,6 +442,23 @@ class PipelineRunner:
             # measurement, deliberately left to the parallelism arm of the reproducibility
             # work rather than changed as a side effect here.
             try:
+                config_dict = context.get("config", {})
+
+                # Inference is not a stage sequence: it loads a trained model and applies
+                # it. It shares the data preparation with training (the model's saved
+                # scaler expects raw input in the training input's space), which is why
+                # `run_inference` builds an EMUSESPipeline of its own rather than this
+                # method assembling stages for it.
+                if config_dict.get("command") == "inference":
+                    from emuses.pipelines.inference_runner import run_inference
+
+                    obs_ctx.set_attribute("enabled_stages", ["inference"])
+                    results = run_inference(config_dict)
+                    obs_ctx.set_attribute("pipeline_success", True)
+                    result_context = dict(context)
+                    result_context["inference_results"] = results
+                    return result_context
+
                 # Convert context to EMUSESPipeline arguments
                 args = self._context_to_emuses_args(context)
 
@@ -473,7 +490,6 @@ class PipelineRunner:
                     )
 
                 # Add stages based on configuration
-                config_dict = context.get("config", {})
                 enabled_stages = []
 
                 if config_dict.get("umap_stage_enabled", True):

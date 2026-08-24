@@ -446,6 +446,28 @@ emuses inference results/ new_data.csv \
 
 *Note: Exactly one of `--model-id` or `--model` must be provided.
 
+**Preprocessing parameters must match the training run**
+
+Inference applies the scalers saved with the model, so the new data has to be read and scaled the
+same way the training data was. These flags are accepted by `emuses inference` and default to the
+same values as training: `--input_header`, `--input_index_column`, `--columns_are_features`,
+`--input_normalization`, `--inputs_columns`, `--classification`, and the `--scores*` options for
+validation mode.
+
+| Situation | Flag |
+|---|---|
+| Your CSV has a header row | `--input_header 0` — without it the load fails with "No numeric data remaining after processing the file" |
+| Your CSV has row labels or IDs in the first column | `--input_index_column 0` |
+| The model was trained with `--columns_are_features` / `--input_normalization robust` | pass the same flags |
+
+Do **not** feed a model its own `split_dataset/*.npy` files back in. Those are written *after*
+normalization, and the inference path normalizes again, which silently moves the samples off the
+manifold the UMAP was fitted on.
+
+**Where inference runs.** Like every other command, `emuses inference` submits a job to the EMUSES
+service (a local one is auto-started if none is running), so a model on a server can be used by
+people who did not train it. `--service-url` points at a remote service.
+
 **Example Workflows**
 ```bash
 # Registry workflow - from model discovery to inference

@@ -225,6 +225,42 @@ class InferenceRequest(BaseModel):
         description="Output format (csv or npy)"
     )
 
+    # Preprocessing options. These are not cosmetic: inference applies the model's saved
+    # scaler, so the data has to be read and scaled exactly as the training data was. A
+    # request that omits `columns_are_features` or `input_normalization` when the model was
+    # trained with them produces a run that completes and is wrong.
+    input_header: Optional[int] = Field(
+        default=None, description="Header row for input dataset (0-based)"
+    )
+    input_index_column: Optional[int] = Field(
+        default=None, description="Index column for input dataset (0-based)"
+    )
+    columns_are_features: bool = Field(
+        default=False, description="Columns represent features (not samples)"
+    )
+    input_normalization: str = Field(
+        default="none",
+        description="Input normalization method, matching the model's training run"
+    )
+    inputs_columns: Optional[List[str]] = Field(
+        default=None, description="Columns to use as inputs"
+    )
+    classification: bool = Field(
+        default=False, description="Classification mode instead of regression"
+    )
+    scores: Optional[str] = Field(
+        default=None, description="Path to a scores file, for validation mode"
+    )
+    scores_header: Optional[int] = Field(
+        default=None, description="Header row for the scores file (0-based)"
+    )
+    scores_index_column: Optional[int] = Field(
+        default=None, description="Index column for the scores file (0-based)"
+    )
+    scores_normalization: str = Field(
+        default="none", description="Normalization method for scores data"
+    )
+
     def model_post_init(self, __context):
         """Validate that exactly one of model_path or model_id is provided."""
         if not self.model_path and not self.model_id:
@@ -258,10 +294,23 @@ class InferenceResponse(BaseModel):
     status: str = Field(..., description="Inference execution status")
     mode: str = Field(..., description="Inference mode (inference or validation)")
     samples_processed: int = Field(..., description="Number of samples processed")
-    predictions: List[float] = Field(..., description="Ensemble predictions")
+    predictions: List[float] = Field(
+        ...,
+        description=(
+            "Ensemble predictions for the first target. Multi-target runs should read "
+            "target_results, which carries every target"
+        )
+    )
     confidence_scores: Optional[List[float]] = Field(
         default=None,
-        description="Confidence scores for predictions"
+        description="Confidence scores for the predictions above"
+    )
+    target_count: int = Field(
+        default=1, description="Number of prediction targets the model produced"
+    )
+    target_results: Dict[str, Any] = Field(
+        default_factory=dict,
+        description="Per-target predictions and confidence scores, keyed by target name"
     )
     processing_time_ms: float = Field(..., description="Total processing time in milliseconds")
     throughput_samples_per_sec: float = Field(..., description="Processing throughput")

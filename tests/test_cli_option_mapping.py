@@ -66,6 +66,14 @@ RENAMED = {"recursive_search": "recursive_input_file_search"}
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 
+def _find_all(haystack: str, needle: str):
+    """Every index of ``needle`` - the same declaration can appear more than once."""
+    start = haystack.find(needle)
+    while start != -1:
+        yield start
+        start = haystack.find(needle, start + 1)
+
+
 def _cli_option_names() -> set:
     """Names of every parameter the ``full`` command accepts."""
     return set(inspect.signature(full).parameters)
@@ -323,16 +331,26 @@ def test_retired_prediction_stage_is_not_advertised():
     Accepting a stage name nothing can run turns a typo into a confusing runtime failure
     instead of an immediate, accurate rejection.
     """
-    offenders = {
-        "emuses/foundation_fastapi_service/app.py": 'valid_stages = ["umap", "heatmap"]',
-        "emuses/cli/service_client.py": 'valid_types = ["full", "umap", "clustering", "heatmap"]',
+    # The lists themselves are allowed to grow - "inference" joined valid_types in Phase 1F.
+    # What must not come back is "prediction", so the assertion is about membership rather
+    # than an exact literal, which would fail on every legitimate addition instead.
+    declarations = {
+        "emuses/foundation_fastapi_service/app.py": "valid_stages = [",
+        "emuses/cli/service_client.py": "valid_types = [",
     }
-    for relative, expected in offenders.items():
+    for relative, prefix in declarations.items():
         source = (PROJECT_ROOT / relative).read_text()
-        assert expected in source, (
-            f"{relative} no longer declares the stage list as {expected!r}. If the list "
-            "legitimately changed, update this test - but do not re-add \"prediction\"."
+        assert prefix in source, (
+            f"{relative} no longer declares a stage list starting {prefix!r}. If it moved, "
+            "update this test - but do not re-add \"prediction\"."
         )
+        for start in _find_all(source, prefix):
+            declared = source[start + len(prefix): source.index("]", start)]
+            assert "prediction" not in declared, (
+                f"{relative} advertises a retired \"prediction\" stage: {declared!r}. "
+                "Nothing can run it, so accepting the name turns a typo into a confusing "
+                "runtime failure instead of an immediate rejection."
+            )
 
     main_source = (PROJECT_ROOT / "emuses/cli/main.py").read_text()
     assert '"prediction": "PredictionStage"' not in main_source, (
