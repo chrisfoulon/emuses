@@ -17,6 +17,36 @@ import pytest
 from emuses.pipelines.inference_stage import InferenceStage
 
 
+def predict_result(predictions):
+    """A ``_predict`` return value in the shape the real method produces.
+
+    These tests used to patch ``_predict`` with a flat ``predictions`` key, a shape the
+    stage stopped returning when multi-target support landed: predictions nest under
+    ``target_results[target]``. Everything downstream indexes ``target_results``, so the
+    stale stub made all five tests die with ``KeyError: 'target_results'`` in production
+    code that was doing exactly the right thing.
+    """
+    predictions = np.asarray(predictions)
+    return {
+        'target_results': {
+            'target_0': {
+                'ensemble_predictions': predictions,
+                'normalized_ensemble_predictions': None,
+                'individual_predictions': {'stub_model': predictions},
+                'confidence_scores': np.full(len(predictions), 0.8),
+                'model_count': 1,
+                'model_names': ['stub_model'],
+                'denormalization_applied': False,
+            }
+        },
+        'target_count': 1,
+        'individual_predictions': {'stub_model': predictions},
+        'model_count': 1,
+        'model_names': ['stub_model'],
+    }
+
+
+
 class TestInferenceStageProgress(unittest.TestCase):
     """Test progress indicators in InferenceStage."""
 
@@ -63,7 +93,7 @@ class TestInferenceStageProgress(unittest.TestCase):
             with patch.object(stage, '_load_features_from_context', return_value=np.array([[1, 2], [3, 4]])):
                 with patch.object(stage, '_detect_labels', return_value=False):
                     with patch.object(stage, '_transform_features', return_value=np.array([[0.1, 0.2], [0.3, 0.4]])):
-                        with patch.object(stage, '_predict', return_value={'predictions': [0.7, 0.8]}):
+                        with patch.object(stage, '_predict', return_value=predict_result([0.7, 0.8])):
                             with patch.object(stage, '_save_results'):
                                 # Run should create progress context
                                 stage.run({})
@@ -91,7 +121,7 @@ class TestInferenceStageProgress(unittest.TestCase):
             with patch.object(stage, '_load_features_from_context', return_value=np.array([[1, 2]])):
                 with patch.object(stage, '_detect_labels', return_value=False):
                     with patch.object(stage, '_transform_features', return_value=np.array([[0.1, 0.2]])):
-                        with patch.object(stage, '_predict', return_value={'predictions': [0.7]}):
+                        with patch.object(stage, '_predict', return_value=predict_result([0.7])):
                             with patch.object(stage, '_save_results'):
                                 stage.run({})
         
@@ -100,7 +130,12 @@ class TestInferenceStageProgress(unittest.TestCase):
         
         # Check that main inference phases are tracked
         task_calls = mock_progress_instance.add_task.call_args_list
-        task_descriptions = [call[1]['description'] for call in task_calls if 'description' in call[1]]
+        # add_task is called with the description positionally, so reading only
+        # call[1]['description'] collected nothing and compared against an empty list.
+        task_descriptions = [
+            call.args[0] if call.args else call.kwargs.get('description', '')
+            for call in task_calls
+        ]
         
         expected_tasks = [
             "Loading models",
@@ -139,7 +174,7 @@ class TestInferenceStageProgress(unittest.TestCase):
             with patch.object(stage, '_load_features_from_context', side_effect=mock_load_features):
                 with patch.object(stage, '_detect_labels', return_value=False):
                     with patch.object(stage, '_transform_features', return_value=np.array([[0.1], [0.2], [0.3]])):
-                        with patch.object(stage, '_predict', return_value={'predictions': [0.7, 0.8, 0.9]}):
+                        with patch.object(stage, '_predict', return_value=predict_result([0.7, 0.8, 0.9])):
                             with patch.object(stage, '_save_results'):
                                 stage.run({})
         
@@ -167,7 +202,7 @@ class TestInferenceStageProgress(unittest.TestCase):
             with patch.object(stage, '_load_features_from_context', return_value=large_dataset):
                 with patch.object(stage, '_detect_labels', return_value=False):
                     with patch.object(stage, '_transform_features', return_value=np.random.rand(1000, 2)):
-                        with patch.object(stage, '_predict', return_value={'predictions': np.random.rand(1000)}):
+                        with patch.object(stage, '_predict', return_value=predict_result(np.random.rand(1000))):
                             with patch.object(stage, '_save_results'):
                                 stage.run({})
         
@@ -195,7 +230,7 @@ class TestInferenceStageProgress(unittest.TestCase):
             with patch.object(stage, '_load_features_from_context', return_value=np.array([[1, 2]])):
                 with patch.object(stage, '_detect_labels', return_value=False):
                     with patch.object(stage, '_transform_features', return_value=np.array([[0.1, 0.2]])):
-                        with patch.object(stage, '_predict', return_value={'predictions': [0.7]}):
+                        with patch.object(stage, '_predict', return_value=predict_result([0.7])):
                             with patch.object(stage, '_save_results'):
                                 stage.run({})
         

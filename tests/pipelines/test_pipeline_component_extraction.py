@@ -162,11 +162,12 @@ class TestPipelineComponentExtraction:
         # but will be fixed by our pipeline component extraction approach
         try:
             results = stage._predict(test_coords, models_dict)
-            # If this succeeds, our implementation is working
+            # If this succeeds, our implementation is working.
+            # Predictions nest per target; single-target is the n=1 case.
             assert results is not None
-            assert "ensemble_predictions" in results
+            assert "ensemble_predictions" in results["target_results"]["target_0"]
             # All predictions should have consistent shape for ensemble
-            ensemble_pred = results["ensemble_predictions"]
+            ensemble_pred = results["target_results"]["target_0"]["ensemble_predictions"]
             assert isinstance(ensemble_pred, np.ndarray)
             assert len(ensemble_pred) == 3  # Same as test samples
         except ValueError as e:
@@ -258,8 +259,8 @@ class TestPipelineComponentExtraction:
         # Assert
         assert results is not None
         assert "individual_predictions" in results
-        assert "ensemble_predictions" in results
-        
+        assert "ensemble_predictions" in results["target_results"]["target_0"]
+
         # Both models should produce predictions
         individual_preds = results["individual_predictions"] 
         assert "legacy_model" in individual_preds
@@ -271,5 +272,5 @@ class TestPipelineComponentExtraction:
         assert legacy_pred.shape == pipeline_pred.shape == (3,)
         
         # Ensemble prediction should work
-        ensemble_pred = results["ensemble_predictions"]
+        ensemble_pred = results["target_results"]["target_0"]["ensemble_predictions"]
         assert ensemble_pred.shape == (3,)

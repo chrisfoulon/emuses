@@ -34,6 +34,11 @@ from emuses.tools.UMAP_utils import load_umap_model
 logger = logging.getLogger(__name__)
 
 
+def _as_path_str(value):
+    """Return ``value`` as a string path, preserving None."""
+    return None if value is None else str(value)
+
+
 class InferenceStage(PipelineStage):
     """
     Stage for running inference on trained EMUSES models.
@@ -57,10 +62,13 @@ class InferenceStage(PipelineStage):
         """
         super().__init__(config)
 
-        # Extract inference-specific configuration
-        self.model_path = getattr(config, 'model_path', None)
-        self.data_path = getattr(config, 'data_path', None)
-        self.output_path = getattr(config, 'output_path', None)
+        # Extract inference-specific configuration. Paths are kept as strings: they end up
+        # in the results metadata, which is written as JSON and served over HTTP, and a
+        # PosixPath there raises "Object of type PosixPath is not JSON serializable".
+        # Every use here wraps them in Path() anyway.
+        self.model_path = _as_path_str(getattr(config, 'model_path', None))
+        self.data_path = _as_path_str(getattr(config, 'data_path', None))
+        self.output_path = _as_path_str(getattr(config, 'output_path', None))
         self.validate_mode = getattr(config, 'validate_mode', False)
 
         # Initialize model storage
@@ -164,22 +172,13 @@ class InferenceStage(PipelineStage):
                 # Calculate validation metrics if in validation mode
                 validation_metrics = None
                 if mode == "validation" and hasattr(self, '_detected_labels') and self._detected_labels is not None:
-                    # Check if this is a multi-target scenario
-                    if 'target_results' in prediction_results:
-                        # Multi-target validation
-                        validation_metrics = self._calculate_multi_target_validation_metrics(
-                            prediction_results['target_results'], 
-                            self._detected_labels
-                        )
-                        if validation_metrics:
-                            logger.info("Multi-target validation metrics calculated successfully")
-                    else:
-                        # Single-target validation (existing behavior)
-                        validation_metrics = self._calculate_validation_metrics(
-                            prediction_results['ensemble_predictions'], 
-                            self._detected_labels
-                        )
-                        logger.info("Single-target validation metrics calculated successfully")
+                    # One shape: _predict always returns target_results, single-target included.
+                    validation_metrics = self._calculate_multi_target_validation_metrics(
+                        prediction_results['target_results'],
+                        self._detected_labels
+                    )
+                    if validation_metrics:
+                        logger.info("Validation metrics calculated successfully")
 
                 # Format results for output
                 formatted_results = self._format_results(prediction_results, mode, performance_data, validation_metrics)
@@ -611,7 +610,14 @@ class InferenceStage(PipelineStage):
         np.ndarray
             Feature matrix for inference from context
         """
-        # Get inference features from context (standard stage pattern)
+        # Get inference features from context (standard stage pattern).
+        # `inference_features` is what hands data over in every wired path: EMUSESPipeline sets it
+        # in inference mode, and HeatmapStage sets it from prediction_test/train_features when the
+        # stage runs inside a full pipeline (heatmap_stage.py). `prediction_test_features` is
+        # deliberately NOT read here: HeatmapStage, not this method, decides whether validation
+        # runs against the test or the train split, and a context that never went through it is a
+        # wiring mistake worth refusing loudly - see
+        # tests/pipelines/test_inference_stage_context_integration.py.
         features = context.get("inference_features")
         if features is None:
             # Fallback: check for other common feature keys in context
@@ -725,13 +731,25 @@ class InferenceStage(PipelineStage):
         """
         prediction_models = models.get('prediction_models', [])
         if not prediction_models:
-            logger.warning("No prediction models available - returning dummy predictions")
-            # Return dummy structure when no models are available (for testing)
+            logger.warning("No prediction models available - returning zero predictions")
+            # Same target_results shape as a real run: everything downstream
+            # (_format_results, run(), the service endpoints) indexes 'target_results',
+            # so a flat result here dies with KeyError instead of returning this.
             n_samples = len(embeddings)
             return {
-                'ensemble_predictions': np.zeros(n_samples),
+                'target_results': {
+                    'target_0': {
+                        'ensemble_predictions': np.zeros(n_samples),
+                        'normalized_ensemble_predictions': None,
+                        'individual_predictions': {},
+                        'confidence_scores': np.zeros(n_samples),
+                        'model_count': 0,
+                        'model_names': [],
+                        'denormalization_applied': False,
+                    }
+                },
+                'target_count': 1,
                 'individual_predictions': {},
-                'confidence_scores': np.zeros(n_samples),
                 'model_count': 0,
                 'model_names': []
             }
@@ -1153,6 +1171,17 @@ class InferenceStage(PipelineStage):
         # Ensure same length
         if len(predictions) != len(ground_truth):
             min_len = min(len(predictions), len(ground_truth))
+            if min_len == 0:
+                # Truncating to nothing and carrying on produced
+                # "zero-size array to reduction operation minimum" from np.min a few lines
+                # below - an opaque numpy error for what is really an empty ensemble.
+                raise ValueError(
+                    "Cannot calculate validation metrics: "
+                    f"{len(predictions)} predictions against {len(ground_truth)} ground truth "
+                    "values leaves no samples to compare. An empty prediction array means the "
+                    "ensemble produced nothing - check that the loaded models predict on the "
+                    "transformed embeddings."
+                )
             predictions = predictions[:min_len]
             ground_truth = ground_truth[:min_len]
             logger.warning(f"Prediction and ground truth length mismatch - using first {min_len} samples")
@@ -1493,7 +1522,12 @@ class InferenceStage(PipelineStage):
                 'denormalization_applied': denormalization_applied
             }
             
-            logger.info(f"Target {target} ensemble complete: {len(embeddings)} predictions generated")
+            # Report what the ensemble actually produced, not the input count: this line read
+            # "5 predictions generated" while ensemble_predictions was empty.
+            logger.info(
+                f"Target {target} ensemble complete: {len(ensemble_predictions)} predictions "
+                f"generated from {len(embeddings)} samples"
+            )
         
         return target_results
 
@@ -1521,10 +1555,11 @@ class InferenceStage(PipelineStage):
             - model_names: list aggregated model names
         """
         if not target_results:
+            # Keep the target_results shape even when empty - callers index it unconditionally.
             return {
-                'ensemble_predictions': np.array([]),
+                'target_results': {},
+                'target_count': 0,
                 'individual_predictions': {},
-                'confidence_scores': np.array([]),
                 'model_count': 0,
                 'model_names': []
             }

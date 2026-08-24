@@ -165,25 +165,18 @@ class TestNormalizationValidation:
         # Set up the mock UMAP model in the loaded models
         models['umap_model'] = complete_model_setup['mock_umap']
         
-        # Test feature transformation (should apply normalization)
+        # Test feature transformation
         transformed_features = inference_stage._transform_features(inference_data, models)
-        
-        # Verify UMAP transform was called with normalized features
+
+        # The stage passes features to UMAP UNCHANGED. Normalization happens once, in
+        # EMUSESPipeline, which loads the model's saved input_scaler in inference mode
+        # (see tests/inference/test_normalization_fix.py). This test used to assert the
+        # opposite; normalizing in both places scales the data twice and collapses the
+        # UMAP transform to a single point.
         assert complete_model_setup['mock_umap'].transform.called
-        normalized_features_passed = complete_model_setup['mock_umap'].transform.call_args[0][0]
-        
-        # Key validation: Features should be normalized (different from original)
-        assert not np.array_equal(normalized_features_passed, inference_data)
-        
-        # For min-max normalization, all values should be in [0,1] range
-        assert np.all(normalized_features_passed >= 0)
-        assert np.all(normalized_features_passed <= 1)
-        
-        # Verify specific normalization worked correctly
-        # Original value 150 for feature_1 with training range ~[70,130] should be > 1 (clamped)
-        # Original value 80 for feature_1 should be < 0.5
-        # This demonstrates that training normalization parameters are being applied
-        
+        features_passed = complete_model_setup['mock_umap'].transform.call_args[0][0]
+        np.testing.assert_array_equal(features_passed, inference_data)
+
         # Test that KernelRegressor gets reasonable inputs for non-zero predictions
         kernel_regressor = complete_model_setup['kernel_regressor']
         kernel_predictions = kernel_regressor.predict(transformed_features)
@@ -250,10 +243,15 @@ class TestNormalizationValidation:
         
         # Test transformation
         transformed_features = inference_stage._transform_features(inference_data, models)
-        
-        # Verify that embeddings are rescaled to [0,1] range (UMAPStage rescaling)
-        assert np.all(transformed_features >= 0)
-        assert np.all(transformed_features <= 1)
+
+        # Embeddings are rescaled against the TRAINING range: the saved min maps to 0 and
+        # the saved max to 1. Points outside that range therefore land outside [0,1], and
+        # must - that is the signal that the input sits off the training manifold. The old
+        # assertion (everything within [0,1]) would only hold if rescaling clamped, which
+        # would erase exactly that signal.
+        raw = complete_model_setup['mock_umap'].transform.return_value
+        expected = (raw - np.array([0.1, 0.2])) / (np.array([0.9, 0.8]) - np.array([0.1, 0.2]))
+        np.testing.assert_allclose(transformed_features, expected, rtol=1e-6)
 
     def test_normalization_with_different_data_scales(self, complete_model_setup):
         """Test normalization with data at very different scales from training."""
@@ -279,13 +277,12 @@ class TestNormalizationValidation:
         
         # Test that extreme data is handled gracefully
         transformed_features = inference_stage._transform_features(extreme_data, models)
-        
-        # Verify normalization was applied (values should be transformed)
-        normalized_input = complete_model_setup['mock_umap'].transform.call_args[0][0]
-        
-        # For min-max normalization, some values may exceed [0,1] range due to extrapolation
-        # but they should be consistently normalized
-        assert not np.array_equal(normalized_input, extreme_data)
+
+        # Extreme values are neither rescaled nor clipped here: the stage forwards what it
+        # was given, and EMUSESPipeline has already applied the training scaler. Out-of-range
+        # input stays out of range, which is what makes it visible downstream.
+        features_passed = complete_model_setup['mock_umap'].transform.call_args[0][0]
+        np.testing.assert_array_equal(features_passed, extreme_data)
         assert isinstance(transformed_features, np.ndarray)
 
     def test_backward_compatibility_without_scalers(self, temp_model_dir):
@@ -338,37 +335,45 @@ class TestNormalizationValidation:
         assert isinstance(transformed_features, np.ndarray)
 
     def test_normalization_validation_logging(self, complete_model_setup, caplog):
-        """Test that appropriate logging messages are generated."""
+        """Test that appropriate logging messages are generated.
+
+        The level is set explicitly: this test used to pass only when something earlier in
+        the session had configured the emuses logger, and failed when run on its own.
+        """
+        import logging
+
         from emuses.pipelines.inference_stage import InferenceStage
-        
+
         # Create mock config
         mock_config = Mock()
         mock_config.model_path = str(complete_model_setup['model_dir'])
-        
+
         inference_stage = InferenceStage(mock_config)
-        
-        # Test model loading with logging
-        context = {}
-        models = inference_stage._load_trained_models_with_context(context)
-        
-        # Verify scaler loading logs
-        log_messages = [record.message for record in caplog.records]
-        
-        # Should have logs about loading scalers
-        scaler_logs = [msg for msg in log_messages if 'scaler' in msg.lower()]
-        assert len(scaler_logs) > 0, "Should have logging messages about scaler loading"
-        
-        # Test feature transformation with logging
-        test_features = np.array([[100, 50, 0.5]])
-        models['umap_model'] = complete_model_setup['mock_umap']
-        
-        caplog.clear()
-        transformed_features = inference_stage._transform_features(test_features, models)
-        
-        # Should have logs about applying normalization
-        transform_logs = [record.message for record in caplog.records]
-        normalization_logs = [msg for msg in transform_logs if 'normalization' in msg.lower()]
-        assert len(normalization_logs) > 0, "Should have logging messages about applying normalization"
+
+        with caplog.at_level(logging.INFO, logger="emuses.pipelines.inference_stage"):
+            # Test model loading with logging
+            context = {}
+            models = inference_stage._load_trained_models_with_context(context)
+
+            # Verify scaler loading logs
+            log_messages = [record.message for record in caplog.records]
+
+            # Should have logs about loading scalers
+            scaler_logs = [msg for msg in log_messages if 'scaler' in msg.lower()]
+            assert len(scaler_logs) > 0, "Should have logging messages about scaler loading"
+
+            # Test feature transformation with logging
+            test_features = np.array([[100, 50, 0.5]])
+            models['umap_model'] = complete_model_setup['mock_umap']
+
+            caplog.clear()
+            inference_stage._transform_features(test_features, models)
+
+            # Should say what it did with normalization - here, that it did none, because
+            # EMUSESPipeline already applied the saved scaler.
+            transform_logs = [record.message for record in caplog.records]
+            normalization_logs = [msg for msg in transform_logs if 'normaliz' in msg.lower()]
+            assert len(normalization_logs) > 0, "Should have logging messages about normalization"
 
     def test_denormalization_capability(self, complete_model_setup):
         """Test that denormalization capability is available for interpretable output."""

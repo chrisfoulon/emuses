@@ -139,8 +139,8 @@ class TestInferenceNormalization:
         assert models['metadata']['input_normalization_method'] == 'robust'
         assert models['metadata']['scores_normalization_method'] == 'min-max'
 
-    def test_input_normalization_application_in_transform(self, mock_inference_stage):
-        """Test that input normalization is applied during feature transformation."""
+    def test_transform_does_not_normalize_again(self, mock_inference_stage):
+        """The stage forwards features to UMAP; it does not apply the input scaler."""
         # Create test input features
         test_features = np.array([
             [1.5, 15.0],
@@ -176,24 +176,14 @@ class TestInferenceNormalization:
         
         # Verify UMAP transform was called
         assert mock_umap.transform.called
-        
-        # Verify that normalized features were passed to UMAP
-        normalized_features_passed = mock_umap.transform.call_args[0][0]
-        
-        # The key test is that normalization was applied (not the exact values)
-        # Verify that normalized features are different from original features
-        assert not np.array_equal(normalized_features_passed, test_features)
-        
-        # Verify that features were normalized to expected ranges
-        # For min-max normalization, all values should be between 0 and 1
-        assert np.all(normalized_features_passed >= 0)
-        assert np.all(normalized_features_passed <= 1)
-        
-        # Verify specific expected results based on scaling factors
-        # Test value 1.5 with scaling factors (1,5) -> (1.5-1)/(5-1) = 0.125
-        expected_first_row = np.array([0.125, 0.125])
-        np.testing.assert_array_almost_equal(normalized_features_passed[0], expected_first_row, decimal=6)
-        
+
+        # Features reach UMAP UNCHANGED, even though the models dict carries an
+        # input_scaler. Normalization is EMUSESPipeline's job and happens exactly once,
+        # before the stage sees the data (tests/inference/test_normalization_fix.py).
+        # Applying the scaler here as well would scale the input twice.
+        features_passed = mock_umap.transform.call_args[0][0]
+        np.testing.assert_array_equal(features_passed, test_features)
+
         # Verify result is returned
         assert isinstance(result_embeddings, np.ndarray)
 

@@ -242,9 +242,10 @@ class TestMultiTargetIntegration:
         # Act
         results = stage._predict(test_coords, models_dict)
         
-        # Assert
-        assert results['ensemble_predictions'].shape == (5,)
-        assert np.all(results['ensemble_predictions'] == 0)
+        # Assert - the no-models path returns the same target_results shape as a real run
+        target = results['target_results']['target_0']
+        assert target['ensemble_predictions'].shape == (5,)
+        assert np.all(target['ensemble_predictions'] == 0)
         assert results['model_count'] == 0
         assert len(results['individual_predictions']) == 0
 

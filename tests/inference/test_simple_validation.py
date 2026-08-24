@@ -155,8 +155,8 @@ class TestSimpleNormalizationValidation:
         assert models['input_scaler'] is not None
         assert models['metadata']['input_normalization_method'] == 'min-max'
 
-    def test_normalization_application_during_transform(self, temp_model_dir):
-        """Test that normalization is correctly applied during feature transformation."""
+    def test_transform_forwards_features_without_normalizing(self, temp_model_dir):
+        """The stage does not re-apply the input scaler; the pipeline already did."""
         from emuses.pipelines.inference_stage import InferenceStage
         
         # Create training data and scaling factors
@@ -196,21 +196,14 @@ class TestSimpleNormalizationValidation:
         
         result = inference_stage._transform_features(test_features, models)
         
-        # Verify UMAP was called with normalized features
+        # Verify UMAP was called with the features as given
         assert mock_umap.transform.called
-        normalized_features = mock_umap.transform.call_args[0][0]
-        
-        # For min-max normalization:
-        # [20, 300] -> [(20-0)/(40-0), (300-100)/(500-100)] = [0.5, 0.5]
-        # [0, 100] -> [0.0, 0.0]
-        # [40, 500] -> [1.0, 1.0]
-        expected = np.array([
-            [0.5, 0.5],
-            [0.0, 0.0], 
-            [1.0, 1.0]
-        ])
-        
-        np.testing.assert_array_almost_equal(normalized_features, expected, decimal=10)
+        features_passed = mock_umap.transform.call_args[0][0]
+
+        # No min-max transform happens here. EMUSESPipeline applies the saved input
+        # scaler before InferenceStage runs, so the stage must forward the features
+        # untouched - see tests/inference/test_normalization_fix.py.
+        np.testing.assert_array_equal(features_passed, test_features)
 
     def test_backward_compatibility_no_scalers(self, temp_model_dir):
         """Test that models without scalers still work."""
