@@ -35,6 +35,31 @@ EXTERNAL_DATA_ROOT = (
 )
 
 
+# Command-line options must be registered here rather than beside the fixtures that read them.
+# pytest honours pytest_addoption only from *initial* conftests - the rootdir conftest and the
+# conftests of directories named on the command line. pytest.ini sets `testpaths = tests`, so a
+# bare `pytest` has `tests` as its initial path: this file qualifies, tests/regression/conftest.py
+# does not.
+#
+# --regen-baselines lived in tests/regression/conftest.py until 2026-08-25. The consequence was
+# not a missing flag: every test in tests/regression/ reaches the `regenerating` fixture, so all
+# 14 died at setup with `ValueError: no option named 'regen_baselines'` in any run that did not
+# name the directory. The numerical pinning - the guard against silent scientific drift - did not
+# execute at all under a bare `pytest`, and reported "error" rather than "regression detected"
+# inside a suite already carrying ~150 known failures.
+#
+# Do not move this back down next to its fixtures. tests/test_pytest_option_registration.py fails
+# if anything tries.
+REGEN_HELP = (
+    "Regenerate the numerical baselines instead of asserting against them. "
+    "Deliberate act: the commit message must say what moved the numbers and why."
+)
+
+
+def pytest_addoption(parser):
+    parser.addoption("--regen-baselines", action="store_true", help=REGEN_HELP)
+
+
 @pytest.fixture(autouse=True)
 def _isolate_cwd(tmp_path, monkeypatch):
     """
