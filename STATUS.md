@@ -16,35 +16,32 @@ flags say, and the same command twice gives the same answer.
 per-phase notes). Merge to `main` when `full`, `umap` and `inference` run end to end and
 `tests/regression` passes — not when every feature is implemented.
 
-### The open defect that matters
+### EMUSES runs end to end (measured 2026-08-24)
 
-**Silent degeneracy: models that know nothing and report certainty.**
+| check | result |
+|---|---|
+| `emuses full` | exit 0 |
+| `emuses umap` | exit 0 |
+| `emuses inference`, headerless CSV | exit 0 |
+| `emuses inference`, CSV with header + `--input_header 0` | exit 0 |
+| `ModelIOManager.validate_model` on the `full` output | `is_complete_model=True`, no errors |
+| `tests/regression` | 14 passed, 90 s |
+| `scripts/dev_test_runner.py` | 13/13 |
+| listeners left on 8000–8010 | none |
 
-The earlier claim on this line — "inference emits constant predictions" — was **withdrawn on
-2026-08-24**. Reproducing it contradicted it. The constants come from *training*: every fold
-estimator on `test_data/` is an `ElasticNet` with all coefficients zero, returning its intercept
-(the training-target mean, 0.807) for any input across a grid spanning [-50, 50]². EMUSES' own
-`prediction_values.npy` already holds one unique value across 10 000 grid points, with
-`confidence_values.npy` at exactly 1.0. Inference faithfully applies a model that was already
-constant. The digits measurement behind the original claim fed the model its own
-`split_dataset/test_features.npy`, which is stored *after* normalization while the inference path
-normalizes again — the input was normalized twice.
+**Every merge criterion on this branch is met.**
 
-What is real, confirmed, and open:
+**Scope decision (2026-08-24): scientific plausibility is Chris's call, and not now.** The goal is
+that the pipelines run; Chris judges the results once he can train and infer freely. Observations
+about result *quality* get recorded, not acted on.
 
-1. **Nothing reports a degenerate model.** Confidence is `1.0 - std(across fold predictions)`, so
-   perfect agreement between useless models reads as perfect confidence. The evidence exists at
-   training time — report it there.
-2. **Off-manifold input collapses the UMAP transform silently.** The pre-normalized split gives
-   **1** distinct embedding, the same rows raw give 10, all 50 raw give 50. No error, exit 0.
-3. `.npy` rejected (EMUSES writes its own splits as `.npy`) and header-bearing CSV rejected.
-
-**`test_data/` cannot validate prediction quality** — `features.csv` is a rank-1 synthetic ramp, so
-fits collapse at any budget, and `tests/regression` baselines are pinned at negative R². A passing
-regression suite is not evidence that prediction works.
-
-Whether digits shows a genuine *inference* defect is unresolved; settling it needs a re-run with raw
-input (~3.5 h). `dev-docs/issues/inference_constant_predictions_2026_08.md`, ADR §3.1b.
+The earlier "inference emits constant predictions" claim was **withdrawn** — the constants came from
+training (`ElasticNet` fits collapsing to intercept-only on rank-1 synthetic data), and the digits
+measurement behind it fed the model its own pre-normalized split. Recorded, not being fixed:
+degenerate fits are never reported (`confidence = 1.0 - std(across folds)`, so agreement between
+useless models reads as certainty), and off-manifold input collapses the UMAP transform silently.
+`test_data/` is rank-1 and `tests/regression` baselines sit at negative R², so a passing suite is not
+evidence that prediction works. `dev-docs/issues/inference_constant_predictions_2026_08.md`, ADR §3.1b.
 
 ### What works now
 
