@@ -11,7 +11,8 @@ flags say, and the same command twice gives the same answer.
 
 ## State of play
 
-**On `main`, plus branch `feat/inference-on-service` (Phase 1F).** Plan:
+**On `main`, plus `feat/inference-on-service` (Phase 1F, PR #9 open) and `fix/science-path-tests`
+stacked on it (Phase 4).** Plan:
 `~/.claude/plans/playful-watching-naur.md` (consolidated 2026-08-24 — read that, not the older
 per-phase notes).
 
@@ -38,6 +39,19 @@ no CLI path runs a pipeline in-process (ADR §4). The pre-existing `/api/v1/infe
 422 for every request (measured). All three now call one implementation,
 `emuses/pipelines/inference_runner.py::run_inference`. Outputs are unchanged: the same CLI command
 before and after produced bitwise identical prediction and confidence CSVs.
+
+**Phase 4 done (2026-08-24): the science-path failures are gone — 33 → 0** across
+`tests/pipelines`, `tests/inference` and `tests/flexible-inference-stage` (185 passing). They were
+seven causes, five of them one design change the tests never followed: `_predict` returns
+`target_results[target]['ensemble_predictions']`, not a flat key — the same family as the empty HTTP
+responses fixed in 1F. Five production defects came out of the triage: the no-models branch still
+returned the old flat shape (so it died with `KeyError` instead of returning zeros); an empty
+ensemble surfaced as a numpy "zero-size array" error; a log line reported the *input* count as
+"predictions generated", which is what hid it; `output_path` stayed a `PosixPath` and broke JSON
+serialisation; and `EMUSESPipeline(args, inference_data=...)` was dead — stored, never read, now
+removed. Three contracts are now recorded in ADR §2.5b, including that **normalisation happens once,
+in the pipeline** — doing it in the stage as well is what the withdrawn "constant predictions" claim
+was really about. Details: `dev-docs/issues/phase4_science_path_triage.md`.
 
 **Scope decision (2026-08-24): scientific plausibility is Chris's call, and not now.** The goal is
 that the pipelines run; Chris judges the results once he can train and infer freely. Observations
@@ -83,8 +97,11 @@ port for over an hour; and the service was invisible to `pgrep` because its argv
 `emuses.cli full`. `get_safe_n_jobs` is unchanged — the clamp was right, the process identity was
 wrong.
 
-**Test suite collects cleanly and does not crash**: 2592 tests, 0 errors. 22 known failures, 386
-passing in the working subset. Core dumps, the missing-package problem, the `enhanced-cli-typer`
+**Test suite collects cleanly and does not crash**: 2608 tests, 0 errors. In the working subset
+(`tests/pipelines tests/inference tests/flexible-inference-stage tests/foundation_fastapi_service
+tests/tools tests/cli` + the six guard files): **33 failed / 540 passed / 2 skipped**, down from 68
+before Phase 4, with no new failures. What remains is entirely in `tests/cli` and
+`tests/foundation_fastapi_service` — the science path is clean. Core dumps, the missing-package problem, the `enhanced-cli-typer`
 hang and repo pollution by test output are all fixed.
 
 ## Decided strategy
@@ -103,8 +120,13 @@ hang and repo pollution by test output are all fixed.
 
 ## Open questions / next
 
-1. [ ] **Phase 4** — ~33 science-path test failures, triaged by root cause. **Phase 5** — finish the
-       `emuses/tools/` → `emuses/extras/` move (22 modules, 8 import rewrites).
+1. [x] ~~**Phase 4** — science-path test failures~~ done 2026-08-24 (`fix/science-path-tests`).
+       [ ] **Phase 5** — finish the `emuses/tools/` → `emuses/extras/` move (22 modules, 8 import
+       rewrites). `tests/test_architecture_boundary.py` verifies it.
+       [ ] The 33 remaining failures in `tests/cli` / `tests/foundation_fastapi_service` are
+       untriaged: 6 `test_enhanced_models_commands`, 5 `test_models_hdbscan`,
+       5 `test_inference_preprocessing_params`, 3 each in `test_security_validation`,
+       `test_models_commands`, `test_inference_integration`, and singles elsewhere.
 2. [ ] **Finish the `n_jobs` evidence.** The service fix was measured only at 48 samples. The agreed
        standard was a larger-n arm too, because a misbehaving parallel reduction shows there first.
        Build Arm B: digits as CSV with a **binary** label — 1797 rows kept (so the randomized PCA
