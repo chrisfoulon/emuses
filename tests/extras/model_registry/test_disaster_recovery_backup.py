@@ -23,7 +23,7 @@ from typing import Dict, List, Any, Optional
 from unittest.mock import Mock, AsyncMock
 from datetime import datetime
 
-from emuses.tools.cloud_storage import S3StorageBackend, AzureBlobStorageBackend, GCSStorageBackend
+from emuses.extras.cloud_storage import S3StorageBackend, AzureBlobStorageBackend, GCSStorageBackend
 
 
 class DisasterRecoveryValidator:

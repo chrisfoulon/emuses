@@ -6,8 +6,8 @@ import numpy as np
 from unittest.mock import Mock, MagicMock, patch
 from typing import Dict, List, Any
 
-from emuses.tools.advanced_search import AdvancedModelSearch, SearchConfig
-from emuses.tools.personalized_ranking import (
+from emuses.extras.advanced_search import AdvancedModelSearch, SearchConfig
+from emuses.extras.personalized_ranking import (
     PersonalizedRanker, UserProfile, RankingFeatures, RankingError
 )
 

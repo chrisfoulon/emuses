@@ -11,8 +11,8 @@
 ### DatabaseModelRegistry Integration (✅ From Database)
 ```python
 # VERIFIED: Database implementation provides working patterns
-from emuses.tools.database_model_registry import DatabaseModelRegistry
-from emuses.tools.model_permission_manager import ModelPermissionManager
+from emuses.extras.database_model_registry import DatabaseModelRegistry
+from emuses.extras.model_permission_manager import ModelPermissionManager
 
 # Cloud registry will extend these patterns:
 db_registry = DatabaseModelRegistry(db_session, current_user)
@@ -32,7 +32,7 @@ async def register_model(current_user: User = Depends(get_current_user)):
 ### Permission System Integration (✅ From Database)
 ```python
 # VERIFIED: Permission system operational
-from emuses.tools.model_permission_manager import ModelPermissionManager
+from emuses.extras.model_permission_manager import ModelPermissionManager
 
 # Cloud features extend existing permission patterns:
 # - Public models with community access
@@ -43,7 +43,7 @@ from emuses.tools.model_permission_manager import ModelPermissionManager
 ## Cloud Storage Abstraction Layer - ✅ IMPLEMENTED
 
 ### Storage Backend Interface  
-**Location**: `emuses/tools/cloud_storage.py`  
+**Location**: `emuses/extras/cloud_storage.py`  
 **Status**: ✅ Complete implementation with comprehensive testing (14 tests passing)
 
 **Supported Backends**: ✅ All three major providers implemented
@@ -94,7 +94,7 @@ bucket-name/
 ```
 
 ### CloudModelRegistry Class
-**Location**: `emuses/tools/cloud_model_registry.py`  
+**Location**: `emuses/extras/cloud_model_registry.py`  
 **Purpose**: Production registry with cloud storage and analytics  
 **Integration**: Extends DatabaseModelRegistry patterns
 
@@ -108,7 +108,7 @@ bucket-name/
 ## Advanced Analytics System
 
 ### ModelAnalytics Class
-**Location**: `emuses/tools/model_analytics.py`  
+**Location**: `emuses/extras/model_analytics.py`  
 **Purpose**: Usage tracking and community insights
 
 **Analytics Features**:

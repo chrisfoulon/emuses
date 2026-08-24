@@ -18,8 +18,8 @@ from sqlalchemy.orm import Session
 from emuses.multi_user_service.auth import fastapi_users, get_current_active_user
 from emuses.multi_user_service.database import get_db
 from emuses.multi_user_service.models import User
-from emuses.tools.database_model_registry import DatabaseModelRegistry
-from emuses.tools.model_permission_manager import ModelPermissionManager
+from emuses.extras.database_model_registry import DatabaseModelRegistry
+from emuses.extras.model_permission_manager import ModelPermissionManager
 from emuses.tools.model_registry_health import get_health_checker
 
 logger = logging.getLogger(__name__)

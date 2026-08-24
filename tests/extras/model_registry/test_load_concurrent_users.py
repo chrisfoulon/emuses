@@ -26,11 +26,11 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from emuses.multi_user_service.models import Base, User, Workspace, ModelRegistry
-from emuses.tools.database_model_registry import DatabaseModelRegistry
-from emuses.tools.model_permission_manager import ModelPermissionManager
-from emuses.tools.model_analytics import ModelAnalytics
-from emuses.tools.advanced_search import AdvancedModelSearch, SearchConfig
-from emuses.tools.community_model_manager import CommunityModelManager
+from emuses.extras.database_model_registry import DatabaseModelRegistry
+from emuses.extras.model_permission_manager import ModelPermissionManager
+from emuses.extras.model_analytics import ModelAnalytics
+from emuses.extras.advanced_search import AdvancedModelSearch, SearchConfig
+from emuses.extras.community_model_manager import CommunityModelManager
 
 
 # Load test metrics tracking

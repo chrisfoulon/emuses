@@ -21,8 +21,8 @@ models = local_registry.list_models(filters={"tags": ["fMRI"]})
 ### Database Integration (✅ From Sub-Plan 2)  
 ```python
 # VERIFIED: Database registry with permissions
-from emuses.tools.database_model_registry import DatabaseModelRegistry
-from emuses.tools.model_permission_manager import ModelPermissionManager
+from emuses.extras.database_model_registry import DatabaseModelRegistry
+from emuses.extras.model_permission_manager import ModelPermissionManager
 
 # Multi-user registry patterns:
 db_registry = DatabaseModelRegistry(db_session, current_user)
@@ -32,8 +32,8 @@ models = await db_registry.search_models("motor task", filters)
 ### Cloud Integration (✅ From Sub-Plan 3)
 ```python  
 # VERIFIED: Cloud registry with analytics
-from emuses.tools.cloud_model_registry import CloudModelRegistry
-from emuses.tools.model_analytics import ModelAnalytics
+from emuses.extras.cloud_model_registry import CloudModelRegistry
+from emuses.extras.model_analytics import ModelAnalytics
 
 # Production registry patterns:
 cloud_registry = CloudModelRegistry(storage_backend, db_session, current_user)
@@ -187,13 +187,13 @@ error_msg = ErrorMessages.format_error(ErrorMessages.MODEL_NOT_FOUND, model_name
 ### Phase 4.2 Implementation Achievements:
 
 #### ModelMigrator Class (✅ COMPLETE)
-**Location**: `emuses/tools/model_migration.py`  
+**Location**: `emuses/extras/model_migration.py`  
 **Purpose**: Cross-mode model migration utilities  
 **Status**: ✅ Complete with 8 methods including metadata format conversion
 
 ```python
 # WORKING IMPLEMENTATION:
-from emuses.tools.model_migration import ModelMigrator
+from emuses.extras.model_migration import ModelMigrator
 from emuses.tools.model_registry_factory import RegistryMode
 
 migrator = ModelMigrator()
@@ -222,13 +222,13 @@ converted_metadata = migrator.convert_metadata_format(
 ```
 
 #### RegistryConfig Class (✅ COMPLETE)
-**Location**: `emuses/tools/registry_config.py`  
+**Location**: `emuses/extras/registry_config.py`  
 **Purpose**: Unified configuration management across deployment modes  
 **Status**: ✅ Complete with validation, environment setup, and migration utilities
 
 ```python
 # WORKING IMPLEMENTATION:
-from emuses.tools.registry_config import RegistryConfig
+from emuses.extras.registry_config import RegistryConfig
 from emuses.tools.model_registry_factory import RegistryMode
 
 config = RegistryConfig()
@@ -348,13 +348,13 @@ result = config.import_configuration("/tmp/config.yaml")
 ### Phase 5.1.1: Caching Optimization (✅ COMPLETE)
 
 #### ModelRegistryCache Implementation (✅ COMPLETE)
-**Location**: `emuses/tools/model_registry_cache.py`
+**Location**: `emuses/extras/model_registry_cache.py`
 **Purpose**: In-memory cache with TTL and LRU eviction for performance optimization
 **Status**: ✅ Complete with 15 tests passing
 
 ```python
 # WORKING IMPLEMENTATION:
-from emuses.tools.model_registry_cache import ModelRegistryCache
+from emuses.extras.model_registry_cache import ModelRegistryCache
 
 # Initialize cache with configuration
 cache = ModelRegistryCache(max_size=1000, default_ttl=300)
@@ -377,13 +377,13 @@ list_key = cache.generate_list_models_key(
 ```
 
 #### DatabaseModelRegistry Cache Integration (✅ COMPLETE)
-**Location**: `emuses/tools/database_model_registry.py` (lines 804-985)
+**Location**: `emuses/extras/database_model_registry.py` (lines 804-985)
 **Purpose**: Cached database operations for improved query performance
 **Status**: ✅ Complete with cached methods implemented
 
 ```python
 # WORKING CACHED METHODS:
-from emuses.tools.database_model_registry import DatabaseModelRegistry
+from emuses.extras.database_model_registry import DatabaseModelRegistry
 
 registry = DatabaseModelRegistry(db_session, current_user)
 
@@ -423,7 +423,7 @@ result = registry.register_model_with_cache_invalidation(model_path, name='test'
 
 #### Database Query Optimization Achievements (✅ COMPLETE)
 
-**Location**: `emuses/tools/database_model_registry.py`  
+**Location**: `emuses/extras/database_model_registry.py`  
 **Performance Testing**: `tests/performance/test_database_query_optimization.py` (15 tests)
 
 **Key Optimizations Implemented**:

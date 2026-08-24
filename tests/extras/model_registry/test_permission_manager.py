@@ -13,7 +13,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from emuses.multi_user_service.models import Base, ModelAccess, ModelRegistry, User, Workspace
-from emuses.tools.model_permission_manager import ModelPermissionManager
+from emuses.extras.model_permission_manager import ModelPermissionManager
 
 
 @pytest.fixture

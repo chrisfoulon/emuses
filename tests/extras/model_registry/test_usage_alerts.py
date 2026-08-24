@@ -9,7 +9,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from emuses.multi_user_service.models import Base, User, Workspace, ModelRegistry, ModelDownload
-from emuses.tools.usage_alerts import (
+from emuses.extras.usage_alerts import (
     UsageAlerter, AlertConfig, AlertingError, AlertSeverity, AlertType
 )
 

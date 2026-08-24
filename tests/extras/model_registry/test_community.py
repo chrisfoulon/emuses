@@ -8,7 +8,7 @@ from unittest.mock import Mock, patch, MagicMock
 
 from sqlalchemy.orm import Session
 
-from emuses.tools.community_model_manager import (
+from emuses.extras.community_model_manager import (
     CommunityModelManager,
     CommunityConfig,
     CommunityError,

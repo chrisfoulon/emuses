@@ -14,7 +14,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from emuses.multi_user_service.models import Base, User, Workspace, ModelRegistry, ModelDownload
-from emuses.tools.model_analytics import ModelAnalytics
+from emuses.extras.model_analytics import ModelAnalytics
 
 
 class TestAnalyticsAccuracy:

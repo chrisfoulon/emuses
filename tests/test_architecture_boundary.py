@@ -8,7 +8,9 @@ the suite — exercising code nothing runs.
 
 Nothing was deleted. Those features are *parked*: kept in the tree, importable,
 tested on demand via ``pytest -m extras``, but kept out of the default run and
-out of the core's import graph.
+out of the core's import graph. Since 2026-08-24 they also live in their own
+package, ``emuses/extras/``, so which side of the line a module is on follows
+from where its file sits.
 
 This test is the mechanical backstop for that boundary. Prose in a README does
 not survive nine months of sessions; a failing test does.
@@ -20,8 +22,9 @@ meant to be wired. ``foundation_fastapi_service/app.py`` already does exactly
 this for the multi-user endpoints, gated on ``is_service_mode_enabled()``.
 
 If you are adding a feature and this test fails, the question to ask is not
-"how do I silence it" but "is this feature core?". If it genuinely is, move it
-out of EXTRAS deliberately and say why in ``.codebase-memory/adr.md``.
+"how do I silence it" but "is this feature core?". If it genuinely is, move the
+file out of ``emuses/extras/`` deliberately and say why in
+``.codebase-memory/adr.md``.
 """
 
 from __future__ import annotations
@@ -37,45 +40,32 @@ PACKAGE_ROOT = PROJECT_ROOT / "emuses"
 # --- The boundary, declared by intent rather than derived from the graph ------
 #
 # Deriving it from reachability would be circular: core would be "whatever core
-# imports", and the test could never fail. This list is a product decision.
+# imports", and the test could never fail. This is a product decision, now
+# carried mostly by package layout rather than by a hand-kept list of names.
 
 EXTRAS_PACKAGES = (
     # Auth, workspaces, quotas, multi-tenancy. Already gated at runtime by
     # DeploymentMode; this keeps it gated at import time too.
     "emuses.multi_user_service",
-    # Populated by the Phase 2 move; harmless until then.
+    # The marketplace (search, analytics, ranking, benchmarking, community,
+    # compression, migration), the publication/GDPR compliance scaffolding, and
+    # the cloud and database registry backends. Until 2026-08-24 these were 22
+    # names listed one by one below, sitting in emuses/tools/ next to the code
+    # that is core; the move gave them their own package so membership follows
+    # from where a file lives rather than from a list someone must maintain.
+    #
+    # The *local* folder registry stayed in tools/ (local_model_registry,
+    # model_io, base_model_registry, storage_manager, model_registry_factory,
+    # model_registry_metrics, model_registry_health) — it is the model sharing
+    # that is actually used.
     "emuses.extras",
 )
 
+# What did not fit the package split: two modules parked in place, because each
+# sits inside a package that is otherwise core.
 EXTRAS_MODULES = frozenset({
-    # Marketplace: search, analytics, ranking, benchmarking, community.
-    "emuses.tools.advanced_search",
-    "emuses.tools.model_analytics",
-    "emuses.tools.model_benchmarking",
-    "emuses.tools.model_cache",
-    "emuses.tools.personalized_ranking",
-    "emuses.tools.community_model_manager",
-    "emuses.tools.streaming_analytics",
-    "emuses.tools.usage_alerts",
-    "emuses.tools.model_compression",
-    "emuses.tools.model_migration",
-    "emuses.tools.registry_config",
-    # Publication/compliance scaffolding for a public registry.
-    "emuses.tools.academic_features",
-    "emuses.tools.academic_compliance",
-    "emuses.tools.gdpr_compliance",
-    # Cloud and database registry backends. The *local* folder registry
-    # (local_model_registry, model_io, base_model_registry, storage_manager,
-    # model_registry_factory, model_registry_metrics) is core — it is the model
-    # sharing that is actually used.
-    "emuses.tools.cloud_model_registry",
-    "emuses.tools.cloud_storage",
-    "emuses.tools.cloud_resilience",
-    "emuses.tools.cloud_validation",
-    "emuses.tools.database_model_registry",
-    "emuses.tools.database_index_optimizer",
-    "emuses.tools.model_permission_manager",
-    "emuses.tools.model_registry_cache",
+    # The CLI front end for cloud validation. Lives in cli/ with the live
+    # commands, and is reachable only through the parked backend.
     "emuses.cli.cloud_validation",
     # Orphaned inside an otherwise-live service: referenced only by its own test.
     "emuses.foundation_fastapi_service.stage_runners",
@@ -153,7 +143,7 @@ def _violations():
         for imported in unguarded_imports(
             path.read_text(encoding="utf-8", errors="ignore"), package
         ):
-            # `from emuses.tools.model_cache import X` also yields the symbol,
+            # `from emuses.extras.model_cache import X` also yields the symbol,
             # so check the parent module too.
             for candidate in (imported, imported.rsplit(".", 1)[0]):
                 if is_extras(candidate):
@@ -172,7 +162,7 @@ def test_core_does_not_import_extras_at_module_level():
             "Either import it lazily (inside a function, or behind "
             "try/except ImportError, as foundation_fastapi_service/app.py does "
             "for the multi-user endpoints), or decide the feature is core and "
-            "remove it from EXTRAS in this file - recording why in "
+            "move its file out of emuses/extras/ - recording why in "
             ".codebase-memory/adr.md.",
             pytrace=False,
         )
@@ -186,15 +176,15 @@ def test_the_checker_has_teeth():
     """
     package = "emuses.pipelines"
 
-    unguarded = "from emuses.tools.model_cache import ModelCache\n"
-    assert "emuses.tools.model_cache" in unguarded_imports(unguarded, package)
+    unguarded = "from emuses.extras.model_cache import ModelCache\n"
+    assert "emuses.extras.model_cache" in unguarded_imports(unguarded, package)
 
-    in_function = "def f():\n    from emuses.tools.model_cache import ModelCache\n"
+    in_function = "def f():\n    from emuses.extras.model_cache import ModelCache\n"
     assert unguarded_imports(in_function, package) == set()
 
     behind_try = (
         "try:\n"
-        "    from emuses.tools.model_cache import ModelCache\n"
+        "    from emuses.extras.model_cache import ModelCache\n"
         "except ImportError:\n"
         "    ModelCache = None\n"
     )
@@ -208,4 +198,40 @@ def test_boundary_lists_describe_modules_that_exist():
     assert not missing, (
         f"EXTRAS_MODULES names modules that no longer exist: {missing}. "
         "Remove them, or fix the path if the module moved."
+    )
+
+
+def test_the_extras_package_is_actually_declared():
+    """The 2026-08-24 move traded a list of names for a package.
+
+    That is a better boundary only while the package is in EXTRAS_PACKAGES.
+    Measured by removing the entry: the real core-to-extras import stops being
+    reported, and in its place come ~15 violations from parked modules
+    importing ``emuses.multi_user_service.models`` - legitimate extras-to-extras
+    imports, now mis-read as core reaching into extras. So the failure is loud
+    but points everywhere except at the cause, which is the kind of report
+    people fix by loosening something. This names it instead.
+    """
+    package_dir = PACKAGE_ROOT / "extras"
+    assert package_dir.is_dir(), "emuses/extras/ is gone; the move was undone"
+
+    parked = sorted(
+        p.stem for p in package_dir.glob("*.py") if p.stem != "__init__"
+    )
+    assert len(parked) > 15, (
+        f"emuses/extras/ holds only {len(parked)} modules. If features were "
+        "promoted to core that is fine - say why in .codebase-memory/adr.md "
+        "and update this floor."
+    )
+
+    unclassified = [m for m in parked if not is_extras(f"emuses.extras.{m}")]
+    assert not unclassified, (
+        "emuses/extras/ modules are not being treated as extras: "
+        f"{unclassified}. EXTRAS_PACKAGES has probably lost 'emuses.extras', "
+        "which makes this whole check pass while enforcing nothing."
+    )
+
+    assert not is_extras("emuses.pipelines.umap_stage"), (
+        "A core module classified as extras - EXTRAS_PACKAGES is too broad, "
+        "and core-to-core imports would now be reported as violations."
     )

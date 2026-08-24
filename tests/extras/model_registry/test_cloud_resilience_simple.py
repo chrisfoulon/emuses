@@ -10,7 +10,7 @@ from unittest.mock import MagicMock, AsyncMock
 from pathlib import Path
 from uuid import uuid4
 
-from emuses.tools.cloud_storage import S3StorageBackend, AzureBlobStorageBackend, GCSStorageBackend
+from emuses.extras.cloud_storage import S3StorageBackend, AzureBlobStorageBackend, GCSStorageBackend
 
 
 class TestBasicCloudResilience:

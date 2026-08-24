@@ -20,7 +20,7 @@ from emuses.tools.model_registry_metrics import (
     track_model_storage
 )
 from emuses.tools.local_model_registry import LocalModelRegistry
-from emuses.tools.model_registry_cache import ModelRegistryCache
+from emuses.extras.model_registry_cache import ModelRegistryCache
 
 
 def test_local_registry_metrics():

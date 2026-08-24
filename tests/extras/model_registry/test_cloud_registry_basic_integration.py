@@ -12,8 +12,8 @@ from unittest.mock import MagicMock, AsyncMock
 from uuid import uuid4
 from datetime import datetime
 
-from emuses.tools.cloud_model_registry import CloudModelRegistry
-from emuses.tools.cloud_storage import S3StorageBackend
+from emuses.extras.cloud_model_registry import CloudModelRegistry
+from emuses.extras.cloud_storage import S3StorageBackend
 from emuses.multi_user_service.models import User, ModelRegistry
 
 

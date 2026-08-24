@@ -17,7 +17,7 @@ from pathlib import Path
 from unittest.mock import Mock
 from uuid import uuid4
 
-from emuses.tools.model_permission_manager import ModelPermissionManager
+from emuses.extras.model_permission_manager import ModelPermissionManager
 from emuses.tools.local_model_registry import LocalModelRegistry
 from emuses.tools.model_registry_factory import ModelRegistryFactory
 

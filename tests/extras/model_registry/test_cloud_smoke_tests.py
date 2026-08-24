@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Dict, Any, Optional
 from unittest.mock import patch
 
-from emuses.tools.cloud_validation import (
+from emuses.extras.cloud_validation import (
     validate_cloud_deployment,
     CloudConfigurationValidator,
     CloudHealthChecker,
@@ -278,7 +278,7 @@ class TestCloudHealthChecks:
         os.environ["AWS_DEFAULT_REGION"] = "us-east-1"
         
         with mock_aws():
-            from emuses.tools.cloud_storage import S3StorageBackend
+            from emuses.extras.cloud_storage import S3StorageBackend
             
             # Create S3 client and bucket
             s3_client = boto3.client("s3", region_name="us-east-1")
@@ -309,7 +309,7 @@ class TestCloudHealthChecks:
     @pytest.mark.asyncio
     async def test_backend_health_check_with_invalid_backend(self):
         """Test health check with invalid backend configuration."""
-        from emuses.tools.cloud_storage import S3StorageBackend
+        from emuses.extras.cloud_storage import S3StorageBackend
         
         # Create backend with invalid configuration
         invalid_backend = S3StorageBackend(
@@ -460,7 +460,7 @@ class TestCloudValidationReporting:
 
     def test_validation_result_analysis(self):
         """Test analysis of validation results."""
-        from emuses.tools.cloud_validation import ValidationResult, ValidationStatus
+        from emuses.extras.cloud_validation import ValidationResult, ValidationStatus
         
         # Create sample results
         results = [

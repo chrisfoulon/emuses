@@ -5,7 +5,7 @@ metadata integrity, and rollback scenarios across LOCAL, DATABASE, and CLOUD mod
 """
 import pytest
 
-from emuses.tools.model_migration import ModelMigrator
+from emuses.extras.model_migration import ModelMigrator
 from emuses.tools.model_registry_factory import ModelRegistryFactory, RegistryMode
 
 

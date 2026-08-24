@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session
 
 from emuses.multi_user_service.model_registry_endpoints import get_model_registry_router
 from emuses.multi_user_service.models import User, ModelRegistry, Workspace
-from emuses.tools.database_model_registry import DatabaseModelRegistry
+from emuses.extras.database_model_registry import DatabaseModelRegistry
 
 
 class TestAPIPaginationOptimization:
@@ -684,7 +684,7 @@ class TestIntegratedAPIOptimization:
         Validates that pagination, compression, and serialization optimizations
         integrate properly with the Phase 5.1.1 caching implementation.
         """
-        from emuses.tools.model_registry_cache import ModelRegistryCache
+        from emuses.extras.model_registry_cache import ModelRegistryCache
         
         # Initialize cache
         cache = ModelRegistryCache(max_size=100, default_ttl=300)

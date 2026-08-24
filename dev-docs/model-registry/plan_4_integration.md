@@ -39,7 +39,7 @@
 ### Phase 4.2: Cross-Mode Compatibility ║ tests/integration/test_model_migration.py ║ Mode transitions ║ M
 
 - [x] **Task 4.2.1: Create ModelMigrator class**
-  - [x] 4.2.1.a: Create emuses/tools/model_migration.py
+  - [x] 4.2.1.a: Create emuses/extras/model_migration.py
   - [x] 4.2.1.b: Implement migrate_local_to_database() with validation
   - [x] 4.2.1.c: Add migrate_database_to_cloud() with cloud upload
   - [x] 4.2.1.d: Create migrate_cloud_to_local() for offline scenarios

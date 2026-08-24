@@ -7,7 +7,7 @@ import pytest
 import tempfile
 from pathlib import Path
 
-from emuses.tools.model_migration import ModelMigrator
+from emuses.extras.model_migration import ModelMigrator
 from emuses.tools.model_registry_factory import ModelRegistryFactory, RegistryMode
 
 

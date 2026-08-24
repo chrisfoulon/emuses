@@ -20,9 +20,9 @@ from sqlalchemy.orm import Session
 from emuses.multi_user_service.models import (
     User, ModelRegistry, ModelAccess, ModelDownload, Workspace
 )
-from emuses.tools.model_permission_manager import ModelPermissionManager
-from emuses.tools.model_registry_cache import ModelRegistryCache
-from emuses.tools.database_index_optimizer import DatabaseIndexOptimizer
+from emuses.extras.model_permission_manager import ModelPermissionManager
+from emuses.extras.model_registry_cache import ModelRegistryCache
+from emuses.extras.database_index_optimizer import DatabaseIndexOptimizer
 
 logger = logging.getLogger(__name__)
 

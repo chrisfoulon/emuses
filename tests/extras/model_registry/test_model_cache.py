@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 from unittest.mock import Mock, MagicMock, patch, call
 from pathlib import Path
 
-from emuses.tools.model_cache import (
+from emuses.extras.model_cache import (
     ModelCache, CacheBackend, CacheConfig, CachingError,
     RedisBackend, MemcachedBackend, InMemoryBackend
 )
@@ -162,7 +162,7 @@ class TestInMemoryBackend:
 @pytest.fixture
 def mock_redis():
     """Mock Redis client."""
-    with patch('emuses.tools.model_cache.redis.Redis') as mock_redis_class:
+    with patch('emuses.extras.model_cache.redis.Redis') as mock_redis_class:
         mock_client = Mock()
         mock_redis_class.return_value = mock_client
         yield mock_client
@@ -232,7 +232,7 @@ class TestRedisBackend:
     
     def test_redis_connection_error(self):
         """Test Redis connection error handling."""
-        with patch('emuses.tools.model_cache.redis.Redis') as mock_redis_class:
+        with patch('emuses.extras.model_cache.redis.Redis') as mock_redis_class:
             mock_redis_class.side_effect = Exception("Connection failed")
             
             with pytest.raises(CachingError, match="Failed to connect to Redis"):
@@ -242,7 +242,7 @@ class TestRedisBackend:
 @pytest.fixture
 def mock_memcached():
     """Mock Memcached client."""
-    with patch('emuses.tools.model_cache.MemcachedClient') as mock_memcached_class:
+    with patch('emuses.extras.model_cache.MemcachedClient') as mock_memcached_class:
         mock_client = Mock()
         mock_memcached_class.return_value = mock_client
         yield mock_client
@@ -333,7 +333,7 @@ class TestModelCache:
         assert cache.config is config
         assert isinstance(cache.backend, InMemoryBackend)
     
-    @patch('emuses.tools.model_cache.RedisBackend')
+    @patch('emuses.extras.model_cache.RedisBackend')
     def test_model_cache_init_redis_backend(self, mock_redis_backend, mock_database_session):
         """Test ModelCache initialization with Redis backend."""
         config = CacheConfig(backend_type="redis")
@@ -345,7 +345,7 @@ class TestModelCache:
             db=config.redis_db
         )
     
-    @patch('emuses.tools.model_cache.MemcachedBackend')
+    @patch('emuses.extras.model_cache.MemcachedBackend')
     def test_model_cache_init_memcached_backend(self, mock_memcached_backend, mock_database_session):
         """Test ModelCache initialization with Memcached backend."""
         config = CacheConfig(backend_type="memcached")
@@ -620,7 +620,7 @@ class TestModelCache:
     
     def test_cache_popular_models_with_analytics(self, mock_database_session):
         """Test caching popular models using analytics data."""
-        from emuses.tools.model_analytics import ModelAnalytics
+        from emuses.extras.model_analytics import ModelAnalytics
         
         # Mock analytics data
         mock_analytics = Mock(spec=ModelAnalytics)

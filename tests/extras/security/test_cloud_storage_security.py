@@ -26,13 +26,13 @@ import ssl
 import urllib3
 from uuid import uuid4
 
-from emuses.tools.cloud_storage import (
+from emuses.extras.cloud_storage import (
     S3StorageBackend, 
     AzureBlobStorageBackend, 
     GCSStorageBackend,
     create_storage_backend
 )
-from emuses.tools.cloud_model_registry import CloudModelRegistry
+from emuses.extras.cloud_model_registry import CloudModelRegistry
 
 
 class TestCredentialSecurity:

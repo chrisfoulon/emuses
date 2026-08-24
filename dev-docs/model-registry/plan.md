@@ -554,7 +554,7 @@ Enable seamless model migration between deployment modes with validation, portab
 ### Implementation Achievements ✅
 
 #### ModelMigrator Class ✅ IMPLEMENTED
-**Location**: `emuses/tools/model_migration.py`  
+**Location**: `emuses/extras/model_migration.py`  
 **Purpose**: Cross-mode model migration utilities with factory integration
 - ✅ Factory-based design using ModelRegistryFactory from Phase 4.1
 - ✅ Source/target mode validation (prevents same-mode migration)

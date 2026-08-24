@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from enum import Enum
 import json
 
-from emuses.tools.cloud_storage import CloudStorageBackend, S3StorageBackend, AzureBlobStorageBackend, GCSStorageBackend
+from emuses.extras.cloud_storage import CloudStorageBackend, S3StorageBackend, AzureBlobStorageBackend, GCSStorageBackend
 
 logger = logging.getLogger(__name__)
 

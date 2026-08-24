@@ -125,7 +125,7 @@ This guide provides troubleshooting steps for common issues encountered when dep
 
 2. **Adjust Timeout Settings**
    ```python
-   from emuses.tools.cloud_resilience import CloudOperationTimeout
+   from emuses.extras.cloud_resilience import CloudOperationTimeout
    
    # Configure longer timeouts for slow networks
    timeout_config = CloudOperationTimeout(
@@ -216,7 +216,7 @@ This guide provides troubleshooting steps for common issues encountered when dep
 2. **Implement Caching**
    ```python
    # Enable local caching for frequently accessed models
-   from emuses.tools.model_cache import ModelCache
+   from emuses.extras.model_cache import ModelCache
    
    cache = ModelCache(
        backend="redis",
@@ -302,7 +302,7 @@ This guide provides troubleshooting steps for common issues encountered when dep
 
 2. **Retry Failed Transfers**
    ```python
-   from emuses.tools.cloud_resilience import with_exponential_backoff
+   from emuses.extras.cloud_resilience import with_exponential_backoff
    
    @with_exponential_backoff(max_attempts=5)
    async def reliable_download(storage_url, target_path):
@@ -315,10 +315,10 @@ This guide provides troubleshooting steps for common issues encountered when dep
 
 ```bash
 # Run comprehensive cloud configuration validation
-python -m emuses.tools.cloud_validation validate --environment production --config config/cloud.json
+python -m emuses.extras.cloud_validation validate --environment production --config config/cloud.json
 
 # Test specific provider configuration
-python -m emuses.tools.cloud_validation test-connection --provider aws --config config/aws.json
+python -m emuses.extras.cloud_validation test-connection --provider aws --config config/aws.json
 ```
 
 ### 2. Health Checks
@@ -349,8 +349,8 @@ python -m emuses admin test-concurrent --operations 10 --size 50MB
 import logging
 
 # Enable debug logging for cloud operations
-logging.getLogger('emuses.tools.cloud_storage').setLevel(logging.DEBUG)
-logging.getLogger('emuses.tools.cloud_resilience').setLevel(logging.DEBUG)
+logging.getLogger('emuses.extras.cloud_storage').setLevel(logging.DEBUG)
+logging.getLogger('emuses.extras.cloud_resilience').setLevel(logging.DEBUG)
 ```
 
 ### 2. Monitor Key Metrics

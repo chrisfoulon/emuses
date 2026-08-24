@@ -9,7 +9,7 @@ import uuid
 from datetime import datetime, timedelta
 from unittest.mock import MagicMock
 
-from emuses.tools.community_model_manager import (
+from emuses.extras.community_model_manager import (
     CommunityModelManager, CommunityConfig, ModelRating, ReviewData,
     PublishingStatus, CommunityError
 )

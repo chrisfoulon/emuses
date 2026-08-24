@@ -11,7 +11,7 @@ from datetime import datetime, timedelta
 from unittest.mock import Mock, patch
 from uuid import uuid4
 
-from emuses.tools.gdpr_compliance import GDPRComplianceManager, GDPRError
+from emuses.extras.gdpr_compliance import GDPRComplianceManager, GDPRError
 
 
 class TestGDPRDataAccess:

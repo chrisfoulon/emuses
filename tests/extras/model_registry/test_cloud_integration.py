@@ -19,7 +19,7 @@ try:
 except ImportError:
     MOTO_AVAILABLE = False
 
-from emuses.tools.cloud_storage import S3StorageBackend
+from emuses.extras.cloud_storage import S3StorageBackend
 
 
 @pytest.mark.skipif(not MOTO_AVAILABLE, reason="moto not installed")
@@ -262,7 +262,7 @@ class TestAzureBlobStorageIntegration:
     @pytest.fixture
     def azure_backend_with_azurite(self, azurite_container):
         """Create Azure Blob Storage backend with Azurite emulation."""
-        from emuses.tools.cloud_storage import AzureBlobStorageBackend
+        from emuses.extras.cloud_storage import AzureBlobStorageBackend
         
         # Get connection string from Azurite container
         connection_string = azurite_container.get_connection_string()
@@ -444,7 +444,7 @@ class TestGCSStorageIntegration:
     @pytest.fixture
     def gcs_backend_with_fake_gcs(self, fake_gcs_container):
         """Create GCS backend with fake-gcs-server emulation."""
-        from emuses.tools.cloud_storage import GCSStorageBackend
+        from emuses.extras.cloud_storage import GCSStorageBackend
         
         # Get container host and port
         host = fake_gcs_container.get_container_host_ip()

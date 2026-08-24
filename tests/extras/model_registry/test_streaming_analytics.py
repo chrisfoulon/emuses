@@ -10,7 +10,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from emuses.multi_user_service.models import Base, User, Workspace, ModelRegistry
-from emuses.tools.streaming_analytics import (
+from emuses.extras.streaming_analytics import (
     AnalyticsStreamer, AnalyticsStreamingError, StreamingConfig
 )
 
