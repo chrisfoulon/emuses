@@ -18,20 +18,33 @@ per-phase notes). Merge to `main` when `full`, `umap` and `inference` run end to
 
 ### The open defect that matters
 
-**Inference emits constant predictions for some targets.** Measured on digits 2026-08-24: two of ten
-one-vs-rest targets returned a single constant value for all 360 samples, in every one of their five
-fold pipelines, having cross-validated at 0.9896–1.0000. The test set holds 34 and 30 true positives
-for those targets; all missed, silently, exit code 0. Other targets varied normally.
+**Silent degeneracy: models that know nothing and report certainty.**
 
-This confirms an observation from Phase 0 on `test_data/` and removes the "too few samples"
-explanation. It lands on the deployment EMUSES is aimed at — one person trains, others run inference
-— where a model that scores 0.99 in CV and then predicts a constant is the worst available failure
-mode, because the run looks successful.
+The earlier claim on this line — "inference emits constant predictions" — was **withdrawn on
+2026-08-24**. Reproducing it contradicted it. The constants come from *training*: every fold
+estimator on `test_data/` is an `ElasticNet` with all coefficients zero, returning its intercept
+(the training-target mean, 0.807) for any input across a grid spanning [-50, 50]². EMUSES' own
+`prediction_values.npy` already holds one unique value across 10 000 grid points, with
+`confidence_values.npy` at exactly 1.0. Inference faithfully applies a model that was already
+constant. The digits measurement behind the original claim fed the model its own
+`split_dataset/test_features.npy`, which is stored *after* normalization while the inference path
+normalizes again — the input was normalized twice.
 
-`dev-docs/issues/inference_constant_predictions_2026_08.md`, ADR §3.1b. **Reproduce on `test_data/`
-(~30 s), not digits (~3.5 h, 1.3 GB).** ADR §2.4 records a closely related fix (raw vs rescaled UMAP
-embeddings at inference, which once made every prediction identical) — same symptom shape, first
-place to look, not a known cause.
+What is real, confirmed, and open:
+
+1. **Nothing reports a degenerate model.** Confidence is `1.0 - std(across fold predictions)`, so
+   perfect agreement between useless models reads as perfect confidence. The evidence exists at
+   training time — report it there.
+2. **Off-manifold input collapses the UMAP transform silently.** The pre-normalized split gives
+   **1** distinct embedding, the same rows raw give 10, all 50 raw give 50. No error, exit 0.
+3. `.npy` rejected (EMUSES writes its own splits as `.npy`) and header-bearing CSV rejected.
+
+**`test_data/` cannot validate prediction quality** — `features.csv` is a rank-1 synthetic ramp, so
+fits collapse at any budget, and `tests/regression` baselines are pinned at negative R². A passing
+regression suite is not evidence that prediction works.
+
+Whether digits shows a genuine *inference* defect is unresolved; settling it needs a re-run with raw
+input (~3.5 h). `dev-docs/issues/inference_constant_predictions_2026_08.md`, ADR §3.1b.
 
 ### What works now
 
@@ -85,7 +98,7 @@ hang and repo pollution by test output are all fixed.
 
 ## Open questions / next
 
-1. [ ] **Fix the inference constant-prediction bug** (above). Highest priority.
+1. [ ] **Report degenerate models, and guard the UMAP transform collapse** (above). Highest priority.
 2. [ ] **Finish the `n_jobs` evidence.** The service fix was measured only at 48 samples. The agreed
        standard was a larger-n arm too, because a misbehaving parallel reduction shows there first.
        Build Arm B: digits as CSV with a **binary** label — 1797 rows kept (so the randomized PCA
