@@ -507,6 +507,31 @@ unable to fail.
 
 ---
 
+### 3.1b Inference Emits Constant Predictions for Some Targets (OPEN, high priority)
+
+**Measured 2026-08-24 on digits (1797x64).** Two of ten one-vs-rest targets returned a single
+constant value for all 360 inference samples, in every one of their five fold pipelines, while
+cross-validating at 0.9896-1.0000. The test set contains 34 and 30 true positives for those targets,
+so every one is missed - silently, with exit code 0.
+
+Partial degeneracy sits either side of it: two further targets have constant *confidence* scores, and
+one predicts positive for 0.9% of samples where 11% are truly positive. So it is a spectrum, not an
+on/off fault.
+
+This confirms an observation first made in Phase 0 on `test_data/` and removes the "too few samples"
+explanation. It matters more than its size suggests: the deployment EMUSES is aimed at is one person
+training a model and others running inference against it, and a model that scores 0.99 in CV and then
+predicts a constant is the worst failure mode for a scientific tool - the run looks successful.
+
+§2.4 (embedding scaling saved separately) exists because of a closely related fix: inference once used
+raw UMAP embeddings while training used rescaled ones, driving kernel weights to zero and making every
+prediction identical. Same symptom shape. That fix is in the tree and most targets work, so it is the
+first place to look rather than a known cause.
+
+Reproduce cheaply on `test_data/` (~30 s), not digits (~3.5 h, 1.3 GB). Details, evidence and two
+inference usability defects found alongside (`.npy` rejected; header-bearing CSV rejected) in
+`dev-docs/issues/inference_constant_predictions_2026_08.md`.
+
 ### 3.2 Optuna Parameter Space Conflict on Resume (OPEN)
 
 **Issue**: Resuming training in an existing output directory with a different `--prediction_optim_dict` crashes because the loaded Optuna study expects the original parameter space.
@@ -587,3 +612,28 @@ against it on a server needs inference to go through the service, and today it d
 
 `--service-url` opts into a remote service. `--service` is redundant now that every mode uses one, so
 it warns instead of sitting there looking wired.
+
+**The service is its own interpreter, not a fork (decided 2026-08-24, Phase 1E).**
+`_start_local_service` launches `python -m emuses.cli.service_process --port N` via
+`subprocess.Popen(sys.executable, ...)`. It used `multiprocessing.Process`, and that had three
+consequences, only one of which was visible:
+
+- **`--n_jobs` was inert on the CLI.** `is_subprocess_context()` is
+  `mp.current_process().name != "MainProcess"`, true in any forked child, so `get_safe_n_jobs()`
+  clamped to 1 inside the service while the Python API was unaffected. **The clamp is not the bug** -
+  spawning loky workers from an already-forked process genuinely hangs, and that was reproduced
+  directly. The process *identity* was wrong. Fixing it leaves `get_safe_n_jobs` untouched.
+- **A SIGKILLed CLI orphaned the service**, which then held its port for over an hour and ignored
+  SIGTERM; `atexit` does not run when the parent is killed. `service_process` now dies with its
+  parent via `prctl(PR_SET_PDEATHSIG)` on Linux, with a pid-watchdog fallback and a guard for the
+  race where the parent dies first.
+- **The service was invisible to `pgrep`**, because as a fork its argv still read
+  `python -m emuses.cli full`. It now names itself.
+
+The entry point binds `127.0.0.1` and takes an explicit `--port`. It deliberately does not reuse
+`foundation_fastapi_service/app.py`'s `__main__`, which hardcodes port 8000 and binds `0.0.0.0`.
+The macOS `_macos_service_worker` branch is deleted: it existed only to satisfy `multiprocessing`
+spawn-pickling, and a subprocess needs no picklable target.
+
+Verified not to move results: 18/18 scalar metrics identical against both the API baseline and the
+pre-change forked CLI, cluster ARI 1.0, embedding distance correlation 1.0.

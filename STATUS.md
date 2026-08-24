@@ -86,6 +86,43 @@ validates via `ModelIOManager.validate_model()`. `inference` works. This was gen
 session test fixture drives the *Python API*, while the CLI goes out over HTTP to an auto-started
 FastAPI service, and only the first had ever been checked.
 
+**Inference emits constant predictions for some targets — a real bug, found 2026-08-24.** A digits
+model (1797x64, 10-class one-vs-rest, seed 42) was asked to predict on its own held-out 360-sample
+split. **Targets 7 and 8 returned a single constant value for every sample, in every one of their
+five fold pipelines** — while cross-validating at 0.9896–1.0000. The test set genuinely contains 34
+and 30 positives for those digits, so every true positive is missed, silently, with exit code 0.
+Targets 0–6 and 9 varied normally. Partial degeneracy either side: `target_3`/`target_5` have
+constant *confidence* scores, and `target_9` predicts positive for 0.9% where 11% are truly positive.
+
+This confirms Phase 0's observation and upgrades it: it is not an artefact of `test_data/` being
+tiny. It is also the deployment EMUSES is aimed at — train once, others run inference — so it
+outranks the remaining phases. Full write-up and a **cheap** reproduction route (via `test_data/`,
+~30 s, not the 3.5 h digits run) in `dev-docs/issues/inference_constant_predictions_2026_08.md`.
+`STATUS` already records a closely related fix (raw vs rescaled UMAP embeddings at inference) — same
+symptom shape, first place to look, not yet proven to be the same cause.
+
+**The rest of the digits run is healthy**, which is what makes the above a bug rather than bad data:
+`composite_score` 0.6519, **11 clusters** on a 10-class dataset with **0.9% noise**, 3 h 26 m,
+1.3 GB of output. Two inference usability defects found alongside: `emuses inference` **rejects
+`.npy`** although EMUSES writes its own splits as `.npy`, and a **CSV with a header** fails with "No
+numeric data remaining" because `input_header` defaults to `None`.
+
+**The service is now a real process, and `--n_jobs` works** (Phase 1E). `_start_local_service` used
+`multiprocessing.Process`, which made the service look like a joblib worker to
+`is_subprocess_context()` (`name != "MainProcess"`), so `get_safe_n_jobs()` clamped every request to
+1 — `--n_jobs` was inert on the CLI while working normally through the Python API. The clamp was
+never wrong: spawning loky workers from an already-forked process genuinely hangs, and that was
+reproduced. The *process identity* was wrong, so `get_safe_n_jobs` is untouched and the service now
+runs as `python -m emuses.cli.service_process --port N`.
+
+Three things fixed at once: `--n_jobs` is honoured (`get_safe_n_jobs(4)` → 4, asserted in a real
+standalone interpreter); **the orphan is gone** — a SIGKILLed CLI used to leave the service holding a
+port for over an hour, and the child now dies with its parent via `prctl(PR_SET_PDEATHSIG)` with a
+pid-watchdog fallback; and **`pgrep` now finds the service**, because its argv finally names itself.
+Numbers unmoved: 18/18 scalar metrics identical against both the API baseline and the pre-1E forked
+CLI, cluster ARI 1.0, distance correlation 1.0. The macOS `_macos_service_worker` special case is
+deleted — it existed only for `multiprocessing` spawn-pickling.
+
 **One execution path: every mode goes through the service** (decided 2026-08-23, ADR §4). Local mode
 auto-starts a service and submits to it, rather than calling the pipeline directly. ADR §4 used to say
 local was "in-process execution"; that was never true, was briefly implemented, and was **reverted the
@@ -298,9 +335,11 @@ with 500. Since `_execute_via_remote_service` defaults to `localhost:8000` (`mai
 CLI run contacted it first — had it answered 200, a real job would have gone into a test fixture's
 service. The test now patches the service lifecycle, and a session-scoped autouse fixture in
 `tests/conftest.py` fails the session on leaked children. Nothing is listening on 8000–8010 as of
-2026-08-23. **`pgrep -af uvicorn` does not detect these** — the service is a fork of the CLI
-process, so its argv still reads `python -m emuses.cli full`. Use
-`ss -ltnp | awk '$4 ~ /:80[0-9][0-9]$/'`.
+2026-08-23. **This changed on 2026-08-24 (Phase 1E):** the service is no longer a fork, so its argv
+now reads `python -m emuses.cli.service_process --port N` and `pgrep -af service_process` finds it.
+`ss -ltnp | awk '$4 ~ /:80[0-9][0-9]$/'` remains the reliable check — it answers "is a port held",
+which is the question that matters, and does not depend on argv. Note port 8080 belongs to another
+user on this machine, not EMUSES.
 
 - [ ] Run `/lad:converge` — nine months of accumulated claims have not been checked against the
       code. Two were already found and fixed on 2026-07-30 (a stale "ready for merge" banner, and
