@@ -1,68 +1,89 @@
-# Inference emits constant predictions for some targets, while CV says 0.99+
+# Constant predictions: NOT an inference bug — degenerate models, reported silently
 
-_Measured 2026-08-24 on sklearn digits (1797 x 64). Confirms and upgrades an observation first
-made in Phase 0 on `test_data/`._
+_Opened 2026-08-24 on a digits measurement. **Substantially corrected the same day** after the
+`test_data/` reproduction contradicted it. Read the correction before acting on the original claim._
 
-## The finding
+## Corrected finding
 
-A digits model trained by `emuses full` (10-class, one-vs-rest, 5 outer folds, seed 42) was asked
-to predict on its own held-out test split (360 samples). **Two of ten targets emitted a single
-constant value for every sample, in every one of their five fold pipelines.**
+Constant predictions are real, but **inference is not where they come from**. On `test_data/` at the
+regression config, every fold's estimator is an **`ElasticNet` whose coefficients are all zero**. It
+returns its intercept — the training-target mean — for any input whatsoever:
 
-| target | inference output | unique values | true positives in the test set | training CV score |
-|---|---|---|---|---|
-| target_7 | `0.0` for all 360 | **1** | 34 (9.4 %) | 0.9896 – 1.0000 |
-| target_8 | `0.0` for all 360 | **1** | 30 (8.3 %) | 0.9930 – 1.0000 |
+| evidence | value |
+|---|---|
+| each fold estimator over a grid spanning [-50, 50]² | **1 unique output** (0.7981 – 0.8159 per fold) |
+| `target_0/prediction-heatmaps/prediction_values.npy`, 10 000 grid points | **1 unique value**, 0.807000 |
+| `confidence_values.npy` | **1.0 exactly**, at every grid point |
+| `train_labels` mean | **0.8070** — the constant *is* the mean |
 
-Every true positive is missed, silently. The run exits 0, writes its CSVs, and reports nothing
-wrong. Targets 0–6 and 9 produced varying predictions in the same run, so this is not a
-whole-pipeline failure.
+The training-time artifacts already show the degeneracy. Inference faithfully applies a model that
+was constant when it was fitted, so it reproduces the constant exactly.
 
-**The training scores make it worse, not better.** These targets cross-validated at 0.9896–1.0000
-across five folds. Whatever fails, it fails *between* the model that was scored and the model that
-is loaded and applied — not during fitting.
+**The fit is not itself a bug.** `quick_train_dict` searches ElasticNet `alpha` up to 1.0; on 40
+samples of 2-D embeddings whose target has std 0.07, zeroing the coefficients genuinely minimises
+cross-validated error. Optuna is answering correctly that there is no signal to fit.
 
-Partial degeneracy is visible either side of the hard cases: `target_3` and `target_5` produce
-varying predictions but a **constant confidence score**, and `target_9` predicts positive for ~0.9 %
-of samples where 11 % are truly positive. The failure is a spectrum, not a binary.
+**The bug is that nothing says so.** A model that predicts the mean everywhere is reported with
+`confidence = 1.0` — the maximum — and the run exits 0.
 
-## Why this matters more than the numbers suggest
+## Why the original claim was wrong
 
-This is the deployment EMUSES is aimed at: one person trains a model, other people run inference
-against it. A model that scores 0.99 in cross-validation and then predicts a constant is the worst
-kind of defect for a scientific tool — the run looks successful and the result is wrong.
+Two independent flaws, both in the measurement rather than in EMUSES:
 
-## What is already known
+1. **The digits inference was fed the model's own pre-normalized split.** The recorded command was
+   `np.load(armA/split_dataset/test_features.npy)` → CSV → `emuses inference`. But
+   `split_dataset/*.npy` is written **after** input normalization, while the inference path applies
+   the saved training scaler again. The data was normalized twice.
+2. **`test_data/` cannot demonstrate prediction behaviour.** `features.csv` is a synthetic ramp —
+   row *i* is `[1.i, 2.i, … 8.i]` — so all 50 points lie on a line in 8-D. It is rank-1 by
+   construction and yields degenerate fits. Phase 0's guess ("degenerate fits from the tiny budget")
+   was right about the cause and wrong only about the budget: this is a realistic budget
+   (`optuna_trials=15`) and it still collapses.
 
-ADR §2.4 ("Embedding Scaling Saved Separately") records a previous, closely related fix: inference
-used **raw** UMAP embeddings while training used **rescaled** ones,
-so kernel weights went to zero and every prediction came out identical. That was fixed by having
-`UMAPStage` persist min/max to `embedding_scaling.json` for `InferenceStage` to reload.
+The digits result was accepted because it was alarming, not because its input had been checked. It
+is the same failure the project keeps meeting: **the encouraging-or-dramatic reading gets less
+scrutiny than the boring one.**
 
-The symptom here is the same shape. It is *not* proof the same cause has returned — that fix is in
-the tree and the majority of targets work — but it is the first place to look, and it establishes
-that a train/inference representation mismatch is a defect class this codebase has already had once.
+## What IS confirmed, and worth fixing
 
-## How to reproduce cheaply
+**1. Degenerate models are never reported (highest value).** All-zero coefficients, a constant
+prediction grid, and `confidence = 1.0` together describe a model that knows nothing and says it is
+certain. Confidence is computed as `1.0 - std(across fold predictions)`
+(`inference_stage.py:1455`), so **perfect agreement between useless models reads as perfect
+confidence**. Detect and report at training time, where the evidence already exists.
 
-Do **not** start from digits: that run costs ~3.5 h and 1.3 GB. Phase 0 saw the same symptom on
-`test_data/` ("three of five inference folds emitted a constant prediction"), which is ~30 s a run.
+**2. Feeding EMUSES' own splits back in silently double-normalizes.** Measured on `test_data/`:
 
-1. `emuses full` on `test_data/` at the regression config, then `emuses inference` against the
-   resulting model using its own `split_dataset/test_features.npy` contents.
-2. Assert per-target, per-fold that predictions have more than one unique value.
-3. If it reproduces there, diagnose there.
+| inference input | distinct embeddings from `umap.transform` |
+|---|---|
+| `split_dataset/test_features.npy` (pre-normalized) | **1** — total collapse |
+| the same 10 rows, raw from `features.csv` | 10 |
+| all 50 rows, raw | 50 |
 
-Two obstacles found while doing this on digits, both worth fixing regardless:
+Off-manifold input collapses the UMAP transform to a single point, with no error and exit 0. This
+did not change the *predictions* on `test_data/` only because the models were already constant; on a
+model that had learned something it would silently destroy the result.
 
-- **`emuses inference` rejects `.npy`** ("Unsupported file format: .npy"), although EMUSES writes
-  its own split data as `.npy`. A model's own `split_dataset/test_features.npy` cannot be fed back
-  in without converting it first.
-- **A CSV with a header fails** with "No numeric data remaining after processing the file", because
-  `input_header` defaults to `None` and the header row is parsed as data. A headerless CSV works.
+**3. Two input defects.** `emuses inference` **rejects `.npy`** although EMUSES writes its splits as
+`.npy`; and a **header-bearing CSV** fails with "No numeric data remaining" because `input_header`
+defaults to `None`. Note the ordering constraint: accepting `.npy` makes defect 2 *easier* to hit,
+so the collapse guard should land first or alongside.
 
-## Status
+## Consequence for the regression suite
 
-**Open.** The digits model was deleted after metrics extraction (disk was at 94 %), so diagnosis
-starts from a fresh reproduction. Evidence retained: inference predictions, per-fold training
-scores, `best_trial_info.json`, `random_seeds.json` and the test labels.
+`tests/regression/baselines/*.json` pin per-fold prediction scores of mean **-0.3554**, min
+**-0.9809** — negative R², i.e. worse than predicting the mean, which is what intercept-only models
+give on held-out folds. The suite remains valid for what it is for (those numbers must not move),
+but it **cannot detect a prediction-quality regression, because it is already at the floor**. Do not
+read a passing regression suite as evidence that prediction works.
+
+## Still open
+
+Whether digits shows a genuine inference defect **is unresolved**. Its models were not degenerate
+(CV 0.9895–1.0 with real spread, above the ~0.90 one-vs-rest base rate), so the constant `0.0` on
+targets 7 and 8 is not explained by the ElasticNet collapse seen here — but the input was
+double-normalized, which is sufficient on its own to produce it. Settling it needs a digits model
+re-run with **raw** inference input (~3.5 h, ~1.5 GB); the original model was deleted.
+
+Until then, treat "inference is broken" as **unproven**, and the two silent-failure defects above as
+the real, confirmed work.

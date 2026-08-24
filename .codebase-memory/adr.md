@@ -507,30 +507,44 @@ unable to fail.
 
 ---
 
-### 3.1b Inference Emits Constant Predictions for Some Targets (OPEN, high priority)
+### 3.1b Constant Predictions Are Degenerate Models, Not an Inference Bug (OPEN, corrected)
 
-**Measured 2026-08-24 on digits (1797x64).** Two of ten one-vs-rest targets returned a single
-constant value for all 360 inference samples, in every one of their five fold pipelines, while
-cross-validating at 0.9896-1.0000. The test set contains 34 and 30 true positives for those targets,
-so every one is missed - silently, with exit code 0.
+**Opened and corrected on 2026-08-24.** The original entry claimed inference emitted constant
+predictions for some digits targets while cross-validating at 0.99+. That claim is **withdrawn**:
+both pieces of evidence for it were compromised.
 
-Partial degeneracy sits either side of it: two further targets have constant *confidence* scores, and
-one predicts positive for 0.9% of samples where 11% are truly positive. So it is a spectrum, not an
-on/off fault.
+- The digits inference was fed the model's own `split_dataset/test_features.npy`, which is written
+  **after** input normalization, while the inference path applies the saved scaler again. The input
+  was normalized twice.
+- The `test_data/` reproduction shows the constants come from **training**, not inference. Every fold
+  estimator is an `ElasticNet` with all coefficients zero, returning its intercept (the training-target
+  mean, 0.807) for any input across a grid spanning [-50, 50]^2. `prediction_values.npy` holds one
+  unique value across 10 000 grid points and `confidence_values.npy` is exactly 1.0. Inference is
+  faithfully applying a model that was already constant.
 
-This confirms an observation first made in Phase 0 on `test_data/` and removes the "too few samples"
-explanation. It matters more than its size suggests: the deployment EMUSES is aimed at is one person
-training a model and others running inference against it, and a model that scores 0.99 in CV and then
-predicts a constant is the worst failure mode for a scientific tool - the run looks successful.
+The fit itself is defensible - `quick_train_dict` searches alpha up to 1.0, and on 40 samples of 2-D
+embeddings with target std 0.07 there is no signal, so zeroing the coefficients minimises CV error.
 
-§2.4 (embedding scaling saved separately) exists because of a closely related fix: inference once used
-raw UMAP embeddings while training used rescaled ones, driving kernel weights to zero and making every
-prediction identical. Same symptom shape. That fix is in the tree and most targets work, so it is the
-first place to look rather than a known cause.
+**What is actually wrong, and is still open:**
 
-Reproduce cheaply on `test_data/` (~30 s), not digits (~3.5 h, 1.3 GB). Details, evidence and two
-inference usability defects found alongside (`.npy` rejected; header-bearing CSV rejected) in
-`dev-docs/issues/inference_constant_predictions_2026_08.md`.
+1. **Degenerate models are never reported.** All-zero coefficients, a constant prediction grid, and
+   `confidence = 1.0` describe a model that knows nothing and claims certainty. Confidence is
+   `1.0 - std(across fold predictions)` (`inference_stage.py:1455`), so perfect agreement between
+   useless models reads as perfect confidence. The evidence exists at training time; report it there.
+2. **Feeding EMUSES' own splits back into inference silently double-normalizes.** Measured: the
+   pre-normalized split yields **1** distinct embedding from `umap.transform`, the same rows raw yield
+   10, all 50 raw rows yield 50. Off-manifold input collapses the transform with no error.
+3. `.npy` rejected and header-bearing CSV rejected (`input_header` defaults to `None`). Accepting
+   `.npy` makes (2) easier to hit, so the collapse guard lands first or alongside.
+
+**`test_data/` cannot validate prediction behaviour**: `features.csv` is a synthetic ramp (row i is
+`[1.i, 2.i, ... 8.i]`), rank-1 by construction, and yields degenerate fits at any budget. Related:
+`tests/regression/` baselines pin per-fold scores of mean -0.3554 / min -0.9809 (negative R^2), so a
+passing regression suite is **not** evidence that prediction works - it is pinned at the floor.
+
+Whether digits shows a genuine inference defect is **unresolved**; its models were not degenerate, but
+its input was double-normalized. Settling it needs a re-run with raw inference input (~3.5 h). Details
+in `dev-docs/issues/inference_constant_predictions_2026_08.md`.
 
 ### 3.2 Optuna Parameter Space Conflict on Resume (OPEN)
 
