@@ -197,17 +197,140 @@ def setup_test_session():
     pass
 
 
-@pytest.fixture(autouse=True)
-def mock_atexit_register():
-    """Mock atexit.register to prevent pytest hanging issues.
-    
-    This fixture automatically mocks atexit.register calls during tests
-    to prevent multiprocessing logging listeners from preventing clean
-    pytest exit. This is a cleaner approach than adding TESTING_MODE
-    checks in production code.
+# An autouse fixture used to patch `atexit.register` into a Mock for every test in the
+# suite, to stop multiprocessing logging listeners blocking pytest exit. It was added
+# 2025-07-10 (17525d5); the listener leak it worked around was fixed properly on 2026-08-19
+# (015a307) with a module-level singleton plus a multiprocessing.util.Finalize, so the
+# workaround outlived its cause by thirteen months.
+#
+# Leaving it in was not harmless. `_start_local_service` (cli/main.py) registers an
+# `emergency_cleanup` atexit handler described in its own comment as the safety net that
+# "ensures cleanup even if finally block doesn't run". Under test that registration went
+# into a Mock and was discarded, so the safety net was disabled in exactly the environment
+# that needed it most - and a FastAPI service process leaked out of
+# test_concurrent_job_submissions and ran for three days holding port 8000.
+#
+# Removed after measuring: tests/pipelines + tests/foundation_fastapi_service + tests/tools
+# give 23 failed / 314 passed / 2 skipped both with and without it, and neither run hangs.
+# No test requested the fixture.
+
+
+# Python's multiprocessing and joblib's loky each run a `resource_tracker` daemon that
+# deliberately outlives individual worker pools - it exists to clean up shared memory and
+# semaphores at interpreter exit. These are infrastructure, not leaks, and killing them causes
+# the very problem they prevent ("resource_tracker: process died unexpectedly, relaunching.
+# Some folders/semaphores might leak"). Everything else is still reported.
+_INFRASTRUCTURE_MARKERS = ("resource_tracker", "semaphore_tracker")
+
+
+def _is_resource_tracker(proc):
+    """True if `proc` is a multiprocessing/loky resource tracker rather than a leaked process."""
+    try:
+        cmdline = " ".join(proc.cmdline())
+    except Exception:
+        return False
+    return any(marker in cmdline for marker in _INFRASTRUCTURE_MARKERS)
+
+
+def _describe(proc):
+    """One-line description of a process for leak reporting."""
+    try:
+        return f"pid={proc.pid} age={int(time.time() - proc.create_time())}s cmd={' '.join(proc.cmdline())[:110]}"
+    except Exception:  # process vanished, or we cannot read it
+        return f"pid={getattr(proc, 'pid', '?')} <no longer inspectable>"
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _fail_on_leaked_child_processes():
+    """Fail the session if a test leaves a child process running, and reap it.
+
+    A test that starts a real service and does not stop it does not fail - it succeeds, and
+    the process outlives the run. One escaped this suite and served HTTP on port 8000 for
+    three days; because the service is a *fork* of the pytest process its argv still read
+    `python -m pytest`, so `pgrep -af uvicorn` reported nothing and it stayed invisible.
+
+    Anything still alive at session end is a leak by definition: pytest is finished, so
+    nothing it started has any reason to still be running. Reaping here is a backstop, not
+    the fix - a SIGKILLed session runs no fixtures at all, which is how the three-day orphan
+    escaped. The fix is that tests should not start real services (mock the starter), and
+    that production cleanup paths are left intact.
     """
-    with patch('atexit.register') as mock_register:
-        yield mock_register
+    try:
+        import psutil
+    except ImportError:  # psutil absent in the minimal fast-tests CI env
+        yield
+        return
+
+    me = psutil.Process()
+    before = {child.pid for child in me.children(recursive=True)}
+
+    yield
+
+    # joblib's loky backend keeps an idle worker pool alive between calls on purpose, and
+    # would otherwise be reported here as a leak on every run that touched create_safe_parallel.
+    # Shutting it down explicitly is better than excluding it by name: a genuine leak from
+    # inside a joblib worker still gets caught, and the check keeps its teeth.
+    try:
+        from joblib.externals.loky import reusable_executor
+
+        # Only shut down a pool that already exists. get_reusable_executor() *creates* one
+        # when there is none, so calling it unconditionally would spawn a worker pool at
+        # teardown purely in order to shut it down.
+        if reusable_executor._executor is not None:
+            reusable_executor._executor.shutdown(wait=True)
+    except Exception:  # joblib absent, or the internal name moved
+        pass
+
+    leaked = [
+        c
+        for c in me.children(recursive=True)
+        if c.pid not in before and not _is_resource_tracker(c)
+    ]
+    if not leaked:
+        return
+
+    details = [_describe(c) for c in leaked]
+    for child in leaked:
+        try:
+            child.terminate()
+        except psutil.Error:
+            pass
+    _, still_alive = psutil.wait_procs(leaked, timeout=5)
+    for child in still_alive:
+        try:
+            child.kill()
+        except psutil.Error:
+            pass
+
+    pytest.fail(
+        f"{len(leaked)} child process(es) survived the test session and were killed:\n  "
+        + "\n  ".join(details)
+        + "\n\nA test started a process and did not stop it. Find it and mock the thing that "
+        "starts the process rather than relying on this cleanup, which cannot run if the "
+        "session is killed.",
+        pytrace=False,
+    )
+
+
+@pytest.fixture(autouse=True)
+def _reset_parallelism_backend():
+    """Undo the process-wide parallelism override that production code sets.
+
+    `configure_parallelism_backend` writes a module-level global `_force_backend`, and
+    `PipelineRunner._run_pipeline_in_process` sets it to "threading" unconditionally. Nothing
+    resets it, so once any test runs a pipeline, every later test in that process sees a
+    forced backend.
+
+    That is not hypothetical: tests/tools/test_parallelism_utils.py passes 13/13 on its own,
+    and `test_enhanced_backend_selection_by_depth` fails if a single pipeline test runs
+    first. Restoring the previous value keeps the failure attributable to the test that
+    causes it.
+    """
+    from emuses.tools import parallelism_utils
+
+    previous = parallelism_utils._force_backend
+    yield
+    parallelism_utils._force_backend = previous
 
 
 @pytest.fixture(scope="session")
@@ -345,3 +468,137 @@ def emuses_pipeline_results():
         print("🧹 Session fixture cleanup completed")
     except Exception as e:
         print(f"⚠️ Session cleanup warning: {e}")
+
+
+# Rendered figures are the bulk of a pipeline output folder and have nothing to do
+# with what the registry validates or stores. Copying them for every test filled
+# /tmp and turned the registry suite into 40 "No space left on device" errors.
+# Everything the completeness check looks at is kept: the root manifest, the
+# .joblib models, embeddings.npy / input_matrix.npy, and each target_*/ with its
+# manifest and models.
+_MODEL_COPY_IGNORE = shutil.ignore_patterns(
+    "*.png", "*.html", "*.svg", "*.pdf", "plots", "cluster_visualizations"
+)
+
+
+def _copy_model_folder(source: Path, destination: Path) -> Path:
+    """Copy a model folder without the rendered figures."""
+    shutil.copytree(source, destination, ignore=_MODEL_COPY_IGNORE)
+    return destination
+
+
+@pytest.fixture(scope="session")
+def real_emuses_model_source(emuses_pipeline_results):
+    """Path to a genuine complete EMUSES output folder, produced by a real run.
+
+    Registry fixtures used to hand-build a directory holding a bare sklearn
+    ``Pipeline`` and call it a model. ADR 2.1 is explicit that an EMUSES model is
+    an *entire output folder* - UMAP, HDBSCAN, prediction pipelines, scalers and
+    metadata, trained together - and that components are not separable. The
+    registry was right to reject those directories; the fixtures were wrong.
+
+    Guardrail G009 says not to invent what real data looks like, so this does not
+    assemble a folder by hand to satisfy the validator. It takes the folder a
+    real pipeline run produced and asserts it validates, which means the check
+    and the pipeline are held to each other rather than to a fixture author's
+    guess about the format.
+
+    Session-scoped: the pipeline runs once. Use ``real_emuses_model`` for a
+    writable per-test copy.
+    """
+    folder = emuses_pipeline_results.get("regression")
+    if folder is None:
+        pytest.fail(
+            "The session pipeline fixture did not produce a regression model. It "
+            "logs the pipeline traceback to stdout and stores None on failure, so "
+            "run with -s to see why.",
+            pytrace=False,
+        )
+
+    folder = Path(folder)
+    if not folder.is_dir():
+        pytest.fail(f"Pipeline reported success but {folder} is not a directory.",
+                    pytrace=False)
+
+    from emuses.tools.model_io import ModelIOManager
+
+    # base_path is where the manager keeps its own metadata, not the model under
+    # test; give it a scratch dir so validation does not write into the fixture.
+    manager = ModelIOManager(base_path=folder.parent / "_io_manager_scratch")
+    validation = manager.validate_model(folder)
+    if not validation.is_complete_model:
+        pytest.fail(
+            f"A real pipeline run produced {folder}, but the registry does not "
+            f"accept it as a complete EMUSES model: {validation.validation_errors}. "
+            "That is a genuine disagreement between what the pipeline writes and "
+            "what the registry requires - fix that, do not relax the validator.",
+            pytrace=False,
+        )
+    return folder
+
+
+@pytest.fixture
+def real_emuses_model(real_emuses_model_source, tmp_path):
+    """A writable per-test copy of a genuine complete EMUSES model folder.
+
+    Tests install, mutate and delete these, so each gets its own copy rather
+    than sharing the session's folder.
+    """
+    destination = tmp_path / "emuses_model"
+    _copy_model_folder(real_emuses_model_source, destination)
+    return destination
+
+
+@pytest.fixture(scope="session")
+def real_emuses_model_alt_source(emuses_pipeline_results):
+    """A second, genuinely different complete EMUSES model.
+
+    The session fixture trains a single-target and a multi-target run. Using the
+    multi-target one here means tests needing two models get two that really
+    differ, rather than two copies of one folder - which the registry would
+    correctly identify as duplicates and refuse.
+    """
+    folder = emuses_pipeline_results.get("multi_target_regression")
+    if folder is None or not Path(folder).is_dir():
+        pytest.fail(
+            "The session pipeline fixture did not produce a multi_target_regression "
+            "model. Run with -s to see the pipeline traceback.",
+            pytrace=False,
+        )
+    return Path(folder)
+
+
+@pytest.fixture
+def real_emuses_model_alt(real_emuses_model_alt_source, tmp_path):
+    """A writable per-test copy of the second complete EMUSES model."""
+    destination = tmp_path / "emuses_model_alt"
+    _copy_model_folder(real_emuses_model_alt_source, destination)
+    return destination
+
+
+@pytest.fixture
+def make_real_emuses_model(real_emuses_model_source, tmp_path):
+    """Factory for independent copies of a real complete EMUSES model.
+
+    Deduplication tests need several models and care whether they are identical.
+    Call with ``distinct=False`` for a byte-identical copy the registry should
+    detect as a duplicate, or leave the default for one it should accept as new.
+
+    Distinctness comes from adding a small marker file. Content hashing covers
+    the whole folder, so that is enough to make it a different model, and an
+    extra file does not stop the folder validating - which is what makes this
+    honest rather than a fixture that games the hash.
+    """
+    counter = {"n": 0}
+
+    def _make(name: str = None, *, distinct: bool = True) -> Path:
+        counter["n"] += 1
+        destination = tmp_path / (name or f"emuses_model_{counter['n']}")
+        _copy_model_folder(real_emuses_model_source, destination)
+        if distinct:
+            (destination / "run_id.txt").write_text(
+                f"{destination.name}\n", encoding="utf-8"
+            )
+        return destination
+
+    return _make

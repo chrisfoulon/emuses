@@ -25,15 +25,12 @@ Consider refactoring to reduce duplication while maintaining functionality.
 
 import asyncio
 import logging
-import platform
 import re
 import subprocess
 import sys
 import time
 import urllib.parse
 import warnings
-from enum import Enum
-from multiprocessing import Process
 from pathlib import Path
 from typing import Annotated, List, Optional, Union
 
@@ -44,7 +41,6 @@ warnings.filterwarnings("ignore", message="'force_all_finite' was renamed to 'en
 
 import requests
 import typer
-import uvicorn
 
 from emuses import __version__
 from .interactive_mode import InteractiveWorkflowManager
@@ -58,32 +54,21 @@ from .service_client import ServiceClientError, ServiceHTTPClient
 logger = logging.getLogger(__name__)
 
 
-class InputNormalization(str, Enum):
-    """Input normalization options."""
+# The option enums live with the option declaration they are used by. Re-exported here
+# because they have long been importable from this module.
+from .pipeline_options import (  # noqa: E402
+    CorrelationMethod,
+    InputNormalization,
+    ScoresNormalization,
+    with_pipeline_options,
+)
 
-    none = "none"
-    zscore = "zscore"
-    min_max = "min-max"
-    zero_max = "zero-max"
-    robust = "robust"
-
-
-class CorrelationMethod(str, Enum):
-    """Correlation calculation methods."""
-
-    pearson = "pearson"
-    spearman = "spearman"
-    pointbiserial = "pointbiserial"
-
-
-class ScoresNormalization(str, Enum):
-    """Scores normalization options."""
-
-    none = "none"
-    zscore = "zscore"
-    min_max = "min-max"
-    zero_max = "zero-max"
-    robust = "robust"
+__all__ = [
+    "app",
+    "CorrelationMethod",
+    "InputNormalization",
+    "ScoresNormalization",
+]
 
 
 def validate_output_folder(output_folder: Path) -> Path:
@@ -564,381 +549,17 @@ app.name = "emuses"
 
 
 @app.command(help="Run the full pipeline")
-def full(
-    output_folder: Annotated[Path, typer.Argument(help="Output folder")],
-    input_dataset: Annotated[
-        Path, typer.Argument(help="Input dataset of images (jpg), NIfTI, or MNIST")
-    ],
-    # Optional arguments start here
-    input_file_list: Annotated[
-        bool,
-        typer.Option(
-            "--input_file_list",
-            help="Treat input_dataset as a file (CSV/Excel/TXT) containing paths to data files"
-        ),
-    ] = False,
-    scores: Annotated[
-        Optional[Path],
-        typer.Option(help="Path to scores file associated with the dataset"),
-    ] = None,
-    label_dataset: Annotated[
-        Optional[Path], typer.Option("--label_dataset", help="Path to a separate labelled dataset")
-    ] = None,
-    recursive_search: Annotated[
-        bool,
-        typer.Option(
-            "--recursive-input-file-search",
-            help="Search recursively in the input dataset folder",
-        ),
-    ] = False,
-    input_file_types: Annotated[
-        Optional[List[str]],
-        typer.Option(
-            "--input_file_types",
-            help="File types to search for in the input dataset folder",
-        ),
-    ] = None,
-    arg_separator: Annotated[
-        str,
-        typer.Option("--arg_separator", help="Separator for the input dataset list"),
-    ] = ",",
-    input_header: Annotated[
-        Optional[int],
-        typer.Option("--input_header", help="Header for the spreadsheet input dataset"),
-    ] = None,
-    inputs_columns: Annotated[
-        Optional[List[str]],
-        typer.Option(
-            "--inputs_columns", help="List of columns for inputs in the scores file"
-        ),
-    ] = None,
-    input_index_column: Annotated[
-        Optional[int],
-        typer.Option(
-            "--input_index_column",
-            help="Index column for the spreadsheet input dataset",
-        ),
-    ] = None,
-    columns_are_features: Annotated[
-        bool,
-        typer.Option(
-            "--columns_are_features",
-            help="Columns are features in the spreadsheet input dataset",
-        ),
-    ] = False,
-    bids_filters: Annotated[
-        Optional[List[str]], typer.Option(help="BIDS filters for the input dataset")
-    ] = None,
-    input_normalization: Annotated[
-        InputNormalization,
-        typer.Option(
-            "-inorm",
-            "--input_normalization",
-            help="Normalization method for input data",
-        ),
-    ] = InputNormalization.none,
-    scores_header: Annotated[
-        Optional[int],
-        typer.Option("--scores_header", help="Header for the scores spreadsheet"),
-    ] = None,
-    scores_index_column: Annotated[
-        Optional[int],
-        typer.Option(
-            "--scores_index_column", help="Index column for the scores spreadsheet"
-        ),
-    ] = None,
-    scores_are_rows: Annotated[
-        bool,
-        typer.Option(
-            "--scores_are_rows",
-            help="Scores are in the columns of the spreadsheet input dataset",
-        ),
-    ] = False,
-    scores_column: Annotated[
-        Optional[List[str]],
-        typer.Option("--scores_column", help="Column(s) for scores in the scores file"),
-    ] = None,
-    classification: Annotated[
-        bool, typer.Option(help="Scores are integer classes in one column")
-    ] = False,
-    correlation_method: Annotated[
-        CorrelationMethod,
-        typer.Option(
-            "--correlation_method", help="Method to use for correlation calculation"
-        ),
-    ] = CorrelationMethod.pearson,
-    scores_normalization: Annotated[
-        ScoresNormalization,
-        typer.Option(
-            "-snorm",
-            "--scores_normalization",
-            help="Normalization method for scores data",
-        ),
-    ] = ScoresNormalization.none,
-    filter_labelled_by_scores: Annotated[
-        bool,
-        typer.Option(
-            "--filter_labelled_by_scores",
-            help="Filter the labelled dataset to only keep files referenced in the scores file",
-        ),
-    ] = False,
-    load_umap: Annotated[
-        Optional[str], typer.Option(help="Path to a pre-trained UMAP model")
-    ] = None,
-    load_embeddings: Annotated[
-        Optional[str], typer.Option(help="Path to precomputed embeddings")
-    ] = None,
-    test_size: Annotated[
-        float, typer.Option("--test_size", help="Test size for splitting the dataset")
-    ] = 0.2,
-    prefix: Annotated[str, typer.Option(help="Prefix for the output path names")] = "",
-    optim_dict: Annotated[
-        str,
-        typer.Option("--optim_dict", help="Name of an optim_dict in optim_configs.py"),
-    ] = "optim_dict_default",
-    umap_trials: Annotated[
-        int,
-        typer.Option(
-            "--umap_trials", help="Number of outer (UMAP) optimization trials"
-        ),
-    ] = 50,
-    hdbscan_trials: Annotated[
-        int,
-        typer.Option(
-            "--hdbscan_trials", help="Number of inner (HDBSCAN) optimization trials"
-        ),
-    ] = 20,
-    load_hdbscan: Annotated[
-        Optional[str], typer.Option(help="Path to a pre-trained HDBSCAN model")
-    ] = None,
-    min_cluster_size: Annotated[
-        int, typer.Option("--min_cluster_size", help="Minimum cluster size")
-    ] = 5,
-    interactive_plot: Annotated[
-        bool,
-        typer.Option(
-            "--interactive_plot", help="Option to create interactive clustering plots"
-        ),
-    ] = False,
-    hdbscan_approx_min_span_tree: Annotated[
-        bool,
-        typer.Option(
-            "--hdbscan_approx_min_span_tree",
-            help="When set to False, ensures reproducibility but with much longer runtime",
-        ),
-    ] = True,
-    hdbscan_core_dist_n_jobs: Annotated[
-        int,
-        typer.Option(
-            "--hdbscan_core_dist_n_jobs",
-            help="Number of parallel jobs for core distance computation in HDBSCAN",
-        ),
-    ] = -1,
-    inspect_data_state: Annotated[
-        bool,
-        typer.Option(
-            "--inspect_data_state",
-            help="Inspect data state before model training (for debugging)",
-        ),
-    ] = False,
-    use_enhanced_pipeline: Annotated[
-        bool,
-        typer.Option(
-            "--use_enhanced_pipeline",
-            help="Use the enhanced pipeline with Optuna optimization for model selection",
-        ),
-    ] = False,
-    optuna_trials: Annotated[
-        int,
-        typer.Option(
-            "--optuna_trials",
-            help="Number of trials for Optuna optimization per model/feature set",
-        ),
-    ] = 60,
-    parallel_models: Annotated[
-        bool,
-        typer.Option(
-            "--parallel_models",
-            help="Train models in parallel across different feature sets",
-        ),
-    ] = False,
-    n_jobs: Annotated[
-        int,
-        typer.Option(
-            "--n_jobs",
-            help="Number of parallel jobs for model training (-1 uses all cores)",
-        ),
-    ] = -1,
-    service_timeout: Annotated[
-        float,
-        typer.Option(
-            "--service-timeout",
-            help="Service request timeout in seconds (0 for unlimited)",
-        ),
-    ] = 0.0,
-    umap_timeout: Annotated[
-        float,
-        typer.Option(
-            "--umap-timeout", help="UMAP stage timeout in seconds (0 for unlimited)"
-        ),
-    ] = 0.0,
-    heatmap_timeout: Annotated[
-        float,
-        typer.Option(
-            "--heatmap-timeout",
-            help="Heatmap stage timeout in seconds (0 for unlimited)",
-        ),
-    ] = 0.0,
-    prediction_timeout: Annotated[
-        float,
-        typer.Option(
-            "--prediction-timeout",
-            help="Prediction stage timeout in seconds (0 for unlimited)",
-        ),
-    ] = 0.0,
-    model_selection: Annotated[
-        Optional[List[str]],
-        typer.Option(
-            "--model_selection",
-            help="List of models to try. Options: gp, rf, gb, kr, xgb, lgb, et, svr",
-        ),
-    ] = None,
-    prediction_optim_dict: Annotated[
-        str,
-        typer.Option(
-            "--prediction_optim_dict",
-            help="Name of a prediction optim_dict in optim_configs_predict.py",
-        ),
-    ] = "optim_dict_predict",
-    random_state: Annotated[
-        Optional[int],
-        typer.Option("--random_state", help="Master random seed. When set, all component seeds are derived from this value for full reproducibility, but UMAP parallelism is disabled (n_jobs forced to 1). Omit for parallel UMAP (faster on multi-core machines) with non-reproducible runs."),
-    ] = None,
-    umap_jobs: Annotated[
-        Optional[int],
-        typer.Option(
-            "--umap_jobs", help="Number of parallel jobs for outer (UMAP) optimization"
-        ),
-    ] = None,
-    hdbscan_jobs: Annotated[
-        Optional[int],
-        typer.Option(
-            "--hdbscan_jobs",
-            help="Number of parallel jobs for inner (HDBSCAN) optimization",
-        ),
-    ] = None,
-    interactive: Annotated[
-        bool, typer.Option("--interactive", help="Run in interactive mode")
-    ] = False,
-    use_service: Annotated[
-        bool, typer.Option("--service", help="Use remote service for execution")
-    ] = False,
-    service_url: Annotated[
-        Optional[str],
-        typer.Option(
-            "--service-url",
-            help="URL of the remote service (auto-detected in multi-user mode)",
-        ),
-    ] = None,
-    token: Annotated[
-        Optional[str],
-        typer.Option("--token", help="Authentication token for multi-user mode"),
-    ] = None,
-) -> None:
+@with_pipeline_options
+def full(**kwargs) -> None:
     """
     Run the full pipeline.
 
     This command executes the complete EMUSES pipeline including UMAP training,
     clustering, heatmap generation, and prediction model training.
 
-    Parameters
-    ----------
-    output_folder : Path
-        Output folder for results
-    input_dataset : Path
-        Input dataset of images (jpg), NIfTI, or MNIST
-    scores : Optional[Path], optional
-        Path to scores file associated with the dataset
-    label_dataset : Optional[Path], optional
-        Path to a separate labelled dataset
-    recursive_search : bool, optional
-        Search recursively in the input dataset folder, by default False
-    input_file_types : Optional[List[str]], optional
-        File types to search for in the input dataset folder
-    arg_separator : str, optional
-        Separator for the input dataset list, by default ","
-    input_header : Optional[int], optional
-        Header for the spreadsheet input dataset
-    inputs_columns : Optional[List[str]], optional
-        List of columns for inputs in the scores file
-    input_index_column : Optional[int], optional
-        Index column for the spreadsheet input dataset
-    columns_are_features : bool, optional
-        Columns are features in the spreadsheet input dataset, by default False
-    bids_filters : Optional[List[str]], optional
-        BIDS filters for the input dataset
-    input_normalization : InputNormalization, optional
-        Normalization method for input data, by default InputNormalization.none
-    scores_header : Optional[int], optional
-        Header for the scores spreadsheet
-    scores_index_column : Optional[int], optional
-        Index column for the scores spreadsheet
-    scores_are_rows : bool, optional
-        Scores are in the columns of the spreadsheet input dataset, by default False
-    scores_column : Optional[List[str]], optional
-        Column(s) for scores in the scores file
-    classification : bool, optional
-        Scores are integer classes in one column, by default False
-    correlation_method : CorrelationMethod, optional
-        Method to use for correlation calculation, by default CorrelationMethod.pearson
-    scores_normalization : ScoresNormalization, optional
-        Normalization method for scores data, by default ScoresNormalization.none
-    filter_labelled_by_scores : bool, optional
-        Filter the labelled dataset to only keep files referenced in the scores file, by default False
-    load_umap : Optional[str], optional
-        Path to a pre-trained UMAP model
-    load_embeddings : Optional[str], optional
-        Path to precomputed embeddings
-    test_size : float, optional
-        Test size for splitting the dataset, by default 0.2
-    prefix : str, optional
-        Prefix for the output path names, by default ""
-    optim_dict : str, optional
-        Name of an optim_dict in optim_configs.py, by default "optim_dict_default"
-    umap_trials : int, optional
-        Number of outer (UMAP) optimization trials, by default 50
-    hdbscan_trials : int, optional
-        Number of inner (HDBSCAN) optimization trials, by default 20
-    load_hdbscan : Optional[str], optional
-        Path to a pre-trained HDBSCAN model
-    min_cluster_size : int, optional
-        Minimum cluster size, by default 5
-    interactive_plot : bool, optional
-        Option to create interactive clustering plots, by default False
-    hdbscan_approx_min_span_tree : bool, optional
-        When set to False, ensures reproducibility but with much longer runtime, by default True
-    hdbscan_core_dist_n_jobs : int, optional
-        Number of parallel jobs for core distance computation in HDBSCAN, by default -1
-    inspect_data_state : bool, optional
-        Inspect data state before model training (for debugging), by default False
-    use_enhanced_pipeline : bool, optional
-        Use the enhanced pipeline with Optuna optimization for model selection, by default False
-    optuna_trials : int, optional
-        Number of trials for Optuna optimization per model/feature set, by default 60
-    parallel_models : bool, optional
-        Train models in parallel across different feature sets, by default False
-    n_jobs : int, optional
-        Number of parallel jobs for model training (-1 uses all cores), by default -1
-    model_selection : Optional[List[str]], optional
-        List of models to try. Options: gp, rf, gb, kr, xgb, lgb, et, svr
-    prediction_optim_dict : str, optional
-        Name of a prediction optim_dict in optim_configs_predict.py, by default "optim_dict_predict"
-    random_state : int, optional
-        Master random seed for reproducibility, by default 42
-    umap_jobs : Optional[int], optional
-        Number of parallel jobs for outer (UMAP) optimization
-    hdbscan_jobs : Optional[int], optional
-        Number of parallel jobs for inner (HDBSCAN) optimization
+    Accepts the shared pipeline option set (see ``emuses.cli.pipeline_options``),
+    stamped onto this function by ``@with_pipeline_options``. That declaration is
+    shared with ``umap`` and ``heatmap`` so the three commands cannot drift apart.
 
     Returns
     -------
@@ -952,74 +573,18 @@ def full(
         If security constraints are violated
     """
     # Save command for easy rerun
-    save_command_to_output_folder(output_folder)
+    save_command_to_output_folder(kwargs["output_folder"])
 
     # Log arguments for debugging (preserve legacy behavior)
     logger.info("Arguments:")
     logger.info("command: full")
-    logger.info(f"output_folder: {output_folder}")
-    logger.info(f"input_dataset: {input_dataset}")
-    logger.info(f"scores: {scores}")
-    # ... log other arguments as needed
+    logger.info(f"output_folder: {kwargs['output_folder']}")
+    logger.info(f"input_dataset: {kwargs['input_dataset']}")
+    logger.info(f"scores: {kwargs.get('scores')}")
 
     # Run the async implementation
     try:
-        asyncio.run(
-            _full_async(
-                output_folder=output_folder,
-                input_dataset=input_dataset,
-                input_file_list=input_file_list,
-                scores=scores,
-                label_dataset=label_dataset,
-                recursive_search=recursive_search,
-                input_file_types=input_file_types,
-                arg_separator=arg_separator,
-                input_header=input_header,
-                inputs_columns=inputs_columns,
-                input_index_column=input_index_column,
-                columns_are_features=columns_are_features,
-                bids_filters=bids_filters,
-                input_normalization=input_normalization,
-                scores_header=scores_header,
-                scores_index_column=scores_index_column,
-                scores_are_rows=scores_are_rows,
-                scores_column=scores_column,
-                classification=classification,
-                correlation_method=correlation_method,
-                scores_normalization=scores_normalization,
-                filter_labelled_by_scores=filter_labelled_by_scores,
-                load_umap=load_umap,
-                load_embeddings=load_embeddings,
-                test_size=test_size,
-                prefix=prefix,
-                optim_dict=optim_dict,
-                umap_trials=umap_trials,
-                hdbscan_trials=hdbscan_trials,
-                load_hdbscan=load_hdbscan,
-                min_cluster_size=min_cluster_size,
-                interactive_plot=interactive_plot,
-                hdbscan_approx_min_span_tree=hdbscan_approx_min_span_tree,
-                hdbscan_core_dist_n_jobs=hdbscan_core_dist_n_jobs,
-                inspect_data_state=inspect_data_state,
-                use_enhanced_pipeline=use_enhanced_pipeline,
-                optuna_trials=optuna_trials,
-                parallel_models=parallel_models,
-                n_jobs=n_jobs,
-                service_timeout=service_timeout,
-                umap_timeout=umap_timeout,
-                heatmap_timeout=heatmap_timeout,
-                prediction_timeout=prediction_timeout,
-                model_selection=model_selection,
-                prediction_optim_dict=prediction_optim_dict,
-                random_state=random_state,
-                umap_jobs=umap_jobs,
-                hdbscan_jobs=hdbscan_jobs,
-                interactive=interactive,
-                use_service=use_service,
-                service_url=service_url,
-                token=token,
-            )
-        )
+        asyncio.run(_full_async(**kwargs))
     except KeyboardInterrupt:
         typer.echo("\n🛑 Operation cancelled by user", err=True)
         raise typer.Exit(code=130)
@@ -1070,9 +635,23 @@ async def _full_async(**kwargs) -> None:
 
     # Handle interactive mode
     interactive = kwargs.pop("interactive", False)
-    kwargs.pop("use_service", False)  # Remove unused parameter
+    # Both of these used to be popped and thrown away, so neither did anything.
+    # --service-url now opts into a remote service from local mode. --service is
+    # redundant, because every mode goes through a service - it warns rather than
+    # sitting there looking wired (the Phase 1A defect).
+    use_service = kwargs.pop("use_service", False)
     service_url = kwargs.pop("service_url", None)
     token = kwargs.pop("token", None)
+    explicit_service_url = service_url is not None
+
+    if use_service and not explicit_service_url:
+        print(
+            status_renderer.render_status(
+                "warning",
+                "--service has no effect: every deployment mode already executes "
+                "through the EMUSES service. Use --service-url to target a remote one.",
+            )
+        )
 
     if interactive:
         print(status_renderer.render_status("info", "Starting Interactive Mode..."))
@@ -1087,7 +666,7 @@ async def _full_async(**kwargs) -> None:
     print(status_renderer.render_status("info", "Starting EMUSES Full Pipeline..."))
 
     # Convert arguments to service API format
-    pipeline_config = _convert_typer_args_to_service_config(**kwargs)
+    pipeline_config = _convert_typer_args_to_service_config("full", **kwargs)
 
     # Determine service URL based on deployment mode and parameters
     if service_url is None:
@@ -1102,8 +681,13 @@ async def _full_async(**kwargs) -> None:
 
     # Execution logic based on deployment mode
     try:
-        if deployment_config.mode.value == "local":
-            # Local mode - auto-start local service
+        if deployment_config.mode.value == "local" and not explicit_service_url:
+            # Local mode auto-starts a service and submits to it. Deliberately the same
+            # execution path as every other mode (ADR §4): one path to maintain, and
+            # local runs exercise the HTTP surface that lab and server users depend on.
+            # Phase 1C is the evidence - `/api/v1/jobs/pipeline/umap` did not exist on
+            # the server, and that was findable locally *because* local mode goes over
+            # HTTP. In-process, a missing route is invisible until someone deploys.
             await _execute_via_unified_service(
                 pipeline_config, status_renderer, progress_tracker
             )
@@ -1128,12 +712,18 @@ async def _full_async(**kwargs) -> None:
         raise e
 
 
-def _convert_typer_args_to_service_config(**kwargs) -> dict:
+def _convert_typer_args_to_service_config(command: str = "full", **kwargs) -> dict:
     """
     Convert Typer command arguments to service API configuration format.
 
     Parameters
     ----------
+    command : str
+        Which pipeline command produced these arguments - ``full``, ``umap`` or
+        ``heatmap``. Recorded in the config because the service-fallback path recovers
+        the pipeline type from it (``config.get("command", "full")``). Before 2026-08-23
+        nothing set it, so a fallback from ``emuses umap`` silently ran the *full*
+        pipeline and was then rejected for having no scores.
     **kwargs
         Command line arguments from Typer
 
@@ -1142,7 +732,7 @@ def _convert_typer_args_to_service_config(**kwargs) -> dict:
     dict
         Configuration dictionary suitable for service API
     """
-    config = {}
+    config = {"command": command}
 
     for key, value in kwargs.items():
         if value is None:
@@ -1417,138 +1007,82 @@ async def _execute_via_unified_service(
             _stop_local_service(service_process)
 
 
-def _macos_service_worker(port: int):
+def _start_local_service(port: int = 8000) -> Optional[subprocess.Popen]:
     """
-    MacOS-compatible service worker (module-level function for pickle compatibility).
-    
-    On macOS Python 3.8+, multiprocessing uses 'spawn' method which requires
-    picklable target functions. Nested functions cannot be pickled.
-    
-    This function is only used on macOS systems. Linux/Windows continue to use
-    the nested function inside _start_local_service() for zero behavior change.
-    
+    Start the EMUSES service as an independent process.
+
+    Deliberately a subprocess and not a ``multiprocessing.Process``. Two defects came from
+    the fork, both measured on 2026-08-23:
+
+    - **``--n_jobs`` was inert.** ``is_subprocess_context()`` asks whether
+      ``mp.current_process().name != "MainProcess"``, which is true in any forked child, so
+      ``get_safe_n_jobs()`` clamped every request to 1 inside the service while the Python
+      API was unaffected. The clamp is not wrong - spawning loky workers from an
+      already-forked process genuinely hangs, and that was reproduced - but the service is
+      the *top* of the pipeline's work, not a joblib worker. A separate interpreter is
+      ``MainProcess``, so the clamp stops firing without ``get_safe_n_jobs`` being touched.
+    - **A killed CLI orphaned the service.** The child held its port for over an hour,
+      ignored SIGTERM and needed SIGKILL; ``atexit`` never runs when the parent is killed.
+      ``emuses.cli.service_process`` now arranges to die with its parent.
+
+    It also makes the service findable: as a fork its argv read ``python -m emuses.cli
+    full``, so ``pgrep -af uvicorn`` could not see it. It now names itself.
+
     Parameters
     ----------
     port : int
-        Port to run service on
-    """
-    import logging
-    import signal
-    import sys
-    import traceback
-    
-    logger = logging.getLogger(__name__)
-    
-    def signal_handler(signum, frame):
-        """Handle termination signals gracefully."""
-        logger.info(f"Service received signal {signum}, shutting down gracefully...")
-        sys.exit(0)
-    
-    signal.signal(signal.SIGINT, signal_handler)
-    signal.signal(signal.SIGTERM, signal_handler)
-    
-    try:
-        logger.info(f"Starting FastAPI service on port {port}...")
-        from emuses.api.main import create_app
-        import uvicorn
-
-        app = create_app()
-        logger.info("FastAPI app created successfully")
-        uvicorn.run(app, host="127.0.0.1", port=port, log_level="info")
-    except Exception as e:
-        logger.error(f"Service failed to start: {e}")
-        traceback.print_exc()
-
-
-def _start_local_service(port: int = 8000) -> Optional[Process]:
-    """
-    Start local FastAPI service in background process.
-    
-    Platform-aware implementation:
-    - macOS: Uses module-level _macos_service_worker (required for pickle compatibility)
-    - Linux/Windows: Uses nested run_service function (original behavior, no changes)
-
-    Parameters
-    ----------
-    port : int, optional
-        Port to run service on, by default 8000
+        Port for the service to listen on (loopback only).
 
     Returns
     -------
-    Optional[Process]
-        Service process if successful, None if failed
+    Optional[subprocess.Popen]
+        The running service, or None if it failed to start.
     """
     try:
-        # Detect platform for multiprocessing compatibility
-        is_macos = platform.system() == "Darwin"
-        
-        if is_macos:
-            # macOS Python 3.8+ uses 'spawn' method - requires picklable function
-            # Use module-level _macos_service_worker with port as argument
-            service_process = Process(target=_macos_service_worker, args=(port,), daemon=False)
-        else:
-            # Linux/Windows: Keep original nested function approach (zero behavior change)
-            def run_service():
-                """Run the FastAPI service with graceful shutdown support."""
-                import signal
-                import sys
-                
-                def signal_handler(signum, frame):
-                    """Handle termination signals gracefully."""
-                    logger.info(f"Service received signal {signum}, shutting down gracefully...")
-                    sys.exit(0)
-                
-                # Register signal handlers for graceful shutdown
-                signal.signal(signal.SIGINT, signal_handler)
-                signal.signal(signal.SIGTERM, signal_handler)
-                
-                try:
-                    logger.info(f"Starting FastAPI service on port {port}...")
-                    from emuses.api.main import create_app
+        logger.info(f"Starting FastAPI service on port {port}...")
 
-                    app = create_app()
-                    logger.info("FastAPI app created successfully")
-                    # Use info level to see startup messages
-                    uvicorn.run(app, host="127.0.0.1", port=port, log_level="info")
-                except Exception as e:
-                    logger.error(f"Service failed to start: {e}")
-                    import traceback
+        # sys.executable, never bare "python": the latter resolves to whatever is first on
+        # PATH, which is not necessarily the interpreter running EMUSES.
+        service_process = subprocess.Popen(
+            [
+                sys.executable,
+                "-m",
+                "emuses.cli.service_process",
+                "--port",
+                str(port),
+            ]
+        )
 
-                    traceback.print_exc()
-            
-            # Use nested function (original approach for non-macOS systems)
-            service_process = Process(target=run_service, daemon=False)
-        
-        # Start the process (common for both platforms)
-        service_process.start()
-        
-        # Register emergency cleanup handler as safety net
-        # This ensures cleanup even if finally block doesn't run (rare edge cases)
+        # Safety net for the ordinary case. It is not the primary mechanism - the child
+        # watches for its parent's death itself, because atexit does not run on SIGKILL.
         import atexit
-        
+
         def emergency_cleanup():
             """Emergency cleanup if normal shutdown fails."""
-            if service_process and service_process.is_alive():
+            if service_process and service_process.poll() is None:
                 logger.warning("Emergency cleanup: Force-killing orphaned service process")
                 try:
                     service_process.kill()
-                    service_process.join(timeout=2)
+                    service_process.wait(timeout=2)
                 except Exception as e:
                     logger.error(f"Emergency cleanup failed: {e}")
-        
+
         atexit.register(emergency_cleanup)
 
-        # Give the process more time to start up
+        # Give the process a moment to fail loudly if it is going to.
         time.sleep(2)
 
-        if service_process.is_alive():
+        if service_process.poll() is None:
             logger.info(
                 f"Service process started successfully (PID: {service_process.pid})"
             )
             return service_process
-        else:
-            logger.error("Service process died immediately after startup")
-            return None
+
+        logger.error(
+            f"Service process died immediately after startup "
+            f"(exit code {service_process.returncode})"
+        )
+        return None
 
     except Exception as e:
         logger.error(f"Failed to start service: {e}")
@@ -1558,39 +1092,39 @@ def _start_local_service(port: int = 8000) -> Optional[Process]:
         return None
 
 
-def _stop_local_service(service_process: Process) -> None:
+def _stop_local_service(service_process: subprocess.Popen) -> None:
     """
-    Stop local FastAPI service process with graceful shutdown.
-    
-    Attempts graceful termination first (SIGTERM), then force-kills if needed.
-    With daemon=False, the service can now receive and respond to SIGTERM.
+    Stop the local service, gracefully if it will go.
 
     Parameters
     ----------
-    service_process : Process
-        Service process to stop
+    service_process : subprocess.Popen
+        Service process to stop.
     """
     try:
-        if service_process and service_process.is_alive():
+        if service_process and service_process.poll() is None:
             logger.info(f"Stopping service process (PID: {service_process.pid})...")
-            
-            # Try graceful shutdown first (service now receives SIGTERM)
-            service_process.terminate()
-            service_process.join(timeout=5)
 
-            if service_process.is_alive():
+            service_process.terminate()
+            try:
+                service_process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
                 logger.warning("Service didn't stop gracefully, forcing kill...")
-                service_process.kill()  # Force kill if needed
-                service_process.join(timeout=2)
-                
-            if service_process.is_alive():
-                logger.error("Failed to kill service process - may require manual cleanup")
-            else:
-                logger.info("Service process stopped successfully")
+                service_process.kill()
+                try:
+                    service_process.wait(timeout=2)
+                except subprocess.TimeoutExpired:
+                    logger.error(
+                        "Failed to kill service process - may require manual cleanup"
+                    )
+                    return
+
+            logger.info("Service process stopped successfully")
 
     except Exception as e:
         logger.error(f"Error stopping service: {e}")
         # Don't re-raise - this is cleanup code
+
 
 
 def _wait_for_service_ready(service_url: str, timeout: int = 30) -> bool:
@@ -1637,7 +1171,7 @@ async def _umap_async(**kwargs) -> None:
 
     print(status_renderer.render_status("info", "Starting UMAP training..."))
 
-    pipeline_config = _convert_typer_args_to_service_config(**kwargs)
+    pipeline_config = _convert_typer_args_to_service_config("umap", **kwargs)
 
     try:
         await _execute_via_remote_service(
@@ -1672,7 +1206,7 @@ async def _heatmap_async(**kwargs) -> None:
 
     print(status_renderer.render_status("info", "Starting heatmap generation..."))
 
-    pipeline_config = _convert_typer_args_to_service_config(**kwargs)
+    pipeline_config = _convert_typer_args_to_service_config("heatmap", **kwargs)
 
     try:
         await _execute_via_remote_service(
@@ -1830,11 +1364,12 @@ async def _execute_stage_locally(
         Progress tracking component
     """
     try:
+        # PredictionStage is retired - prediction is produced by HeatmapStage. Listing it
+        # here accepted a stage name the pipeline has no class for.
         stage_classes = {
             "umap": "UMAPStage",
             "clustering": "ClusteringStage",
             "heatmap": "HeatmapStage",
-            "prediction": "PredictionStage",
         }
 
         if stage not in stage_classes:
@@ -1858,37 +1393,25 @@ async def _execute_stage_locally(
 
 
 @app.command(help="Train the UMAP and get the embeddings")
-def umap(
-    output_folder: Annotated[Path, typer.Argument(help="Output folder")],
-    input_dataset: Annotated[
-        Path, typer.Argument(help="Input dataset of images (jpg), NIfTI, or MNIST")
-    ],
-) -> None:
+@with_pipeline_options
+def umap(**kwargs) -> None:
     """
     Train the UMAP and get the embeddings.
 
-    Parameters
-    ----------
-    output_folder : Path
-        Output folder for results
-    input_dataset : Path
-        Input dataset of images (jpg), NIfTI, or MNIST
+    Accepts the shared pipeline option set (see
+    ``emuses.cli.pipeline_options``), stamped onto this function by
+    ``@with_pipeline_options``. Only the UMAP stage is enabled.
 
     Returns
     -------
     None
     """
     # Save command for easy rerun
-    save_command_to_output_folder(output_folder)
+    save_command_to_output_folder(kwargs["output_folder"])
 
     # Run the async implementation
     try:
-        asyncio.run(
-            _umap_async(
-                output_folder=output_folder,
-                input_dataset=input_dataset,
-            )
-        )
+        asyncio.run(_umap_async(**kwargs))
     except KeyboardInterrupt:
         typer.echo("\n🛑 Operation cancelled by user", err=True)
         raise typer.Exit(code=130)
@@ -1896,46 +1419,32 @@ def umap(
         typer.echo(f"Error: {e}", err=True)
         raise typer.Exit(code=1)
 
-
 @app.command(help="Create a heatmap")
-def heatmap(
-    output_folder: Annotated[Path, typer.Argument(help="Output folder")],
-    input_dataset: Annotated[
-        Path, typer.Argument(help="Input dataset of images (jpg), NIfTI, or MNIST")
-    ],
-) -> None:
+@with_pipeline_options
+def heatmap(**kwargs) -> None:
     """
     Create a heatmap.
 
-    Parameters
-    ----------
-    output_folder : Path
-        Output folder for results
-    input_dataset : Path
-        Input dataset of images (jpg), NIfTI, or MNIST
+    Accepts the shared pipeline option set (see
+    ``emuses.cli.pipeline_options``), stamped onto this function by
+    ``@with_pipeline_options``. Only the heatmap stage is enabled.
 
     Returns
     -------
     None
     """
     # Save command for easy rerun
-    save_command_to_output_folder(output_folder)
+    save_command_to_output_folder(kwargs["output_folder"])
 
     # Run the async implementation
     try:
-        asyncio.run(
-            _heatmap_async(
-                output_folder=output_folder,
-                input_dataset=input_dataset,
-            )
-        )
+        asyncio.run(_heatmap_async(**kwargs))
     except KeyboardInterrupt:
         typer.echo("\n🛑 Operation cancelled by user", err=True)
         raise typer.Exit(code=130)
     except Exception as e:
         typer.echo(f"Error: {e}", err=True)
         raise typer.Exit(code=1)
-
 
 @app.command(help="Run inference on trained model")
 def inference(

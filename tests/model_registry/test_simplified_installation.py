@@ -16,15 +16,11 @@ from emuses.tools.model_io import ModelIOManager
 class TestSimplifiedInstallationWorkflow:
     """Test simplified installation workflow with basic deduplication."""
 
-    def test_install_with_deduplication_no_duplicates(self, tmp_path):
+    def test_install_with_deduplication_no_duplicates(self, tmp_path, make_real_emuses_model):
         """Test installation when no duplicates exist."""
         registry = LocalModelRegistry(registry_path=tmp_path / "registry")
-        
-        # Create test model
-        model_dir = tmp_path / "test_model"
-        model_dir.mkdir()
-        (model_dir / "umap_model.pkl").write_bytes(b"test umap content")
-        (model_dir / "hdbscan_model.pkl").write_bytes(b"test hdbscan content")
+
+        model_dir = make_real_emuses_model("test_model")
         
         # Install with deduplication
         result = registry.install_model_with_deduplication(
@@ -35,14 +31,11 @@ class TestSimplifiedInstallationWorkflow:
         assert result["status"] == "success"
         assert "test_model" in result["name"]
         
-    def test_install_with_deduplication_skip_duplicate(self, tmp_path):
+    def test_install_with_deduplication_skip_duplicate(self, tmp_path, make_real_emuses_model):
         """Test that duplicates are skipped with clear messaging."""
         registry = LocalModelRegistry(registry_path=tmp_path / "registry")
-        
-        # Create test model
-        model_dir = tmp_path / "test_model"
-        model_dir.mkdir()
-        (model_dir / "umap_model.pkl").write_bytes(b"test content")
+
+        model_dir = make_real_emuses_model("test_model")
         
         # Install first time
         result1 = registry.install_model_with_deduplication(
@@ -60,14 +53,11 @@ class TestSimplifiedInstallationWorkflow:
         assert "existing_model_id" in result2
         assert "existing_model_name" in result2
         
-    def test_install_with_deduplication_force_duplicate(self, tmp_path):
+    def test_install_with_deduplication_force_duplicate(self, tmp_path, make_real_emuses_model):
         """Test forcing installation of duplicate by disabling duplicate check."""
         registry = LocalModelRegistry(registry_path=tmp_path / "registry")
-        
-        # Create test model
-        model_dir = tmp_path / "test_model"
-        model_dir.mkdir()
-        (model_dir / "umap_model.pkl").write_bytes(b"test content")
+
+        model_dir = make_real_emuses_model("test_model")
         
         # Install first time
         result1 = registry.install_model_with_deduplication(
@@ -85,14 +75,11 @@ class TestSimplifiedInstallationWorkflow:
         assert result2["status"] == "success"
         assert result2["name"] == "model2"
 
-    def test_filesystem_artifacts_ignored(self, tmp_path):
+    def test_filesystem_artifacts_ignored(self, tmp_path, make_real_emuses_model):
         """Test that filesystem artifacts don't affect duplicate detection when content is truly identical."""
         registry = LocalModelRegistry(registry_path=tmp_path / "registry")
-        
-        # Create base model directory
-        model_dir = tmp_path / "shared_model"
-        model_dir.mkdir()
-        (model_dir / "umap_model.pkl").write_bytes(b"test content")
+
+        model_dir = make_real_emuses_model("shared_model")
         
         # First install - should succeed
         result1 = registry.install_model_with_deduplication(
@@ -117,17 +104,12 @@ class TestSimplifiedInstallationWorkflow:
 class TestBatchInstallationWorkflow:
     """Test simplified batch installation workflow."""
     
-    def test_batch_install_basic_functionality(self, tmp_path):
+    def test_batch_install_basic_functionality(self, tmp_path, make_real_emuses_model):
         """Test basic batch installation functionality."""
         registry = LocalModelRegistry(registry_path=tmp_path / "registry")
-        
-        # Create multiple unique models
-        batch_models = []
-        for i in range(3):
-            model_dir = tmp_path / f"model_{i}"
-            model_dir.mkdir()
-            (model_dir / "umap_model.pkl").write_bytes(f"content_{i}".encode())
-            batch_models.append(model_dir)
+
+        # Three genuinely distinct complete models, not three component stubs.
+        batch_models = [make_real_emuses_model(f"model_{i}") for i in range(3)]
         
         # Install batch
         results = registry.batch_install_models_with_deduplication(
@@ -171,14 +153,11 @@ class TestSemanticModelIdGeneration:
 class TestInteractiveWorkflowCompatibility:
     """Test that interactive methods properly delegate to simplified workflow."""
     
-    def test_interactive_resolution_delegates(self, tmp_path):
+    def test_interactive_resolution_delegates(self, tmp_path, make_real_emuses_model):
         """Test that interactive resolution delegates to basic deduplication."""
         registry = LocalModelRegistry(registry_path=tmp_path / "registry")
         
-        # Create test model
-        model_dir = tmp_path / "test_model"
-        model_dir.mkdir()
-        (model_dir / "umap_model.pkl").write_bytes(b"test content")
+        model_dir = make_real_emuses_model("test_model")
         
         # Call interactive method - should work but use simplified logic
         result = registry.install_model_with_interactive_resolution(
@@ -189,14 +168,11 @@ class TestInteractiveWorkflowCompatibility:
         assert result["status"] == "success"
         assert "test_model" in result["name"]
         
-    def test_batch_deduplication_delegates(self, tmp_path):
+    def test_batch_deduplication_delegates(self, tmp_path, make_real_emuses_model):
         """Test that batch deduplication delegates to basic deduplication."""
         registry = LocalModelRegistry(registry_path=tmp_path / "registry")
         
-        # Create test model
-        model_dir = tmp_path / "test_model"
-        model_dir.mkdir()
-        (model_dir / "umap_model.pkl").write_bytes(b"test content")
+        model_dir = make_real_emuses_model("test_model")
         
         # Call batch method - should work but use simplified logic
         result = registry.install_model_with_batch_deduplication(

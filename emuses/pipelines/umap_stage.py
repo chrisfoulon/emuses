@@ -15,6 +15,54 @@ from emuses.tools.UMAP_utils import (
     load_umap_model, train_and_save_umap_optim_with_nested_clustering)
 
 
+def _as_jobs(value, default=1):
+    """Coerce a jobs setting to an int, tolerating what actually arrives.
+
+    ``None`` still reaches here from arg objects built before ``PipelineConfig``
+    declared an explicit default, and a ``Mock`` config fabricates the attribute
+    as a Mock -- the same trap that hid the broken parallelism detector and broke
+    the seed wiring in ``heatmap_stage._seeds_from``. Hence ``isinstance``, not
+    truthiness.
+    """
+    if isinstance(value, bool) or not isinstance(value, (int, np.integer)):
+        return default
+    return int(value)
+
+
+def _resolve_search_jobs(cfg, logger):
+    """Decide how many Optuna trials run concurrently -- in exactly one place.
+
+    Serial is the default (ADR 2.9c). ``optuna.study.optimize(n_jobs>1)`` runs
+    trials concurrently, so TPE's suggestion depends on which trials have
+    finished when each one asks: thread timing, which ``--random_state`` does not
+    control. Measured 2026-08-23 at 10 of 20 metrics identical against 20 of 20
+    serial (``dev-docs/issues/reproducibility_tolerances_2026_08.md``).
+
+    Parallel search stays available. It warns rather than being overridden,
+    because forfeiting reproducibility is the caller's decision to make.
+    """
+    umap_jobs = _as_jobs(getattr(cfg, "umap_jobs", 1))
+    hdbscan_jobs = _as_jobs(getattr(cfg, "hdbscan_jobs", 1))
+
+    if umap_jobs != 1:
+        logger.warning(
+            "umap_jobs=%s runs the UMAP/HDBSCAN search in parallel, which is NOT "
+            "reproducible: optuna schedules trials concurrently, so the search "
+            "path depends on thread timing and random_state cannot fix it. "
+            "Use umap_jobs=1 for a run you intend to publish. See "
+            "dev-docs/issues/reproducibility_tolerances_2026_08.md",
+            umap_jobs,
+        )
+    if hdbscan_jobs != 1:
+        logger.warning(
+            "hdbscan_jobs=%s has no effect: the inner HDBSCAN search always runs "
+            "serially under the current parallel_mode ('umap'). The option is "
+            "kept declared, not wired.",
+            hdbscan_jobs,
+        )
+    return umap_jobs, hdbscan_jobs
+
+
 class UMAPStage(PipelineStage):
     def __init__(self, config):
         super().__init__(config)
@@ -111,6 +159,8 @@ class UMAPStage(PipelineStage):
             )
             core_dist_n_jobs = getattr(self.config, "hdbscan_core_dist_n_jobs", -1)
 
+            umap_jobs, hdbscan_jobs = _resolve_search_jobs(self.config, logger)
+
             (
                 self.trained_umap,
                 embeddings,
@@ -128,14 +178,8 @@ class UMAPStage(PipelineStage):
                 n_trials=getattr(self.config, "umap_trials", 50),
                 n_inner_trials=getattr(self.config, "hdbscan_trials", 20),
                 pref=self.config.prefix,
-                n_jobs=(
-                    self.config.umap_jobs if self.config.umap_jobs is not None else 1
-                ),
-                inner_n_jobs=(
-                    self.config.hdbscan_jobs
-                    if self.config.hdbscan_jobs is not None
-                    else 1
-                ),
+                n_jobs=umap_jobs,
+                inner_n_jobs=hdbscan_jobs,
                 random_state=umap_seed,
                 clusterer_random_state=clustering_seed,
                 approx_min_span_tree=approx_min_span_tree,

@@ -215,7 +215,101 @@ declares is finally used by something and `-m "not slow"` cuts the worst 163s. N
 output paths instead of taking them through the whole service-client path (§2c). The remaining
 files are unmarked.
 
+### 2d. The ADR-2.1 fixture cluster, mostly cleared (2026-08-22)
+
+The 36-plus `assert 'error' == 'success'` failures in item 2 were exactly what that item said:
+fixtures encoding the separable-component model. Rebuilt against real pipeline output via
+`real_emuses_model` / `make_real_emuses_model` in `tests/conftest.py`, which copy a folder a real run
+produced rather than assembling one to satisfy the validator (G009).
+
+- `test_local_registry_real.py` 8 failing -> 0
+- `test_simplified_installation.py` 7 -> 0
+- `test_enhanced_schema.py` 7 -> 3
+- `test_enhanced_metadata_storage.py` 5 -> 2
+
+Beyond the fixtures, the assertions themselves encoded the old model and were corrected: component
+types (`sklearn_pipeline`, `umap`) became the single atomic `emuses_model`; `len(components_found)
+== 3` became `"emuses_folder" in components_found`; the `umap_model.pkl` / `prediction_ensemble/`
+layout checks became "the folder round-trips and still validates". One test was inverted on purpose
+— it asserted a directory of loose model files installs once a manifest is generated for it, and now
+asserts the rejection, which is the real contract.
+
+**Verified, not a bug**: content hashing is filesystem-independent. Two folders with identical
+contents and different names produce the same content hash. The suspicion that Phase 2C had
+regressed was wrong — those tests failed because their stub folders never validated, so both hashes
+came from an early-exit path rather than from folder contents.
+
+**Two unresolved, left failing rather than skipped** (`test_enhanced_metadata_storage.py`):
+editing a real model's manifest does not change its `configuration_hash`, even after setting all
+four sources `_extract_configuration_hash` merges (`pipeline_config`, `config`, `training_config`,
+`parameters`) and after writing to whichever of `manifest.json` / `model_manifest.json`
+`_load_or_generate_manifest` prefers. Either the edit is not reaching the loader or something
+downstream re-derives the hash. Not chased further; it needs someone to instrument
+`_extract_configuration_hash` on a real folder. Recorded because a configuration hash that does not
+respond to configuration changes would defeat duplicate detection, which is worth knowing either way.
+
+**Found while doing this** (fixed): `emuses models install --force` never bypassed duplicate
+detection - see the CLI commit. `--name` was unaffected.
+
+**Also noted, unfixed**: `validate_model` reports the name from the folder's own manifest, which for
+a real run is component metadata ("hdbscan_model"), while `install_model` overrides it with the
+folder name. The two disagree about what a model is called.
+
+### 3d. The hang DOES reproduce — in full-suite context only (2026-08-19, evening)
+
+Supersedes the "does not reproduce" conclusion in §3b below. That conclusion was drawn from running
+`test_performance_stress.py` **on its own**, where it completes in ~163s. It was true as far as it
+went and wrong as a general claim: the first full run of the tiered core suite hung on
+`TestConcurrentJobSubmissions::test_concurrent_job_submissions`.
+
+pytest-timeout named it and dumped the stack:
+
+```
+test_performance_stress.py:420  in submit_job   -> await _full_async(...)
+emuses/cli/main.py:1107         in _full_async  -> await _execute_via_unified_service(...)
+emuses/cli/main.py:1396         in _execute_via_unified_service
+                                -> if not _wait_for_service_ready(service_url, timeout=30):
+emuses/cli/main.py:1624         in _wait_for_service_ready -> time.sleep(0.5)
+```
+
+**Mechanism.** The test patches `emuses.cli.main.ServiceHTTPClient` and sets
+`check_service_health.return_value = True`. But `_wait_for_service_ready` does not go through
+`ServiceHTTPClient` — it polls with raw `requests.get` in a loop with a blocking `time.sleep(0.5)`.
+The mock therefore does not cover the path the test actually takes. The test submits five jobs and
+asserts `execution_time < 60`, so its own intent is that the service is fully mocked out.
+
+Two defects, and they are different in kind:
+1. **Test**: the mock is incomplete — it stops at the client and misses the readiness check.
+2. **Code**: `_wait_for_service_ready` performs blocking I/O and `time.sleep` inside an async call
+   chain, so five "concurrent" submissions serialise into 5 × 30 s.
+
+**Why only in full-suite context** is not established. The three tests pass in ~40 s when the class
+runs alone. Something earlier in the suite leaves state behind that makes the readiness poll block
+rather than fail fast — a leaked uvicorn is the obvious suspect (see §3c, where the service-spawn
+leak was confirmed real but believed unreached). That is a hypothesis, not a finding, and it is the
+next thing to test. Do not record it as the cause until a run demonstrates it.
+
+**This is very likely the six-day orphan from 2026-07-31.** Same file, and a readiness poll against
+a socket is exactly the `ep_poll` signature that orphan showed. §3b guessed at interpreter shutdown
+instead; on this evidence that guess was probably wrong.
+
+### 3e. `timeout_method = thread` kills the entire run (2026-08-19)
+
+Worth separating out, because it cost a full measurement. pytest-timeout's thread method cannot
+interrupt a stuck test: it dumps stacks and terminates the process. One hang therefore aborts
+everything, and no other result is ever reported — the run above died at 27% with 828 of 1431 tests
+executed and no summary.
+
+Changed to `timeout_method = signal`. SIGALRM interrupts the test and the run continues. The
+trade-off is real and recorded in `pytest.ini`: SIGALRM fires only on the main thread and cannot
+interrupt a block inside a C extension, so a hang of that kind still needs the thread method to
+diagnose. Losing every other result by default costs more than that.
+
 ### 3b. `test_performance_stress.py` — hang not reproducible; net installed anyway (2026-08-19)
+
+**Superseded in part by §3d above — the hang does reproduce, in full-suite context.** Kept for the
+orphan's forensic detail and the two real test fixes.
+
 
 An orphaned run of this file from 2026-07-31 was found still alive on 2026-08-06, blocked in
 `ep_poll` after **6 days 11 hours** — despite having been started with

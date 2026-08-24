@@ -36,6 +36,20 @@ from emuses.tools.optuna_cv import nested_optuna_cv
 from ..tools.model_io import ModelIOManager
 
 
+def _seeds_from(cfg):
+    """Return the derived seed dict off a config, or {} if there isn't one.
+
+    The config is duck-typed: EMUSESPipeline sets ``random_seeds`` to the dict
+    it derives from --random_state, but HeatmapStage is also driven directly
+    (PipelineRunner, tests) by objects that do not. The isinstance check is not
+    defensive padding -- a Mock config fabricates ``random_seeds`` as a Mock,
+    which is truthy and whose ``.get`` returns another Mock, so ``or {}`` alone
+    silently produces a Mock where an int is required.
+    """
+    seeds = getattr(cfg, "random_seeds", None)
+    return seeds if isinstance(seeds, dict) else {}
+
+
 def _optimise_target(
     col_idx,
     X,
@@ -61,12 +75,27 @@ def _optimise_target(
         logger.warning("%s skipped – only %d non-NaN rows", tag, len(yi))
         return tag, np.array([]), []  # skip optimisation
 
+    # Seeds derived from --random_state by EMUSESPipeline and stored on the
+    # config (emuses_pipeline.py). getattr keeps HeatmapStage usable when it is
+    # driven outside EMUSESPipeline (tests, PipelineRunner), where the fallback
+    # of 42 reproduces the previous hardcoded behaviour.
+    # A key present but set to None means master_seed was None, i.e. the user
+    # deliberately asked for an unseeded run - keep it None rather than
+    # substituting 42, matching heatmap_stage.robust_ood_evaluation.
+    random_seeds = _seeds_from(cfg)
+    cv_seed = random_seeds.get("cv_seed", 42)
+    optuna_seed = random_seeds.get("optuna_seed", cv_seed)
+    prediction_seed = random_seeds.get("prediction_seed", cv_seed)
+
     scores, pipes = nested_optuna_cv(
         Xi,
         yi,
         task=task,
         n_outer=cfg.outer_folds,
         n_trials=cfg.optuna_trials,
+        random_state=cv_seed,
+        optuna_seed=optuna_seed,
+        model_seed=prediction_seed,
         target_tag=tag,
         output_folder=out_dir,
         optim_dict=optim_dict,
@@ -96,6 +125,27 @@ class HeatmapStage(PipelineStage):
 
         # Get prediction labels (scores for prediction)
         prediction_train_labels = context.get("prediction_train_labels")
+
+        # HeatmapStage fits prediction models against UMAP embedding coordinates, so it
+        # cannot run without them. Without this check the None travels into a joblib
+        # worker and surfaces as "TypeError: 'NoneType' object is not subscriptable" from
+        # inside filter_nan_rows, which says nothing about what the user did wrong.
+        #
+        # Note --load_umap / --load_embeddings do not help here: both are read by
+        # UMAPStage, which a heatmap-only run does not execute.
+        if prediction_train_coords is None:
+            raise ValueError(
+                "HeatmapStage has no UMAP embedding coordinates to fit against "
+                "(context key 'prediction_train_coords' is empty). HeatmapStage consumes "
+                "the output of UMAPStage, so it cannot run standalone. Use `emuses full` "
+                "to run both stages - add --load_umap <model> to reuse an already trained "
+                "UMAP model instead of retraining it."
+            )
+        if prediction_train_labels is None:
+            raise ValueError(
+                "HeatmapStage has no scores to fit against (context key "
+                "'prediction_train_labels' is empty). Pass --scores <file>."
+            )
 
         # Get embedding coordinates (UMAP embeddings for unlabelled data used for UMAP training)
         # embedding_train_coords = context.get("embedding_train_coords")  # Unused
@@ -149,7 +199,15 @@ class HeatmapStage(PipelineStage):
         # 2 ─ Sanity-check the search space: grab ONE random draw
         #     This lets you inspect what Optuna will actually see.
         # ------------------------------------------------------------------
-        _tmp_study = optuna.create_study()  # direction irrelevant here
+        # Seeded so the logged example is reproducible, and so that "no
+        # unseeded create_study in emuses/" holds without exemptions. This
+        # study feeds nothing but the log line below.
+        _tmp_seeds = _seeds_from(self.config)
+        _tmp_study = optuna.create_study(  # direction irrelevant here
+            sampler=optuna.samplers.TPESampler(
+                seed=_tmp_seeds.get("optuna_seed", 42)
+            )
+        )
         _tmp_trial = _tmp_study.ask()  # empty trial, no objective yet
         sample_params = suggest_parameters_conditional(
             _tmp_trial, optim_dict_predict_selected
@@ -269,11 +327,15 @@ class HeatmapStage(PipelineStage):
                     timestamp = int(time.time())
                     model_name = f"best_ae_model_{timestamp}"
 
+                    # Same derived seeds the prediction search uses; the 42
+                    # that used to be hardcoded here ignored --random_state.
+                    ae_seeds = _seeds_from(self.config)
                     ae_results = optimize_ae_pretraining(
                         X=ae_input_data,
                         n_trials=ae_trials,
                         output_folder=self.config.output_folder,
-                        random_state=42,
+                        random_state=ae_seeds.get("prediction_seed", 42),
+                        optuna_seed=ae_seeds.get("optuna_seed", None),
                         model_name=model_name,
                     )
 

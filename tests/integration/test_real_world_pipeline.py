@@ -21,6 +21,21 @@ from typing import Dict, List, Any, Optional
 import json
 import pickle
 import glob
+import importlib.util
+import sys
+
+
+def _regression_metrics():
+    """Load tests/regression/regression_metrics.py by path.
+
+    tests/regression is not an import package, and duplicating the metric set
+    here is how the two copies would drift apart.
+    """
+    path = Path(__file__).resolve().parents[1] / "regression" / "regression_metrics.py"
+    spec = importlib.util.spec_from_file_location("emuses_regression_metrics", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 class RealWorldIntegrationTest:
@@ -34,8 +49,11 @@ class RealWorldIntegrationTest:
 
     # Real-world CLI command pattern for integration testing
     # Based on actual EMUSES production usage
+    # `{python}`, not a bare `python`: on this machine bare python resolves to a
+    # different conda install than the one running the suite, so the subprocess
+    # would test an environment nobody is developing in.
     CLI_COMMAND_TEMPLATE = """
-    python -m emuses.cli full \
+    {python} -m emuses.cli full \
       "{output_folder}" \
       "{features_train}" \
       --columns_are_features \
@@ -186,7 +204,7 @@ class RealWorldIntegrationTest:
             CompletedProcess object with command results
         """
         # Format the command with actual file paths
-        command_params = {**self.params, **data_files}
+        command_params = {"python": sys.executable, **self.params, **data_files}
 
         # Build the command
         cmd = self.CLI_COMMAND_TEMPLATE.format(**command_params)
@@ -262,27 +280,16 @@ class RealWorldIntegrationTest:
         Returns:
             Dictionary with extracted performance metrics
         """
-        metrics = {}
-
-        # Extract CV scores if available
-        cv_scores_path = output_dir / 'cv_scores.csv'
-        if cv_scores_path.exists():
-            cv_scores_df = pd.read_csv(cv_scores_path)
-            metrics['cv_scores'] = cv_scores_df.to_dict()
-
-        # Extract optimization results if available
-        optim_history_path = output_dir / 'optimization_history.json'
-        if optim_history_path.exists():
-            with open(optim_history_path, 'r') as f:
-                metrics['optimization_history'] = json.load(f)
-
-        # Extract prediction results if available
-        pred_results_path = output_dir / 'prediction_results.json'
-        if pred_results_path.exists():
-            with open(pred_results_path, 'r') as f:
-                metrics['prediction_results'] = json.load(f)
-
-        return metrics
+        # Delegates to the regression suite's extractor, which is the single
+        # definition of what an EMUSES run is compared on.
+        #
+        # This used to look for cv_scores.csv, optimization_history.json and
+        # prediction_results.json. **No EMUSES code writes any of those names**,
+        # so it always returned {} and every caller was comparing empty dicts.
+        # The real artefacts are best_trial_info.json, cluster_labels.npy,
+        # embeddings.npy and performance_summary_statistics_*.csv (the last
+        # carries a timestamp, so it has to be globbed).
+        return _regression_metrics().extract_metrics(output_dir)
 
     def compare_results(
         self,
@@ -382,36 +389,59 @@ class TestCLIIntegration:
                 results = json.load(f)
             assert isinstance(results, dict), "Prediction results should be a dictionary"
 
+    @pytest.mark.slow
     def test_reproducibility(self, integration_test_suite):
-        """Test that runs with same parameters produce identical results."""
-        # First run
+        """Two identical CLI invocations produce identical numbers.
+
+        This is the CLI-path counterpart of ``tests/regression/``, which drives
+        the Python API. It exists because the two paths can diverge silently:
+        the CLI forks a service and submits over HTTP, and only the API path had
+        ever been checked before 2026-08-22.
+
+        It replaces an assertion that could not fail. The old version compared
+        ``cv_scores.csv``, ``optimization_history.json`` and
+        ``prediction_results.json`` -- three filenames **no EMUSES code writes**
+        -- so both sides were empty dicts, the ``if comparisons:`` branch was
+        never entered, and the only surviving check was that two empty dicts
+        have the same length. Not a weakened test (G002): there was nothing to
+        weaken.
+        """
         data_files_1 = integration_test_suite.setup_test_environment()
         result_1 = integration_test_suite.run_cli_command(data_files_1)
-        assert result_1.returncode == 0
+        assert result_1.returncode == 0, result_1.stderr[-2000:]
+        metrics_1 = integration_test_suite.extract_performance_metrics(
+            data_files_1['output_folder']
+        )
 
-        metrics_1 = integration_test_suite.extract_performance_metrics(data_files_1['output_folder'])
-
-        # Second run (new temporary directory)
         integration_test_suite.teardown_test_environment()
         data_files_2 = integration_test_suite.setup_test_environment()
         result_2 = integration_test_suite.run_cli_command(data_files_2)
-        assert result_2.returncode == 0
+        assert result_2.returncode == 0, result_2.stderr[-2000:]
+        metrics_2 = integration_test_suite.extract_performance_metrics(
+            data_files_2['output_folder']
+        )
 
-        metrics_2 = integration_test_suite.extract_performance_metrics(data_files_2['output_folder'])
+        scalar_keys = sorted(
+            key
+            for key, value in metrics_1.items()
+            if not key.startswith('_') and isinstance(value, (int, float))
+        )
+        assert scalar_keys, (
+            'no numeric metrics were extracted, so this test would pass '
+            'vacuously -- exactly the failure it replaced'
+        )
 
-        # Compare results (should be identical with same random seed)
-        comparisons = integration_test_suite.compare_results(metrics_1, metrics_2)
-
-        # Note: Due to optimization randomness, we mainly check structure consistency
-        # rather than exact numerical equality
-        assert len(metrics_1) == len(metrics_2), "Different number of output metrics"
-
-        # Basic consistency check - at least some metrics should match
-        if comparisons:
-            matching_keys = sum(1 for v in comparisons.values() if v)
-            total_keys = len(comparisons)
-            match_ratio = matching_keys / total_keys if total_keys > 0 else 0
-            assert match_ratio >= 0.5, f"Too few matching metrics: {match_ratio:.2%}"
+        differing = {
+            key: (metrics_1[key], metrics_2.get(key))
+            for key in scalar_keys
+            if metrics_2.get(key) != metrics_1[key]
+        }
+        assert not differing, (
+            'two identical CLI invocations disagreed. Bitwise identity is the '
+            'expected result on one machine after the Phase 1D seed wiring; if '
+            'this starts failing, something is reading an unseeded source of '
+            f'randomness. Differing: {differing}'
+        )
 
 
 class TestFastAPIIntegration:

@@ -66,8 +66,20 @@ class PipelineConfig:
 
     # UMAP/HDBSCAN optimization parameters
     prefix: str = ""  # Prefix for output file names
-    umap_jobs: int = None  # Number of parallel jobs for UMAP optimization
-    hdbscan_jobs: int = None  # Number of parallel jobs for HDBSCAN optimization
+    # Serial by default, deliberately. optuna's optimize(n_jobs>1) runs trials
+    # concurrently, so TPE's suggestion depends on which trials have finished when
+    # each one asks -- thread timing, which no seed controls. Measured 2026-08-23:
+    # 10 of 20 metrics identical at jobs=4, 20 of 20 at jobs=1
+    # (dev-docs/issues/reproducibility_tolerances_2026_08.md, ADR 2.9c). Parallel
+    # search stays available as an opt-in, and asking for it warns.
+    umap_jobs: int = 1  # Parallel jobs for the outer (UMAP) Optuna search
+    # Currently inert. train_and_save_umap_optim_with_nested_clustering takes
+    # parallel_mode="umap" and no caller overrides it, so inner_n_jobs is only read
+    # in the parallel_mode == "hdbscan" branch and the inner search always runs at
+    # inner_optimize_hdbscan's own n_jobs=1. Declared rather than removed, and
+    # guarded by tests/test_search_jobs_default.py so it cannot drift into looking
+    # wired.
+    hdbscan_jobs: int = 1  # Parallel jobs for the inner (HDBSCAN) Optuna search
     umap_trials: int = 50  # Number of UMAP optimization trials
     hdbscan_trials: int = 20  # Number of HDBSCAN optimization trials
 
@@ -110,7 +122,10 @@ class PipelineConfig:
     n_jobs: int = -1  # Number of parallel jobs for model training
     model_selection: list = None  # List of models to try
     prediction_optim_dict: str = "optim_dict_predict"  # Prediction optim_dict name
-    random_state: Optional[int] = None  # Master random seed (None = parallel UMAP, int = reproducible but single-threaded UMAP)
+    # Master random seed; every component seed derives from it (emuses_pipeline.py).
+    # Setting it does NOT change umap_jobs: a parallel Optuna search is
+    # nondeterministic whatever the seed. The old comment here claimed otherwise.
+    random_state: Optional[int] = None
 
     # Additional required fields
     input_dataset: str = None  # Input dataset path

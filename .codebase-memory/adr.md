@@ -276,14 +276,220 @@ so running as root with an output folder under `/root/` is now refused.
 
 ### 2.9 Reproducibility: Hierarchical Random Seeds
 
-**Decision**: Derive component-specific random seeds from a master seed using `numpy.random.default_rng`, and persist all seeds to `random_seeds.json`.
+**Decision**: Derive component-specific random seeds from a master seed (`--random_state`) using
+`numpy.random.default_rng`, and persist all seeds to `random_seeds.json`. **This is the only seeding
+mechanism in EMUSES.** Anything that needs randomness takes its seed from this derivation; do not
+introduce a second scheme, and do not hardcode a seed at a call site.
 
 **Rationale**:
-- Full reproducibility is required for scientific publication.
-- Separate seeds per component (UMAP, clustering, prediction, CV, Optuna) allow individual component reproduction.
+- Reproducibility is required for scientific publication. *Bitwise* reproducibility across machines
+  is explicitly out of scope (see §2.9b); reproducibility of a rerun on one machine is not.
+- Separate seeds per component (UMAP, clustering, prediction, CV, Optuna) allow individual component
+  reproduction.
 - Persisting seeds to a JSON file makes them citable and inspectable by reviewers.
 
-**Code**: `emuses/pipelines/emuses_pipeline.py` (`__init__`)
+**The decision was made in 2025 but only implemented for the UMAP and clustering stages.** On
+2026-08-23 the prediction path was found disconnected from it at five points, which is why two
+identical invocations at `--random_state 42` produced identical embeddings and different prediction
+scores. Fixed in `687f7a9` and `4152635`:
+
+1. `nested_optuna_cv` created its Optuna study with no `sampler`, so it got `TPESampler(seed=None)`.
+   Each outer fold now takes its own seed derived from `optuna_seed` — a single shared seed would
+   make every fold replay the same TPE startup trials, correlating outer scores that are supposed to
+   be independent estimates.
+2. `_optimise_target` never passed `random_state` to `nested_optuna_cv`, so CV folds always used the
+   hardcoded default of 42 and `--random_state` did not reach them.
+3. `build_estimator` hardcoded `random_state=42`; `LogisticRegression(solver="saga")` shuffles.
+4. `PCAGWD` / `KernelPCAGWD` were unseeded.
+5. `optimize_ae_pretraining` had an unseeded study and a caller passing `random_state=42`.
+
+**The PCA case is the one to remember.** `PCA(svd_solver="auto")` only switches to the *randomized*
+solver once `max(X.shape) > 500`, and the GWD kernel matrix is n×n in the number of samples. An
+unseeded `PCAGWD` is therefore perfectly reproducible on `test_data`'s 50 samples and irreproducible
+on a real cohort — the defect is invisible to the test data by construction and appears first on the
+runs worth publishing. It is fixed by seeding, not by pinning `svd_solver="full"`, which would cost
+O(n³) on exactly the large inputs the randomized solver exists for.
+
+**Enforced invariant**: no `optuna.create_study` anywhere in `emuses/` without an explicit `sampler`.
+No exemptions — a study whose result is only logged still costs one line to seed. Guarded by
+`tests/test_seed_wiring.py::test_no_unseeded_optuna_study`.
+
+A weaker companion guard checks that every key in `random_seeds.json` is read somewhere. It is
+documented as weak in its own docstring, because it would **not** have caught the above:
+`prediction_seed` and `cv_seed` already had readers in `robust_ood_evaluation` while the main
+prediction path ignored them. Only `optuna_seed` was derived and read by nothing.
+
+**Known residual**: `load_if_exists=True` with RDB storage means a *resumed* study still diverges —
+the sampler is re-seeded while the trial history is not. Related to §3.2.
+
+**Code**: `emuses/pipelines/emuses_pipeline.py` (`__init__`), `emuses/pipelines/heatmap_stage.py`
+(`_seeds_from`, `_optimise_target`), `emuses/tools/optuna_cv.py`, `emuses/tools/models_utils.py`,
+`emuses/tools/features_utils.py`, `emuses/tools/ae_optuna.py`
+
+### 2.9c Optuna Parallel Search Forfeits Reproducibility; Serial Is the Default
+
+**Decision**: `umap_jobs` / `hdbscan_jobs` default to **1**. Parallel Optuna search is available as
+an explicit opt-in that warns it forfeits reproducibility.
+
+**Rationale**: `optuna.study.optimize(n_jobs>1)` runs trials concurrently, so TPE's suggestion
+depends on which trials have completed when each one asks — thread timing. Seeding the sampler does
+not help, and EMUSES does seed it (`UMAP_utils.py:633`). Measured 2026-08-23, three repeats at seed
+42 with one variable changed: jobs=4 gave 10 of 20 metrics identical, jobs=1 gave 20 of 20
+(`dev-docs/issues/reproducibility_tolerances_2026_08.md`).
+
+Reproducibility wins because EMUSES exists to produce results people publish. A faster search that
+cannot be rerun is worth less than a slower one that can.
+
+**Trap worth knowing**: CLI runs were reproducible before this decision *by accident* — the CLI forks
+a service, so `is_subprocess_context()` is True and `get_safe_n_jobs()` clamps jobs to 1. Moving
+local execution in-process (§4, Phase 1B2) removes that clamp and would have silently made CLI runs
+nondeterministic.
+
+**Related trap**: `optim_dict_hcp` and `optim_dict_test` have every parameter fixed, and
+`UMAP_utils.py:430` deliberately collapses to a single trial in that case. Raising `umap_trials`
+against them changes nothing, and a config built on them cannot exhibit search nondeterminism at
+all — which is why the test fixture showed perfect reproducibility while the problem was live.
+
+**Implemented 2026-08-23** (`bec42c9`). Three things surfaced while doing it:
+
+- `umap_jobs` was *already* serial, by a `None -> 1` mapping inside `UMAPStage` rather than by
+  declaration. A default nothing declares is a default nothing guards. There is now one place that
+  decides search parallelism, `umap_stage._resolve_search_jobs`.
+- **`hdbscan_jobs` is inert.** `train_and_save_umap_optim_with_nested_clustering` takes
+  `parallel_mode="umap"` and no caller overrides it, so `inner_n_jobs` is only read in the
+  `"hdbscan"` branch; the inner search always runs at `inner_optimize_hdbscan`'s own `n_jobs=1`.
+  Decided to document and guard it rather than wire or remove it — the same treatment as the five
+  `NOT_IMPLEMENTED` CLI options. `tests/test_search_jobs_default.py` fails if anyone wires
+  `parallel_mode`, so the decision gets revisited rather than drifted past.
+- **`--help` claimed the opposite of the truth.** The `--random_state` help text, the
+  `PipelineConfig` comment and the `UMAP_utils` docstring all said that setting a seed forces UMAP
+  `n_jobs` to 1. Nothing does. The confusion is understandable — UMAP's *own* `n_jobs` is overridden
+  when seeded, and it warns so — but optuna's is not, and optuna's is the one that decides the
+  search.
+
+**`hdbscan_core_dist_n_jobs` is exonerated** (re-measured 2026-08-23 at the regression config, 3
+clusters, 20/20 identical across 1 vs −1). The first measurement ran on an all-noise clustering and
+was recorded as weak evidence; that caveat is closed.
+
+### 2.9d What Is Pinned Numerically, and at What Tolerance
+
+**Decision**: `tests/regression/` pins prediction scores, composite score, the UMAP/HDBSCAN metrics,
+cluster count, cluster structure and embedding geometry, on **its own config**
+(`tests/regression/regression_config.py`) rather than the shared `emuses_pipeline_results` fixture.
+
+**Rationale for the separate config**: the shared fixture runs `optim_dict_hcp`, which returns zero
+clusters with all 40 points labelled noise. An adjusted Rand index between two all-noise labellings
+is 1.0 by construction, so a cluster assertion there could never fail. The regression config is the
+`midbudget-serial` arm — the only measured config that is both reproducible (20/20 over three
+repeats) and non-degenerate (3 clusters, `noise_fraction` 0.1). `test_baseline_is_not_degenerate`
+fails if it ever drifts back.
+
+**Rationale for the comparison forms**: cluster ids are arbitrary, so structure is compared by
+adjusted Rand index rather than label equality. UMAP is defined only up to rotation and reflection,
+so embeddings are compared through pairwise distances, never coordinates.
+
+**Where the tolerances come from**: `dev-docs/issues/reproducibility_tolerances_2026_08.md`. Local
+run-to-run variation is exactly **zero** on every metric, so every float tolerance is a *chosen*
+cross-machine allowance (per §2.9b), not a measured one, and each is labelled as such in the test
+file. `rtol=1e-3` on prediction scores (the CSVs are written to 4 dp), `rtol=1e-6` on the search
+metrics, ARI ≥ 0.95, distance correlation ≥ 0.999, cluster count exact.
+
+**Regenerating a baseline is a deliberate act** recorded in the commit message. A missing baseline
+fails rather than being written silently, otherwise the suite ratchets to whatever the code
+currently does. Each baseline records the config that produced it and fails if the two drift apart.
+
+**Worth knowing before trusting a pass**: a one-line production change (UMAP model seed shifted by
+one) failed the composite score, cluster structure and embedding geometry — while prediction scores
+and cluster count did **not** move. Pinning only "the number that matters" would have missed a real
+change to the science.
+
+### 2.9b Bitwise Reproducibility Is Out of Scope
+
+**Decision**: EMUSES targets reproducibility within a machine and environment, verified against
+*measured* tolerances, not bitwise identity across platforms.
+
+**Rationale**: parallel floating-point reductions are not associative, so results legitimately differ
+with thread count and BLAS build. Chasing bitwise identity would mean forcing single-threaded
+execution everywhere, at a large and permanent performance cost, to remove differences that are below
+scientific significance. Tolerances are to be derived from measurement and cited where they are
+pinned, rather than guessed.
+
+**Do not re-litigate this.** It was decided deliberately after the alternative was considered.
+
+### 2.11 Pipeline Commands Share One Option Declaration; `heatmap` Cannot Run Standalone
+
+**Decision (2026-08-23, Phase 1C).** `full`, `umap` and `heatmap` take their CLI options from a
+single declaration in `emuses/cli/pipeline_options.py`, stamped onto each command by
+`@with_pipeline_options`. Typer builds its CLI from `inspect.signature()` and honours a
+programmatically assigned `__signature__` (verified against typer 0.19.2), so the options stay
+ordinary readable Python in one place rather than three lists that drift.
+
+**Why not three copies.** `umap` and `heatmap` previously declared only `output_folder` and
+`input_dataset` — every other flag worked on `full` and did not exist on the other two. Copying
+`full`'s block twice would have fixed the symptom and reproduced the Phase 1A defect (options
+accepted and silently discarded) in three places instead of one. `tests/test_cli_option_mapping.py`
+pins that all three commands expose exactly the shared set, and that each command's signature *is*
+the shared object.
+
+**`emuses heatmap` standalone is unsupported, by architecture rather than omission.** `HeatmapStage`
+fits prediction models against UMAP embedding coordinates (`prediction_train_coords`), which only
+`UMAPStage` produces. `--load_umap` and `--load_embeddings` are both read by `UMAPStage`, so a
+heatmap-only run cannot obtain its input by any route. It fails fast with a message naming the
+missing context key, the stage that produces it, and `emuses full` as the working command. Do not
+"fix" this by loosening the check — the correct resolutions are to make `heatmap` imply UMAP, to
+teach HeatmapStage to load a trained model, or to remove the command. That is a product decision and
+is deliberately still open.
+
+**Consequences.** Unsupervised runs are now a real path: `split_dataset` no longer passes
+`self.scores` into `train_test_split` when there are no scores, and `InferenceStage` is only added
+when `HeatmapStage` ran, since it exists to validate that stage's models. `PredictionStage` is
+retired and no longer advertised anywhere (`app.py` `valid_stages`, `service_client.py`
+`valid_types`, `main.py` `stage_classes`); requesting it is rejected rather than accepted and failed
+at run time. The service defines `/api/v1/jobs/pipeline/{umap,heatmap}` as thin aliases onto the
+stage endpoint, not copies of it.
+
+### 2.10 Core / Extras Boundary: Parked Features Stay, But Cost Nothing
+
+**Decision**: EMUSES has a declared **core** and a set of **parked (extras)** features. Parked code
+stays in the tree and remains importable and testable, but is excluded from the default test run and
+must not be imported by core at module level. The boundary is enforced mechanically by
+`tests/test_architecture_boundary.py`.
+
+**Core**: `pipelines/`, `cli/` (except `cloud_validation.py`), `config/`, `utils/`, `observability/`
+(every pipeline stage imports it), `foundation_fastapi_service/` (except the orphaned
+`stage_runners.py`), and in `tools/` the science modules plus `model_io`, `local_model_registry`,
+`base_model_registry`, `storage_manager`, `model_registry_factory`, `model_registry_metrics`,
+`model_registry_health`.
+
+**Parked**: the model marketplace (`advanced_search`, `model_analytics`, `personalized_ranking`,
+`model_benchmarking`, `community_model_manager`, `streaming_analytics`, `usage_alerts`,
+`model_compression`, `model_migration`, `registry_config`), the publication/compliance scaffolding
+(`academic_features`, `academic_compliance`, `gdpr_compliance`), the cloud and database registry
+backends, and `multi_user_service/` in full.
+
+**Rationale**:
+- Measured 2026-08-19: 16,585 LOC (22% of the package) was unreachable from *every* entry point, and
+  1,071 of 2,499 tests exercised it. The registry those features would serve holds one model.
+- The maintenance cost was real and the benefit was zero, but the work is not worthless — it is
+  unfinished. Deleting it would discard genuine effort; leaving it in the default path made the
+  suite too large to keep trustworthy. Parking resolves both.
+- `model_analytics` had 32 references and still looked alive; every one came from another parked
+  module. A self-referential cluster cannot be spotted by counting references, which is why the
+  boundary must be declared rather than inferred.
+- The seam already existed: `DeploymentMode` and `is_service_mode_enabled()`, with
+  `foundation_fastapi_service/app.py` wiring the multi-user endpoints behind
+  `try/except ImportError`. This decision makes that existing pattern explicit and enforced.
+
+**The rule**: core must not import parked code *at module level*. Lazy imports — inside a function,
+or behind `try/except ImportError` — are the sanctioned way to wire an optional feature, and
+`model_registry_factory.py` already loads the cloud and database backends that way.
+
+**Do not** relax the boundary to make a test pass. If a parked feature turns out to be genuinely
+core, move it out of `EXTRAS_MODULES` deliberately and record why here. The declaration is a product
+decision, not a graph property — deriving it from reachability would make the test circular and
+unable to fail.
+
+**Code**: `tests/test_architecture_boundary.py`, `tests/extras/conftest.py`, `pytest.ini`
 
 ---
 
@@ -300,6 +506,45 @@ so running as root with an output folder under `/root/` is now refused.
 **Status**: Unresolved. Needs verification and implementation.
 
 ---
+
+### 3.1b Constant Predictions Are Degenerate Models, Not an Inference Bug (OPEN, corrected)
+
+**Opened and corrected on 2026-08-24.** The original entry claimed inference emitted constant
+predictions for some digits targets while cross-validating at 0.99+. That claim is **withdrawn**:
+both pieces of evidence for it were compromised.
+
+- The digits inference was fed the model's own `split_dataset/test_features.npy`, which is written
+  **after** input normalization, while the inference path applies the saved scaler again. The input
+  was normalized twice.
+- The `test_data/` reproduction shows the constants come from **training**, not inference. Every fold
+  estimator is an `ElasticNet` with all coefficients zero, returning its intercept (the training-target
+  mean, 0.807) for any input across a grid spanning [-50, 50]^2. `prediction_values.npy` holds one
+  unique value across 10 000 grid points and `confidence_values.npy` is exactly 1.0. Inference is
+  faithfully applying a model that was already constant.
+
+The fit itself is defensible - `quick_train_dict` searches alpha up to 1.0, and on 40 samples of 2-D
+embeddings with target std 0.07 there is no signal, so zeroing the coefficients minimises CV error.
+
+**What is actually wrong, and is still open:**
+
+1. **Degenerate models are never reported.** All-zero coefficients, a constant prediction grid, and
+   `confidence = 1.0` describe a model that knows nothing and claims certainty. Confidence is
+   `1.0 - std(across fold predictions)` (`inference_stage.py:1455`), so perfect agreement between
+   useless models reads as perfect confidence. The evidence exists at training time; report it there.
+2. **Feeding EMUSES' own splits back into inference silently double-normalizes.** Measured: the
+   pre-normalized split yields **1** distinct embedding from `umap.transform`, the same rows raw yield
+   10, all 50 raw rows yield 50. Off-manifold input collapses the transform with no error.
+3. `.npy` rejected and header-bearing CSV rejected (`input_header` defaults to `None`). Accepting
+   `.npy` makes (2) easier to hit, so the collapse guard lands first or alongside.
+
+**`test_data/` cannot validate prediction behaviour**: `features.csv` is a synthetic ramp (row i is
+`[1.i, 2.i, ... 8.i]`), rank-1 by construction, and yields degenerate fits at any budget. Related:
+`tests/regression/` baselines pin per-fold scores of mean -0.3554 / min -0.9809 (negative R^2), so a
+passing regression suite is **not** evidence that prediction works - it is pinned at the floor.
+
+Whether digits shows a genuine inference defect is **unresolved**; its models were not degenerate, but
+its input was double-normalized. Settling it needs a re-run with raw inference input (~3.5 h). Details
+in `dev-docs/issues/inference_constant_predictions_2026_08.md`.
 
 ### 3.2 Optuna Parameter Space Conflict on Resume (OPEN)
 
@@ -332,8 +577,77 @@ so running as root with an output folder under `/root/` is now refused.
 ## 4. Deployment Architecture
 
 Three deployment modes share the same pipeline core:
-- **Local**: CLI, file-based storage, in-process execution
+- **Local**: CLI, file-based storage, auto-started local service (see below — this bullet used to
+  say "in-process execution", which was never true and is no longer the intent)
 - **Lab (multi-user)**: FastAPI service, SQLite/PostgreSQL job persistence, background workers
 - **Cloud-native**: Kubernetes, distributed job queue, cloud object storage
 
 Models created in any mode are portable to any other mode. No deployment-specific model formats.
+
+**Every deployment mode executes through the EMUSES service, including local (decided 2026-08-23).**
+Local mode auto-starts a service and submits to it rather than calling the pipeline directly. The
+bullet above once read "in-process execution"; that was aspirational, never true, and after being
+briefly implemented it was reverted the same day.
+
+**Why one path, and not a direct local call.** The reason is maintenance, not purity. A local path
+means every change to logging, progress reporting, job status or error handling has to be made twice.
+That was measured rather than predicted: moving `full` in-process took about forty lines and
+immediately produced a **third** progress mechanism (the service writes into the job record, the CLI
+polls and prints, the local path printed directly), with no interrupt handling and no job record; a
+leaked temp scores file, because `_cleanup_temp_scores_file` lives in `execute_pipeline`'s `finally`
+and a direct call to `_run_pipeline_in_process` bypasses it; no timeout, applied in the same place;
+and a CLI where `full` behaved one way and `umap`/`heatmap` another.
+
+**Going over HTTP locally also catches real bugs.** Phase 1C: `/api/v1/jobs/pipeline/umap` did not
+exist on the server. The CLI built that URL, got a 404, and the defect was found on a laptop. Executed
+in-process, a missing route stays invisible until someone deploys. What HTTP does *not* catch is
+configuration errors - `JobSubmissionRequest.pipeline_config` is an untyped `dict`, so Pydantic
+validates nothing about its contents. It catches transport bugs: route existence, JSON
+serializability, error-to-status mapping.
+
+**Known cost, accepted deliberately.** The pipeline runs in a `multiprocessing.Process` child, so
+`is_subprocess_context()` is True and `get_safe_n_jobs()` clamps `n_jobs` to 1: **`--n_jobs` does
+nothing on the CLI** while working normally through the Python API. Measured directly -
+`get_safe_n_jobs(4)` returns 4 in the main process and 1 in a forked child. The fix is to make the
+clamp precise, not to bypass the service: its documented hazard is spawning *loky* workers from an
+already-forked process, while `_run_pipeline_in_process` forces the **threading** backend, where that
+hazard does not apply. That needs its own measurement and is tracked as open.
+
+**Validation is a named function, not a route body.** `prepare_pipeline_context` (`app.py`) holds the
+required-field checks, special-dataset handling and the output-path checks added after the
+shell-injection cleanup. Kept from the reverted work because it is right regardless: those checks
+should be callable and testable rather than reachable only by making an HTTP request.
+
+`tests/test_single_execution_path.py` guards this decision, and declares the one function that
+already breaks it: `_execute_inference_locally` builds an `EMUSESPipeline` and runs `InferenceStage`
+directly in the CLI process. That predates this decision. **It is the first thing to fix if
+server-side inference matters** - a lab where one person trains a model and others run inference
+against it on a server needs inference to go through the service, and today it does not.
+
+`--service-url` opts into a remote service. `--service` is redundant now that every mode uses one, so
+it warns instead of sitting there looking wired.
+
+**The service is its own interpreter, not a fork (decided 2026-08-24, Phase 1E).**
+`_start_local_service` launches `python -m emuses.cli.service_process --port N` via
+`subprocess.Popen(sys.executable, ...)`. It used `multiprocessing.Process`, and that had three
+consequences, only one of which was visible:
+
+- **`--n_jobs` was inert on the CLI.** `is_subprocess_context()` is
+  `mp.current_process().name != "MainProcess"`, true in any forked child, so `get_safe_n_jobs()`
+  clamped to 1 inside the service while the Python API was unaffected. **The clamp is not the bug** -
+  spawning loky workers from an already-forked process genuinely hangs, and that was reproduced
+  directly. The process *identity* was wrong. Fixing it leaves `get_safe_n_jobs` untouched.
+- **A SIGKILLed CLI orphaned the service**, which then held its port for over an hour and ignored
+  SIGTERM; `atexit` does not run when the parent is killed. `service_process` now dies with its
+  parent via `prctl(PR_SET_PDEATHSIG)` on Linux, with a pid-watchdog fallback and a guard for the
+  race where the parent dies first.
+- **The service was invisible to `pgrep`**, because as a fork its argv still read
+  `python -m emuses.cli full`. It now names itself.
+
+The entry point binds `127.0.0.1` and takes an explicit `--port`. It deliberately does not reuse
+`foundation_fastapi_service/app.py`'s `__main__`, which hardcodes port 8000 and binds `0.0.0.0`.
+The macOS `_macos_service_worker` branch is deleted: it existed only to satisfy `multiprocessing`
+spawn-pickling, and a subprocess needs no picklable target.
+
+Verified not to move results: 18/18 scalar metrics identical against both the API baseline and the
+pre-change forked CLI, cluster ARI 1.0, embedding distance correlation 1.0.

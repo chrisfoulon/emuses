@@ -329,13 +329,22 @@ def train_and_save_umap_optim_with_nested_clustering(
     n_trials=50,
     n_inner_trials=20,
     pref=None,
-    n_jobs=4,
+    # Serial by default: optimize(n_jobs>1) below is nondeterministic whatever the
+    # seed (ADR 2.9c, dev-docs/issues/reproducibility_tolerances_2026_08.md).
+    n_jobs=1,
     parallel_mode="umap",  # "umap" or "hdbscan"
-    inner_n_jobs=4,
+    # Only read when parallel_mode == "hdbscan", which no caller selects.
+    inner_n_jobs=1,
     random_state=42,
     clusterer_random_state=None,
-    approx_min_span_tree=True,  # For reproducibility (False = reproducible but 10-100x slower)
-    core_dist_n_jobs=-1,  # For reproducibility (1 = reproducible)
+    approx_min_span_tree=True,  # False is exact but 10-100x slower
+    # Measured 2026-08-23: core_dist_n_jobs 1 vs -1 changed nothing across 4 runs
+    # (dev-docs/issues/reproducibility_tolerances_2026_08.md). The old comment
+    # here claimed "1 = reproducible" while defaulting to -1, which read as an
+    # admission that the default was wrong. It is not the reproducibility
+    # problem; optuna's optimize(n_jobs>1) below is. Caveat: that measurement ran
+    # on a clustering that returned zero clusters, so it is weak evidence.
+    core_dist_n_jobs=-1,
     **kwargs,
 ):
     """
@@ -364,19 +373,21 @@ def train_and_save_umap_optim_with_nested_clustering(
           Number of inner (HDBSCAN) trials per UMAP trial.
       pref : str, optional
           Prefix for saved files.
-      n_jobs : int, default=4
+      n_jobs : int, default=1
             Number of parallel jobs for Optuna.
       parallel_mode : str, default="umap"
             Whether to parallelize the outer optimization ("umap") or inner optimization ("hdbscan").
-      inner_n_jobs : int, default=4
-            Number of parallel jobs for inner optimization
+      inner_n_jobs : int, default=1
+            Number of parallel jobs for inner optimization. Only read when
+            parallel_mode == "hdbscan"; no caller selects that, so it is inert.
       random_state : int, default=42
             Random seed for UMAP for reproducibility.
             
-            Note: Setting random_state will override any n_jobs > 1 within UMAP to n_jobs=1
-            to ensure reproducible results. This is expected behavior. To enable parallel 
-            processing in UMAP (faster training), set random_state=None, but results 
-            will not be reproducible across runs.
+            Note: setting random_state does NOT reduce n_jobs. It seeds the sampler
+            and UMAP itself, but optuna's optimize(n_jobs>1) below schedules trials
+            concurrently, so the search path still depends on thread timing. Pass
+            n_jobs=1 for a reproducible search; see
+            dev-docs/issues/reproducibility_tolerances_2026_08.md.
       clusterer_random_state : int, optional
             Random seed for HDBSCAN clustering. If None, uses the same as random_state.
       approx_min_span_tree : bool, default=True

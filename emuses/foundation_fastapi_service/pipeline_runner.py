@@ -24,6 +24,7 @@ from emuses.foundation_fastapi_service.job_manager import JobManager
 from emuses.observability import get_logger, track_scientific_operation
 from emuses.pipelines.emuses_pipeline import EMUSESPipeline
 from emuses.pipelines.pipeline_config import PipelineConfig
+from emuses.tools.parallelism_utils import parallelism_backend
 
 
 class PipelineRunner:
@@ -96,13 +97,14 @@ class PipelineRunner:
         args.test_size = float(config_dict.get("test_size", 0.2))
         args.interactive_plot = bool(config_dict.get("interactive_plot", False))
         args.optim_dict = str(config_dict.get("optim_dict", "optim_dict_hcp"))
-        args.hdbscan_jobs = int(config_dict.get("hdbscan_jobs", 4))
+        # 1, not 4: serial Optuna search is the reproducible default (ADR 2.9c).
+        args.hdbscan_jobs = int(config_dict.get("hdbscan_jobs", 1))
         args.n_jobs = int(config_dict.get("n_jobs", -1))
         args.sigma = config_dict.get("sigma", None)
         args.fwhm = config_dict.get("fwhm", None)
         args.outer_folds = int(config_dict.get("outer_folds", 5))
         args.model_version = str(config_dict.get("model_version", "1.0.0"))
-        args.umap_jobs = config_dict.get("umap_jobs", None)
+        args.umap_jobs = int(config_dict.get("umap_jobs", 1))
 
         # Dataset and input configuration
         # Support both file-based (HCP-style) and direct data (API-style) execution
@@ -180,9 +182,6 @@ class PipelineRunner:
         )
 
         # Additional EMUSESPipeline parameters that might be needed
-        args.recursive_input_file_search = bool(
-            config_dict.get("recursive_input_file_search", False)
-        )
         args.input_file_types = config_dict.get("input_file_types")
         args.arg_separator = str(config_dict.get("arg_separator", ","))
         args.bids_filters = config_dict.get("bids_filters", {})
@@ -192,6 +191,45 @@ class PipelineRunner:
         args.scores_column = config_dict.get("scores_column", None)
         args.load_embeddings = config_dict.get("load_embeddings", None)
         args.label_dataset = config_dict.get("label_dataset", None)
+
+        # ------------------------------------------------------------------
+        # Options the CLI accepts but this mapping used to drop on the floor.
+        #
+        # Every `emuses full` option travels through here on its way to
+        # PipelineConfig. Anything not assigned below never reaches the
+        # pipeline at all - it silently falls back to the PipelineConfig
+        # dataclass default, so the run quietly ignores the flag instead of
+        # failing. These four have real consumers and were being lost:
+        #
+        #   hdbscan_core_dist_n_jobs     -> umap_stage.py:112
+        #   hdbscan_approx_min_span_tree -> umap_stage.py:110
+        #   input_file_list              -> emuses_pipeline.py:265
+        #   recursive_input_file_search  -> emuses_pipeline.py:327 (see below)
+        #
+        # tests/test_cli_option_mapping.py fails if a new CLI option is added
+        # without either being mapped here or declared as deliberately unmapped.
+        # ------------------------------------------------------------------
+        args.hdbscan_core_dist_n_jobs = int(
+            config_dict.get("hdbscan_core_dist_n_jobs", -1)
+        )
+        args.hdbscan_approx_min_span_tree = bool(
+            config_dict.get("hdbscan_approx_min_span_tree", True)
+        )
+        args.input_file_list = bool(config_dict.get("input_file_list", False))
+
+        # The CLI flag --recursive-input-file-search binds to the Python
+        # parameter `recursive_search`, so it arrives under that key - but the
+        # only consumer, emuses_pipeline.py:327, reads
+        # `args.recursive_input_file_search`. The flag was therefore always
+        # False no matter what the user passed. PipelineConfig declares both
+        # names (pipeline_config.py:80 and :97); `recursive_input_file_search`
+        # is the live one, so accept either key and feed that attribute.
+        args.recursive_input_file_search = bool(
+            config_dict.get(
+                "recursive_input_file_search",
+                config_dict.get("recursive_search", False),
+            )
+        )
 
         # Store data references for access during pipeline execution
         # We'll store them as attributes but they won't be used by EMUSESPipeline directly
@@ -381,15 +419,29 @@ class PipelineRunner:
                 "dataset": dataset_name,
                 "execution_method": "pipeline_runner",
             },
-        ) as obs_ctx:
+        ) as obs_ctx, parallelism_backend("threading"):
+            # Pipeline work runs on the threading backend, scoped to this call.
+            #
+            # This was previously an unconditional
+            # `configure_parallelism_backend(force_backend="threading")` justified by
+            # "service workers run in subprocess context". Two problems with that: it set a
+            # module-level global nothing restored, so the choice leaked into everything
+            # sharing the interpreter (a pipeline test demonstrably changed the outcome of an
+            # unrelated test that ran afterwards); and the justification stops being true when
+            # the pipeline runs in the main process, which both the local CLI path and the
+            # tests do.
+            #
+            # Letting context detection choose instead is wrong here for a reason that only
+            # showed up when measured: in the main process it selects loky, which spawns a
+            # worker pool that re-imports the scientific stack per worker. For the small,
+            # short tasks this pipeline distributes that is pure overhead - it turned a ~110 s
+            # test into one still running after 300 s with eight LokyProcess workers alive.
+            #
+            # So the backend choice is kept, and only its scope is fixed. Whether loky is
+            # worth it for realistic workloads is a performance question with its own
+            # measurement, deliberately left to the parallelism arm of the reproducibility
+            # work rather than changed as a side effect here.
             try:
-                # Configure parallelism context for service worker environment
-                from emuses.tools.parallelism_utils import \
-                    configure_parallelism_backend
-
-                # Service workers run in subprocess context - use threading backend
-                configure_parallelism_backend(force_backend="threading")
-
                 # Convert context to EMUSESPipeline arguments
                 args = self._context_to_emuses_args(context)
 
@@ -441,7 +493,12 @@ class PipelineRunner:
 
                 # InferenceStage for classic mode validation when test_size > 0
                 # Automatically added after HeatmapStage for held-out test set validation
-                if (config_dict.get("inference_stage_enabled", True) and 
+                # InferenceStage validates the prediction models HeatmapStage produces, so
+                # it cannot run without them. A UMAP-only job (`emuses umap`) has no
+                # prediction stage and no scores, and adding inference to it failed with
+                # "No inference features found in context".
+                if ("heatmap" in enabled_stages and
+                    config_dict.get("inference_stage_enabled", True) and 
                     config_dict.get("test_size", 0.0) > 0.0 and 
                     config_dict.get("label_dataset") is None):  # Classic mode only
                     

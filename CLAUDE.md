@@ -18,7 +18,8 @@ This project is indexed in codebase-memory-mcp (project name `home-chrisfoulon-n
 
 ## Quick Status for New Sessions
 
-**Current Status**: Analysis API Enhancement Foundation Complete - Statistical Analysis + Model Registry + Pipeline Consolidation ✅
+**Current Status**: see `STATUS.md`. Do not duplicate it here — this line went a year stale before
+anyone noticed, while `STATUS.md` said something different.
 
 **Key Status Files**:
 - **STATUS.md** - Current state of play (short; read this first)
@@ -179,5 +180,5 @@ The `feature/analysis-api-enhancement` branch this section once named no longer 
 - See `/scripts/README.md` for comprehensive testing approach
 
 ---
-*Last Updated: 2025-08-31 - Analysis API Enhancement Foundation Complete: Statistical Analysis + Model Registry + Pipeline Consolidation*
+*Last Updated: 2026-08-24 — dynamic state lives in `STATUS.md`; this file holds conventions only*
 *Static guidelines in the `lad:lad-standards` skill | Historical details in `dev-docs/project-history/`*

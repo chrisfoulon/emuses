@@ -1,160 +1,173 @@
 """
 Parallelism utility module for EMUSES.
 
-Provides safe parallelism handling that detects multiprocessing context
-and adjusts backend/n_jobs accordingly to avoid conflicts.
+Chooses a joblib backend and n_jobs based on whether we are running in the main process or
+inside a worker, so that nested parallelism does not deadlock or oversubscribe the machine.
+
+Spawning loky worker *processes* from inside an already-forked process is a known source of
+hangs and resource exhaustion, so a worker uses the threading backend and a single job.
 """
 
 import logging
 import multiprocessing as mp
+from contextlib import contextmanager
 
 logger = logging.getLogger(__name__)
 
-# Global configuration for backend override
+VALID_BACKENDS = ("loky", "threading", "multiprocessing")
+
+# Process-wide override. Prefer the `parallelism_backend` context manager over setting this
+# through configure_parallelism_backend(): an override that is never restored leaks into
+# everything else sharing the interpreter, which is how a pipeline test came to change the
+# outcome of an unrelated test that ran after it.
 _force_backend = None
-
-
-def get_process_hierarchy_depth():
-    """
-    Get the depth of the current process in the process hierarchy.
-
-    Returns
-    -------
-    int
-        Process hierarchy depth (0 for main process, 1+ for subprocesses)
-    """
-    current = mp.current_process()
-    depth = 0
-
-    # Traverse up the process hierarchy
-    while hasattr(current, "parent") and current.parent is not None:
-        depth += 1
-        current = current.parent
-        # Safety check to prevent infinite loops
-        if depth > 10:
-            logger.warning(
-                "Process hierarchy depth exceeded 10 levels, stopping traversal"
-            )
-            break
-
-    return depth
 
 
 def is_subprocess_context():
     """
-    Check if current process is running in a subprocess context.
+    Check whether the current process is a multiprocessing worker.
 
     Returns
     -------
     bool
-        True if in subprocess, False if main process
+        True if running in a worker process, False in the main process.
     """
     return mp.current_process().name != "MainProcess"
 
 
-def configure_parallelism_backend(force_backend=None):
-    """
-    Configure parallelism backend behavior.
-
-    Parameters
-    ----------
-    force_backend : str or None
-        Force specific backend ('loky', 'threading', 'multiprocessing')
-        or None for auto-detection
-
-    Raises
-    ------
-    ValueError
-        If invalid backend specified
-    """
-    global _force_backend
-
-    if force_backend is not None:
-        valid_backends = ["loky", "threading", "multiprocessing"]
-        if force_backend not in valid_backends:
-            raise ValueError(
-                f"Invalid backend '{force_backend}'. Must be one of: {valid_backends}"
-            )
-
-    _force_backend = force_backend
-    logger.debug(f"Parallelism backend configuration: {force_backend or 'auto-detect'}")
-
-
 def get_safe_parallel_backend():
     """
-    Get appropriate Joblib backend based on process context.
-
-    Uses enhanced process hierarchy detection and configuration options.
+    Get the appropriate joblib backend for the current process context.
 
     Returns
     -------
     str
-        'loky' for main process, 'threading' for subprocess, or configured override
+        The configured override if one is set, otherwise 'threading' in a worker process and
+        'loky' in the main process.
+
+    Notes
+    -----
+    This used to consult a `get_process_hierarchy_depth()` helper that walked
+    `mp.current_process().parent`. `multiprocessing.Process` has no `parent` attribute, so the
+    walk never executed and the function always reported depth 0 - meaning this function always
+    returned 'loky', including in the worker case it exists to catch. Its tests passed because
+    they mocked `current_process()` with a `MagicMock`, which fabricates any attribute asked of
+    it, so the mock had the `.parent` the real object lacks.
+
+    The subprocess check below is the one that has always worked, and was already being used by
+    `get_safe_n_jobs`.
     """
-    # Use configured override if set
     if _force_backend is not None:
         logger.debug(f"Using configured backend override: {_force_backend}")
         return _force_backend
 
-    # Enhanced context detection
-    hierarchy_depth = get_process_hierarchy_depth()
-    logger.debug(f"Process hierarchy depth: {hierarchy_depth}")
+    if is_subprocess_context():
+        logger.debug("Worker process detected, using threading backend")
+        return "threading"
 
-    if hierarchy_depth > 0:
-        logger.debug(
-            f"Subprocess detected (depth {hierarchy_depth}), using threading backend"
-        )
-        backend = "threading"
-    else:
-        logger.debug("Main process detected, using loky backend")
-        backend = "loky"
-
-    logger.debug(f"Selected backend: {backend}")
-    return backend
+    logger.debug("Main process detected, using loky backend")
+    return "loky"
 
 
 def get_safe_n_jobs(requested_n_jobs):
     """
-    Get safe n_jobs value based on context.
+    Get a safe n_jobs value for the current context.
 
     Parameters
     ----------
     requested_n_jobs : int
-        Requested number of jobs
+        Requested number of jobs.
 
     Returns
     -------
     int
-        Safe n_jobs value for current context
+        1 in a worker process, otherwise the requested value unchanged.
     """
     if is_subprocess_context() and requested_n_jobs != 1:
-        hierarchy_depth = get_process_hierarchy_depth()
         logger.debug(
-            f"Subprocess detected (depth {hierarchy_depth}), limiting n_jobs from {requested_n_jobs} to 1"
+            f"Worker process detected, limiting n_jobs from {requested_n_jobs} to 1"
         )
         return 1
     return requested_n_jobs
 
 
+def _validate_backend(backend):
+    """Raise ValueError unless `backend` is a supported joblib backend or None."""
+    if backend is not None and backend not in VALID_BACKENDS:
+        raise ValueError(
+            f"Invalid backend '{backend}'. Must be one of: {list(VALID_BACKENDS)}"
+        )
+
+
+def configure_parallelism_backend(force_backend=None):
+    """
+    Set the process-wide backend override.
+
+    Parameters
+    ----------
+    force_backend : str or None
+        Backend to force ('loky', 'threading', 'multiprocessing'), or None for auto-detection.
+
+    Raises
+    ------
+    ValueError
+        If an unsupported backend is given.
+
+    Notes
+    -----
+    Prefer `parallelism_backend()` where the override applies to a bounded piece of work. This
+    function changes global state that nothing restores.
+    """
+    global _force_backend
+
+    _validate_backend(force_backend)
+    _force_backend = force_backend
+    logger.debug(f"Parallelism backend configuration: {force_backend or 'auto-detect'}")
+
+
+@contextmanager
+def parallelism_backend(backend):
+    """
+    Temporarily force a joblib backend, restoring the previous setting on exit.
+
+    Parameters
+    ----------
+    backend : str or None
+        Backend to force for the duration of the block, or None to force auto-detection.
+
+    Examples
+    --------
+    >>> with parallelism_backend("threading"):
+    ...     run_some_work()
+    """
+    global _force_backend
+
+    _validate_backend(backend)
+    previous = _force_backend
+    _force_backend = backend
+    try:
+        yield
+    finally:
+        _force_backend = previous
+
+
 def create_safe_parallel(n_jobs=-1, **kwargs):
     """
-    Create Parallel object with safe backend selection.
+    Create a joblib Parallel object with a context-appropriate backend and n_jobs.
 
     Parameters
     ----------
     n_jobs : int, default=-1
-        Number of parallel jobs
+        Number of parallel jobs.
     **kwargs
-        Additional arguments for Parallel
+        Additional arguments for Parallel.
 
     Returns
     -------
     joblib.Parallel
-        Configured Parallel object with safe backend and n_jobs
     """
     from joblib import Parallel
 
-    safe_n_jobs = get_safe_n_jobs(n_jobs)
-    safe_backend = get_safe_parallel_backend()
-
-    return Parallel(n_jobs=safe_n_jobs, backend=safe_backend, **kwargs)
+    return Parallel(
+        n_jobs=get_safe_n_jobs(n_jobs), backend=get_safe_parallel_backend(), **kwargs
+    )

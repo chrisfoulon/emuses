@@ -10,6 +10,14 @@ import os
 import pytest
 from pathlib import Path
 
+@pytest.fixture(autouse=True)
+def _run_from_repo_root(repo_cwd):
+    """These tests assert on repo-relative paths (docker/, .github/, emuses/).
+
+    The autouse `_isolate_cwd` fixture in tests/conftest.py runs every test in a
+    throwaway directory, which is right for tests that write files but wrong for
+    tests that inspect the repository's own layout. `repo_cwd` opts back in.
+    """
 
 class TestDocumentationCompliance:
     """Test suite for documentation compliance"""

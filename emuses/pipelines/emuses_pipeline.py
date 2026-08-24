@@ -783,6 +783,20 @@ class EMUSESPipeline:
                         if hasattr(scores_indices, "iloc")
                         else None
                     )
+                elif self.scores is None:
+                    # Unsupervised run - `emuses umap` trains an embedding and has no
+                    # scores to predict. Passing self.scores=None through to
+                    # train_test_split makes sklearn try to index None, which is where
+                    # every `emuses umap` run died before 2026-08-23.
+                    train_features, test_features = train_test_split(
+                        self.input_matrix,
+                        test_size=test_size,
+                        random_state=split_seed,
+                    )
+                    train_labels = None
+                    test_labels = None
+                    train_indices = None
+                    test_indices = None
                 else:
                     # Regular split without indices
                     train_features, test_features, train_labels, test_labels = (
@@ -797,10 +811,12 @@ class EMUSESPipeline:
                     test_indices = None
 
                 np.save(split_folder / "test_features.npy", test_features)
-                np.save(split_folder / "test_labels.npy", test_labels)
+                if test_labels is not None:
+                    np.save(split_folder / "test_labels.npy", test_labels)
 
             np.save(split_folder / "train_features.npy", train_features)
-            np.save(split_folder / "train_labels.npy", train_labels)
+            if train_labels is not None:
+                np.save(split_folder / "train_labels.npy", train_labels)
 
             # Update context with new naming pattern only (no backward compatibility)
             self.context.update(

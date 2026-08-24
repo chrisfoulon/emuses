@@ -25,6 +25,9 @@ class TestHeatmapContextBridge:
         config.output_folder = "/tmp/test"
         config.classification = False
         config.n_jobs = 1
+        # A real config either carries the derived seed dict or nothing at all;
+        # a bare Mock fabricates it as a Mock, which is not a thing that exists.
+        config.random_seeds = {}
         
         stage = HeatmapStage(config, output_format_info=(64,))
         
@@ -72,6 +75,9 @@ class TestHeatmapContextBridge:
         config.output_folder = "/tmp/test"
         config.classification = False
         config.n_jobs = 1
+        # A real config either carries the derived seed dict or nothing at all;
+        # a bare Mock fabricates it as a Mock, which is not a thing that exists.
+        config.random_seeds = {}
         
         stage = HeatmapStage(config, output_format_info=(64,))
         
@@ -119,6 +125,9 @@ class TestHeatmapContextBridge:
         config.output_folder = "/tmp/test"
         config.classification = False
         config.n_jobs = 1
+        # A real config either carries the derived seed dict or nothing at all;
+        # a bare Mock fabricates it as a Mock, which is not a thing that exists.
+        config.random_seeds = {}
         
         stage = HeatmapStage(config, output_format_info=(64,))
         
@@ -164,6 +173,9 @@ class TestHeatmapContextBridge:
         config.output_folder = "/tmp/test"
         config.classification = False
         config.n_jobs = 1
+        # A real config either carries the derived seed dict or nothing at all;
+        # a bare Mock fabricates it as a Mock, which is not a thing that exists.
+        config.random_seeds = {}
         
         stage = HeatmapStage(config, output_format_info=(64,))
         
