@@ -29,7 +29,8 @@ per-phase notes). Merge to `main` when `full`, `umap` and `inference` run end to
 | `scripts/dev_test_runner.py` | 13/13 |
 | listeners left on 8000–8010 | none |
 
-**Every merge criterion on this branch is met.**
+**Merged to `main` on 2026-08-24** (PR #8, `acc0e30`); `tests/regression` passes on `main` itself
+(14 passed, 83 s). Branch fresh from `main` for the next piece.
 
 **Scope decision (2026-08-24): scientific plausibility is Chris's call, and not now.** The goal is
 that the pipelines run; Chris judges the results once he can train and infer freely. Observations
