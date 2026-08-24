@@ -93,6 +93,11 @@ hang and repo pollution by test output are all fixed.
 - **Test locally before pushing** — `dev_test_runner.py` on feature branches (13 tests, ~1 min), full
   CI reserved for `main`.
 - **Documentation split**: `docs/` user-facing, `dev-docs/` for contributors and sessions.
+- **Parked features live in `emuses/extras/`** (moved 2026-08-24, ADR §2.10). The core/extras line
+  used to be 22 module names typed into `tests/test_architecture_boundary.py`, describing files that
+  sat in `emuses/tools/` next to core code; it is now package layout. Core may still reach into
+  extras *lazily* — `model_registry_factory` loads the cloud and database backends inside functions,
+  which is why the move needed no change to core.
 
 ## Open questions / next
 
@@ -105,8 +110,10 @@ hang and repo pollution by test output are all fixed.
        entirely, which blocks shared-model inference on a server. `/api/v1/inference` and
        `/api/v1/inference/async` already exist, so this is likely wiring. **Do the bug first** —
        wiring a broken path through the service makes it broken in two places.
-4. [ ] **Phase 4** — ~33 science-path test failures, triaged by root cause. **Phase 5** — finish the
-       `emuses/tools/` → `emuses/extras/` move (22 modules, 8 import rewrites).
+4. [ ] **Phase 4** — ~33 science-path test failures, triaged by root cause (done on
+       `fix/science-path-tests`, which is stacked on `feat/inference-on-service`).
+       [x] ~~**Phase 5** — the `emuses/tools/` → `emuses/extras/` move~~ done 2026-08-24 on
+       `chore/extras-move` (branched off `main`, so it can merge on its own).
 5. [ ] Run `/lad:converge` — nine months of accumulated claims unchecked against the code.
 6. [ ] `tests/multi-user-service/` hangs **as a directory**; root cause unknown. Measure on a quiet
        machine. Note `tests/multi_user_service/` also exists with different contents.
