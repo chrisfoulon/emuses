@@ -403,6 +403,20 @@ one) failed the composite score, cluster structure and embedding geometry — wh
 and cluster count did **not** move. Pinning only "the number that matters" would have missed a real
 change to the science.
 
+**The `--regen-baselines` option must stay in `tests/conftest.py`** (fixed 2026-08-25,
+`fix/regression-conftest`). pytest honours `pytest_addoption` only from *initial* conftests, and
+with `testpaths = tests` a subdirectory conftest is not one. While the hook lived in
+`tests/regression/conftest.py` — beside the fixtures that read it, which is where it looks like it
+belongs — this entire suite **did not execute** under a bare `pytest`: all 14 tests died at setup
+with `ValueError: no option named 'regen_baselines'`. Measured at one commit: 14 passed as
+`pytest tests/regression/`, 14 errors as `pytest`.
+
+That is the failure mode this section exists to prevent, arriving through the test harness instead
+of the science: the guard reported `error`, not "regression detected", inside a suite already
+carrying ~150 known failures, so it read as one more piece of known breakage. Restoring it was
+verified by perturbation — a drifted baseline now fails the **whole-tree** run naming the metric.
+`tests/test_pytest_option_registration.py` fails if the hook is ever moved back down.
+
 ### 2.9b Bitwise Reproducibility Is Out of Scope
 
 **Decision**: EMUSES targets reproducibility within a machine and environment, verified against
