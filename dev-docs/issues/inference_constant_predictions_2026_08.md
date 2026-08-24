@@ -34,8 +34,8 @@ kind of defect for a scientific tool — the run looks successful and the result
 
 ## What is already known
 
-`STATUS.md` records a previous, closely related fix (2026-08-27 entry, "Inference Performance &
-Normalization Fixes"): inference used **raw** UMAP embeddings while training used **rescaled** ones,
+ADR §2.4 ("Embedding Scaling Saved Separately") records a previous, closely related fix: inference
+used **raw** UMAP embeddings while training used **rescaled** ones,
 so kernel weights went to zero and every prediction came out identical. That was fixed by having
 `UMAPStage` persist min/max to `embedding_scaling.json` for `InferenceStage` to reload.
 
