@@ -25,14 +25,12 @@ Consider refactoring to reduce duplication while maintaining functionality.
 
 import asyncio
 import logging
-import platform
 import re
 import subprocess
 import sys
 import time
 import urllib.parse
 import warnings
-from multiprocessing import Process
 from pathlib import Path
 from typing import Annotated, List, Optional, Union
 
@@ -43,7 +41,6 @@ warnings.filterwarnings("ignore", message="'force_all_finite' was renamed to 'en
 
 import requests
 import typer
-import uvicorn
 
 from emuses import __version__
 from .interactive_mode import InteractiveWorkflowManager
@@ -1010,138 +1007,82 @@ async def _execute_via_unified_service(
             _stop_local_service(service_process)
 
 
-def _macos_service_worker(port: int):
+def _start_local_service(port: int = 8000) -> Optional[subprocess.Popen]:
     """
-    MacOS-compatible service worker (module-level function for pickle compatibility).
-    
-    On macOS Python 3.8+, multiprocessing uses 'spawn' method which requires
-    picklable target functions. Nested functions cannot be pickled.
-    
-    This function is only used on macOS systems. Linux/Windows continue to use
-    the nested function inside _start_local_service() for zero behavior change.
-    
+    Start the EMUSES service as an independent process.
+
+    Deliberately a subprocess and not a ``multiprocessing.Process``. Two defects came from
+    the fork, both measured on 2026-08-23:
+
+    - **``--n_jobs`` was inert.** ``is_subprocess_context()`` asks whether
+      ``mp.current_process().name != "MainProcess"``, which is true in any forked child, so
+      ``get_safe_n_jobs()`` clamped every request to 1 inside the service while the Python
+      API was unaffected. The clamp is not wrong - spawning loky workers from an
+      already-forked process genuinely hangs, and that was reproduced - but the service is
+      the *top* of the pipeline's work, not a joblib worker. A separate interpreter is
+      ``MainProcess``, so the clamp stops firing without ``get_safe_n_jobs`` being touched.
+    - **A killed CLI orphaned the service.** The child held its port for over an hour,
+      ignored SIGTERM and needed SIGKILL; ``atexit`` never runs when the parent is killed.
+      ``emuses.cli.service_process`` now arranges to die with its parent.
+
+    It also makes the service findable: as a fork its argv read ``python -m emuses.cli
+    full``, so ``pgrep -af uvicorn`` could not see it. It now names itself.
+
     Parameters
     ----------
     port : int
-        Port to run service on
-    """
-    import logging
-    import signal
-    import sys
-    import traceback
-    
-    logger = logging.getLogger(__name__)
-    
-    def signal_handler(signum, frame):
-        """Handle termination signals gracefully."""
-        logger.info(f"Service received signal {signum}, shutting down gracefully...")
-        sys.exit(0)
-    
-    signal.signal(signal.SIGINT, signal_handler)
-    signal.signal(signal.SIGTERM, signal_handler)
-    
-    try:
-        logger.info(f"Starting FastAPI service on port {port}...")
-        from emuses.api.main import create_app
-        import uvicorn
-
-        app = create_app()
-        logger.info("FastAPI app created successfully")
-        uvicorn.run(app, host="127.0.0.1", port=port, log_level="info")
-    except Exception as e:
-        logger.error(f"Service failed to start: {e}")
-        traceback.print_exc()
-
-
-def _start_local_service(port: int = 8000) -> Optional[Process]:
-    """
-    Start local FastAPI service in background process.
-    
-    Platform-aware implementation:
-    - macOS: Uses module-level _macos_service_worker (required for pickle compatibility)
-    - Linux/Windows: Uses nested run_service function (original behavior, no changes)
-
-    Parameters
-    ----------
-    port : int, optional
-        Port to run service on, by default 8000
+        Port for the service to listen on (loopback only).
 
     Returns
     -------
-    Optional[Process]
-        Service process if successful, None if failed
+    Optional[subprocess.Popen]
+        The running service, or None if it failed to start.
     """
     try:
-        # Detect platform for multiprocessing compatibility
-        is_macos = platform.system() == "Darwin"
-        
-        if is_macos:
-            # macOS Python 3.8+ uses 'spawn' method - requires picklable function
-            # Use module-level _macos_service_worker with port as argument
-            service_process = Process(target=_macos_service_worker, args=(port,), daemon=False)
-        else:
-            # Linux/Windows: Keep original nested function approach (zero behavior change)
-            def run_service():
-                """Run the FastAPI service with graceful shutdown support."""
-                import signal
-                import sys
-                
-                def signal_handler(signum, frame):
-                    """Handle termination signals gracefully."""
-                    logger.info(f"Service received signal {signum}, shutting down gracefully...")
-                    sys.exit(0)
-                
-                # Register signal handlers for graceful shutdown
-                signal.signal(signal.SIGINT, signal_handler)
-                signal.signal(signal.SIGTERM, signal_handler)
-                
-                try:
-                    logger.info(f"Starting FastAPI service on port {port}...")
-                    from emuses.api.main import create_app
+        logger.info(f"Starting FastAPI service on port {port}...")
 
-                    app = create_app()
-                    logger.info("FastAPI app created successfully")
-                    # Use info level to see startup messages
-                    uvicorn.run(app, host="127.0.0.1", port=port, log_level="info")
-                except Exception as e:
-                    logger.error(f"Service failed to start: {e}")
-                    import traceback
+        # sys.executable, never bare "python": the latter resolves to whatever is first on
+        # PATH, which is not necessarily the interpreter running EMUSES.
+        service_process = subprocess.Popen(
+            [
+                sys.executable,
+                "-m",
+                "emuses.cli.service_process",
+                "--port",
+                str(port),
+            ]
+        )
 
-                    traceback.print_exc()
-            
-            # Use nested function (original approach for non-macOS systems)
-            service_process = Process(target=run_service, daemon=False)
-        
-        # Start the process (common for both platforms)
-        service_process.start()
-        
-        # Register emergency cleanup handler as safety net
-        # This ensures cleanup even if finally block doesn't run (rare edge cases)
+        # Safety net for the ordinary case. It is not the primary mechanism - the child
+        # watches for its parent's death itself, because atexit does not run on SIGKILL.
         import atexit
-        
+
         def emergency_cleanup():
             """Emergency cleanup if normal shutdown fails."""
-            if service_process and service_process.is_alive():
+            if service_process and service_process.poll() is None:
                 logger.warning("Emergency cleanup: Force-killing orphaned service process")
                 try:
                     service_process.kill()
-                    service_process.join(timeout=2)
+                    service_process.wait(timeout=2)
                 except Exception as e:
                     logger.error(f"Emergency cleanup failed: {e}")
-        
+
         atexit.register(emergency_cleanup)
 
-        # Give the process more time to start up
+        # Give the process a moment to fail loudly if it is going to.
         time.sleep(2)
 
-        if service_process.is_alive():
+        if service_process.poll() is None:
             logger.info(
                 f"Service process started successfully (PID: {service_process.pid})"
             )
             return service_process
-        else:
-            logger.error("Service process died immediately after startup")
-            return None
+
+        logger.error(
+            f"Service process died immediately after startup "
+            f"(exit code {service_process.returncode})"
+        )
+        return None
 
     except Exception as e:
         logger.error(f"Failed to start service: {e}")
@@ -1151,39 +1092,39 @@ def _start_local_service(port: int = 8000) -> Optional[Process]:
         return None
 
 
-def _stop_local_service(service_process: Process) -> None:
+def _stop_local_service(service_process: subprocess.Popen) -> None:
     """
-    Stop local FastAPI service process with graceful shutdown.
-    
-    Attempts graceful termination first (SIGTERM), then force-kills if needed.
-    With daemon=False, the service can now receive and respond to SIGTERM.
+    Stop the local service, gracefully if it will go.
 
     Parameters
     ----------
-    service_process : Process
-        Service process to stop
+    service_process : subprocess.Popen
+        Service process to stop.
     """
     try:
-        if service_process and service_process.is_alive():
+        if service_process and service_process.poll() is None:
             logger.info(f"Stopping service process (PID: {service_process.pid})...")
-            
-            # Try graceful shutdown first (service now receives SIGTERM)
-            service_process.terminate()
-            service_process.join(timeout=5)
 
-            if service_process.is_alive():
+            service_process.terminate()
+            try:
+                service_process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
                 logger.warning("Service didn't stop gracefully, forcing kill...")
-                service_process.kill()  # Force kill if needed
-                service_process.join(timeout=2)
-                
-            if service_process.is_alive():
-                logger.error("Failed to kill service process - may require manual cleanup")
-            else:
-                logger.info("Service process stopped successfully")
+                service_process.kill()
+                try:
+                    service_process.wait(timeout=2)
+                except subprocess.TimeoutExpired:
+                    logger.error(
+                        "Failed to kill service process - may require manual cleanup"
+                    )
+                    return
+
+            logger.info("Service process stopped successfully")
 
     except Exception as e:
         logger.error(f"Error stopping service: {e}")
         # Don't re-raise - this is cleanup code
+
 
 
 def _wait_for_service_ready(service_url: str, timeout: int = 30) -> bool:
