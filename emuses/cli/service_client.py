@@ -840,7 +840,7 @@ class ServiceHTTPClient:
         """
         # "prediction" is retired: PredictionStage no longer exists and prediction is
         # produced by HeatmapStage. The service defines routes for the rest.
-        valid_types = ["full", "umap", "clustering", "heatmap"]
+        valid_types = ["full", "umap", "clustering", "heatmap", "inference"]
         if pipeline_type not in valid_types:
             raise ValueError(
                 f"Invalid pipeline type '{pipeline_type}'. "
@@ -1580,7 +1580,7 @@ class LocalServiceClient:
         """
         # "prediction" is retired: PredictionStage no longer exists and prediction is
         # produced by HeatmapStage. The service defines routes for the rest.
-        valid_types = ["full", "umap", "clustering", "heatmap"]
+        valid_types = ["full", "umap", "clustering", "heatmap", "inference"]
         if pipeline_type not in valid_types:
             raise ValueError(
                 f"Invalid pipeline type '{pipeline_type}'. "

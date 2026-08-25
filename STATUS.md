@@ -11,10 +11,9 @@ flags say, and the same command twice gives the same answer.
 
 ## State of play
 
-**Branch `chore/core-boundary`, pushed, 32 commits ahead of `main`.** Plan:
+**On `main`, plus branch `feat/inference-on-service` (Phase 1F).** Plan:
 `~/.claude/plans/playful-watching-naur.md` (consolidated 2026-08-24 — read that, not the older
-per-phase notes). Merge to `main` when `full`, `umap` and `inference` run end to end and
-`tests/regression` passes — not when every feature is implemented.
+per-phase notes).
 
 ### EMUSES runs end to end (measured 2026-08-24)
 
@@ -30,7 +29,15 @@ per-phase notes). Merge to `main` when `full`, `umap` and `inference` run end to
 | listeners left on 8000–8010 | none |
 
 **Merged to `main` on 2026-08-24** (PR #8, `acc0e30`); `tests/regression` passes on `main` itself
-(14 passed, 83 s). Branch fresh from `main` for the next piece.
+(14 passed, 83 s).
+
+**Phase 1F done (2026-08-24): `emuses inference` goes through the service.** It submits to
+`/api/v1/jobs/pipeline/inference` like every other command; `KNOWN_LOCAL_EXECUTION` is now empty, so
+no CLI path runs a pipeline in-process (ADR §4). The pre-existing `/api/v1/inference` endpoints
+**could never have worked** — they handed `InferenceStage` a context with no data in it and returned
+422 for every request (measured). All three now call one implementation,
+`emuses/pipelines/inference_runner.py::run_inference`. Outputs are unchanged: the same CLI command
+before and after produced bitwise identical prediction and confidence CSVs.
 
 **Scope decision (2026-08-24): scientific plausibility is Chris's call, and not now.** The goal is
 that the pipelines run; Chris judges the results once he can train and infer freely. Observations
@@ -96,17 +103,18 @@ hang and repo pollution by test output are all fixed.
 
 ## Open questions / next
 
-1. [ ] **Report degenerate models, and guard the UMAP transform collapse** (above). Highest priority.
+1. [ ] **Phase 4** — ~33 science-path test failures, triaged by root cause. **Phase 5** — finish the
+       `emuses/tools/` → `emuses/extras/` move (22 modules, 8 import rewrites).
 2. [ ] **Finish the `n_jobs` evidence.** The service fix was measured only at 48 samples. The agreed
        standard was a larger-n arm too, because a misbehaving parallel reduction shows there first.
        Build Arm B: digits as CSV with a **binary** label — 1797 rows kept (so the randomized PCA
        path stays reachable) but one target instead of ten, ~7 min a run. Compare `n_jobs` ∈ {1, 4}.
-3. [ ] **Phase 1F — put `emuses inference` on the service.** `_execute_inference_locally` bypasses it
-       entirely, which blocks shared-model inference on a server. `/api/v1/inference` and
-       `/api/v1/inference/async` already exist, so this is likely wiring. **Do the bug first** —
-       wiring a broken path through the service makes it broken in two places.
-4. [ ] **Phase 4** — ~33 science-path test failures, triaged by root cause. **Phase 5** — finish the
-       `emuses/tools/` → `emuses/extras/` move (22 modules, 8 import rewrites).
+3. [ ] **Two error messages.** A header-bearing CSV fails with "No numeric data remaining" and never
+       mentions `--input_header`, which works. `.npy` is refused as an unsupported format, when the
+       real problem is that the file people reach for (`split_dataset/test_features.npy`) is stored
+       *after* normalization and is the wrong input regardless of format.
+4. [ ] **Recorded, not being acted on** (result-quality judgements are Chris's call): degenerate
+       fits are never reported, and off-manifold input collapses the UMAP transform silently.
 5. [ ] Run `/lad:converge` — nine months of accumulated claims unchecked against the code.
 6. [ ] `tests/multi-user-service/` hangs **as a directory**; root cause unknown. Measure on a quiet
        machine. Note `tests/multi_user_service/` also exists with different contents.

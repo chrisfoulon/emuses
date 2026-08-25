@@ -1236,114 +1236,52 @@ async def _heatmap_async(**kwargs) -> None:
 
 
 async def _inference_async(**kwargs) -> None:
-    """Async implementation of the inference command."""
-    status_renderer = StatusRenderer()
-    # progress_tracker = ProgressTracker()  # Currently unused
+    """Async implementation of the inference command.
 
-    # Execute inference locally using InferenceStage (handles its own status messages)
+    Submits to the service like every other command (ADR §4). Until 2026-08-24 this ran
+    ``InferenceStage`` in the CLI process instead, which is why a lab could not have one
+    person train a model and others run inference against it on a server.
+
+    The inference command has its own option set rather than the shared pipeline one, so
+    the two positional arguments are renamed here to the keys the service config uses.
+    """
+    status_renderer = StatusRenderer()
+    progress_tracker = ProgressTracker()
+
+    print(status_renderer.render_status("info", "Starting inference..."))
+
+    service_kwargs = dict(kwargs)
+    service_kwargs["input_dataset"] = service_kwargs.pop("data")
+    service_kwargs["output_folder"] = service_kwargs.pop("output")
+
+    pipeline_config = _convert_typer_args_to_service_config(
+        "inference", **service_kwargs
+    )
+
     try:
-        await _execute_inference_locally(kwargs, status_renderer)
+        await _execute_via_remote_service(
+            "inference", pipeline_config, status_renderer, progress_tracker
+        )
         print(
             status_renderer.render_status(
-                "success", "Inference completed successfully!"
+                "success", "Inference completed successfully via service!"
             )
         )
-    except Exception as e:
-        print(status_renderer.render_status("error", f"Inference failed: {e}"))
-        raise
-
-
-async def _execute_inference_locally(config: dict, status_renderer) -> None:
-    """
-    Execute inference locally using EMUSESPipeline with InferenceStage.
-
-    Parameters
-    ----------
-    config : dict
-        Inference configuration
-    status_renderer : StatusRenderer
-        Status display component
-    """
-    try:
-        from emuses.pipelines.inference_stage import InferenceStage
-        from emuses.pipelines.emuses_pipeline import EMUSESPipeline
-
-        # InferenceStage will handle pipeline status messages
-        # Removed redundant "Initializing inference pipeline..." message
-
-        # Create args object for EMUSESPipeline (consolidated approach)
-        args = type('Args', (), {})()
-        args.input_dataset = str(config["data"])  # Still needed for PipelineConfig
-        args.output_folder = str(config["output"])
-        args.random_state = None
-        args.load_embeddings = None
-        args.bids_filters = None
-
-        # Critical preprocessing parameters for data processing
-        args.input_header = config.get("input_header")
-        args.input_index_column = config.get("input_index_column")
-        args.scores_header = config.get("scores_header")
-        args.scores_index_column = config.get("scores_index_column")
-        args.scores = str(config["scores"]) if config.get("scores") else None
-
-        # Additional preprocessing parameters
-        args.columns_are_features = config.get("columns_are_features", False)
-        args.input_normalization = config.get("input_normalization", "none")
-        args.inputs_columns = config.get("inputs_columns")
-        args.classification = config.get("classification", False)
-        
-        # Advanced processing parameters
-        args.scores_normalization = config.get("scores_normalization", "none")
-        args.scores_are_rows = config.get("scores_are_rows", False)
-        args.scores_column = config.get("scores_column")
-        args.filter_labelled_by_scores = config.get("filter_labelled_by_scores", False)
-        args.recursive_search = config.get("recursive_search", False)
-        args.input_file_types = config.get("input_file_types")
-        args.arg_separator = config.get("arg_separator", ",")
-        args.bids_filters = config.get("bids_filters")
-
-        # Set inference mode to skip training-specific operations
-        args.inference_mode = True
-        
-        # Set model path for scaler loading in inference mode
-        if config.get("model"):
-            args.model_path = str(config["model"])
-
-        # Create EMUSESPipeline - format_args will handle inference mode properly
-        pipeline = EMUSESPipeline(args)
-        
-        # Use pipeline context directly - no duplicate processing
-        context = pipeline.context.copy()  # Copy to avoid modifying pipeline context
-        context.update({
-            "verify_integrity": config.get("verify", True),
-            "output_format": config.get("output_format", "csv"),
-            "model_path": str(config["model"]) if config.get("model") else None,
-            "cli_inference_mode": True
-        })
-
-        # Create inference stage with proper configuration
-        inference_stage = InferenceStage(pipeline.config)
-        inference_stage.model_path = str(config["model"])
-        inference_stage.output_path = str(config["output"])
-        inference_stage.validate_mode = config.get("validate", False)
-
-        # Run inference stage with processed data in context (standard pattern)
-        results = inference_stage.run(context)
-
-        # InferenceStage already provides comprehensive output including sample count and mode
-        mode = results.get("mode", "inference")
-
-        # Show validation results if available
-        if mode == "validation" and "validation_metrics" in results:
-            metrics = results["validation_metrics"]
-            print(status_renderer.render_status("info", "Validation metrics:"))
-            for metric, value in metrics.items():
-                print(status_renderer.render_status("info", f"  {metric}: {value:.4f}"))
-
-    except ImportError as e:
-        raise ServiceClientError(f"Inference stage not available: {e}")
-    except Exception as e:
-        raise ServiceClientError(f"Local inference execution failed: {e}")
+    except ServiceClientError as e:
+        print(
+            status_renderer.render_status(
+                "warning",
+                f"Service unavailable ({e}), falling back to local execution...",
+            )
+        )
+        await _execute_via_unified_service(
+            pipeline_config, status_renderer, progress_tracker
+        )
+        print(
+            status_renderer.render_status(
+                "success", "Inference completed successfully via local execution!"
+            )
+        )
 
 
 async def _execute_stage_locally(

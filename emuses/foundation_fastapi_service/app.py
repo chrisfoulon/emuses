@@ -768,9 +768,9 @@ class BackgroundTaskManager:
                     return
                 self.tasks[task_id]["progress"] = 20
 
-            # Import inference components
-            from emuses.pipelines.inference_stage import InferenceStage
-            from emuses.pipelines.pipeline_config import PipelineConfig
+            # Import inference components - the same implementation the synchronous
+            # endpoint and the CLI's inference job use.
+            from emuses.pipelines.inference_runner import run_inference
             from emuses.tools.local_model_registry import LocalModelRegistry
 
             # Handle model resolution (registry lookup if needed)
@@ -795,13 +795,8 @@ class BackgroundTaskManager:
             else:
                 output_folder = "inference_results"
 
-            # Create pipeline configuration (InferenceStage works with resolved paths only)
-            inference_config = PipelineConfig(
-                model_path=resolved_model_path,
-                data_path=inference_request.data_path,
-                output_path=inference_request.output_path,
-                validate_mode=inference_request.validation_mode,
-                output_folder=output_folder
+            inference_config = _inference_request_to_config(
+                inference_request, resolved_model_path, output_folder
             )
 
             # Update progress
@@ -810,15 +805,6 @@ class BackgroundTaskManager:
                     return
                 self.tasks[task_id]["progress"] = 60
 
-            # Create and run inference stage
-            stage = InferenceStage(inference_config)
-
-            # Prepare execution context
-            context = {
-                "verify_integrity": inference_request.verify_integrity,
-                "output_format": inference_request.output_format
-            }
-
             # Update progress
             with self.lock:
                 if self.tasks[task_id]["status"] == "cancelled":
@@ -826,32 +812,9 @@ class BackgroundTaskManager:
                 self.tasks[task_id]["progress"] = 80
 
             # Execute inference
-            results = stage.run(context)
+            results = run_inference(inference_config)
 
-            # Extract results for response
-            predictions = results.get("predictions", [])
-            if hasattr(predictions, 'tolist'):
-                predictions = predictions.tolist()
-
-            confidence_scores = None
-            if "prediction_details" in results:
-                confidence_scores = results["prediction_details"].get("confidence_scores", [])
-                if hasattr(confidence_scores, 'tolist'):
-                    confidence_scores = confidence_scores.tolist()
-
-            performance = results.get("performance_breakdown", {})
-
-            # Prepare final result
-            result = {
-                "status": results.get("status", "completed"),
-                "predictions": predictions,
-                "confidence_scores": confidence_scores,
-                "processing_time_ms": performance.get("total_time_ms", 0),
-                "samples_processed": len(predictions) if predictions else 0,
-                "model_info": results.get("model_info", {}),
-                "output_files": results.get("output_files", {}),
-                "validation_metrics": results.get("validation_metrics")
-            }
+            result = _inference_results_to_response(results)
 
             with self.lock:
                 self.tasks[task_id]["status"] = "completed"
@@ -1309,6 +1272,87 @@ async def submit_heatmap_pipeline_job(
 ) -> JobStatusResponse:
     """Submit a heatmap-only pipeline job. Alias of the ``heatmap`` stage endpoint."""
     return await submit_stage_specific_job(request, "heatmap", job_request)
+
+
+@app.post("/api/v1/jobs/pipeline/inference", status_code=201)
+@conditional_rate_limit("100/hour")
+async def submit_inference_pipeline_job(
+    request: Request, job_request: JobSubmissionRequest
+) -> JobStatusResponse:
+    """Submit an inference job against a trained model.
+
+    Inference is a job like any other rather than a call to ``/api/v1/inference``, so it
+    gets the job record, progress polling, timeout and interrupt handling the other
+    commands already have (ADR §4). ``emuses inference`` submits here.
+
+    It cannot reuse ``prepare_pipeline_context``: that requires ``scores``, and inference
+    on new data has no ground truth. What it requires instead is a model.
+
+    Parameters
+    ----------
+    job_request : JobSubmissionRequest
+        Job submission request whose ``pipeline_config`` carries the model directory, the
+        input dataset and the preprocessing options the model was trained with.
+
+    Returns
+    -------
+    JobStatusResponse
+        Initial job status with job ID and submission details.
+
+    Raises
+    ------
+    HTTPException
+        400: Missing model, dataset or output folder, or a path that does not exist.
+    """
+    try:
+        config = job_request.pipeline_config.copy()
+        config["command"] = "inference"
+        # No training stages run: inference loads a model, it does not fit one.
+        config["umap_stage_enabled"] = False
+        config["heatmap_stage_enabled"] = False
+        config["prediction_stage_enabled"] = False
+
+        model_path = config.get("model") or config.get("model_path")
+        if not model_path:
+            raise ValueError("model is required for inference")
+        if "input_dataset" not in config:
+            raise ValueError("input_dataset is required")
+        if "output_folder" not in config:
+            raise ValueError("output_folder is required")
+
+        validate_path_exists(model_path)
+        validate_path_exists(config["input_dataset"])
+        if config.get("scores"):
+            validate_file_path(config["scores"])
+
+        job_id = get_job_manager().create_job(
+            config=config,
+            job_name=job_request.job_name or "Inference Job",
+            description=job_request.description,
+        )
+
+        pipeline_context = {
+            "config": config,
+            "input_dataset": config.get("input_dataset"),
+            "scores_dataset": config.get("scores"),
+        }
+
+        asyncio.create_task(
+            get_pipeline_runner().execute_pipeline(job_id, pipeline_context)
+        )
+
+        status = get_job_manager().get_job_status(job_id)
+        return JobStatusResponse(**status)
+
+    except ValueError as e:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "error_code": "VALIDATION_ERROR",
+                "message": str(e),
+                "timestamp": datetime.now(timezone.utc).isoformat() + "Z",
+            },
+        )
 
 
 # Job Management Endpoints
@@ -1947,6 +1991,122 @@ async def upload_labels_file(
         )
 
 
+def _as_list(values) -> list:
+    """Numpy arrays do not serialise to JSON; lists do."""
+    if values is None:
+        return []
+    if hasattr(values, "tolist"):
+        return values.tolist()
+    return list(values)
+
+
+def _jsonable(value):
+    """Recursively convert numpy types to plain Python ones.
+
+    Shallow conversion is not enough and that is measured, not assumed: converting only
+    the top level of ``target_results`` still returned 400 "Unable to serialize unknown
+    type: <class 'numpy.ndarray'>", because each target holds per-fold arrays of its own.
+    """
+    if isinstance(value, dict):
+        return {str(key): _jsonable(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_jsonable(item) for item in value]
+    if hasattr(value, "tolist"):  # ndarray and numpy scalars
+        return _jsonable(value.tolist())
+    return value
+
+
+def _inference_results_to_response(results: dict) -> dict:
+    """Shape ``InferenceStage`` results into the inference response.
+
+    Both inference endpoints used to read ``results["predictions"]`` and
+    ``results["prediction_details"]``. ``InferenceStage`` returns neither: predictions are
+    nested per target under ``target_results``. So the response carried
+    ``predictions: []`` and ``confidence_scores: null`` while reporting 200 and a sample
+    count - the run looked successful and the payload was empty.
+
+    Parameters
+    ----------
+    results : dict
+        What :func:`emuses.pipelines.inference_runner.run_inference` returned.
+
+    Returns
+    -------
+    dict
+        Response fields, with every target under ``target_results`` and the first
+        target's predictions also flattened into ``predictions``.
+    """
+    serialisable_targets = _jsonable(results.get("target_results", {}) or {})
+
+    predictions: list = []
+    confidence_scores: list = []
+    if serialisable_targets:
+        first = serialisable_targets[list(serialisable_targets)[0]]
+        predictions = _as_list(first.get("ensemble_predictions"))
+        confidence_scores = _as_list(first.get("confidence_scores"))
+
+    performance = results.get("performance_breakdown", {})
+    return {
+        "status": results.get("status", "completed"),
+        "mode": results.get("mode", "inference"),
+        "samples_processed": results.get("samples_processed", len(predictions)),
+        "predictions": predictions,
+        "confidence_scores": confidence_scores or None,
+        "target_count": results.get("target_count", len(serialisable_targets)),
+        "target_results": serialisable_targets,
+        "processing_time_ms": performance.get("total_duration_ms", 0.0),
+        "throughput_samples_per_sec": performance.get(
+            "throughput_samples_per_sec", 0.0
+        ),
+        "model_info": _jsonable(results.get("model_info", {})),
+        "output_files": _jsonable(results.get("output_files", {})),
+        "validation_metrics": _jsonable(results.get("validation_metrics")),
+    }
+
+
+def _inference_request_to_config(
+    inference_request, resolved_model_path: str, output_folder: str
+) -> dict:
+    """Turn an :class:`InferenceRequest` into the config ``run_inference`` consumes.
+
+    Shared by the synchronous and asynchronous inference endpoints so the two cannot
+    disagree about what a field means - the failure this codebase has hit repeatedly with
+    hand-copied option mappings.
+
+    Parameters
+    ----------
+    inference_request : InferenceRequest
+        The incoming request.
+    resolved_model_path : str
+        Model directory, after any registry lookup.
+    output_folder : str
+        Where results are written.
+
+    Returns
+    -------
+    dict
+        Configuration for :func:`emuses.pipelines.inference_runner.run_inference`.
+    """
+    return {
+        "model": resolved_model_path,
+        "input_dataset": inference_request.data_path,
+        "output_folder": output_folder,
+        "validate": inference_request.validation_mode,
+        "verify": inference_request.verify_integrity,
+        "output_format": inference_request.output_format,
+        "input_header": inference_request.input_header,
+        "input_index_column": inference_request.input_index_column,
+        "columns_are_features": inference_request.columns_are_features,
+        "input_normalization": inference_request.input_normalization,
+        "inputs_columns": inference_request.inputs_columns,
+        "classification": inference_request.classification,
+        "scores": inference_request.scores,
+        "scores_header": inference_request.scores_header,
+        "scores_index_column": inference_request.scores_index_column,
+        "scores_normalization": inference_request.scores_normalization,
+    }
+
+
 @app.post("/api/v1/inference", status_code=200)
 @conditional_rate_limit("20/hour")  # Rate limit: 20 inference requests per hour per IP
 async def run_inference(
@@ -1994,9 +2154,12 @@ async def run_inference(
                 }
             )
 
-            # Import inference components
-            from emuses.pipelines.inference_stage import InferenceStage
-            from emuses.pipelines.pipeline_config import PipelineConfig
+            # One implementation, shared with the inference job the CLI submits. This
+            # endpoint used to build a bare PipelineConfig and hand InferenceStage a
+            # context holding only verify_integrity and output_format - nothing ever
+            # loaded the data file, so every request returned 422 "No inference features
+            # found in context" (measured 2026-08-24).
+            from emuses.pipelines.inference_runner import run_inference
             from emuses.tools.local_model_registry import LocalModelRegistry
 
             # Handle model resolution (registry lookup if needed)
@@ -2019,53 +2182,13 @@ async def run_inference(
             else:
                 output_folder = "inference_results"
 
-            # Create pipeline configuration (InferenceStage works with resolved paths only)
-            inference_config = PipelineConfig(
-                model_path=resolved_model_path,
-                data_path=inference_request.data_path,
-                output_path=inference_request.output_path,
-                validate_mode=inference_request.validation_mode,
-                output_folder=output_folder
+            results = run_inference(
+                _inference_request_to_config(
+                    inference_request, resolved_model_path, output_folder
+                )
             )
 
-            # Create and run inference stage
-            stage = InferenceStage(inference_config)
-
-            # Prepare execution context
-            context = {
-                "verify_integrity": inference_request.verify_integrity,
-                "output_format": inference_request.output_format
-            }
-
-            # Execute inference
-            results = stage.run(context)
-
-            # Extract results for response
-            predictions = results.get("predictions", [])
-            if hasattr(predictions, 'tolist'):
-                predictions = predictions.tolist()
-
-            confidence_scores = None
-            if "prediction_details" in results:
-                confidence_scores = results["prediction_details"].get("confidence_scores", [])
-                if hasattr(confidence_scores, 'tolist'):
-                    confidence_scores = confidence_scores.tolist()
-
-            performance = results.get("performance_breakdown", {})
-
-            # Create response
-            response = {
-                "status": results.get("status", "completed"),
-                "mode": results.get("mode", "inference"),
-                "samples_processed": results.get("samples_processed", 0),
-                "predictions": predictions,
-                "confidence_scores": confidence_scores,
-                "processing_time_ms": performance.get("total_duration_ms", 0.0),
-                "throughput_samples_per_sec": performance.get("throughput_samples_per_sec", 0.0),
-                "model_info": results.get("model_info", {}),
-                "output_files": results.get("output_files", {}),
-                "validation_metrics": results.get("validation_metrics")
-            }
+            response = _inference_results_to_response(results)
 
             logger.info(
                 "Inference request completed successfully",

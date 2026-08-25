@@ -5,11 +5,13 @@ This module tests the inference endpoints including request/response models,
 error handling, and integration with the InferenceStage pipeline component.
 """
 
+import json
 import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import numpy as np
 import pytest
 from fastapi.testclient import TestClient
 
@@ -110,6 +112,79 @@ class TestInferenceEndpoints(unittest.TestCase):
         self.assertEqual(valid_response.samples_processed, 3)
         self.assertEqual(len(valid_response.predictions), 3)
         self.assertIsNotNone(valid_response.confidence_scores)
+
+
+class TestInferenceResponseShaping(unittest.TestCase):
+    """The response must carry the predictions the stage actually produced.
+
+    Both endpoints read ``results["predictions"]`` and ``results["prediction_details"]``.
+    ``InferenceStage`` returns neither - predictions are nested per target under
+    ``target_results`` - so a completed run answered 200 with ``predictions: []`` and
+    ``confidence_scores: null`` while reporting the right sample count. Nothing failed;
+    the payload was simply empty.
+    """
+
+    def _results(self):
+        """A stage result in the shape ``InferenceStage.run`` really returns."""
+        return {
+            "status": "completed",
+            "mode": "inference",
+            "samples_processed": 3,
+            "target_count": 2,
+            "target_results": {
+                "target_0": {
+                    "ensemble_predictions": np.array([0.1, 0.2, 0.3]),
+                    "confidence_scores": np.array([0.9, 0.8, 0.7]),
+                    "fold_predictions": [np.array([0.1, 0.2, 0.3])],
+                },
+                "target_1": {
+                    "ensemble_predictions": np.array([1.1, 1.2, 1.3]),
+                    "confidence_scores": np.array([0.5, 0.5, 0.5]),
+                },
+            },
+            "performance_breakdown": {
+                "total_duration_ms": 12.0,
+                "throughput_samples_per_sec": 250.0,
+            },
+            "model_info": {"loaded_models": 5},
+            "output_files": {"predictions": "/tmp/p.csv"},
+        }
+
+    def test_predictions_are_extracted_from_target_results(self):
+        from emuses.foundation_fastapi_service.app import _inference_results_to_response
+
+        response = _inference_results_to_response(self._results())
+
+        self.assertEqual(response["predictions"], [0.1, 0.2, 0.3])
+        self.assertEqual(response["confidence_scores"], [0.9, 0.8, 0.7])
+        self.assertEqual(response["samples_processed"], 3)
+
+    def test_every_target_survives_into_the_response(self):
+        """A multi-target run must not silently answer with one target's predictions."""
+        from emuses.foundation_fastapi_service.app import _inference_results_to_response
+
+        response = _inference_results_to_response(self._results())
+
+        self.assertEqual(response["target_count"], 2)
+        self.assertEqual(sorted(response["target_results"]), ["target_0", "target_1"])
+        self.assertEqual(
+            response["target_results"]["target_1"]["ensemble_predictions"],
+            [1.1, 1.2, 1.3],
+        )
+
+    def test_the_response_is_json_serialisable(self):
+        """Nested numpy arrays used to return 400 'Unable to serialize unknown type'."""
+        from emuses.foundation_fastapi_service.app import _inference_results_to_response
+
+        json.dumps(_inference_results_to_response(self._results()))
+
+    def test_an_empty_result_does_not_raise(self):
+        from emuses.foundation_fastapi_service.app import _inference_results_to_response
+
+        response = _inference_results_to_response({})
+
+        self.assertEqual(response["predictions"], [])
+        self.assertIsNone(response["confidence_scores"])
 
 
 if __name__ == '__main__':
