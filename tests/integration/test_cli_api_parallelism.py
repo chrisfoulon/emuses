@@ -130,8 +130,24 @@ class TestServiceParallelismIntegration:
         with patch('emuses.foundation_fastapi_service.pipeline_runner.EMUSESPipeline') as mock_pipeline:
             mock_pipeline_instance = Mock()
             mock_pipeline_instance.context = {}
-            mock_pipeline_instance.run.return_value = {'status': 'completed'}
             mock_pipeline.return_value = mock_pipeline_instance
+
+            # Record what the *pipeline body* sees, not just what the scope was asked for.
+            # Asserting that `parallelism_backend("threading")` was entered says nothing about
+            # whether the value is visible where `create_safe_parallel` is actually called; a
+            # per-thread or per-task mechanism could be in force at the scope and invisible one
+            # frame deeper. This is the positive control for that.
+            observed_in_body = []
+
+            def _record_and_finish(*_args, **_kwargs):
+                from emuses.tools.parallelism_utils import (
+                    get_safe_parallel_backend,
+                )
+
+                observed_in_body.append(get_safe_parallel_backend())
+                return {'status': 'completed'}
+
+            mock_pipeline_instance.run.side_effect = _record_and_finish
             
             # Phase 1B1 replaced the process-wide
             # `configure_parallelism_backend(force_backend="threading")` call with a
@@ -166,6 +182,11 @@ class TestServiceParallelismIntegration:
 
             assert requested == ["threading"]
             assert inside == ["threading"], "the backend was not in force inside the scope"
+            assert observed_in_body == ["threading"], (
+                f"the scope was entered, but the pipeline body saw "
+                f"{observed_in_body!r} - the override is not reaching the depth where "
+                f"create_safe_parallel is called"
+            )
             assert parallelism_utils._FORCED_BACKEND.get() == before, (
                 "parallelism_backend leaked its override past the scope, which is exactly "
                 "what the context manager exists to prevent"

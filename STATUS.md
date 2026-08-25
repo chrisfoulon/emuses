@@ -1,5 +1,5 @@
 # STATUS — EMUSES
-_Last touched: 2026-08-24_
+_Last touched: 2026-08-25_
 
 ## Goal
 
@@ -55,6 +55,18 @@ seeding mechanism and no second may be invented (ADR §2.9).
 
 **Search is serial by default**, because `optuna.optimize(n_jobs>1)` is nondeterministic and no seed
 fixes it. Parallel remains an opt-in that warns (ADR §2.9c).
+
+**The backend override is per-context, not process-wide** (2026-08-25, ADR §2.9e). It was a module
+global with save/restore, which is correct only under strict LIFO unwinding: two overlapping runs
+would have had the first to exit restore the value captured before either started, dropping the
+other back to **loky** mid-run — several times slower, with no exception and no changed number. It
+was not failing only because `_run_pipeline_in_process` blocks the event loop, so nothing overlaps;
+that is a side effect of blocking code in an `async def`, not a decision, and the obvious tidy-up
+would have removed it. Now a `ContextVar`. The same blocking call makes the service's
+`pipeline_timeout` inert — known, recorded at the call site, not fixed. **loky runs in no shipped
+path**: the service forces threading, and the CLI inference path was scoped to match. It is still
+what `tests/regression` runs on, since that drives `EMUSESPipeline` directly — so the two backends
+have never been compared numerically, the baselines having been generated on loky either way.
 
 **Numbers are pinned.** `tests/regression/` compares prediction scores, composite score, UMAP/HDBSCAN
 metrics, cluster count, cluster structure (adjusted Rand index) and embedding geometry (pairwise
