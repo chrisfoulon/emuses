@@ -615,6 +615,19 @@ in `dev-docs/issues/inference_constant_predictions_2026_08.md`.
 
 ---
 
+### 3.5 The Service's Pipeline Timeout Cannot Fire (OPEN)
+
+`PipelineRunner.pipeline_timeout` has no effect. `execute_pipeline` wraps the run in
+`asyncio.wait_for`, but `_execute_pipeline_stages` calls `_run_pipeline_in_process` synchronously,
+so the event loop is blocked for the whole run and the timeout callback cannot execute until the
+work it is timing has already finished. A hung pipeline hangs forever and the job stays `running`.
+
+Not fixed as a drive-by: the fix (move the call to an executor) also makes concurrent jobs genuinely
+concurrent, and nothing currently bounds how many the service accepts or sizes resource limits and
+`--n_jobs` for more than one run at a time. Found 2026-08-25 while auditing the parallelism backend;
+full write-up and the trap in verifying a fix in
+`dev-docs/issues/inert_pipeline_timeout_2026_08.md`.
+
 ## 4. Deployment Architecture
 
 Three deployment modes share the same pipeline core:

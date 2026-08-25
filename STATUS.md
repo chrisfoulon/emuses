@@ -63,7 +63,9 @@ other back to **loky** mid-run — several times slower, with no exception and n
 was not failing only because `_run_pipeline_in_process` blocks the event loop, so nothing overlaps;
 that is a side effect of blocking code in an `async def`, not a decision, and the obvious tidy-up
 would have removed it. Now a `ContextVar`. The same blocking call makes the service's
-`pipeline_timeout` inert — known, recorded at the call site, not fixed. **loky runs in no shipped
+`pipeline_timeout` **inert** — a hung pipeline hangs forever and the job stays `running`. Not fixed:
+the fix also makes jobs genuinely concurrent, and nothing bounds how many the service accepts
+(`dev-docs/issues/inert_pipeline_timeout_2026_08.md`, ADR §3.5). **loky runs in no shipped
 path**: the service forces threading, and the CLI inference path was scoped to match. It is still
 what `tests/regression` runs on, since that drives `EMUSESPipeline` directly — so the two backends
 have never been compared numerically, the baselines having been generated on loky either way.
