@@ -97,6 +97,14 @@ port for over an hour; and the service was invisible to `pgrep` because its argv
 `emuses.cli full`. `get_safe_n_jobs` is unchanged — the clamp was right, the process identity was
 wrong.
 
+**`--n_jobs` does not move the numbers** (Arm B, 2026-08-25). Digits, 1797 rows, binary label, one
+target, through the CLI/service with only `--n_jobs` varying: **18/18 scalar metrics identical, ARI
+1.0, distance correlation 1.0, max pairwise-distance diff 0**. A positive control was included
+because an identical result equally fits "`--n_jobs 4` never engaged" — the pre-1E bug — and CPU
+124 % → 161 % confirms it does engage. `--n_jobs` buys *threads*, not processes: the service scopes
+the backend to threading on purpose, so 0 loky workers is correct rather than a failure.
+`dev-docs/issues/njobs_arm_b_2026_08.md`.
+
 **Test suite collects cleanly and does not crash**: 2608 tests, 0 errors. In the working subset
 (`tests/pipelines tests/inference tests/flexible-inference-stage tests/foundation_fastapi_service
 tests/tools tests/cli` + the six guard files): **33 failed / 540 passed / 2 skipped**, down from 68
@@ -120,23 +128,19 @@ hang and repo pollution by test output are all fixed.
 
 ## Open questions / next
 
-1. [x] ~~**Phase 4** — science-path test failures~~ done 2026-08-24 (`fix/science-path-tests`).
-       [ ] **Phase 5** — finish the `emuses/tools/` → `emuses/extras/` move (22 modules, 8 import
+1. [ ] **Phase 5** — finish the `emuses/tools/` → `emuses/extras/` move (22 modules, 8 import
        rewrites). `tests/test_architecture_boundary.py` verifies it.
-       [ ] The 33 remaining failures in `tests/cli` / `tests/foundation_fastapi_service` are
+2. [ ] The 33 remaining failures in `tests/cli` / `tests/foundation_fastapi_service` are
        untriaged: 6 `test_enhanced_models_commands`, 5 `test_models_hdbscan`,
        5 `test_inference_preprocessing_params`, 3 each in `test_security_validation`,
        `test_models_commands`, `test_inference_integration`, and singles elsewhere.
-2. [ ] **Finish the `n_jobs` evidence.** The service fix was measured only at 48 samples. The agreed
-       standard was a larger-n arm too, because a misbehaving parallel reduction shows there first.
-       Build Arm B: digits as CSV with a **binary** label — 1797 rows kept (so the randomized PCA
-       path stays reachable) but one target instead of ten, ~7 min a run. Compare `n_jobs` ∈ {1, 4}.
 3. [ ] **Two error messages.** A header-bearing CSV fails with "No numeric data remaining" and never
        mentions `--input_header`, which works. `.npy` is refused as an unsupported format, when the
        real problem is that the file people reach for (`split_dataset/test_features.npy`) is stored
        *after* normalization and is the wrong input regardless of format.
 4. [ ] **Recorded, not being acted on** (result-quality judgements are Chris's call): degenerate
        fits are never reported, and off-manifold input collapses the UMAP transform silently.
+       Supersedes the older "highest priority" framing — revisit once a real-data run is stable.
 5. [ ] Run `/lad:converge` — nine months of accumulated claims unchecked against the code.
 6. [ ] `tests/multi-user-service/` hangs **as a directory**; root cause unknown. Measure on a quiet
        machine. Note `tests/multi_user_service/` also exists with different contents.
