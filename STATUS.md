@@ -82,7 +82,12 @@ metrics, cluster count, cluster structure (adjusted Rand index) and embedding ge
 distances) against stored baselines. ~80 s. Proven to fail: a one-line production change failed
 composite/cluster/embedding assertions while prediction scores did *not* move, so pinning only "the
 number that matters" would have missed it. Every float tolerance is *chosen*, not measured — local
-variation is zero; they are cross-machine allowances.
+variation is zero; they are cross-machine allowances. **The pinning now actually runs in a
+whole-tree `pytest`** (fixed 2026-08-25, `fix/regression-conftest`): `--regen-baselines` was
+declared in `tests/regression/conftest.py`, which pytest does not treat as an initial conftest, so
+all 14 tests errored at setup in any run that did not name the directory — the guard was reporting
+`error` rather than "regression detected" inside ~150 known failures. Verified by perturbation, and
+`tests/test_pytest_option_registration.py` fails if the hook moves back. ADR §2.9d.
 
 **Every mode goes through the service**, including local, which auto-starts one (ADR §4). A separate
 in-process local path was built and reverted the same day: within forty lines it had produced a third

@@ -17,14 +17,12 @@ from regression_metrics import extract_metrics
 
 BASELINE_DIR = Path(__file__).resolve().parent / "baselines"
 
-REGEN_HELP = (
-    "Regenerate the numerical baselines instead of asserting against them. "
-    "Deliberate act: the commit message must say what moved the numbers and why."
-)
-
-
-def pytest_addoption(parser):
-    parser.addoption("--regen-baselines", action="store_true", help=REGEN_HELP)
+# `--regen-baselines` is registered in tests/conftest.py, not here, and must stay there.
+# pytest honours pytest_addoption only from *initial* conftests, and with `testpaths = tests`
+# this file is not one under a bare `pytest`. Declaring it here read as tidy - the flag next to
+# the fixtures that use it - and silently disabled this entire suite in every whole-tree run
+# for as long as it stood. See tests/test_pytest_option_registration.py, which fails if it
+# comes back.
 
 
 @pytest.fixture(scope="session")
