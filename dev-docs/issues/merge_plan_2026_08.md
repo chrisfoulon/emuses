@@ -67,3 +67,19 @@ The two full-suite baselines to compare against, both measured on this machine:
 
 Compare failure **sets** with `comm`, not counts, and strip ANSI *before* filtering — doing it after
 yields an empty set that reads as "everything cleared".
+
+---
+
+## Executed 2026-08-25
+
+All six landed. PR #9 merged on GitHub (`eb069ce`), the other five locally in the order above,
+pushed as `a256502`. The three predicted conflicts were the only ones, and `emuses/cli/main.py`
+resolved as planned — took the deletion, dropped the CLI-side scope, corrected ADR §2.9e and the
+matching `STATUS.md` line in the same commit.
+
+Measured on the merged tree before pushing: **114 failed / 1416 passed / 14 skipped / 1 error** in
+16 m 48 s, against 150 / 1343 / 14 / 15 before. Compared as failure *sets*: **zero new failures**,
+50 cleared, the remaining 115 a strict subset of the previous 165. `tests/regression` 14 passed in
+75.7 s; `dev_test_runner` green.
+
+`status_merge_note_2026_08.md` deleted in the same commit — superseded, and its branches are gone.

@@ -45,19 +45,22 @@ loudly as a wrong number; it errors during setup, in a suite that already carrie
 failures, where 14 more lines are easy to read past. A guard that reports "error" instead of
 "regression detected" is the failure mode this project has already paid for elsewhere.
 
-## Proposed fix (hypothesis — **not yet tested**)
+## RESOLVED 2026-08-25 (`fix/regression-conftest`, merged to `main`)
 
-Move the `pytest_addoption` block from `tests/regression/conftest.py` up into `tests/conftest.py`,
-leaving the fixtures where they are. `tests/conftest.py` is initial under `testpaths = tests`, so the
-option would register in both invocations.
+The `pytest_addoption` block moved from `tests/regression/conftest.py` into `tests/conftest.py`,
+which *is* initial under `testpaths = tests`. Fixtures stayed where they were — only the hook has to
+live in an initial conftest.
 
-This has **not** been verified. Before believing it:
+Verified, in the order the plan demanded:
 
-1. Apply the move.
-2. `pytest tests/regression/ -q` → must still be 14 passed (the targeted path must not regress).
-3. `pytest -q` → the 14 errors must become 14 passes, not 14 different errors.
-4. Perturb it: break one stored baseline and confirm the **whole-tree** run reports a numerical
-   failure, not an error. Without step 4 this fix is only assumed to restore the guard.
+1. Repro before the fix: 2 errors. After: 2 passed.
+2. `pytest tests/regression/` → still 14 passed, ~76 s. The targeted path did not regress.
+3. Whole-tree run: the 14 errors became 14 passes.
+4. **Perturbed.** A shifted baseline (`target_0_Mean_Score` −0.3554 → −0.1777) made the *whole-tree*
+   run fail naming the metric and the max absolute difference, with the untouched dataset still
+   passing. Deleting the hook restored the original errors; duplicating it failed the new structural
+   guard naming both files.
 
-Step 4 is the point of the exercise. Steps 1–3 restore a passing line; only step 4 shows the guard
-can still fail.
+Step 4 was the point: steps 1–3 only restore a passing line. `tests/test_pytest_option_registration.py`
+now fails if the hook is ever moved back down beside its fixtures, which is where it looks like it
+belongs. Recorded in ADR §2.9d.
