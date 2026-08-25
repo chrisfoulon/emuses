@@ -403,6 +403,47 @@ one) failed the composite score, cluster structure and embedding geometry — wh
 and cluster count did **not** move. Pinning only "the number that matters" would have missed a real
 change to the science.
 
+### 2.9e The Backend Override Is Per-Context, Not Process-Wide
+
+**Decision**: `parallelism_utils._FORCED_BACKEND` is a `contextvars.ContextVar`, and
+`parallelism_backend()` unwinds it with `ContextVar.reset(token)`. It was a plain module global with
+save/restore until 2026-08-25.
+
+**Rationale**: save/restore is correct only under strict LIFO unwinding. Two pipeline runs
+overlapping in one interpreter break it — the first to *exit* restores the value it captured before
+either started, and the run still in progress falls back to auto-detection, which in a main process
+is **loky**. Nothing raises and no number changes; the run just takes several times longer, because
+loky re-imports the scientific stack in every worker (measured: a ~110 s test still going past 300 s
+with eight `LokyProcess` workers alive). That is a defect whose only signature is a slow run, which
+is close to unattributable after the fact.
+
+**Why it was not already failing**: nothing overlaps today, because
+`PipelineRunner._run_pipeline_in_process` is a synchronous call inside an `async def` and blocks the
+event loop for the whole run, so a second `asyncio.create_task` job cannot start. That is a side
+effect of blocking code in an async function, not a decision, and the obvious tidy-up — moving it to
+`run_in_executor`, a pattern already present in `stage_runners.py` — would silently remove the
+protection. The same blocking call also makes `asyncio.wait_for(..., timeout=pipeline_timeout)` in
+`execute_pipeline` inert; see the note at that call site.
+
+**Consequence, accepted**: a newly spawned *thread* starts with a fresh context and sees the default
+rather than its parent's override. Every path from the scope in `pipeline_runner.py` to the four
+`create_safe_parallel` call sites is synchronous and single-threaded (verified 2026-08-25), so this
+does not arise. If a stage ever hands joblib work to a thread of its own, that thread must enter the
+scope itself. `tests/tools/test_parallelism_utils.py::test_a_new_thread_does_not_inherit_the_override`
+pins this so it is a decision and not a surprise.
+
+**Where loky still runs**: nowhere in a shipped run. The service path forces threading, and the CLI
+inference path (`_execute_inference_locally`) was scoped to threading on 2026-08-25 for the same
+reason — it reaches no `create_safe_parallel` site today, so the scope is there to keep a future
+stats or heatmap call from silently acquiring loky. loky remains the auto-detect default in a main
+process, so it is what `tests/regression` runs on, since that drives `EMUSESPipeline` directly.
+**The two backends have never been compared numerically** — the baselines were generated through the
+same loky test path, so they do not test the difference.
+
+**Do not** replace this with `joblib.parallel_backend`. EMUSES never calls it, deliberately: the
+override is meant to steer `create_safe_parallel` only, and sklearn's internal joblib calls pin
+`n_jobs=1` on purpose (`optim_utils.py`: "Use 1 here since we parallelize at the Optuna level").
+
 ### 2.9b Bitwise Reproducibility Is Out of Scope
 
 **Decision**: EMUSES targets reproducibility within a machine and environment, verified against

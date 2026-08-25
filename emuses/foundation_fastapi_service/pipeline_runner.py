@@ -350,6 +350,19 @@ class PipelineRunner:
 
         # For now, run in the same process to avoid serialization complexity
         # TODO: Later optimize to use ProcessPoolExecutor when serialization is solved
+        #
+        # Note what this synchronous call inside an `async def` currently buys, before moving
+        # it (2026-08-25). Jobs are dispatched with `asyncio.create_task` (app.py), so several
+        # can be in flight; they cannot actually overlap only because this call blocks the
+        # event loop for the whole run. Two known consequences:
+        #
+        #   - `asyncio.wait_for(..., timeout=self.pipeline_timeout)` in `execute_pipeline`
+        #     cannot fire, because the loop it would fire on is the one blocked here. The
+        #     pipeline timeout is inert. Moving this to an executor is what would make it real.
+        #   - The parallelism override used to be a module global with save/restore, so
+        #     overlapping runs would have clobbered each other's backend. That is now a
+        #     ContextVar and no longer depends on this call blocking
+        #     (emuses/tools/parallelism_utils.py).
         try:
             # Call the real pipeline execution
             result_context = self._run_pipeline_in_process(

@@ -1309,26 +1309,35 @@ async def _execute_inference_locally(config: dict, status_renderer) -> None:
         if config.get("model"):
             args.model_path = str(config["model"])
 
-        # Create EMUSESPipeline - format_args will handle inference mode properly
-        pipeline = EMUSESPipeline(args)
-        
-        # Use pipeline context directly - no duplicate processing
-        context = pipeline.context.copy()  # Copy to avoid modifying pipeline context
-        context.update({
-            "verify_integrity": config.get("verify", True),
-            "output_format": config.get("output_format", "csv"),
-            "model_path": str(config["model"]) if config.get("model") else None,
-            "cli_inference_mode": True
-        })
+        # Scoped to threading for the same reason as the service path
+        # (`pipeline_runner.py`): this is the one pipeline execution that does not go through
+        # the service, so without this it runs on joblib's default. `InferenceStage` reaches
+        # no `create_safe_parallel` call site today, so this changes nothing now - it is here
+        # so that stops mattering. Adding a stats or heatmap call to the inference path would
+        # otherwise silently acquire loky, several times slower, with no other symptom.
+        from emuses.tools.parallelism_utils import parallelism_backend
 
-        # Create inference stage with proper configuration
-        inference_stage = InferenceStage(pipeline.config)
-        inference_stage.model_path = str(config["model"])
-        inference_stage.output_path = str(config["output"])
-        inference_stage.validate_mode = config.get("validate", False)
+        with parallelism_backend("threading"):
+            # Create EMUSESPipeline - format_args will handle inference mode properly
+            pipeline = EMUSESPipeline(args)
 
-        # Run inference stage with processed data in context (standard pattern)
-        results = inference_stage.run(context)
+            # Use pipeline context directly - no duplicate processing
+            context = pipeline.context.copy()  # Copy to avoid modifying pipeline context
+            context.update({
+                "verify_integrity": config.get("verify", True),
+                "output_format": config.get("output_format", "csv"),
+                "model_path": str(config["model"]) if config.get("model") else None,
+                "cli_inference_mode": True
+            })
+
+            # Create inference stage with proper configuration
+            inference_stage = InferenceStage(pipeline.config)
+            inference_stage.model_path = str(config["model"])
+            inference_stage.output_path = str(config["output"])
+            inference_stage.validate_mode = config.get("validate", False)
+
+            # Run inference stage with processed data in context (standard pattern)
+            results = inference_stage.run(context)
 
         # InferenceStage already provides comprehensive output including sample count and mode
         mode = results.get("mode", "inference")
