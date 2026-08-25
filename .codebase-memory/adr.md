@@ -182,6 +182,39 @@ EMUSES (Embedding-based Multi-target Unified Statistical and Estimation System) 
 
 ---
 
+### 2.5b One Inference Result Shape; the Pipeline Normalises, the Stage Does Not
+
+**Decision** (2026-08-24, Phase 4): three contracts around `InferenceStage`, each of which had drifted
+and cost failures:
+
+1. **`_predict` always returns `target_results`.** Single-target is the n=1 case; there is no flat
+   `ensemble_predictions` at the top level, including in the "no prediction models" and "no targets"
+   branches. Every consumer — `_format_results`, `run()`, `_save_results`, the HTTP endpoints —
+   indexes `results['target_results'][target]['ensemble_predictions']`.
+2. **Normalisation happens exactly once, in `EMUSESPipeline`.** In inference mode it loads the
+   model's `input_scaler.joblib` and applies it, so the features in the context are already in the
+   training input's space. `InferenceStage._transform_features` forwards them to UMAP untouched.
+3. **`InferenceStage` reads `inference_features` / `inference_labels`, never `prediction_test_*`.**
+   `HeatmapStage` chooses *which* split to hand over (test or train) and copies it into the handover
+   keys. A context holding only the raw split keys is refused, loudly.
+
+**Rationale**: two result shapes for one method is what made `/api/v1/inference` answer 200 with
+`predictions: []` (Phase 1F) and what made a no-models run die with `KeyError: 'target_results'`.
+Normalising in both the pipeline and the stage scales the data twice and collapses the UMAP transform
+— the failure behind the withdrawn "constant predictions" claim (§3.1b). Letting the stage prefer
+`prediction_test_features` would silently override HeatmapStage's choice of split.
+
+**Code**: `emuses/pipelines/inference_stage.py`, `emuses/pipelines/emuses_pipeline.py` (~line 470),
+`emuses/pipelines/heatmap_stage.py` (~line 784). **Guards**: `tests/inference/test_normalization_fix.py`
+(including a double-normalisation guard), `tests/pipelines/test_inference_stage_context_integration.py`,
+`tests/flexible-inference-stage/test_semantic_aliasing.py`. Triage:
+`dev-docs/issues/phase4_science_path_triage.md`.
+
+**Also removed**: `EMUSESPipeline(args, inference_data=...)`. The parameter was stored and never read
+— `inference_mode` on the args plus `emuses/pipelines/inference_runner.py` is the one path.
+
+---
+
 ### 2.6 Scores Handled Separately from Imaging Features
 
 **Decision**: Behavioural/clinical target variables (scores) are loaded and processed via a dedicated path, separate from imaging features throughout the entire pipeline.

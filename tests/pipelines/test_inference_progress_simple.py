@@ -45,11 +45,14 @@ class TestInferenceProgressSimple(unittest.TestCase):
         
         stage = InferenceStage(config)
         
-        # Mock all the methods that would be called to prevent actual execution
-        with patch.object(stage, '_load_trained_models', side_effect=Exception("Test complete")):
+        # Stop execution at the first step run() actually performs. Patching
+        # _load_trained_models (not _with_context) left the run going, and it then failed
+        # on the context instead - which the except below re-raised.
+        with patch.object(stage, '_load_trained_models_with_context',
+                          side_effect=Exception("Test complete")):
             try:
                 # Provide a minimal context with features to avoid context validation error
-                context = {"prediction_test_features": [[1, 2], [3, 4]]}
+                context = {"inference_features": [[1, 2], [3, 4]]}
                 stage.run(context)
             except Exception as e:
                 if "Test complete" in str(e):

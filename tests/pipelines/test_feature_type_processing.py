@@ -244,10 +244,12 @@ class TestFeatureTypeProcessing:
         results = stage._predict(test_coords, models_dict)
         
         # Assert
+        # _predict returns per-target results; single-target is the n=1 case, so the
+        # ensemble lives at target_results['target_0']['ensemble_predictions'].
         assert results is not None
         assert "individual_predictions" in results
-        assert "ensemble_predictions" in results
-        
+        assert "ensemble_predictions" in results["target_results"]["target_0"]
+
         # All models should produce predictions
         individual_preds = results["individual_predictions"]
         assert "raw_model" in individual_preds
@@ -259,7 +261,7 @@ class TestFeatureTypeProcessing:
             assert predictions.shape == (5,), f"Model {model_name} has wrong shape: {predictions.shape}"
         
         # Ensemble prediction should work
-        ensemble_pred = results["ensemble_predictions"]
+        ensemble_pred = results["target_results"]["target_0"]["ensemble_predictions"]
         assert ensemble_pred.shape == (5,)
         
         # Should have correct model count and names

@@ -11,6 +11,27 @@ from emuses.pipelines.inference_stage import InferenceStage
 from emuses.pipelines.pipeline_config import PipelineConfig
 
 
+def stub_umap(embeddings):
+    """UMAP stand-in returning real embeddings.
+
+    A bare MagicMock returns a MagicMock from transform(), which reaches a
+    ``f"...{np.min(embeddings):.6f}"`` log line and raises
+    "unsupported format string passed to MagicMock.__format__".
+    """
+    umap = MagicMock(spec=["transform"])
+    umap.transform.return_value = embeddings
+    return umap
+
+
+def stub_estimator(predictions):
+    """Estimator stand-in. ``spec`` matters: a bare MagicMock has ``named_steps``,
+    so InferenceStage treats it as an sklearn Pipeline and ensembles MagicMocks
+    into an empty array."""
+    estimator = MagicMock(spec=["predict"])
+    estimator.predict.return_value = predictions
+    return estimator
+
+
 class TestContextDataFix(unittest.TestCase):
     """Test that integration tests work with proper context data"""
 
@@ -36,12 +57,10 @@ class TestContextDataFix(unittest.TestCase):
         stage = InferenceStage(self.config)
         
         # Mock model loading to avoid file system dependencies
-        mock_umap_model = MagicMock()
-        mock_prediction_model = MagicMock()
-        mock_prediction_model.predict.return_value = np.array([1.0, 2.0, 3.0])
-        
+        mock_prediction_model = stub_estimator(np.array([1.0, 2.0, 3.0]))
+
         stage._load_trained_models_with_context = MagicMock(return_value={
-            'umap_model': mock_umap_model,
+            'umap_model': stub_umap(np.random.rand(3, 2)),
             'prediction_models': [
                 {'model': mock_prediction_model, 'name': 'test_model', 'score': 0.90}
             ],
@@ -62,42 +81,46 @@ class TestContextDataFix(unittest.TestCase):
         
         # Verify results
         self.assertIsNotNone(results)
-        self.assertIn('predictions', results)
         self.assertEqual(results['mode'], 'validation')  # Should detect validation mode
         self.assertEqual(results['samples_processed'], 3)
-        
-    def test_integration_with_pipeline_context_data(self):
-        """Test that integration works with pipeline context data (prediction_test_features)"""
+        self.assertEqual(len(results['target_results']['target_0']['ensemble_predictions']), 3)
+
+    def test_inference_features_wins_over_pipeline_keys(self):
+        """The handover key wins; the raw split keys do not override it.
+
+        This test used to assert the opposite - that ``prediction_test_features`` had
+        priority. It does not, deliberately. ``HeatmapStage`` copies *either*
+        ``prediction_test_features`` or ``prediction_train_features`` into
+        ``inference_features`` (heatmap_stage.py), so honouring the test split here would
+        silently override its choice and validate against the wrong data. InferenceStage
+        reads what it was handed; it does not re-decide the split.
+        """
         stage = InferenceStage(self.config)
-        
-        # Mock model loading
-        mock_umap_model = MagicMock()
-        mock_prediction_model = MagicMock()
-        mock_prediction_model.predict.return_value = np.array([4.0, 5.0])
-        
+
+        mock_prediction_model = stub_estimator(np.array([4.0, 5.0]))
+
         stage._load_trained_models_with_context = MagicMock(return_value={
-            'umap_model': mock_umap_model,
+            'umap_model': stub_umap(np.random.rand(2, 2)),
             'prediction_models': [
                 {'model': mock_prediction_model, 'name': 'test_model', 'score': 0.85}
             ],
             'metadata': {}
         })
-        
-        # Create proper context with prediction_test_features (pipeline context)
-        test_features = np.random.rand(2, 4) 
-        test_labels = np.array([4.4, 5.5])
-        
+
+        handed_over = np.random.rand(2, 4)
+        handed_over_labels = np.array([4.4, 5.5])
+
         context = {
-            "prediction_test_features": test_features,  # Pipeline context format (should have priority)
-            "prediction_test_labels": test_labels,
-            "inference_features": np.random.rand(1, 2)  # Should be ignored due to lower priority
+            # What HeatmapStage prepared - this is what the stage must use
+            "inference_features": handed_over,
+            "inference_labels": handed_over_labels,
+            # The raw split keys, still in the context, disagreeing on sample count
+            "prediction_test_features": np.random.rand(7, 4),
+            "prediction_test_labels": np.random.rand(7),
         }
-        
-        # This should work and use pipeline context data
+
         results = stage.run(context)
-        
-        # Verify results
+
         self.assertIsNotNone(results)
-        self.assertIn('predictions', results)
         self.assertEqual(results['mode'], 'validation')  # Should detect validation mode
-        self.assertEqual(results['samples_processed'], 2)  # Should use pipeline context features (2 samples)
+        self.assertEqual(results['samples_processed'], 2)  # Handover keys, not the 7-row split

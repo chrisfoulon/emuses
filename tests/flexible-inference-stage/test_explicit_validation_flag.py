@@ -17,6 +17,19 @@ from emuses.pipelines.inference_stage import InferenceStage
 from emuses.pipelines.pipeline_config import PipelineConfig
 
 
+def stub_estimator(predictions):
+    """Estimator stand-in limited to predict().
+
+    A bare MagicMock answers hasattr(model, 'named_steps') with True, so InferenceStage
+    takes the sklearn-Pipeline branch and ensembles MagicMocks into an empty array - which
+    then dies in the validation metrics with a zero-size numpy reduction.
+    """
+    estimator = MagicMock(spec=["predict"])
+    estimator.predict.return_value = predictions
+    return estimator
+
+
+
 class TestExplicitValidationFlag(unittest.TestCase):
     """Test explicit validation flag functionality."""
 
@@ -53,8 +66,7 @@ class TestExplicitValidationFlag(unittest.TestCase):
         def mock_load_models():
             mock_umap = MagicMock()
             mock_umap.transform.return_value = np.random.rand(10, 2)
-            mock_model = MagicMock()
-            mock_model.predict.return_value = np.random.rand(10)
+            mock_model = stub_estimator(np.random.rand(10))
             
             return {
                 'umap_model': mock_umap,
@@ -95,8 +107,7 @@ class TestExplicitValidationFlag(unittest.TestCase):
         def mock_load_models():
             mock_umap = MagicMock()
             mock_umap.transform.return_value = np.random.rand(8, 2)
-            mock_model = MagicMock()
-            mock_model.predict.return_value = np.random.rand(8)
+            mock_model = stub_estimator(np.random.rand(8))
             
             return {
                 'umap_model': mock_umap,

@@ -31,34 +31,41 @@ class TestSemanticAliasing(unittest.TestCase):
         """Clean up test environment.""" 
         self.temp_dir.cleanup()
 
-    def test_pipeline_context_keys_priority(self):
-        """Test that pipeline context keys (prediction_test_features) have highest priority"""
+    def test_handover_key_wins_over_generic_and_split_keys(self):
+        """``inference_features`` wins; the raw split keys are not read at all.
+
+        This test previously asserted that ``prediction_test_features`` had the highest
+        priority. It does not, and must not: ``HeatmapStage`` copies *either*
+        ``prediction_test_features`` or ``prediction_train_features`` into
+        ``inference_features``, so reading the test split here would silently override
+        which split validation runs against. See
+        tests/pipelines/test_inference_stage_context_integration.py, which pins the
+        refusal of a context that never went through that handover.
+        """
         stage = InferenceStage(self.config)
-        
+
         # Mock model loading to avoid file system dependencies
         stage._load_trained_models_with_context = MagicMock(return_value={
             'umap_model': None,
             'prediction_models': [],
             'metadata': {}
         })
-        
-        # Create context with multiple key options - pipeline context should win
-        pipeline_features = np.random.rand(10, 5)
+
+        split_features = np.random.rand(10, 5)
         standalone_features = np.random.rand(8, 4)
         generic_features = np.random.rand(6, 3)
-        
+
         context = {
-            "prediction_test_features": pipeline_features,    # Pipeline context (should win)
-            "inference_features": standalone_features,        # Standalone context
+            "prediction_test_features": split_features,       # Raw split - not read
+            "inference_features": standalone_features,        # The handover key - wins
             "features": generic_features                      # Generic fallback
         }
-        
+
         # Extract features using the method
         features = stage._load_features_from_context(context)
-        
-        # Should get pipeline features (highest priority)
-        np.testing.assert_array_equal(features, pipeline_features)
-        self.assertEqual(features.shape, (10, 5))
+
+        np.testing.assert_array_equal(features, standalone_features)
+        self.assertEqual(features.shape, (8, 4))
 
     def test_standalone_context_keys_fallback(self):
         """Test that standalone context keys (inference_features) are used when pipeline keys missing"""
@@ -97,25 +104,41 @@ class TestSemanticAliasing(unittest.TestCase):
         self.assertEqual(features.shape, (6, 3))
 
     def test_labels_semantic_aliasing(self):
-        """Test that label semantic aliasing works correctly"""
+        """Labels follow the same rule as features: the handover key is what is read.
+
+        ``inference_labels`` first, then ``labels``, then ``scores``.
+        ``prediction_test_labels`` is deliberately not among them - see
+        test_handover_key_wins_over_generic_and_split_keys for why.
+        """
         stage = InferenceStage(self.config)
-        
-        # Test pipeline context labels priority
-        pipeline_labels = np.array([1, 2, 3, 4, 5])
+
         standalone_labels = np.array([6, 7, 8])
-        
-        pipeline_features = np.random.rand(5, 3)
+        generic_labels = np.array([9, 10, 11])
+
         context = {
-            "prediction_test_features": pipeline_features,
-            "prediction_test_labels": pipeline_labels,     # Pipeline context (should win)
-            "inference_labels": standalone_labels          # Standalone context
+            "inference_features": np.random.rand(3, 3),
+            "inference_labels": standalone_labels,         # Handover key (wins)
+            "labels": generic_labels,                      # Generic fallback
+            "prediction_test_labels": np.array([1, 2, 3]),  # Raw split - not read
         }
-        
-        features = stage._load_features_from_context(context)
-        
-        # Verify pipeline labels are detected and stored
+
+        stage._load_features_from_context(context)
+
         self.assertIsNotNone(stage._detected_labels)
-        np.testing.assert_array_equal(stage._detected_labels, pipeline_labels)
+        np.testing.assert_array_equal(stage._detected_labels, standalone_labels)
+
+    def test_split_labels_alone_are_not_picked_up(self):
+        """A context holding only the raw split keys yields no labels (and no features)."""
+        stage = InferenceStage(self.config)
+
+        context = {
+            "features": np.random.rand(3, 3),
+            "prediction_test_labels": np.array([1, 2, 3]),
+        }
+
+        stage._load_features_from_context(context)
+
+        self.assertIsNone(stage._detected_labels)
 
     def test_missing_context_raises_error(self):
         """Test that missing all context keys raises appropriate error"""

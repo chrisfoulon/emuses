@@ -20,6 +20,21 @@ from emuses.pipelines.inference_stage import InferenceStage
 from emuses.pipelines.pipeline_config import PipelineConfig
 
 
+def stub_estimator(predictions):
+    """Stand-in for a non-pipeline estimator that returns ``predictions``.
+
+    A bare ``MagicMock`` is the wrong stand-in: it answers
+    ``hasattr(model, 'named_steps')`` with True, so InferenceStage takes the
+    pipeline-component-extraction branch and every "prediction" is another MagicMock.
+    Those ensemble to an *empty* array, and the test then asserts against nothing while
+    the log cheerfully reports predictions generated. ``spec`` limits the mock to the
+    one method a plain estimator has.
+    """
+    estimator = MagicMock(spec=["predict"])
+    estimator.predict.return_value = predictions
+    return estimator
+
+
 class TestInferenceStageBasic(unittest.TestCase):
     """Basic InferenceStage functionality tests."""
 
@@ -230,20 +245,65 @@ class TestInferenceStageEnsemblePrediction(unittest.TestCase):
             'metadata': {}
         }
         
-        # Should return dummy predictions instead of raising an error
+        # Should return zero predictions instead of raising an error
         results = stage._predict(embeddings, mock_models)
-        
-        # Verify dummy prediction structure
-        self.assertIn('ensemble_predictions', results)
+
+        # The no-models result must carry the SAME shape as a real one: everything
+        # downstream indexes results['target_results'], so a flat result here died with
+        # KeyError: 'target_results' instead of returning these zeros.
+        self.assertIn('target_results', results)
         self.assertIn('individual_predictions', results)
-        self.assertIn('confidence_scores', results)
         self.assertIn('model_count', results)
         self.assertIn('model_names', results)
-        
-        # Check that dummy predictions have correct shape and values
-        self.assertEqual(len(results['ensemble_predictions']), 10)  # Same as embeddings
+
+        target = results['target_results']['target_0']
+        self.assertIn('ensemble_predictions', target)
+        self.assertIn('confidence_scores', target)
+
+        # Check that the zero predictions have correct shape and values
+        self.assertEqual(len(target['ensemble_predictions']), 10)  # Same as embeddings
         self.assertEqual(results['model_count'], 0)
         self.assertEqual(results['model_names'], [])
+
+
+class TestValidationMetricsGuards(unittest.TestCase):
+    """What happens when predictions and ground truth do not line up."""
+
+    def setUp(self):
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.config = PipelineConfig(
+            output_folder=self.temp_dir.name,
+            model_path=str(Path(self.temp_dir.name)),
+        )
+
+    def tearDown(self):
+        self.temp_dir.cleanup()
+
+    def test_empty_predictions_raise_a_legible_error(self):
+        """An empty ensemble must say so, not die inside numpy.
+
+        The old code truncated to ``min(len(pred), len(truth))`` == 0, logged "using
+        first 0 samples", and then called np.min on an empty array, so the user saw
+        "zero-size array to reduction operation minimum which has no identity".
+        """
+        stage = InferenceStage(self.config)
+
+        with self.assertRaises(ValueError) as cm:
+            stage._calculate_validation_metrics(np.array([]), np.array([0.1, 0.2, 0.3]))
+
+        message = str(cm.exception)
+        self.assertIn("no samples to compare", message)
+        self.assertIn("ensemble produced nothing", message)
+
+    def test_a_partial_mismatch_still_truncates(self):
+        """A non-zero mismatch keeps the old lenient behaviour."""
+        stage = InferenceStage(self.config)
+
+        metrics = stage._calculate_validation_metrics(
+            np.array([0.1, 0.2, 0.3]), np.array([0.1, 0.2])
+        )
+
+        self.assertEqual(metrics['sample_count'], 2)
 
 
 class TestInferenceStageResultFormatting(unittest.TestCase):
@@ -603,11 +663,8 @@ class TestInferenceStageIntegration(unittest.TestCase):
             mock_umap = MagicMock()
             mock_umap.transform.return_value = np.random.rand(20, 2)
             
-            mock_model_1 = MagicMock()
-            mock_model_1.predict.return_value = np.random.rand(20)
-            
-            mock_model_2 = MagicMock()
-            mock_model_2.predict.return_value = np.random.rand(20)
+            mock_model_1 = stub_estimator(np.random.rand(20))
+            mock_model_2 = stub_estimator(np.random.rand(20))
             
             return {
                 'umap_model': mock_umap,
@@ -632,9 +689,14 @@ class TestInferenceStageIntegration(unittest.TestCase):
         self.assertIn('mode', results)
         self.assertIn('status', results)
         self.assertIn('samples_processed', results)
-        self.assertIn('predictions', results)
+        self.assertIn('target_results', results)
         self.assertIn('performance_breakdown', results)
         self.assertIn('output_files', results)
+
+        # Predictions nest per target. Assert on the count, not just the key: an empty
+        # ensemble kept every other assertion in this test green.
+        ensemble = results['target_results']['target_0']['ensemble_predictions']
+        self.assertEqual(len(ensemble), 20)
         
         # Verify inference mode (no labels detected)
         self.assertEqual(results['mode'], 'inference')
@@ -671,8 +733,7 @@ class TestInferenceStageIntegration(unittest.TestCase):
             mock_umap = MagicMock()
             mock_umap.transform.return_value = np.random.rand(15, 2)
             
-            mock_model = MagicMock()
-            mock_model.predict.return_value = np.random.rand(15)
+            mock_model = stub_estimator(np.random.rand(15))
             
             return {
                 'umap_model': mock_umap,
@@ -727,8 +788,7 @@ class TestInferenceStageIntegration(unittest.TestCase):
             mock_umap = MagicMock()
             mock_umap.transform.return_value = np.random.rand(10, 2)
             
-            mock_model = MagicMock()
-            mock_model.predict.return_value = np.random.rand(10)
+            mock_model = stub_estimator(np.random.rand(10))
             
             return {
                 'umap_model': mock_umap,
@@ -777,14 +837,9 @@ class TestInferenceStageIntegration(unittest.TestCase):
             mock_umap.transform.return_value = np.random.rand(5, 2)
             
             # Create models with different prediction patterns
-            mock_model_1 = MagicMock()
-            mock_model_1.predict.return_value = np.array([0.8, 0.2, 0.9, 0.1, 0.7])
-            
-            mock_model_2 = MagicMock()
-            mock_model_2.predict.return_value = np.array([0.75, 0.25, 0.85, 0.15, 0.65])  # Similar to model 1
-            
-            mock_model_3 = MagicMock()
-            mock_model_3.predict.return_value = np.array([0.1, 0.9, 0.2, 0.8, 0.3])  # Very different
+            mock_model_1 = stub_estimator(np.array([0.8, 0.2, 0.9, 0.1, 0.7]))
+            mock_model_2 = stub_estimator(np.array([0.75, 0.25, 0.85, 0.15, 0.65]))  # Similar to model 1
+            mock_model_3 = stub_estimator(np.array([0.1, 0.9, 0.2, 0.8, 0.3]))  # Very different
             
             return {
                 'umap_model': mock_umap,

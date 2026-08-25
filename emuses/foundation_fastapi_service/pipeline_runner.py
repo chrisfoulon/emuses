@@ -520,7 +520,9 @@ class PipelineRunner:
                     
                     from emuses.pipelines.inference_stage import InferenceStage
                     
-                    # InferenceStage will access prediction_test_features and prediction_test_labels from context
+                    # HeatmapStage copies prediction_test_features/labels into inference_features
+                    # and inference_labels; InferenceStage reads those. It refuses a context that
+                    # only holds the prediction_test_* keys, which is why it is gated on heatmap.
                     pipeline.add_stage(InferenceStage(pipeline.config))
                     enabled_stages.append("inference")
                     

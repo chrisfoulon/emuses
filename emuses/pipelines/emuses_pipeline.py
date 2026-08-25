@@ -24,27 +24,24 @@ from emuses.tools.inputs_utils import (detect_dataset_type,
 
 
 class EMUSESPipeline:
-    def __init__(self, args, inference_data=None):
+    def __init__(self, args):
         """
-        Initialize EMUSESPipeline with optional inference data injection.
+        Initialize EMUSESPipeline.
 
         Parameters
         ----------
         args : Namespace
-            Pipeline configuration arguments
-        inference_data : dict, optional
-            Inference-specific data for lightweight initialization.
-            If provided, should contain:
-            - input_path: str, path to inference input data
-            - scores_path: str or None, path to scores for validation
-            - model_path: str, path to trained model directory
+            Pipeline configuration arguments. Set ``inference_mode=True`` on them to
+            prepare data for InferenceStage instead of training: the dataset is processed
+            with the model's saved scalers, no split is performed, and
+            ``inference_features`` / ``inference_labels`` are put in the context.
+            (An earlier ``inference_data`` parameter did this by injection. It was stored
+            and never read again, so it did nothing; `emuses/pipelines/inference_runner.py`
+            is the one place that prepares an inference run.)
         """
         self.config = PipelineConfig(args)
         self.args = self.config  # For backward compatibility
         self.output_folder = self.config.output_path  # Use Path object, not string
-
-        # Store inference data for later processing
-        self._inference_data = inference_data
 
         # In classic mode, these come from the main dataset;
         # in label_dataset mode, the labelled dataset is processed separately.
