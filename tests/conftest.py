@@ -339,23 +339,25 @@ def _fail_on_leaked_child_processes():
 
 @pytest.fixture(autouse=True)
 def _reset_parallelism_backend():
-    """Undo the process-wide parallelism override that production code sets.
+    """Undo any parallelism override a test leaves behind.
 
-    `configure_parallelism_backend` writes a module-level global `_force_backend`, and
-    `PipelineRunner._run_pipeline_in_process` sets it to "threading" unconditionally. Nothing
-    resets it, so once any test runs a pipeline, every later test in that process sees a
-    forced backend.
+    `configure_parallelism_backend` sets `_FORCED_BACKEND` and nothing resets it, so once any
+    test forces a backend, every later test sharing that context sees it.
 
     That is not hypothetical: tests/tools/test_parallelism_utils.py passes 13/13 on its own,
     and `test_enhanced_backend_selection_by_depth` fails if a single pipeline test runs
     first. Restoring the previous value keeps the failure attributable to the test that
     causes it.
+
+    `_FORCED_BACKEND` became a ContextVar on 2026-08-25. Read and write it through
+    `.get()`/`.set()`: rebinding the attribute itself would replace the ContextVar object,
+    which silently does nothing to the value this fixture exists to restore.
     """
     from emuses.tools import parallelism_utils
 
-    previous = parallelism_utils._force_backend
+    previous = parallelism_utils._FORCED_BACKEND.get()
     yield
-    parallelism_utils._force_backend = previous
+    parallelism_utils._FORCED_BACKEND.set(previous)
 
 
 @pytest.fixture(scope="session")

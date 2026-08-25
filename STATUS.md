@@ -1,5 +1,5 @@
 # STATUS — EMUSES
-_Last touched: 2026-08-24_
+_Last touched: 2026-08-25_
 
 ## Goal
 
@@ -76,6 +76,26 @@ seeding mechanism and no second may be invented (ADR §2.9).
 
 **Search is serial by default**, because `optuna.optimize(n_jobs>1)` is nondeterministic and no seed
 fixes it. Parallel remains an opt-in that warns (ADR §2.9c).
+
+**The backend override is per-context, not process-wide** (2026-08-25, ADR §2.9e). It was a module
+global with save/restore, which is correct only under strict LIFO unwinding: two overlapping runs
+would have had the first to exit restore the value captured before either started, dropping the
+other back to **loky** mid-run — several times slower, with no exception and no changed number. It
+was not failing only because `_run_pipeline_in_process` blocks the event loop, so nothing overlaps;
+that is a side effect of blocking code in an `async def`, not a decision, and the obvious tidy-up
+would have removed it. Now a `ContextVar`. The same blocking call makes the service's
+`pipeline_timeout` **inert** — a hung pipeline hangs forever and the job stays `running`. Not fixed:
+the fix also makes jobs genuinely concurrent, and nothing bounds how many the service accepts
+(`dev-docs/issues/inert_pipeline_timeout_2026_08.md`, ADR §3.5). Found alongside it: the service's
+`memory_limit_ratio` / `cpu_percent_limit` enforce nothing either, and **nothing in EMUSES is
+memory-aware at all** — an oversized run dies as an OOM kill, not a stated error. That one is a
+*researcher's* control rather than an operator's, blocked on nothing, and wants a measured memory
+profile first — worth capturing **during** the scientific-validity runs
+(`dev-docs/issues/memory_aware_execution_2026_08.md`, ADR §3.6). **loky runs in no shipped
+path**: there is now exactly one place that forces the backend, in `pipeline_runner.py`, since
+Phase 1F removed the last pipeline execution that bypassed the service. It is still what
+`tests/regression` runs on, since that drives `EMUSESPipeline` directly — so the two backends have
+never been compared numerically, the baselines having been generated on loky either way.
 
 **Numbers are pinned.** `tests/regression/` compares prediction scores, composite score, UMAP/HDBSCAN
 metrics, cluster count, cluster structure (adjusted Rand index) and embedding geometry (pairwise

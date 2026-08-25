@@ -10,7 +10,9 @@ anyway because they were asserting against an object model that does not exist.
 A worker process is cheap to start. Use one.
 """
 
+import asyncio
 import multiprocessing as mp
+import threading
 
 import pytest
 
@@ -129,6 +131,115 @@ class TestBackendOverride:
                 pass
 
 
+class TestConcurrentIsolation:
+    """Two overlapping runs must not clobber each other's backend.
+
+    The override was a module global with save/restore until 2026-08-25. That is only correct
+    under strict LIFO unwinding. When two runs overlap, the first to *exit* restores the value
+    it captured before either had started, and the run still in progress silently falls back to
+    auto-detection - loky in the main process, which for this workload is several times slower.
+
+    Nothing raises and no number changes, so the only symptom is a run that took much longer for
+    no visible reason. Both tests below fail against the module-global implementation.
+
+    Today nothing overlaps in production, because `_run_pipeline_in_process` blocks the event
+    loop. These tests exist so that stops being what the guarantee rests on.
+    """
+
+    TIMEOUT = 30
+
+    def test_overlapping_asyncio_tasks_keep_their_own_backend(self):
+        """A exits while B is still inside; B must still see its own override."""
+        observed = {}
+
+        async def scenario():
+            a_entered = asyncio.Event()
+            b_entered = asyncio.Event()
+            a_exited = asyncio.Event()
+
+            async def job_a():
+                with parallelism_backend("threading"):
+                    a_entered.set()
+                    await b_entered.wait()
+                a_exited.set()
+
+            async def job_b():
+                await a_entered.wait()
+                with parallelism_backend("threading"):
+                    b_entered.set()
+                    await a_exited.wait()
+                    # A has now unwound its scope while this one is still open.
+                    observed["b"] = get_safe_parallel_backend()
+
+            await asyncio.wait_for(
+                asyncio.gather(job_a(), job_b()), timeout=self.TIMEOUT
+            )
+
+        asyncio.run(scenario())
+
+        assert observed["b"] == "threading", (
+            f"an overlapping task restored the override out from under this one, which fell "
+            f"back to {observed['b']!r}"
+        )
+
+    def test_overlapping_threads_keep_their_own_backend(self):
+        """Same interleaving across threads rather than tasks."""
+        a_entered = threading.Event()
+        b_entered = threading.Event()
+        a_exited = threading.Event()
+        observed = {}
+
+        def job_a():
+            with parallelism_backend("threading"):
+                a_entered.set()
+                b_entered.wait(timeout=self.TIMEOUT)
+            a_exited.set()
+
+        def job_b():
+            a_entered.wait(timeout=self.TIMEOUT)
+            with parallelism_backend("threading"):
+                b_entered.set()
+                a_exited.wait(timeout=self.TIMEOUT)
+                observed["b"] = get_safe_parallel_backend()
+
+        threads = [threading.Thread(target=job_a), threading.Thread(target=job_b)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(timeout=self.TIMEOUT)
+            assert not thread.is_alive(), "the interleaving deadlocked"
+
+        assert observed.get("b") == "threading", (
+            f"an overlapping thread restored the override out from under this one, which fell "
+            f"back to {observed.get('b')!r}"
+        )
+
+    def test_a_new_thread_does_not_inherit_the_override(self):
+        """Documents the boundary of the guarantee, so it is a decision and not a surprise.
+
+        A thread starts with a fresh context, so it sees the default rather than its parent's
+        override. Every path from the scope in `pipeline_runner.py` to the `create_safe_parallel`
+        call sites is synchronous and stays on one thread, so this does not arise today. If a
+        stage ever hands joblib work to a thread of its own, that thread has to enter the scope
+        itself - and this test is what should make that obvious rather than mysterious.
+        """
+        seen = {}
+
+        def probe():
+            seen["backend"] = get_safe_parallel_backend()
+
+        with parallelism_backend("threading"):
+            thread = threading.Thread(target=probe)
+            thread.start()
+            thread.join(timeout=self.TIMEOUT)
+
+        assert not thread.is_alive()
+        assert seen["backend"] == "loky", (
+            "a spawned thread inherited the parent's override; the module comment and this "
+            "test both say it does not, so one of them now needs correcting"
+        )
+
+
 class TestCreateSafeParallel:
     def test_uses_context_appropriate_settings(self):
         parallel = create_safe_parallel(n_jobs=2)
@@ -139,3 +250,16 @@ class TestCreateSafeParallel:
 
         parallel = create_safe_parallel(n_jobs=2)
         assert parallel(delayed(abs)(x) for x in (-3, -1, 4)) == [3, 1, 4]
+
+    def test_the_override_actually_reaches_joblib(self):
+        """Positive control: our getter returning "threading" is not the same as joblib using it.
+
+        Without this, every assertion in this module could pass while `Parallel` still span up
+        loky workers - the same class of gap as a feature that never engaged.
+        """
+        with parallelism_backend("threading"):
+            parallel = create_safe_parallel(n_jobs=2)
+        assert type(parallel._backend).__name__ == "ThreadingBackend", (
+            f"joblib was handed {type(parallel._backend).__name__}, not the threading backend "
+            f"the override asked for"
+        )

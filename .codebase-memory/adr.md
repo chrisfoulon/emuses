@@ -450,6 +450,51 @@ carrying ~150 known failures, so it read as one more piece of known breakage. Re
 verified by perturbation — a drifted baseline now fails the **whole-tree** run naming the metric.
 `tests/test_pytest_option_registration.py` fails if the hook is ever moved back down.
 
+### 2.9e The Backend Override Is Per-Context, Not Process-Wide
+
+**Decision**: `parallelism_utils._FORCED_BACKEND` is a `contextvars.ContextVar`, and
+`parallelism_backend()` unwinds it with `ContextVar.reset(token)`. It was a plain module global with
+save/restore until 2026-08-25.
+
+**Rationale**: save/restore is correct only under strict LIFO unwinding. Two pipeline runs
+overlapping in one interpreter break it — the first to *exit* restores the value it captured before
+either started, and the run still in progress falls back to auto-detection, which in a main process
+is **loky**. Nothing raises and no number changes; the run just takes several times longer, because
+loky re-imports the scientific stack in every worker (measured: a ~110 s test still going past 300 s
+with eight `LokyProcess` workers alive). That is a defect whose only signature is a slow run, which
+is close to unattributable after the fact.
+
+**Why it was not already failing**: nothing overlaps today, because
+`PipelineRunner._run_pipeline_in_process` is a synchronous call inside an `async def` and blocks the
+event loop for the whole run, so a second `asyncio.create_task` job cannot start. That is a side
+effect of blocking code in an async function, not a decision, and the obvious tidy-up — moving it to
+`run_in_executor`, a pattern already present in `stage_runners.py` — would silently remove the
+protection. The same blocking call also makes `asyncio.wait_for(..., timeout=pipeline_timeout)` in
+`execute_pipeline` inert; see the note at that call site.
+
+**Consequence, accepted**: a newly spawned *thread* starts with a fresh context and sees the default
+rather than its parent's override. Every path from the scope in `pipeline_runner.py` to the four
+`create_safe_parallel` call sites is synchronous and single-threaded (verified 2026-08-25), so this
+does not arise. If a stage ever hands joblib work to a thread of its own, that thread must enter the
+scope itself. `tests/tools/test_parallelism_utils.py::test_a_new_thread_does_not_inherit_the_override`
+pins this so it is a decision and not a surprise.
+
+**Where loky still runs**: nowhere in a shipped run, and now for a simpler reason than when this was
+written. A CLI-side scope was added to `_execute_inference_locally` on 2026-08-25 because it was the
+one pipeline execution not going through the service; Phase 1F (PR #9) then deleted that function
+outright, so inference submits to the service like everything else and is covered by the single
+scope in `pipeline_runner.py`. The CLI-side scope was dropped in the merge rather than carried
+forward — there is **one** place that forces the backend, matching ADR §4's one execution path.
+
+loky remains the auto-detect default in a main process, so it is what `tests/regression` runs on,
+since that drives `EMUSESPipeline` directly. **The two backends have never been compared
+numerically** — the baselines were generated through the same loky test path, so they do not test
+the difference.
+
+**Do not** replace this with `joblib.parallel_backend`. EMUSES never calls it, deliberately: the
+override is meant to steer `create_safe_parallel` only, and sklearn's internal joblib calls pin
+`n_jobs=1` on purpose (`optim_utils.py`: "Use 1 here since we parallelize at the Optuna level").
+
 ### 2.9b Bitwise Reproducibility Is Out of Scope
 
 **Decision**: EMUSES targets reproducibility within a machine and environment, verified against
@@ -620,6 +665,36 @@ in `dev-docs/issues/inference_constant_predictions_2026_08.md`.
 **Status**: Needs verification — may have been fixed without being documented.
 
 ---
+
+### 3.5 The Service's Pipeline Timeout Cannot Fire (OPEN)
+
+`PipelineRunner.pipeline_timeout` has no effect. `execute_pipeline` wraps the run in
+`asyncio.wait_for`, but `_execute_pipeline_stages` calls `_run_pipeline_in_process` synchronously,
+so the event loop is blocked for the whole run and the timeout callback cannot execute until the
+work it is timing has already finished. A hung pipeline hangs forever and the job stays `running`.
+
+Not fixed as a drive-by: the fix (move the call to an executor) also makes concurrent jobs genuinely
+concurrent, and nothing bounds how many the service accepts. Note also that a `wait_for` over a
+thread executor yields a timeout that *reports* without *stopping* — a thread cannot be cancelled
+once started — so a job would show `failed` while the pipeline kept running. Found 2026-08-25 while
+auditing the parallelism backend; options and the trap in verifying a fix in
+`dev-docs/issues/inert_pipeline_timeout_2026_08.md`.
+
+### 3.6 Resource Limits Are Advertised but Not Enforced (OPEN)
+
+`memory_limit_ratio` and `cpu_percent_limit` are constructor options on `PipelineRunner` that
+nothing reads. The only `ResourceMonitor` lives in `stage_runners.py`, which is dead code. Nothing
+in `emuses/pipelines/` or `emuses/tools/` is memory-aware at all, so a run that does not fit in RAM
+fails as an OOM kill rather than a stated error.
+
+**These are a researcher's control, not an operator's**, and so are *separate* from §3.5 despite
+being found with it: they matter with one pipeline on one machine and are blocked on nothing. The
+CPU half is largely covered already by `--n_jobs` (real since the service became its own process);
+memory has no equivalent. Any limit needs a measured memory profile first — peak RSS by stage and
+how it scales with samples, features and `n_jobs` — which is worth capturing during the planned
+scientific-validity runs rather than as a separate exercise. Until a limit enforces something, the
+options should be removed rather than left reading as a guarantee.
+`dev-docs/issues/memory_aware_execution_2026_08.md`.
 
 ## 4. Deployment Architecture
 

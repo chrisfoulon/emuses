@@ -8,6 +8,7 @@ Spawning loky worker *processes* from inside an already-forked process is a know
 hangs and resource exhaustion, so a worker uses the threading backend and a single job.
 """
 
+import contextvars
 import logging
 import multiprocessing as mp
 from contextlib import contextmanager
@@ -16,11 +17,36 @@ logger = logging.getLogger(__name__)
 
 VALID_BACKENDS = ("loky", "threading", "multiprocessing")
 
-# Process-wide override. Prefer the `parallelism_backend` context manager over setting this
-# through configure_parallelism_backend(): an override that is never restored leaks into
-# everything else sharing the interpreter, which is how a pipeline test came to change the
-# outcome of an unrelated test that ran after it.
-_force_backend = None
+# The backend override, held in a ContextVar rather than a plain module global.
+#
+# It was a plain global with save/restore until 2026-08-25. That is only correct when blocks
+# unwind in strict LIFO order, which holds for one run at a time and stops holding the moment
+# two overlap in one interpreter:
+#
+#     A enters:  previous=None        -> "threading"
+#     B enters:  previous="threading" -> "threading"
+#     A exits:   restores None                       <- B is still running
+#     B's next create_safe_parallel() -> auto-detect -> main process -> loky
+#
+# B then silently finishes on loky, which for this workload is several times slower (loky
+# re-imports the scientific stack per worker; see pipeline_runner.py). Nothing raises and the
+# numbers do not change, so the only symptom is a run that took much longer for no reason.
+#
+# Today nothing overlaps, but only by accident: `_run_pipeline_in_process` blocks the event
+# loop, so a second job cannot start. That is a property of a blocking call in async code, not
+# a decision, and the obvious tidy-up (move it to run_in_executor) would remove it. A ContextVar
+# is correct under both threads and asyncio tasks, so the guarantee no longer depends on it.
+#
+# Prefer the `parallelism_backend` context manager over configure_parallelism_backend(): an
+# override that is never restored leaks into everything else sharing the context, which is how a
+# pipeline test came to change the outcome of an unrelated test that ran after it.
+#
+# Note the deliberate consequence: a *newly spawned thread* starts with a fresh context and so
+# sees the default, not its parent's override. Every path from the scope in
+# `pipeline_runner.py` to the `create_safe_parallel` call sites is synchronous and stays on one
+# thread (verified 2026-08-25), so this does not arise; if a stage ever hands joblib work to its
+# own thread, that thread must enter the scope itself.
+_FORCED_BACKEND = contextvars.ContextVar("emuses_forced_parallelism_backend", default=None)
 
 
 def is_subprocess_context():
@@ -57,9 +83,10 @@ def get_safe_parallel_backend():
     The subprocess check below is the one that has always worked, and was already being used by
     `get_safe_n_jobs`.
     """
-    if _force_backend is not None:
-        logger.debug(f"Using configured backend override: {_force_backend}")
-        return _force_backend
+    forced = _FORCED_BACKEND.get()
+    if forced is not None:
+        logger.debug(f"Using configured backend override: {forced}")
+        return forced
 
     if is_subprocess_context():
         logger.debug("Worker process detected, using threading backend")
@@ -101,7 +128,7 @@ def _validate_backend(backend):
 
 def configure_parallelism_backend(force_backend=None):
     """
-    Set the process-wide backend override.
+    Set the backend override for the current context.
 
     Parameters
     ----------
@@ -116,12 +143,11 @@ def configure_parallelism_backend(force_backend=None):
     Notes
     -----
     Prefer `parallelism_backend()` where the override applies to a bounded piece of work. This
-    function changes global state that nothing restores.
+    function sets a value that nothing restores; it just does so per-context rather than
+    process-wide.
     """
-    global _force_backend
-
     _validate_backend(force_backend)
-    _force_backend = force_backend
+    _FORCED_BACKEND.set(force_backend)
     logger.debug(f"Parallelism backend configuration: {force_backend or 'auto-detect'}")
 
 
@@ -139,16 +165,20 @@ def parallelism_backend(backend):
     --------
     >>> with parallelism_backend("threading"):
     ...     run_some_work()
-    """
-    global _force_backend
 
+    Notes
+    -----
+    Uses `ContextVar.reset(token)` rather than reading the previous value and writing it back.
+    Restoring a captured value is what allowed one run to clobber a concurrently running one;
+    a token restores exactly the state this block replaced, and refuses if the block is somehow
+    exited from a different context instead of corrupting it silently.
+    """
     _validate_backend(backend)
-    previous = _force_backend
-    _force_backend = backend
+    token = _FORCED_BACKEND.set(backend)
     try:
         yield
     finally:
-        _force_backend = previous
+        _FORCED_BACKEND.reset(token)
 
 
 def create_safe_parallel(n_jobs=-1, **kwargs):
