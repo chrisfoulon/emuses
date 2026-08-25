@@ -623,10 +623,27 @@ so the event loop is blocked for the whole run and the timeout callback cannot e
 work it is timing has already finished. A hung pipeline hangs forever and the job stays `running`.
 
 Not fixed as a drive-by: the fix (move the call to an executor) also makes concurrent jobs genuinely
-concurrent, and nothing currently bounds how many the service accepts or sizes resource limits and
-`--n_jobs` for more than one run at a time. Found 2026-08-25 while auditing the parallelism backend;
-full write-up and the trap in verifying a fix in
+concurrent, and nothing bounds how many the service accepts. Note also that a `wait_for` over a
+thread executor yields a timeout that *reports* without *stopping* — a thread cannot be cancelled
+once started — so a job would show `failed` while the pipeline kept running. Found 2026-08-25 while
+auditing the parallelism backend; options and the trap in verifying a fix in
 `dev-docs/issues/inert_pipeline_timeout_2026_08.md`.
+
+### 3.6 Resource Limits Are Advertised but Not Enforced (OPEN)
+
+`memory_limit_ratio` and `cpu_percent_limit` are constructor options on `PipelineRunner` that
+nothing reads. The only `ResourceMonitor` lives in `stage_runners.py`, which is dead code. Nothing
+in `emuses/pipelines/` or `emuses/tools/` is memory-aware at all, so a run that does not fit in RAM
+fails as an OOM kill rather than a stated error.
+
+**These are a researcher's control, not an operator's**, and so are *separate* from §3.5 despite
+being found with it: they matter with one pipeline on one machine and are blocked on nothing. The
+CPU half is largely covered already by `--n_jobs` (real since the service became its own process);
+memory has no equivalent. Any limit needs a measured memory profile first — peak RSS by stage and
+how it scales with samples, features and `n_jobs` — which is worth capturing during the planned
+scientific-validity runs rather than as a separate exercise. Until a limit enforces something, the
+options should be removed rather than left reading as a guarantee.
+`dev-docs/issues/memory_aware_execution_2026_08.md`.
 
 ## 4. Deployment Architecture
 

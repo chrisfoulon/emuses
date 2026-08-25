@@ -65,7 +65,12 @@ that is a side effect of blocking code in an `async def`, not a decision, and th
 would have removed it. Now a `ContextVar`. The same blocking call makes the service's
 `pipeline_timeout` **inert** — a hung pipeline hangs forever and the job stays `running`. Not fixed:
 the fix also makes jobs genuinely concurrent, and nothing bounds how many the service accepts
-(`dev-docs/issues/inert_pipeline_timeout_2026_08.md`, ADR §3.5). **loky runs in no shipped
+(`dev-docs/issues/inert_pipeline_timeout_2026_08.md`, ADR §3.5). Found alongside it: the service's
+`memory_limit_ratio` / `cpu_percent_limit` enforce nothing either, and **nothing in EMUSES is
+memory-aware at all** — an oversized run dies as an OOM kill, not a stated error. That one is a
+*researcher's* control rather than an operator's, blocked on nothing, and wants a measured memory
+profile first — worth capturing **during** the scientific-validity runs
+(`dev-docs/issues/memory_aware_execution_2026_08.md`, ADR §3.6). **loky runs in no shipped
 path**: the service forces threading, and the CLI inference path was scoped to match. It is still
 what `tests/regression` runs on, since that drives `EMUSESPipeline` directly — so the two backends
 have never been compared numerically, the baselines having been generated on loky either way.

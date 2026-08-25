@@ -57,6 +57,12 @@ layer is decorative. None of this is enforced anywhere in the live path:
 The module docstring advertises "ProcessPoolExecutor for background execution and resource
 isolation". There is no executor.
 
+**These are two pieces of work, not one.** The memory and CPU limits are a *researcher's* control —
+they matter with a single pipeline on a single machine and are not blocked on anything here. They
+have their own write-up: `memory_aware_execution_2026_08.md`. This document covers only the
+*operator's* controls: the timeout, job admission, and `max_workers`, all of which only mean
+something once someone other than the person who started a run has to clean up after it.
+
 This matters for sequencing: fixing only the timeout moves the service from *no limits but
 accidentally serial* to *no limits and genuinely concurrent*, which is strictly worse. The
 serialisation is currently doing the job the resource limits are not.
