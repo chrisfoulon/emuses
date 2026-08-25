@@ -97,10 +97,13 @@ hang and repo pollution by test output are all fixed.
 ## Open questions / next
 
 1. [ ] **Report degenerate models, and guard the UMAP transform collapse** (above). Highest priority.
-2. [ ] **Finish the `n_jobs` evidence.** The service fix was measured only at 48 samples. The agreed
-       standard was a larger-n arm too, because a misbehaving parallel reduction shows there first.
-       Build Arm B: digits as CSV with a **binary** label — 1797 rows kept (so the randomized PCA
-       path stays reachable) but one target instead of ten, ~7 min a run. Compare `n_jobs` ∈ {1, 4}.
+2. [x] ~~**Finish the `n_jobs` evidence**~~ **done 2026-08-25**. Arm B (digits, 1797 rows, binary
+       label, one target, through the CLI/service): **18/18 scalar metrics identical, ARI 1.0,
+       distance correlation 1.0, max distance diff 0**. Positive control included, because an
+       identical result also fits "`--n_jobs 4` never engaged" — the pre-1E bug: CPU 124 % → 161 %
+       confirms it does. `--n_jobs` buys threads, not processes (the service scopes the backend to
+       threading on purpose), so 0 loky workers is correct, not a failure.
+       `dev-docs/issues/njobs_arm_b_2026_08.md`.
 3. [ ] **Phase 1F — put `emuses inference` on the service.** `_execute_inference_locally` bypasses it
        entirely, which blocks shared-model inference on a server. `/api/v1/inference` and
        `/api/v1/inference/async` already exist, so this is likely wiring. **Do the bug first** —
