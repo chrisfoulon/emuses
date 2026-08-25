@@ -180,6 +180,15 @@ class InferenceStage(PipelineStage):
                     if validation_metrics:
                         logger.info("Validation metrics calculated successfully")
 
+                    multiclass = self._calculate_multiclass_validation_metrics(
+                        prediction_results['target_results'],
+                        getattr(self, '_detected_multiclass_labels', None),
+                        getattr(self, '_ovr_classes', None),
+                    )
+                    if multiclass:
+                        validation_metrics = validation_metrics or {}
+                        validation_metrics['_multiclass'] = multiclass
+
                 # Format results for output
                 formatted_results = self._format_results(prediction_results, mode, performance_data, validation_metrics)
 
@@ -642,7 +651,14 @@ class InferenceStage(PipelineStage):
             self._detected_labels = labels
         else:
             self._detected_labels = None
-            
+
+        # Present only when HeatmapStage expanded a multi-class column into
+        # one-vs-rest targets. The per-column binary scores never answer
+        # "which class was predicted", so the original column is carried
+        # alongside them to compute a single multi-class score.
+        self._detected_multiclass_labels = context.get("inference_labels_multiclass")
+        self._ovr_classes = context.get("inference_ovr_classes")
+
         return features
 
     def _transform_features(self, features, models):
@@ -1221,10 +1237,19 @@ class InferenceStage(PipelineStage):
                 # Classification-like data
                 # Round predictions to nearest integers for classification metrics
                 pred_rounded = np.round(predictions).astype(int)
-                
+
                 try:
                     metrics['accuracy'] = float(accuracy_score(ground_truth.astype(int), pred_rounded))
-                    logger.info("Added classification metrics (accuracy) for discrete target values")
+                    # Training optimises balanced accuracy (optuna_cv.py), so the
+                    # validation side must report it too. On a one-vs-rest target
+                    # roughly 10% of rows are positive, where a model that always
+                    # answers "no" scores 0.90 on plain accuracy and 0.50 here --
+                    # reporting only the first makes a degenerate fit look strong.
+                    from sklearn.metrics import balanced_accuracy_score
+                    metrics['balanced_accuracy'] = float(
+                        balanced_accuracy_score(ground_truth.astype(int), pred_rounded)
+                    )
+                    logger.info("Added classification metrics (accuracy, balanced accuracy) for discrete target values")
                 except Exception as e:
                     logger.warning(f"Could not calculate classification metrics: {e}")
                     
@@ -1631,7 +1656,10 @@ class InferenceStage(PipelineStage):
                 logger.warning(f"Ground truth dimensions ({ground_truth_labels.shape[1]}) don't match target count ({len(target_results)})")
                 return None
                 
-            for target_idx, target in enumerate(sorted(target_results.keys())):
+            # Numeric ordering, not sorted(): this pairs each target with a ground
+            # truth COLUMN by position, so lexicographic order would score
+            # target_10 against class 1's column from ten targets upward.
+            for target_idx, target in enumerate(self._order_targets(target_results)):
                 target_predictions = target_results[target]['ensemble_predictions']
                 target_ground_truth = ground_truth_labels[:, target_idx]
                 
@@ -1646,6 +1674,98 @@ class InferenceStage(PipelineStage):
             logger.info(f"Multi-target validation summary calculated across {len(validation_metrics)-1} targets")
         
         return validation_metrics
+
+    @staticmethod
+    def _order_targets(target_results):
+        """Return target keys in numeric, not lexicographic, order.
+
+        ``sorted()`` puts ``target_10`` before ``target_2``, so any run with ten
+        or more targets would pair each prediction column with the wrong class.
+        Ten classes (digits) is exactly the boundary where this starts to bite.
+        """
+        def key(name):
+            suffix = name.rsplit("_", 1)[-1]
+            return (0, int(suffix)) if suffix.isdigit() else (1, name)
+
+        return sorted(target_results.keys(), key=key)
+
+    def _calculate_multiclass_validation_metrics(self, target_results,
+                                                 multiclass_labels, ovr_classes):
+        """Score the one-vs-rest columns as a single multi-class prediction.
+
+        The per-target binary metrics answer "does this class-vs-rest model
+        separate its class", which is not the question a multi-class run is
+        asking. Taking the argmax across the per-class columns recovers the
+        predicted class and scores it directly.
+
+        Returns None when the run was not a one-vs-rest expansion, so regression
+        and genuinely multi-target runs are unaffected.
+        """
+        if multiclass_labels is None or ovr_classes is None or not target_results:
+            return None
+
+        from sklearn.metrics import (accuracy_score, balanced_accuracy_score,
+                                     classification_report, confusion_matrix)
+
+        ordered = self._order_targets(target_results)
+        if len(ordered) != len(ovr_classes):
+            logger.warning(
+                "Multi-class scoring skipped: %d prediction targets against %d "
+                "training classes.", len(ordered), len(ovr_classes)
+            )
+            return None
+
+        try:
+            E = np.column_stack(
+                [np.asarray(target_results[t]['ensemble_predictions'], dtype=float)
+                 for t in ordered]
+            )
+        except (KeyError, ValueError) as exc:
+            logger.warning("Multi-class scoring skipped: %s", exc)
+            return None
+
+        y_true = np.asarray(multiclass_labels).ravel()
+        if E.shape[0] != y_true.shape[0]:
+            logger.warning(
+                "Multi-class scoring skipped: %d predicted rows against %d labels.",
+                E.shape[0], y_true.shape[0]
+            )
+            return None
+
+        classes = np.asarray(ovr_classes)
+        y_pred = classes[E.argmax(axis=1)]
+
+        # Diagnostics that decide whether the argmax was meaningful at all: rows
+        # where nothing fired, or where two classes tie, are resolved by argmax
+        # picking the first column. Silent when it happens, so it is counted.
+        n_silent = int((E.max(axis=1) == 0).sum())
+        n_tied = int(((E == E.max(axis=1, keepdims=True)).sum(axis=1) > 1).sum())
+
+        metrics = {
+            'n_samples': int(len(y_true)),
+            'n_classes': int(len(classes)),
+            'accuracy': float(accuracy_score(y_true, y_pred)),
+            'balanced_accuracy': float(balanced_accuracy_score(y_true, y_pred)),
+            'n_correct': int((y_true == y_pred).sum()),
+            'rows_with_no_positive_target': n_silent,
+            'rows_with_tied_targets': n_tied,
+            'confusion_matrix': confusion_matrix(y_true, y_pred).tolist(),
+            'class_labels': classes.tolist(),
+            'per_class': classification_report(
+                y_true, y_pred, output_dict=True, zero_division=0
+            ),
+        }
+        logger.info(
+            "Multi-class held-out accuracy: %.4f (%d/%d correct across %d classes)",
+            metrics['accuracy'], metrics['n_correct'],
+            metrics['n_samples'], metrics['n_classes']
+        )
+        if n_silent or n_tied:
+            logger.warning(
+                "Multi-class argmax resolved %d row(s) with no positive target and "
+                "%d tied row(s) by column order.", n_silent, n_tied
+            )
+        return metrics
 
     def _calculate_validation_summary(self, target_metrics):
         """

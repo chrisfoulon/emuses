@@ -215,6 +215,52 @@ Normalising in both the pipeline and the stage scales the data twice and collaps
 
 ---
 
+### 2.5c One-vs-Rest Ground Truth Is Expanded at the Handover, Using Training Classes
+
+**Decision** (2026-08-25): when `--classification` expands a multi-class label column into
+one-vs-rest targets, `HeatmapStage` must expand the **ground truth** the same way before copying it
+into `inference_labels`, and must additionally report a single multi-class score.
+
+**The defect this fixes.** The expansion was a local variable `Y` inside the training loop. The test
+split was handed over as the original single class column, so `InferenceStage` compared *n* prediction
+columns against *one* ground-truth column,
+`_calculate_multi_target_validation_metrics` hit its `shape[1] != len(target_results)` branch and
+returned `None`. Measured on the digits run (2026-08-25): exit 0, a `validation_metadata.json`
+containing only timing, and **no held-out performance at all** — from one WARNING line
+(`Ground truth dimensions (1) don't match target count (10)`) inside a 3.7 MB log. The true accuracy,
+computed by hand from the predictions CSV, was 0.9750. This is the project's recurring signature: the
+run looks successful and the result is silently absent.
+
+**Two constraints that are not optional:**
+
+1. **Expand with the classes seen in *training*, never recomputed from the split being scored.** A
+   split missing a class yields a shorter `np.unique` and shifts every column past the gap — the
+   metric is still produced and is silently wrong, which is strictly worse than the missing metric it
+   replaces. Rows carrying an unseen class are all-zero across every column and are logged.
+2. **Order targets numerically, not lexicographically.** `sorted()` places `target_10` before
+   `target_2`, so from ten targets upward every prediction column pairs with the wrong class. Ten
+   classes (digits) is exactly where this begins to bite. `_order_targets` exists for this.
+
+**A multi-class score is reported alongside the per-target ones.** The per-target binary metrics
+answer "does this class-vs-rest model separate its class", which is not what a multi-class run is
+asking. `_calculate_multiclass_validation_metrics` takes the argmax across the per-class columns and
+scores the recovered class directly, and counts rows where nothing fired or two classes tied, since
+argmax resolves both by column order and would otherwise hide them.
+
+**Validation metrics report balanced accuracy, not only accuracy**, because training optimises
+balanced accuracy (`optuna_cv.py:41`). On a one-vs-rest target roughly 10 % of rows are positive,
+where a model that always answers "no" scores 0.90 on plain accuracy and 0.50 on balanced — reporting
+only the first makes a degenerate fit look strong, the same family as §3.1b.
+
+**Code**: `emuses/pipelines/heatmap_stage.py` (`_expand_ovr_labels`, the handover block),
+`emuses/pipelines/inference_stage.py` (`_order_targets`,
+`_calculate_multiclass_validation_metrics`). **Guards**:
+`tests/inference/test_multiclass_holdout_metrics.py` (13 tests, including the missing-class
+misalignment trap and the `target_10`/`target_2` ordering). Verified against an oracle computed
+independently *before* the fix existed: 0.9750 accuracy, 351/360, on the digits run.
+
+---
+
 ### 2.6 Scores Handled Separately from Imaging Features
 
 **Decision**: Behavioural/clinical target variables (scores) are loaded and processed via a dedicated path, separate from imaging features throughout the entire pipeline.
