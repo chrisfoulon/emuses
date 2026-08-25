@@ -466,7 +466,7 @@ custom_registry = factory.create_custom_registry({
 ### Database Registry Usage
 
 ```python
-from emuses.tools.database_model_registry import DatabaseModelRegistry
+from emuses.extras.database_model_registry import DatabaseModelRegistry
 from emuses.multi_user_service.database import get_db
 from sqlalchemy.orm import Session
 
@@ -937,7 +937,7 @@ def test_model_installation(registry_factory, temp_registry_dir, mock_model_file
 @pytest.mark.asyncio
 async def test_database_registry_async():
     """Test database registry async operations."""
-    from emuses.tools.database_model_registry import DatabaseModelRegistry
+    from emuses.extras.database_model_registry import DatabaseModelRegistry
     
     # Mock database session
     mock_db = MagicMock()

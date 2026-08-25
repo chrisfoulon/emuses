@@ -39,7 +39,7 @@
 ### Phase 2.2: DatabaseModelRegistry Implementation ║ tests/model_registry/test_database_operations.py ║ Core database operations ║ L
 
 - [x] **Task 2.2.1: Create DatabaseModelRegistry class** ✅ COMPLETE
-  - [x] 2.2.1.a: Create emuses/tools/database_model_registry.py
+  - [x] 2.2.1.a: Create emuses/extras/database_model_registry.py
   - [x] 2.2.1.b: Implement constructor with database session and user context
   - [x] 2.2.1.c: Add NumPy-style docstrings and comprehensive error handling
   - [x] 2.2.1.d: Implement registry mode detection and initialization
@@ -59,7 +59,7 @@
 ### Phase 2.3: Permission System ║ tests/model_registry/test_permissions.py ║ Access control ║ M ✅ COMPLETE
 
 - [x] **Task 2.3.1: Create ModelPermissionManager class** ✅ COMPLETE
-  - [x] 2.3.1.a: Create emuses/tools/model_permission_manager.py
+  - [x] 2.3.1.a: Create emuses/extras/model_permission_manager.py
   - [x] 2.3.1.b: Implement check_access() for permission validation
   - [x] 2.3.1.c: Add grant_access() and revoke_access() methods
   - [x] 2.3.1.d: Implement list_permissions() for access management

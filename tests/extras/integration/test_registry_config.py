@@ -7,7 +7,7 @@ import pytest
 import tempfile
 from pathlib import Path
 
-from emuses.tools.registry_config import RegistryConfig
+from emuses.extras.registry_config import RegistryConfig
 
 
 class TestRegistryConfig:

@@ -215,8 +215,8 @@ class SerializationMode(Enum):
 ## Files Modified/Created
 
 ### Database Optimization
-- `emuses/tools/database_model_registry.py` - Query rewrites and monitoring
-- `emuses/tools/database_index_optimizer.py` - Index management
+- `emuses/extras/database_model_registry.py` - Query rewrites and monitoring
+- `emuses/extras/database_index_optimizer.py` - Index management
 - `tests/performance/test_database_query_optimization.py` - Performance tests
 
 ### API Optimization  
@@ -226,7 +226,7 @@ class SerializationMode(Enum):
 - `tests/performance/test_api_response_optimization.py` - API performance tests
 
 ### Caching System
-- `emuses/tools/model_registry_cache.py` - Intelligent caching layer
+- `emuses/extras/model_registry_cache.py` - Intelligent caching layer
 - `tests/performance/test_model_registry_caching.py` - Cache performance tests
 
 This comprehensive performance optimization work ensures the EMUSES Model Registry scales efficiently for production deployment with 1000+ models and concurrent multi-user access patterns.

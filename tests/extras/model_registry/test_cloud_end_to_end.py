@@ -24,7 +24,7 @@ except ImportError:
 
 # Test requires cloud resilience module
 try:
-    from emuses.tools.cloud_resilience import (
+    from emuses.extras.cloud_resilience import (
         CloudErrorClassifier,
         with_exponential_backoff,
         CircuitBreaker,
@@ -34,7 +34,7 @@ try:
 except ImportError:
     RESILIENCE_MODULE_AVAILABLE = False
 
-from emuses.tools.cloud_storage import S3StorageBackend
+from emuses.extras.cloud_storage import S3StorageBackend
 
 
 @pytest.mark.skipif(not MOTO_AVAILABLE or not RESILIENCE_MODULE_AVAILABLE, 

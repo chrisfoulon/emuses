@@ -11,8 +11,9 @@ flags say, and the same command twice gives the same answer.
 
 ## State of play
 
-**On `main`, plus `feat/inference-on-service` (Phase 1F, PR #9 open) and `fix/science-path-tests`
-stacked on it (Phase 4).** Plan:
+**All work is on `main`; no branches outstanding** (2026-08-25). Six branches converged that day —
+Phase 1F (PR #9), Phase 4, Phase 5 (the extras move), the `n_jobs` Arm B evidence, the regression
+conftest fix and the parallelism backend scope. Plan:
 `~/.claude/plans/playful-watching-naur.md` (consolidated 2026-08-24 — read that, not the older
 per-phase notes).
 
@@ -150,22 +151,33 @@ hang and repo pollution by test output are all fixed.
 - **Test locally before pushing** — `dev_test_runner.py` on feature branches (13 tests, ~1 min), full
   CI reserved for `main`.
 - **Documentation split**: `docs/` user-facing, `dev-docs/` for contributors and sessions.
+- **Parked features live in `emuses/extras/`** (moved 2026-08-24, ADR §2.10). The core/extras line
+  used to be 22 module names typed into `tests/test_architecture_boundary.py`, describing files that
+  sat in `emuses/tools/` next to core code; it is now package layout. Core may still reach into
+  extras *lazily* — `model_registry_factory` loads the cloud and database backends inside functions,
+  which is why the move needed no change to core.
 
 ## Open questions / next
 
-1. [ ] **Phase 5** — finish the `emuses/tools/` → `emuses/extras/` move (22 modules, 8 import
-       rewrites). `tests/test_architecture_boundary.py` verifies it.
-2. [ ] The 33 remaining failures in `tests/cli` / `tests/foundation_fastapi_service` are
+1. [ ] The 33 remaining failures in `tests/cli` / `tests/foundation_fastapi_service` are
        untriaged: 6 `test_enhanced_models_commands`, 5 `test_models_hdbscan`,
        5 `test_inference_preprocessing_params`, 3 each in `test_security_validation`,
        `test_models_commands`, `test_inference_integration`, and singles elsewhere.
-3. [ ] **Two error messages.** A header-bearing CSV fails with "No numeric data remaining" and never
+2. [ ] **Two error messages.** A header-bearing CSV fails with "No numeric data remaining" and never
        mentions `--input_header`, which works. `.npy` is refused as an unsupported format, when the
        real problem is that the file people reach for (`split_dataset/test_features.npy`) is stored
        *after* normalization and is the wrong input regardless of format.
-4. [ ] **Recorded, not being acted on** (result-quality judgements are Chris's call): degenerate
+3. [ ] **Recorded, not being acted on** (result-quality judgements are Chris's call): degenerate
        fits are never reported, and off-manifold input collapses the UMAP transform silently.
        Supersedes the older "highest priority" framing — revisit once a real-data run is stable.
+4. [ ] **Resource controls, after the scientific-validity runs.** Two separate pieces (2026-08-25):
+       *memory-aware execution* is a researcher's control, blocked on nothing, and needs a measured
+       memory profile — **capture peak RSS per stage during those runs**, since they are the
+       real-data runs at realistic size (`memory_aware_execution_2026_08.md`). The *service
+       timeout* is an operator's control and is blocked on deciding how many pipelines the service
+       may run at once (`inert_pipeline_timeout_2026_08.md`). Until either enforces something,
+       `memory_limit_ratio` / `cpu_percent_limit` / `max_workers` should be deleted rather than
+       left reading as guarantees.
 5. [ ] Run `/lad:converge` — nine months of accumulated claims unchecked against the code.
 6. [ ] `tests/multi-user-service/` hangs **as a directory**; root cause unknown. Measure on a quiet
        machine. Note `tests/multi_user_service/` also exists with different contents.

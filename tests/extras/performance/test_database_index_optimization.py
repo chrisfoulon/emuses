@@ -9,7 +9,7 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 
 from emuses.multi_user_service.models import Base
-from emuses.tools.database_index_optimizer import DatabaseIndexOptimizer
+from emuses.extras.database_index_optimizer import DatabaseIndexOptimizer
 
 
 @pytest.fixture

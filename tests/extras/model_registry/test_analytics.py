@@ -9,7 +9,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from emuses.multi_user_service.models import Base, User, Workspace, ModelRegistry, ModelDownload
-from emuses.tools.model_analytics import ModelAnalytics, AnalyticsError
+from emuses.extras.model_analytics import ModelAnalytics, AnalyticsError
 
 
 @pytest.fixture
@@ -200,7 +200,7 @@ class TestGetModelStats:
         # Record some downloads
         download_time = datetime.utcnow() - timedelta(days=1)
 
-        with patch('emuses.tools.model_analytics.datetime') as mock_datetime:
+        with patch('emuses.extras.model_analytics.datetime') as mock_datetime:
             mock_datetime.utcnow.return_value = download_time
             analytics.record_download(test_model.id, test_user.id, 1024, "api")
             analytics.record_download(test_model.id, test_user.id, 2048, "cli")
@@ -258,7 +258,7 @@ class TestGetPopularModels:
 
         # Record old download (outside window)
         old_time = datetime.utcnow() - timedelta(days=40)
-        with patch('emuses.tools.model_analytics.datetime') as mock_datetime:
+        with patch('emuses.extras.model_analytics.datetime') as mock_datetime:
             mock_datetime.utcnow.return_value = old_time
             analytics.record_download(test_model.id, test_user.id, 1024)
 

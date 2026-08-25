@@ -355,7 +355,7 @@ class TestMetricsIntegration:
 
     def test_cache_metrics_integration(self):
         """Test metrics integration with ModelRegistryCache."""
-        from emuses.tools.model_registry_cache import ModelRegistryCache
+        from emuses.extras.model_registry_cache import ModelRegistryCache
         
         # Create cache instance
         cache = ModelRegistryCache()

@@ -23,7 +23,7 @@ from typing import Dict, List, Any, Optional
 from unittest.mock import Mock, AsyncMock
 from datetime import datetime
 
-from emuses.tools.model_analytics import ModelAnalytics
+from emuses.extras.model_analytics import ModelAnalytics
 
 
 class PerformanceMonitoringValidator:

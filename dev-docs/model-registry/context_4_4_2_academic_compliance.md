@@ -197,7 +197,7 @@ ADD COLUMN academic_role VARCHAR(100);
 **Focus**: Core academic compliance infrastructure
 
 **Deliverables**:
-- `emuses/tools/academic_compliance.py` - Base academic compliance manager
+- `emuses/extras/academic_compliance.py` - Base academic compliance manager
 - IRB approval tracking system
 - Basic data provenance tracking
 - Database schema migration

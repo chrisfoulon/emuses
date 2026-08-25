@@ -5,7 +5,7 @@ from unittest.mock import MagicMock, AsyncMock, patch
 import tempfile
 import shutil
 
-from emuses.tools.cloud_storage import (
+from emuses.extras.cloud_storage import (
     CloudStorageBackend, 
     S3StorageBackend, 
     AzureBlobStorageBackend,
@@ -318,7 +318,7 @@ class TestCloudStorageIntegration:
     @pytest.mark.asyncio
     async def test_backend_factory_creates_correct_type(self):
         """Test that backend factory creates correct storage backend type."""
-        from emuses.tools.cloud_storage import create_storage_backend
+        from emuses.extras.cloud_storage import create_storage_backend
         
         # Test S3 creation
         s3_config = {
@@ -359,7 +359,7 @@ class TestCloudStorageIntegration:
     @pytest.mark.asyncio
     async def test_unsupported_provider_raises_error(self):
         """Test that unsupported provider raises appropriate error."""
-        from emuses.tools.cloud_storage import create_storage_backend
+        from emuses.extras.cloud_storage import create_storage_backend
         
         unsupported_config = {
             "provider": "dropbox",  # Not supported

@@ -6,7 +6,7 @@ import pickle
 from pathlib import Path
 from unittest.mock import Mock, patch, MagicMock
 
-from emuses.tools.model_compression import (
+from emuses.extras.model_compression import (
     ModelCompressor,
     CompressionMethod,
     CompressionConfig,
@@ -186,7 +186,7 @@ class TestProgressiveDownloader:
         assert downloader.config is not None
         assert isinstance(downloader.config, DownloadConfig)
     
-    @patch('emuses.tools.model_compression.requests')
+    @patch('emuses.extras.model_compression.requests')
     def test_download_model_basic(self, mock_requests, downloader, temp_dir):
         """Test basic model download functionality."""
         # Create realistic test data
@@ -211,7 +211,7 @@ class TestProgressiveDownloader:
         assert progress.downloaded_bytes == 2048
         assert progress.is_complete
     
-    @patch('emuses.tools.model_compression.requests')
+    @patch('emuses.extras.model_compression.requests')
     def test_download_model_with_resume(self, mock_requests, downloader, temp_dir):
         """Test model download with resume capability."""
         # Create partially downloaded file
@@ -340,7 +340,7 @@ class TestCDNIntegration:
         assert cdn_integration.config is not None
         assert isinstance(cdn_integration.config, CDNConfig)
     
-    @patch('emuses.tools.model_compression.requests')
+    @patch('emuses.extras.model_compression.requests')
     def test_upload_to_cdn_basic(self, mock_requests, cdn_integration, temp_dir):
         """Test basic CDN upload functionality."""
         # Create test file
@@ -363,7 +363,7 @@ class TestCDNIntegration:
         assert cdn_url.startswith("https://cdn.example.com/")
         assert "test_model" in cdn_url
     
-    @patch('emuses.tools.model_compression.requests')
+    @patch('emuses.extras.model_compression.requests')
     def test_get_cdn_url_with_optimization(self, mock_requests, cdn_integration):
         """Test getting optimized CDN URL."""
         model_id = "test_model_123"
@@ -508,8 +508,8 @@ class TestBandwidthAdapter:
         assert new_chunk_size == bandwidth_adapter.config.min_chunk_size
         assert bandwidth_adapter.current_chunk_size == new_chunk_size
     
-    @patch('emuses.tools.model_compression.time')
-    @patch('emuses.tools.model_compression.requests')
+    @patch('emuses.extras.model_compression.time')
+    @patch('emuses.extras.model_compression.requests')
     def test_measure_download_speed(self, mock_requests, mock_time, bandwidth_adapter):
         """Test download speed measurement."""
         # Mock time progression

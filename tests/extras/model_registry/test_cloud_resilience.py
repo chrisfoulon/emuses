@@ -15,7 +15,7 @@ from typing import Optional, Dict, Any
 
 # Test will fail initially - imports don't exist yet
 try:
-    from emuses.tools.cloud_resilience import (
+    from emuses.extras.cloud_resilience import (
         CloudErrorClassifier,
         RetryConfig,
         CloudOperationTimeout,
@@ -25,7 +25,7 @@ try:
 except ImportError:
     RESILIENCE_MODULE_AVAILABLE = False
 
-from emuses.tools.cloud_storage import S3StorageBackend
+from emuses.extras.cloud_storage import S3StorageBackend
 
 
 @pytest.mark.skipif(not RESILIENCE_MODULE_AVAILABLE, reason="Cloud resilience module not implemented")
@@ -142,7 +142,7 @@ class TestExponentialBackoffRetry:
         mock_operation = AsyncMock(return_value="success")
         
         # Apply retry decorator (will be implemented)
-        from emuses.tools.cloud_resilience import with_exponential_backoff
+        from emuses.extras.cloud_resilience import with_exponential_backoff
         
         retried_operation = with_exponential_backoff(
             max_attempts=3,
@@ -170,7 +170,7 @@ class TestExponentialBackoffRetry:
             "success"
         ])
         
-        from emuses.tools.cloud_resilience import with_exponential_backoff
+        from emuses.extras.cloud_resilience import with_exponential_backoff
         
         retried_operation = with_exponential_backoff(
             max_attempts=5,
@@ -194,7 +194,7 @@ class TestExponentialBackoffRetry:
         # Create a mock that raises a permanent error
         mock_operation = AsyncMock(side_effect=PermissionError("Access denied"))
         
-        from emuses.tools.cloud_resilience import with_exponential_backoff
+        from emuses.extras.cloud_resilience import with_exponential_backoff
         
         retried_operation = with_exponential_backoff(
             max_attempts=5,
@@ -215,7 +215,7 @@ class TestExponentialBackoffRetry:
         # Create a mock that always fails with transient error
         mock_operation = AsyncMock(side_effect=ConnectionError("Network error"))
         
-        from emuses.tools.cloud_resilience import with_exponential_backoff
+        from emuses.extras.cloud_resilience import with_exponential_backoff
         
         retried_operation = with_exponential_backoff(
             max_attempts=3,
@@ -241,7 +241,7 @@ class TestExponentialBackoffRetry:
         
         mock_operation = AsyncMock(side_effect=record_call_time)
         
-        from emuses.tools.cloud_resilience import with_exponential_backoff
+        from emuses.extras.cloud_resilience import with_exponential_backoff
         
         retried_operation = with_exponential_backoff(
             max_attempts=4,
@@ -281,7 +281,7 @@ class TestS3BackendWithRetry:
         )
         
         # Apply retry capabilities (placeholder - will be implemented)
-        from emuses.tools.cloud_resilience import add_retry_capabilities
+        from emuses.extras.cloud_resilience import add_retry_capabilities
         return add_retry_capabilities(backend)
 
     @pytest.mark.asyncio
@@ -298,7 +298,7 @@ class TestTimeoutHandling:
 
     def test_timeout_configuration_validation(self):
         """Test validation of timeout configuration values."""
-        from emuses.tools.cloud_resilience import CloudOperationTimeout
+        from emuses.extras.cloud_resilience import CloudOperationTimeout
         
         # Valid configuration
         timeout = CloudOperationTimeout(
@@ -326,7 +326,7 @@ class TestCircuitBreakerPattern:
     @pytest.mark.asyncio
     async def test_circuit_breaker_failure_threshold(self):
         """Test circuit breaker opens after failure threshold is reached."""
-        from emuses.tools.cloud_resilience import CircuitBreaker, CircuitBreakerError
+        from emuses.extras.cloud_resilience import CircuitBreaker, CircuitBreakerError
         
         # Create circuit breaker with low threshold for testing
         circuit_breaker = CircuitBreaker(
@@ -351,7 +351,7 @@ class TestCircuitBreakerPattern:
     @pytest.mark.asyncio
     async def test_circuit_breaker_recovery(self):
         """Test circuit breaker recovery after timeout period."""
-        from emuses.tools.cloud_resilience import CircuitBreaker
+        from emuses.extras.cloud_resilience import CircuitBreaker
         
         circuit_breaker = CircuitBreaker(
             failure_threshold=2,

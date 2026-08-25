@@ -10,7 +10,7 @@ from datetime import datetime, date
 from unittest.mock import Mock, MagicMock
 from uuid import uuid4, UUID
 
-from emuses.tools.academic_compliance import (
+from emuses.extras.academic_compliance import (
     AcademicComplianceManager,
     AcademicComplianceError,
     IRBStatus,

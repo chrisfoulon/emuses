@@ -8,7 +8,7 @@ from unittest.mock import Mock, patch, MagicMock
 
 from sqlalchemy.orm import Session
 
-from emuses.tools.model_benchmarking import (
+from emuses.extras.model_benchmarking import (
     ModelBenchmarkingSystem,
     BenchmarkConfig,
     BenchmarkingError,

@@ -9,8 +9,8 @@ import time
 import pytest
 from unittest.mock import MagicMock
 
-from emuses.tools.database_model_registry import DatabaseModelRegistry
-from emuses.tools.model_registry_cache import ModelRegistryCache
+from emuses.extras.database_model_registry import DatabaseModelRegistry
+from emuses.extras.model_registry_cache import ModelRegistryCache
 
 
 class TestModelRegistryCaching:

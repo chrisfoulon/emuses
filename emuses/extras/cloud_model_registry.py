@@ -17,9 +17,9 @@ from uuid import UUID, uuid4
 
 from sqlalchemy.orm import Session
 
-from emuses.tools.cloud_storage import CloudStorageBackend, S3StorageBackend, AzureBlobStorageBackend, GCSStorageBackend
+from emuses.extras.cloud_storage import CloudStorageBackend, S3StorageBackend, AzureBlobStorageBackend, GCSStorageBackend
 from emuses.multi_user_service.models import User, ModelRegistry, ModelDownload, Workspace
-from emuses.tools.model_permission_manager import ModelPermissionManager
+from emuses.extras.model_permission_manager import ModelPermissionManager
 
 logger = logging.getLogger(__name__)
 

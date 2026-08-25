@@ -150,7 +150,7 @@ class ModelRegistryFactory:
                 'supports_multi_user': True,
                 'supports_cloud_storage': False,
                 'registry_class': 'DatabaseModelRegistry',
-                'module': 'emuses.tools.database_model_registry'
+                'module': 'emuses.extras.database_model_registry'
             },
             RegistryMode.CLOUD: {
                 'requires_auth': True,
@@ -158,7 +158,7 @@ class ModelRegistryFactory:
                 'supports_multi_user': True,
                 'supports_cloud_storage': True,
                 'registry_class': 'CloudModelRegistry',
-                'module': 'emuses.tools.cloud_model_registry'
+                'module': 'emuses.extras.cloud_model_registry'
             }
         }
     
@@ -314,7 +314,7 @@ class ModelRegistryFactory:
         # Check cloud storage requirement  
         if mode == RegistryMode.CLOUD:
             try:
-                from emuses.tools.cloud_storage import CloudStorageBackend
+                from emuses.extras.cloud_storage import CloudStorageBackend
             except ImportError:
                 logger.debug(ErrorMessages.CLOUD_COMPONENTS_MISSING)
                 return False
@@ -382,7 +382,7 @@ class ModelRegistryFactory:
         BaseModelRegistry
             Database registry instance
         """
-        from emuses.tools.database_model_registry import DatabaseModelRegistry
+        from emuses.extras.database_model_registry import DatabaseModelRegistry
         return DatabaseModelRegistry(db_session=db_session, user_id=user_id)
     
     def _create_cloud_registry(self, db_session: Optional[Any] = None,
@@ -404,7 +404,7 @@ class ModelRegistryFactory:
         BaseModelRegistry
             Cloud registry instance
         """
-        from emuses.tools.cloud_model_registry import CloudModelRegistry
+        from emuses.extras.cloud_model_registry import CloudModelRegistry
         return CloudModelRegistry(
             db_session=db_session, user_id=user_id,
             cloud_config=cloud_config or {}

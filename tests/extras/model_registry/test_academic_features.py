@@ -8,7 +8,7 @@ from unittest.mock import Mock, patch, MagicMock
 
 from sqlalchemy.orm import Session
 
-from emuses.tools.academic_features import (
+from emuses.extras.academic_features import (
     AcademicFeatureManager,
     AcademicConfig,
     AcademicError,

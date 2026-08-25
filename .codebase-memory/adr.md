@@ -553,11 +553,25 @@ must not be imported by core at module level. The boundary is enforced mechanica
 `base_model_registry`, `storage_manager`, `model_registry_factory`, `model_registry_metrics`,
 `model_registry_health`.
 
-**Parked**: the model marketplace (`advanced_search`, `model_analytics`, `personalized_ranking`,
-`model_benchmarking`, `community_model_manager`, `streaming_analytics`, `usage_alerts`,
-`model_compression`, `model_migration`, `registry_config`), the publication/compliance scaffolding
-(`academic_features`, `academic_compliance`, `gdpr_compliance`), the cloud and database registry
-backends, and `multi_user_service/` in full.
+**Parked**: everything in `emuses/extras/` — the model marketplace (`advanced_search`,
+`model_analytics`, `personalized_ranking`, `model_benchmarking`, `community_model_manager`,
+`streaming_analytics`, `usage_alerts`, `model_compression`, `model_migration`, `registry_config`),
+the publication/compliance scaffolding (`academic_features`, `academic_compliance`,
+`gdpr_compliance`), and the cloud and database registry backends — plus `multi_user_service/` in
+full, and two modules parked in place because each sits inside an otherwise-core package:
+`cli/cloud_validation.py` and `foundation_fastapi_service/stage_runners.py`.
+
+**The parked modules live in `emuses/extras/`** (moved 2026-08-24: 22 modules, 17,552 lines, out of
+`emuses/tools/`). The boundary was originally 22 names typed into the test, describing files that
+sat next to core code; membership now follows from where a file lives. Only three production files
+referenced any of them, and `model_registry_factory` already loaded the cloud and database backends
+lazily, so core needed no change.
+
+The move opens one hole the list did not have, and it is guarded. Measured by removing
+`"emuses.extras"` from `EXTRAS_PACKAGES`: the real core→extras violation stops being reported, and
+about fifteen *legitimate* extras→`multi_user_service` imports start being reported in its place.
+The failure is loud but points everywhere except at the cause — the kind of report that gets "fixed"
+by loosening something. `test_the_extras_package_is_actually_declared` names it directly.
 
 **Rationale**:
 - Measured 2026-08-19: 16,585 LOC (22% of the package) was unreachable from *every* entry point, and
@@ -577,11 +591,12 @@ or behind `try/except ImportError` — are the sanctioned way to wire an optiona
 `model_registry_factory.py` already loads the cloud and database backends that way.
 
 **Do not** relax the boundary to make a test pass. If a parked feature turns out to be genuinely
-core, move it out of `EXTRAS_MODULES` deliberately and record why here. The declaration is a product
-decision, not a graph property — deriving it from reachability would make the test circular and
-unable to fail.
+core, move its file out of `emuses/extras/` deliberately and record why here. The declaration is a
+product decision, not a graph property — deriving it from reachability would make the test circular
+and unable to fail.
 
-**Code**: `tests/test_architecture_boundary.py`, `tests/extras/conftest.py`, `pytest.ini`
+**Code**: `emuses/extras/__init__.py`, `tests/test_architecture_boundary.py`,
+`tests/extras/conftest.py`, `pytest.ini`
 
 ---
 

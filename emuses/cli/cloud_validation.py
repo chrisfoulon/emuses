@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Dict, Any, Optional
 import click
 
-from emuses.tools.cloud_validation import (
+from emuses.extras.cloud_validation import (
     validate_cloud_deployment,
     CloudConfigurationValidator,
     CloudHealthChecker,
@@ -279,7 +279,7 @@ def _create_backend_from_params(
 ):
     """Create cloud storage backend from command line parameters."""
     if provider.lower() in ['aws', 's3']:
-        from emuses.tools.cloud_storage import S3StorageBackend
+        from emuses.extras.cloud_storage import S3StorageBackend
         
         if not all([access_key, secret_key, region]):
             raise click.ClickException("AWS S3 requires --access-key, --secret-key, and --region")
@@ -292,7 +292,7 @@ def _create_backend_from_params(
         )
         
     elif provider.lower() in ['azure', 'azure_blob']:
-        from emuses.tools.cloud_storage import AzureBlobStorageBackend
+        from emuses.extras.cloud_storage import AzureBlobStorageBackend
         
         if not connection_string:
             raise click.ClickException("Azure Blob Storage requires --connection-string")
@@ -303,7 +303,7 @@ def _create_backend_from_params(
         )
         
     elif provider.lower() in ['gcs', 'google_cloud']:
-        from emuses.tools.cloud_storage import GCSStorageBackend
+        from emuses.extras.cloud_storage import GCSStorageBackend
         
         if not project_id:
             raise click.ClickException("Google Cloud Storage requires --project-id")

@@ -30,7 +30,7 @@ except ImportError:
     bcrypt = None
 
 from emuses.tools.local_model_registry import LocalModelRegistry
-from emuses.tools.model_permission_manager import ModelPermissionManager
+from emuses.extras.model_permission_manager import ModelPermissionManager
 
 
 class TestOWASPA01BrokenAccessControl:

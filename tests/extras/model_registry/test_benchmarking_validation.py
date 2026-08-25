@@ -14,7 +14,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from emuses.multi_user_service.models import Base, User, Workspace, ModelRegistry
-from emuses.tools.model_benchmarking import (
+from emuses.extras.model_benchmarking import (
     ModelBenchmarkingSystem,
     BenchmarkConfig,
     BenchmarkingError,

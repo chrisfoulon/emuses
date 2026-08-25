@@ -17,7 +17,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from emuses.multi_user_service.models import Base, User
-from emuses.tools.cloud_storage import (
+from emuses.extras.cloud_storage import (
     S3StorageBackend,
     AzureBlobStorageBackend,
     GCSStorageBackend

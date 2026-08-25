@@ -72,7 +72,7 @@ class TestModelRegistryFactory:
         factory = ModelRegistryFactory()
         
         # Test fallback when database backend unavailable
-        with patch('emuses.tools.database_model_registry.DatabaseModelRegistry',
+        with patch('emuses.extras.database_model_registry.DatabaseModelRegistry',
                   side_effect=ImportError("Database backend not available")):
             registry = factory.create_registry(RegistryMode.DATABASE, 
                                              fallback=True)

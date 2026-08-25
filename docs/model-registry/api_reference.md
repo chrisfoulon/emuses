@@ -697,7 +697,7 @@ except Exception as e:
 ### Using DatabaseModelRegistry
 
 ```python
-from emuses.tools.database_model_registry import DatabaseModelRegistry
+from emuses.extras.database_model_registry import DatabaseModelRegistry
 from emuses.multi_user_service.database import get_db
 
 # Database mode requires database session and user context

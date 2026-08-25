@@ -15,7 +15,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from emuses.multi_user_service.models import Base, ModelRegistry, User, Workspace
-from emuses.tools.database_model_registry import DatabaseModelRegistry
+from emuses.extras.database_model_registry import DatabaseModelRegistry
 
 
 @pytest.fixture

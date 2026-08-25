@@ -28,7 +28,7 @@
 ### Phase 3.1: Cloud Storage Abstraction ║ tests/model_registry/test_cloud_storage.py ║ Storage infrastructure ║ M ✅ COMPLETE
 
 - [x] **Task 3.1.1: Create cloud storage abstraction layer** ✅ COMPLETE
-  - [x] 3.1.1.a: Create emuses/tools/cloud_storage.py with abstract base class
+  - [x] 3.1.1.a: Create emuses/extras/cloud_storage.py with abstract base class
   - [x] 3.1.1.b: Implement S3StorageBackend for AWS integration (validated against boto3 docs)
   - [x] 3.1.1.c: Add AzureBlobStorageBackend for Azure integration (validated against Azure docs)
   - [x] 3.1.1.d: Create GCSStorageBackend for Google Cloud integration (validated against GCS docs)
@@ -50,7 +50,7 @@
 ### Phase 3.2: CloudModelRegistry Implementation ║ tests/model_registry/test_cloud_registry.py ║ Production registry ║ L
 
 - [x] **Task 3.2.1: Create CloudModelRegistry class** ✅ COMPLETE
-  - [x] 3.2.1.a: Create emuses/tools/cloud_model_registry.py
+  - [x] 3.2.1.a: Create emuses/extras/cloud_model_registry.py
   - [x] 3.2.1.b: Extend DatabaseModelRegistry patterns for cloud storage
   - [x] 3.2.1.c: Add NumPy-style docstrings and comprehensive error handling
   - [x] 3.2.1.d: Implement cloud registry initialization and configuration
@@ -98,7 +98,7 @@
 ### Phase 3.3: Advanced Analytics System ║ tests/model_registry/test_analytics.py ║ Usage analytics ║ M
 
 - [x] **Task 3.3.1: Create ModelAnalytics class** ✅ COMPLETE
-  - [x] 3.3.1.a: Create emuses/tools/model_analytics.py
+  - [x] 3.3.1.a: Create emuses/extras/model_analytics.py
   - [x] 3.3.1.b: Implement record_download() with comprehensive tracking
   - [x] 3.3.1.c: Add get_model_stats() for detailed usage statistics
   - [x] 3.3.1.d: Create get_popular_models() with trending algorithms

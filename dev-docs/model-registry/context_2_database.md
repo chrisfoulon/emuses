@@ -126,7 +126,7 @@ CREATE TABLE model_registry (
 ```
 
 ### DatabaseModelRegistry Class
-**Location**: `emuses/tools/database_model_registry.py`  
+**Location**: `emuses/extras/database_model_registry.py`  
 **Purpose**: Database-backed registry operations  
 **Integration**: Extends patterns from LocalModelRegistry
 
@@ -138,7 +138,7 @@ CREATE TABLE model_registry (
 - `download_model(model_id, local_path)` - Download with usage tracking
 
 ### ModelPermissionManager Class  
-**Location**: `emuses/tools/model_permission_manager.py`  
+**Location**: `emuses/extras/model_permission_manager.py`  
 **Purpose**: Multi-level access control system
 
 **Permission Levels**:

@@ -6,7 +6,7 @@ import numpy as np
 from unittest.mock import Mock, MagicMock, patch, call
 from typing import Dict, List, Any
 
-from emuses.tools.advanced_search import (
+from emuses.extras.advanced_search import (
     AdvancedModelSearch, SearchBackend, SearchConfig, SearchError,
     ElasticsearchBackend, SolrBackend, DatabaseBackend, SemanticEmbeddings
 )
@@ -309,8 +309,8 @@ class TestDatabaseBackend:
 def mock_elasticsearch():
     """Mock Elasticsearch client."""
     mock_client = Mock()
-    with patch('emuses.tools.advanced_search.ELASTICSEARCH_AVAILABLE', True):
-        with patch('emuses.tools.advanced_search.Elasticsearch', return_value=mock_client):
+    with patch('emuses.extras.advanced_search.ELASTICSEARCH_AVAILABLE', True):
+        with patch('emuses.extras.advanced_search.Elasticsearch', return_value=mock_client):
             yield mock_client
 
 
@@ -354,8 +354,8 @@ class TestElasticsearchBackend:
     
     def test_elasticsearch_connection_error(self):
         """Test Elasticsearch connection error handling."""
-        with patch('emuses.tools.advanced_search.ELASTICSEARCH_AVAILABLE', True):
-            with patch('emuses.tools.advanced_search.Elasticsearch') as mock_es_class:
+        with patch('emuses.extras.advanced_search.ELASTICSEARCH_AVAILABLE', True):
+            with patch('emuses.extras.advanced_search.Elasticsearch') as mock_es_class:
                 mock_es_class.side_effect = Exception("Connection failed")
                 
                 with pytest.raises(SearchError, match="Failed to connect to Elasticsearch"):
@@ -396,8 +396,8 @@ def mock_solr():
     mock_client = Mock()
     mock_solr_module = Mock()
     mock_solr_module.Solr.return_value = mock_client
-    with patch('emuses.tools.advanced_search.SOLR_AVAILABLE', True):
-        with patch('emuses.tools.advanced_search.pysolr', mock_solr_module):
+    with patch('emuses.extras.advanced_search.SOLR_AVAILABLE', True):
+        with patch('emuses.extras.advanced_search.pysolr', mock_solr_module):
             yield mock_client
 
 
@@ -463,7 +463,7 @@ class TestAdvancedModelSearch:
         assert search.config is config
         assert isinstance(search.backend, DatabaseBackend)
     
-    @patch('emuses.tools.advanced_search.ElasticsearchBackend')
+    @patch('emuses.extras.advanced_search.ElasticsearchBackend')
     def test_advanced_search_init_elasticsearch_backend(self, mock_es_backend, mock_database_session):
         """Test AdvancedModelSearch initialization with Elasticsearch backend."""
         config = SearchConfig(backend_type="elasticsearch")
@@ -471,7 +471,7 @@ class TestAdvancedModelSearch:
         
         mock_es_backend.assert_called_once()
     
-    @patch('emuses.tools.advanced_search.SolrBackend')
+    @patch('emuses.extras.advanced_search.SolrBackend')
     def test_advanced_search_init_solr_backend(self, mock_solr_backend, mock_database_session):
         """Test AdvancedModelSearch initialization with Solr backend."""
         config = SearchConfig(backend_type="solr")

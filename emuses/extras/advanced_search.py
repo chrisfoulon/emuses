@@ -1184,7 +1184,7 @@ class AdvancedModelSearch:
         # Initialize personalized ranker if enabled
         self.personalized_ranker = None
         if self.config.enable_personalized_ranking:
-            from emuses.tools.personalized_ranking import PersonalizedRanker
+            from emuses.extras.personalized_ranking import PersonalizedRanker
             self.personalized_ranker = PersonalizedRanker()
 
         # Search statistics and caching

@@ -84,7 +84,7 @@ class TestRegistryMetricsIntegration:
 
     def test_cache_metrics_integration(self):
         """Test metrics integration with ModelRegistryCache."""
-        from emuses.tools.model_registry_cache import ModelRegistryCache
+        from emuses.extras.model_registry_cache import ModelRegistryCache
         
         # Create cache instance
         cache = ModelRegistryCache(max_size=10)
@@ -137,8 +137,8 @@ class TestRegistryMetricsIntegration:
         assert cache_operation_counts.get('set', 0) > 0, "Cache sets should be tracked"
         assert cache_operation_counts.get('invalidate', 0) > 0, "Cache invalidations should be tracked"
 
-    @patch('emuses.tools.database_model_registry.get_session')
-    @patch('emuses.tools.database_model_registry.get_user_workspaces')
+    @patch('emuses.extras.database_model_registry.get_session')
+    @patch('emuses.extras.database_model_registry.get_user_workspaces')
     def test_database_registry_metrics_integration(self, mock_get_workspaces, mock_get_session):
         """Test metrics integration with DatabaseModelRegistry (mocked)."""
         # Mock database dependencies
@@ -149,7 +149,7 @@ class TestRegistryMetricsIntegration:
         # Mock database query results
         mock_session.execute.return_value.all.return_value = []
         
-        from emuses.tools.database_model_registry import DatabaseModelRegistry
+        from emuses.extras.database_model_registry import DatabaseModelRegistry
         
         # Create registry instance with mocked session
         registry = DatabaseModelRegistry(db_session=mock_session, user_id="test_user")
@@ -501,7 +501,7 @@ class TestRegistryMetricsInProduction:
         )
         
         # Perform high frequency cache operations
-        from emuses.tools.model_registry_cache import ModelRegistryCache
+        from emuses.extras.model_registry_cache import ModelRegistryCache
         cache = ModelRegistryCache(max_size=100)
         
         operations_count = 1000

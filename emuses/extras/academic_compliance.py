@@ -15,7 +15,7 @@ from uuid import UUID, uuid4
 from sqlalchemy.orm import Session
 
 from emuses.multi_user_service.models import ModelRegistry, User
-from emuses.tools.gdpr_compliance import GDPRComplianceManager
+from emuses.extras.gdpr_compliance import GDPRComplianceManager
 
 logger = logging.getLogger(__name__)
 
