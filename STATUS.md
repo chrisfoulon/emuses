@@ -131,12 +131,13 @@ because an identical result equally fits "`--n_jobs 4` never engaged" — the pr
 the backend to threading on purpose, so 0 loky workers is correct rather than a failure.
 `dev-docs/issues/njobs_arm_b_2026_08.md`.
 
-**Test suite collects cleanly and does not crash**: 2608 tests, 0 errors. In the working subset
-(`tests/pipelines tests/inference tests/flexible-inference-stage tests/foundation_fastapi_service
-tests/tools tests/cli` + the six guard files): **33 failed / 540 passed / 2 skipped**, down from 68
-before Phase 4, with no new failures. What remains is entirely in `tests/cli` and
-`tests/foundation_fastapi_service` — the science path is clean. Core dumps, the missing-package problem, the `enhanced-cli-typer`
-hang and repo pollution by test output are all fixed.
+**Whole-tree suite on merged `main`** (measured 2026-08-25, `pytest -q -p no:randomly`, 16 m 48 s):
+**114 failed / 1416 passed / 14 skipped / 1 error**, against 150 / 1343 / 14 / 15 before the six
+branches merged. Compared as failure *sets*, not counts: **zero new failures**, 50 cleared — the 115
+remaining are a strict subset of the previous 165. The one surviving error is
+`tests/unit/test_umap_utils.py`'s teardown. The science path is clean; what remains is concentrated
+in `tests/cli`, `tests/model_registry` and `tests/deployment`. Core dumps, the missing-package
+problem, the `enhanced-cli-typer` hang and repo pollution by test output are all fixed.
 
 ## Decided strategy
 
