@@ -150,10 +150,10 @@ class TestServiceParallelismIntegration:
             def spy(backend):
                 requested.append(backend)
                 with real_backend(backend):
-                    inside.append(parallelism_utils._force_backend)
+                    inside.append(parallelism_utils._FORCED_BACKEND.get())
                     yield
 
-            before = parallelism_utils._force_backend
+            before = parallelism_utils._FORCED_BACKEND.get()
             with patch.object(pipeline_runner_module, 'parallelism_backend', spy):
                 context = {
                     'config': {
@@ -166,8 +166,8 @@ class TestServiceParallelismIntegration:
 
             assert requested == ["threading"]
             assert inside == ["threading"], "the backend was not in force inside the scope"
-            assert parallelism_utils._force_backend == before, (
-                "parallelism_backend leaked process-wide state, which is exactly "
+            assert parallelism_utils._FORCED_BACKEND.get() == before, (
+                "parallelism_backend leaked its override past the scope, which is exactly "
                 "what the context manager exists to prevent"
             )
             mock_pipeline.assert_called_once()
