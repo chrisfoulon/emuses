@@ -1,5 +1,5 @@
 # STATUS — EMUSES
-_Last touched: 2026-08-25_
+_Last touched: 2026-08-26_
 
 ## Goal
 
@@ -103,6 +103,48 @@ degenerate fits are never reported (`confidence = 1.0 - std(across folds)`, so a
 useless models reads as certainty), and off-manifold input collapses the UMAP transform silently.
 `test_data/` is rank-1 and `tests/regression` baselines sit at negative R², so a passing suite is not
 evidence that prediction works. `dev-docs/issues/inference_constant_predictions_2026_08.md`, ADR §3.1b.
+
+### Disconnectome signal audit (2026-08-26) — the real test, measured
+
+`DSD_repro` is the target dataset: 1333 unlabelled + 133 labelled subjects, 902,629 voxels each
+(no masking, 1.8% nonzero, 9.6 GB dense), 87 neuropsych measures, **33% of the score matrix NaN**
+(median 45 missing per measure, so effective n ≈ 88 per target). The June 2026 run
+(`new_pred_pipeline_12-06-2026`, ~19 h) reported `Overall_Mean_Performance = -0.1884`.
+
+**That number was read against the wrong baseline.** At n≈88 with 5-fold CV the floor is not
+R²=0: simply predicting the training mean scores median **−0.086**, mean −0.237. EMUSES' −0.188
+is therefore roughly *at* the floor, not far below it.
+
+**There is real signal, but it is weak and EMUSES is largely finding the wrong targets.**
+1000-permutation test per measure, BH-corrected across 87: **13 survive q<0.10, 6 at q<0.05**
+(18 at p<0.05 vs 4.4 expected). Strongest: `lpegs` R²=0.245 (q=0.017), then the `sip_*` family
+(`sip_psychosoc` 0.153, `sip_body` 0.146, `sip_emo` 0.117). Of the 11 validated measures with a
+non-degenerate floor, **EMUSES June scored >0 on 1** (`lpegs`); its median on them is −0.069
+against PCA-10's +0.063.
+
+**EMUSES' own top-6 is all left-side motor** (larapinch 0.221, lpegs 0.181, lgrip, lshflex,
+laragrip, laragrasp) and **only `lpegs` overlaps the permutation-validated set**. The other five
+are ARAT/motor measures with ceiling-bound distributions where the mean-predictor floor is
+catastrophic (larapinch floor −2.56); a positive R² there is not evidence of prediction. Any
+future ranking must exclude degenerate-floor targets or it will keep promoting them.
+Lesion laterality does *not* explain the left-motor pattern — the cohort is mixed (72 right /
+57 left / 4 bilateral).
+
+**The 2-D UMAP embedding is the limiting factor for the measures that do carry signal.**
+PCA-10 recovers the SIP family (0.117–0.153) where UMAP-2 returns ≈0 (−0.022 to +0.030).
+Full raw voxels are *worse* than PCA-10 (ridge at p≫n), so the optimum is a handful of
+components, not two and not 902,629. `optim_dict_disconnectome` hardcodes
+`n_components: {"value": 2}` (`optim_configs.py:254`). Raising it is a config change for the
+*prediction* path, but the heatmap/effect-size machinery grids the embedding
+(`emuses_utils.py:113`) and is 2-D/3-D in practice — **decide the architecture before changing
+it, do not just raise the number** (cf. ADR, atomic-model constraint).
+
+Method: `~/.claude/jobs/0d3a7417/tmp/{signal_check2,umap_signal,perm_test}.py`. All comparisons use
+EMUSES' own protocol (per-target NaN drop, `KFold(5, shuffle, random_state=1859786276)`, r2). PCA is
+derived from the 133×133 Gram matrix and **verified against sklearn to 1.5e-14** before use.
+Permutation nulls reuse each fold's PCA, so only the y-correspondence is broken.
+
+`--test_size 0.0` in the June command means that run produced **no held-out evaluation at all**.
 
 ### What works now
 
@@ -220,6 +262,21 @@ problem, the `enhanced-cli-typer` hang and repo pollution by test output are all
        or stroke width), reusing the saved UMAP model. Recovers well → the regression path works and
        faces was a data/embedding problem; fails → the faces failure reproduces where the signal is
        known to exist, which is far easier to debug. Either outcome is publishable.
+3c. [ ] **Disconnectome: the embedding dimensionality decision.** The 2026-08-26 audit (above) shows
+       PCA-10 recovering signal that UMAP-2 returns ≈0 on, so `n_components: 2` is costing real
+       results on the target dataset. This is the same continuous-target gap as 3b, now measured on
+       the data that matters. Before changing anything, decide: does the heatmap/effect-size stage
+       stay 2-D while prediction uses more components, or does the whole embedding move? The grid in
+       `emuses_utils.py:113` is generic but explodes as r^d, and every plot path assumes 2-D/3-D.
+       **Confirm the architectural intent first — do not just raise the number.**
+3d. [ ] **Degenerate-floor targets poison the ranking.** ARAT-family measures (larapinch, laragrasp,
+       raragrip, rarapinch …) are ceiling-bound; their mean-predictor floor reaches −2.5, so they
+       surface at the top of `performance_target_rankings` on noise. EMUSES ranked larapinch #1
+       (0.221) and it fails permutation testing. Either exclude targets whose floor is below some
+       threshold, or report R² relative to the mean-predictor floor rather than to 0.
+3e. [ ] **Re-run DSD_repro properly** once PR #10 is merged: `--test_size 0.2` (June used 0.0 and so
+       produced no held-out evaluation at all) and expect ~19 h / 9.6 GB peak. PR #10 is a hard
+       prerequisite: at 87 targets the lexicographic ordering bug mis-pairs 85 of them.
 4. [ ] **Resource controls.** Two separate pieces (2026-08-25): *memory-aware execution* is a
        researcher's control, blocked on nothing. **Peak RSS is now measured: 3.03 GB for the 10-class
        digits run** (1797 x 64, 3 h 35 m), so the profile that was blocking it exists
