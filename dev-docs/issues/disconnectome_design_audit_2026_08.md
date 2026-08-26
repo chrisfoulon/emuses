@@ -185,30 +185,31 @@ Framed fairly, there are two different products being conflated:
 
 The design is fine for the first and does not currently support a claim about the second.
 
-### The thing to check before anything else
+### The comparison with the published numbers cannot be made directly
 
 Talozzi et al. (Brain 2023) report their headline as *mean absolute error*: "average MAE of
 16.1±7% across 83 neuropsychological measures; 65 scores (78%) predicted with MAE<20%".
 
-On this dataset, the MAE of **predicting the training mean**, as a percentage of each
-measure's range:
+**That figure and the R² values in this document are not comparable, for two reasons Chris
+confirmed (2026-08-26):** the scores were not normalised, and no R² was computed because the
+validation set (n=20) was too small to estimate one. So a like-for-like restatement of that
+paper's result in R² does not exist, and the MAE percentages are not on the
+range-normalised scale used here.
 
-| | |
-|---|---|
-| median MAE of the mean-predictor | **14.3%** |
-| measures with MAE < 20% | **65 / 87 (75%)** |
-| measures with MAE < 16.1% | 51 / 87 |
+An earlier version of this document computed the MAE of a mean-predictor on the DSD_repro
+scores (median 14.3% of range, clearing 20% on 65 of 87 measures) and presented it as
+reproducing the published criterion. **That comparison was not valid** — different cohort,
+different normalisation — and it is withdrawn.
 
-The trivial model reproduces the published criterion. This is **not proof of an error in that
-paper** — it is a different cohort (their Dataset 2-validation is n=20), and their
-normalisation may differ from range-normalisation. But MAE on bounded neuropsychological
-scores is nearly insensitive to whether a model has learned anything, and the two R² values
-they do report (0.201 semantic fluency, 0.1797 Bells Test) sit in the same range as the best
-result measured here (`lpegs` 0.203–0.246).
+What survives is narrower and still worth acting on: **MAE on bounded neuropsychological
+scores is weakly sensitive to whether a model has learned anything**, because a
+mean-predictor already achieves a low absolute error when the score range is small. Any
+new claim from this pipeline should therefore be stated in cross-validated R² against the
+mean-predictor floor, on a test set large enough to estimate it — which is exactly what the
+n=20 validation set could not support, and what a larger cohort would fix.
 
-**Verify this against their exact protocol before building on the method or citing the
-78% figure.** If it holds, the "70 of 86 reliably predicted" claim is a statement about the
-metric rather than the model — and that is much better discovered now than in review.
+The two R² values Talozzi et al. do report (0.201 semantic fluency, 0.1797 Bells Test) sit
+in the same range as the best result measured here (`lpegs` 0.203–0.246).
 
 ### Constraints that are real but not flaws
 
@@ -222,6 +223,89 @@ metric rather than the model — and that is much better discovered now than in 
   giving a 9.6 GB dense float64 matrix. That is a cost problem, not a correctness one.
 
 ---
+
+---
+
+## 5. Is ridge the best possible model? Does it capture interactions?
+
+A fair challenge: the ridge used throughout is linear in whatever representation it is given.
+If the scores depend on interactions among many imaging variables rather than a few additive
+factors, a linear model cannot express that. Tested directly on morphospace PCA-10, EMUSES'
+outer folds, 11 validated measures:
+
+| model | measures with R² > 0 | median R² |
+|---|---|---|
+| **ridge** (linear) | **10 / 11** | **+0.073** |
+| kernel ridge, RBF (all-order interactions) | 0 / 11 | −0.405 |
+| random forest (300 trees) | 2 / 11 | −0.059 |
+| gradient boosting | 1 / 11 | −0.169 |
+
+**Every model that can express interactions does dramatically worse.** This is not evidence
+that interactions are absent. It is the standard small-n result: with ~70 training subjects
+per fold, a flexible model has enough freedom to fit noise, and cross-validation charges it
+for that. Ridge wins because it is the most constrained thing on the list.
+
+The literature shows the flip clearly. Benchmarking six algorithms for language outcome after
+stroke (N=238 for Aphasia Quotient), random forest reached r=0.73±0.09 while linear
+regression managed only r=0.24±0.21 — the opposite ordering to the one measured here, at
+roughly three times the sample size. **So the answer is sample-size-dependent: at n≈88 ridge
+is near the ceiling; at n≈250 it would probably not be.**
+
+## 6. Would more data improve the results?
+
+Yes, and this is the clearest result in the audit. Learning curve on morphospace PCA-10:
+fixed 25% held out, 200 random draws per measure, training set grown from 20 to 60.
+
+| n_train | 20 | 30 | 40 | 50 | 60 |
+|---|---|---|---|---|---|
+| mean R² | −0.219 | −0.063 | −0.015 | +0.011 | +0.033 |
+| median R² | −0.204 | −0.074 | −0.020 | −0.005 | +0.015 |
+| measures with R² > 0 | 1/11 | 2/11 | 4/11 | 5/11 | **7/11** |
+
+**Every one of the 11 measures rises monotonically with n, and none has flattened at n=60.**
+The curve is still climbing at the largest sample available.
+
+Fitting the standard form `R²(n) = R²∞ − a/n` per measure to estimate where it levels off:
+
+| measure | R² at n=60 | fitted ceiling | n for 90% of ceiling |
+|---|---|---|---|
+| lpegs | 0.252 | **0.368** | ~177 |
+| sip_body | 0.120 | 0.301 | ~317 |
+| sip_psychosoc | 0.114 | 0.263 | ~341 |
+| rpegs | 0.073 | 0.208 | ~374 |
+| sip_emo | 0.012 | 0.168 | ~488 |
+| *(9 of 11 have a fitted ceiling above 0.1; 4 of 11 above 0.2)* | | | |
+
+Extrapolating a curve fitted over n=20–60 is indicative, not a promise. But the direction is
+unambiguous and the implied scale is actionable: **roughly 300–500 labelled subjects to
+approach the ceiling, against 133 today.**
+
+Two effects would compound at that sample size. The linear fits improve directly, *and*
+nonlinear models become viable — which is where the largest published gains in this
+literature come from. The interactions question and the sample-size question are the same
+question.
+
+### Is R² ≈ 0.2 worth publishing?
+
+Calibration against the field, since "0.1 is pointless" is the right instinct but the bar
+depends on the outcome:
+
+- Lesion location and volume together are generally reported to account for **10–35% of
+  variance** in motor and cognitive performance — so R² 0.10–0.35 is the established band.
+- **Cognitive** outcomes are the hard end: one lesion-network study reports R² < 0.1 across
+  all cognitive domains, and another is titled "improved accuracy yet still low deficit
+  prediction".
+- **Motor** outcomes are the easy end: thresholded structural disconnection maps reach
+  R² ≈ 0.95 (left) and 0.69 (right) for motor deficits.
+
+That the single best result here is `lpegs` — a pegboard, i.e. motor — fits that pattern
+exactly. It also suggests where a strong result is most likely to be found: **the motor
+measures, with enough subjects, are the defensible target**; 87 mixed neuropsych scores at
+n=88 is the configuration least likely to produce a publishable effect.
+
+One caveat worth carrying: prediction performance in independent datasets is consistently
+*worse* than within-dataset cross-validation in this literature, so a held-out cohort should
+be planned rather than assumed.
 
 ## What I would do next, in order
 
