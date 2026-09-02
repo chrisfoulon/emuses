@@ -320,7 +320,40 @@ problem, the `enhanced-cli-typer` hang and repo pollution by test output are all
        raragrip, rarapinch …) are ceiling-bound; their mean-predictor floor reaches −2.5, so they
        surface at the top of `performance_target_rankings` on noise. EMUSES ranked larapinch #1
        (0.221) and it fails permutation testing. Either exclude targets whose floor is below some
-       threshold, or report R² relative to the mean-predictor floor rather than to 0.
+       threshold, or report R² relative to the mean-predictor floor rather than to 0 — the latter
+       half is now folded into 3f. Note the §10 held-out test found `larapinch`-style targets sort
+       to the *bottom* under a stable configuration, so this is a ranking-hygiene fix rather than
+       the sole explanation for June's ordering (that was irreproducibility — §9b).
+3f. [ ] **Two numbers every prediction score should be printed next to** (2026-09-02, the fix the
+       §10 held-out test argues for — see `disconnectome_design_audit_2026_08.md` §10). Supersedes
+       the "report R² relative to the floor" half of 3d.
+       - [ ] **Mean-predictor floor** per target, on that target's own n and folds. R²=0 is not the
+             baseline at n≈88 (median −0.086), and for ceiling-bound targets it reaches −2.5. This
+             is the single number whose absence caused this whole audit: June's −0.1884 was read as
+             "poor but plausible" when it was *at* the floor.
+       - [ ] **Spread across ≥2 sampler seeds.** June's per-target ranking does not reproduce; five
+             independent draws of the same procedure disagree by a median of 0.080, the size of the
+             effects themselves.
+       - [ ] **Gate the *ranking*, not the run.** A target that does not beat its floor gets listed
+             as "not predictable at this n" instead of receiving a rank. No fitting changes.
+       - [ ] ADR entry recording the above, and recording that automated space-switching was
+             **measured and rejected** (below).
+       **Working mode when this is implemented: accept-edits, not auto.** This is reporting on
+       scientific output, where "it ran and looks finished" is exactly the untrustworthy signal.
+3g. [ ] **Do NOT automate space-switching, narrowing, or halting on these metrics — measured.**
+       The `auto` arm of the §10 test did exactly that (pick the space by development CV) and chose
+       correctly in **26 %** of splits, scoring −0.227 against the full space's −0.221: no better
+       than not trying. Reason it fails: a wide space's dev-CV score is inflated by its own
+       max-over-60-trials selection, and a narrow space's is inflated less, so the comparison is
+       biased toward the wider space by precisely the amount that makes it look good.
+       The floor check is only trustworthy **in one direction** — the model's score carries that
+       same selection inflation while the mean predictor carries none, so *failing* the floor is
+       strong evidence and *passing* it is weak. Flag failures; never treat a pass as validation.
+       If space breadth is ever tied to `n`, it must be a **documented default visible in the
+       manifest**, not a silent runtime switch, and sold as tail-risk reduction (catastrophic splits
+       8.7 % → 4.7 %) rather than as improvement — narrowing reaches the floor, it does not beat it.
+       **Never hard-stop a run on a noisy metric**: a completed run with a loud warning is
+       diagnosable, a halted one is not, and silence is this project's recurring failure mode.
 3e. [ ] **Re-run DSD_repro properly** once PR #10 is merged: `--test_size 0.2` (June used 0.0 and so
        produced no held-out evaluation at all) and expect ~19 h / 9.6 GB peak. PR #10 is a hard
        prerequisite: at 87 targets the lexicographic ordering bug mis-pairs 85 of them.
