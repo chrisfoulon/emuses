@@ -1,5 +1,5 @@
 # STATUS — EMUSES
-_Last touched: 2026-08-26_
+_Last touched: 2026-09-02_
 
 ## Goal
 
@@ -122,6 +122,15 @@ is therefore roughly *at* the floor, not far below it.
 non-degenerate floor, **EMUSES June scored >0 on 1** (`lpegs`); its median on them is −0.069
 against PCA-10's +0.063.
 
+**Disconnection PATTERN beats lesion VOLUME — the project's premise survives.** On the 11 validated
+measures (RidgeCV, EMUSES' folds): lesion volume alone **2/11** (median −0.052), disconnection load
+alone 5/11 (−0.016), volume+load 4/11 (−0.032), **pattern (morphospace PCA-10) 8/11 (+0.058)**,
+volume+pattern 9/11 (+0.044). Volume adds essentially nothing once pattern is present, so spatial
+location carries information burden does not. Effect is small and thins out across all 87
+(pattern 10/87 vs volume 4/87). DSD_repro has **no age/NIHSS**, so "imaging beats clinical" is
+*untested* here — only "pattern beats volume". Subject order recovered by fingerprinting
+disconnection load; all 133 matched uniquely, corr(volume, load)=0.766 as the check.
+
 **EMUSES' own top-6 is all left-side motor** (larapinch 0.221, lpegs 0.181, lgrip, lshflex,
 laragrip, laragrasp) and **only `lpegs` overlaps the permutation-validated set**. The other five
 are ARAT/motor measures with ceiling-bound distributions where the mean-predictor floor is
@@ -130,10 +139,21 @@ future ranking must exclude degenerate-floor targets or it will keep promoting t
 Lesion laterality does *not* explain the left-motor pattern — the cohort is mixed (72 right /
 57 left / 4 bilateral).
 
-**The 2-D UMAP embedding is the limiting factor for the measures that do carry signal.**
-PCA-10 recovers the SIP family (0.117–0.153) where UMAP-2 returns ≈0 (−0.022 to +0.030).
-Full raw voxels are *worse* than PCA-10 (ridge at p≫n), so the optimum is a handful of
-components, not two and not 902,629. `optim_dict_disconnectome` hardcodes
+**The per-fold model search costs more than the embedding does.** Splitting the gap on the 11
+validated measures, all on EMUSES' own folds: EMUSES as it ran **1/11** (median −0.069); a plain
+`RidgeCV` on **EMUSES' own UMAP-2 coordinates** **6/11** (+0.013); `RidgeCV` on morphospace PCA-10
+**8/11** (+0.058). Changing the embedding buys 2 measures; changing the *predictor* on coordinates
+EMUSES already has buys 5. Cause is visible in the saved pipelines — the feature union
+(`raw`/`gwd`/`corr`/`pca`/`kpca`/`poly`) and hyperparameters are re-searched inside each outer fold,
+and **0 of 87 targets have all five folds agree**, 79/87 give 4–5 distinct configs, ElasticNet
+`alpha` swinging 0.004→9.8 between folds of one target. At ~70 training rows that search is fitting
+selection noise. Cheapest real fix available: fix the feature union and estimator, tune one
+regularisation parameter. (Earlier revisions of this file said UMAP-2 scored 1/11 as a
+*representation* and blamed the embedding alone — that figure was a custom-solver artefact;
+corrected above.)
+
+**2-D still costs something, just less.** Full raw voxels are *worse* than PCA-10 (ridge at p≫n),
+so the optimum is a handful of components, not two and not 902,629. `optim_dict_disconnectome` hardcodes
 `n_components: {"value": 2}` (`optim_configs.py:254`). Raising it is a config change for the
 *prediction* path, but the heatmap/effect-size machinery grids the embedding
 (`emuses_utils.py:113`) and is 2-D/3-D in practice — **decide the architecture before changing

@@ -307,6 +307,95 @@ One caveat worth carrying: prediction performance in independent datasets is con
 *worse* than within-dataset cross-validation in this literature, so a held-out cohort should
 be planned rather than assumed.
 
+---
+
+## 7. Does the disconnection PATTERN add anything over lesion VOLUME?
+
+The question that matters for the project's premise, and the one Chris cannot get a positive
+answer to on a different cohort (where percentage-damage-per-structure adds nothing over age,
+NIHSS and stroke volume).
+
+DSD_repro has no age or NIHSS, but it has the raw lesion masks, so true lesion volume is
+available. Subject ordering was recovered by fingerprinting each matrix row's disconnection
+load against the source files — all 133 matched uniquely, and the recovered mapping gives
+`corr(lesion volume, disconnection load) = 0.766`, which is the check that it is right.
+
+11 permutation-validated measures, EMUSES' folds, `RidgeCV`, all features standardised:
+
+| representation | measures R² > 0 | median R² |
+|---|---|---|
+| lesion volume alone (+log) | 2 / 11 | −0.052 |
+| disconnection load alone | 5 / 11 | −0.016 |
+| volume + load | 4 / 11 | −0.032 |
+| **disconnection PATTERN (morphospace PCA-10)** | **8 / 11** | **+0.058** |
+| volume + pattern | 9 / 11 | +0.044 |
+
+**Spatial pattern beats volume-only, and volume adds essentially nothing once pattern is
+present.** On this dataset the imaging location information is doing real work — which is the
+opposite of the null result Chris gets from atlas-percentage features against clinical
+variables elsewhere.
+
+Two honest qualifications. The effect is small (median R² +0.058, best 0.25), and across all
+87 measures the picture is much thinner: pattern 10/87 above zero against volume's 4/87. And
+this comparison has no clinical variables in it — a disconnectome that beats lesion volume
+has not been shown to beat age and NIHSS, which is the harder and more relevant bar.
+
+## 8. Correction: the UMAP-vs-PCA gap was overstated
+
+Section 3 reported the June UMAP finding signal in **1 of 11** validated measures against
+morphospace PCA-2's 8. That figure came from a custom dual-form ridge with a fixed alpha
+grid. Re-run with a standard `RidgeCV`, on the same morphospace, same folds, same measures:
+
+| representation | measures R² > 0 (of 11) | median R² | across all 87 |
+|---|---|---|---|
+| June UMAP-2, raw coordinates | 6 / 11 | +0.005 | 7/87 |
+| June UMAP-2, standardised | 6 / 11 | +0.013 | 7/87 |
+| morphospace PCA-2, standardised | **9 / 11** | +0.037 | 10/87 |
+| morphospace PCA-10, standardised | 8 / 11 | **+0.058** | 10/87 |
+
+Standardisation is not the cause — raw and z-scored UMAP agree. The estimator is.
+
+**PCA still beats UMAP at matched dimensionality, but by a modest margin, not the 8-to-1
+collapse first reported.** The direction of every conclusion above is unchanged; the strength
+is not. Any claim resting on the 1/11 figure should be restated with these numbers.
+
+## 9. The bigger loss is the per-fold model search, not the embedding
+
+Sections 3 and 8 attributed EMUSES' weakness to the 2-D embedding. Splitting the gap shows
+that is the smaller half. On the 11 validated measures, all on EMUSES' own folds:
+
+| | measures R² > 0 | median R² |
+|---|---|---|
+| EMUSES June, as it actually ran | 1 / 11 | −0.069 |
+| plain `RidgeCV` on EMUSES' **own** UMAP-2 coordinates | 6 / 11 | +0.013 |
+| plain `RidgeCV` on morphospace PCA-10 | 8 / 11 | +0.058 |
+
+Swapping the embedding is worth 2 measures. Swapping the *predictor*, on coordinates EMUSES
+already computed, is worth 5. **The prediction stage is losing more than the embedding is.**
+
+The mechanism is visible in the saved pipelines. EMUSES re-searches the feature union
+(`raw`/`gwd`/`corr`/`pca`/`kpca`/`poly`) and the estimator hyperparameters independently
+inside each outer fold. Across all 87 targets × 5 folds:
+
+- **0 of 87 targets have all five folds agree** on a feature-union + estimator combination.
+- **79 of 87 produce 4 or 5 distinct configurations** out of 5 folds.
+- Selected ElasticNet `alpha` ranges from 0.004 to 9.8 *between folds of the same target*.
+
+At ~70 training subjects per fold, that search space is far larger than the data can resolve,
+so the inner selection is fitting noise and the choice does not transfer to the outer fold.
+This is the same small-n result as §5 seen from the other side: §5 found that flexible models
+lose to a fixed ridge; here the *search over* models loses to a fixed ridge too.
+
+One qualification that keeps this honest. Across all 87 measures EMUSES (8/87 above zero,
+median −0.120) and `RidgeCV` on its coordinates (7/87, median −0.094) are comparable. The
+difference is concentrated in the measures that carry real signal, which is what one would
+expect: on a noise target every method scores about the same, and only on a signal target does
+an unstable selection fail to exploit what a stable estimator captures.
+
+**This is the most actionable finding in this document**, because unlike sample size it costs
+nothing to test: fix the feature union and the estimator, tune one regularisation parameter,
+and re-run. No new subjects, no architecture change.
+
 ## What I would do next, in order
 
 1. **Merge PR #10.** Prerequisite for any 87-target run that has a held-out set.
