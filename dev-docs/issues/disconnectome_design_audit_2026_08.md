@@ -489,6 +489,73 @@ The surviving set is coherent: left/right pegboard and ARAT pinch/grasp on the m
 side, and the SIP family (mobility, emotion, psychosocial, body care, communication,
 physical) on the self-reported function side. Effects remain small — 0.14 at best.
 
+## 10. Held-out test: §9c was inflated, and narrowing prevents losses rather than creating gains
+
+§9c chose `raw_only`+ElasticNet by comparing configurations on the same folds it then
+reported scores from. This removes that bias. Per repeat, per target: split the non-NaN
+subjects 70/30; run the hyperparameter search **and** the choice of configuration inside
+the 70% by cross-validation; refit on all of the 70%; score once on the held-out 30%.
+25 repeats × 87 targets, identical splits for every configuration so comparisons are paired.
+`floor` is the mean-predictor baseline on the same splits.
+
+| configuration | mean R² | median | p10 | splits < −0.5 | beats own floor | by >0.05 |
+|---|---|---|---|---|---|---|
+| full space, 60 trials | −0.221 | −0.042 | −0.432 | 8.7 % | 16/87 | 8 |
+| `raw_only`+ElasticNet | −0.131 | −0.028 | −0.253 | 4.7 % | 23/87 | 13 |
+| `auto` (space picked on dev) | −0.227 | −0.044 | −0.435 | 8.8 % | 16/87 | 7 |
+| fixed `RidgeCV` | −0.135 | −0.025 | −0.237 | 4.8 % | 18/87 | 13 |
+| **mean predictor (floor)** | **−0.133** | **−0.026** | −0.183 | 3.7 % | — | — |
+
+**Three conclusions, and the first two revise §9.**
+
+**Narrowing does not create gains — it prevents losses.** `raw_only`+ElasticNet (−0.131) is
+indistinguishable from the mean predictor (−0.133), and from a fixed `RidgeCV` (−0.135). What
+separates it from the full space is the tail: medians differ by only 0.014, but 8.7 % of full-space
+splits fall below −0.5 against 4.7 %. That also explains an apparent contradiction — `raw+elastic`
+beats the full space on only **43 %** of paired splits while the paired mean difference is
+**+0.090 (SE 0.017)**. It usually loses slightly and occasionally avoids a catastrophe.
+
+**The fix cannot be automated by development CV.** `auto` — pick whichever space scored better
+inside the development set — chose `raw_only`+ElasticNet in only **26 %** of splits, and scored
+−0.227, statistically indistinguishable from the full space. So `raw_only`+ElasticNet is a
+configuration chosen with hindsight across the whole dataset. **EMUSES has no principled way to
+arrive at it from the data in front of it**, which settles the design question of §9: the fix to
+ship is not this configuration.
+
+**§9c's ranking was substantially inflated.** `rarapinch`, ranked #1 there at R²=0.144, scores
+**−0.253** held-out against a floor of −0.323. `lshflex` (#3, 0.112) drops to 0.067 and never had
+the q-value anyway. The ranking was measuring the configuration choice as much as the measures.
+
+### 10a. What actually survives
+
+Held-out lift over each measure's own floor, permutation-validated measures only:
+
+| measure | q | floor | raw+elastic | **lift** | full | ridge |
+|---|---|---|---|---|---|---|
+| **`lpegs`** | 0.017 | −0.047 | **0.173** | **+0.219** | 0.069 | 0.184 |
+| `raragrasp` | 0.087 | −0.110 | −0.010 | +0.099 | −0.111 | −0.048 |
+| `sip_mob` | 0.077 | −0.045 | 0.050 | +0.095 | −0.020 | 0.068 |
+| `sip_psychosoc` | 0.017 | −0.068 | 0.006 | +0.074 | −0.103 | 0.011 |
+| `sip_emo` | 0.029 | −0.149 | −0.075 | +0.074 | −0.121 | 0.005 |
+| `rarapinch` | 0.017 | −0.323 | −0.253 | +0.070 | −0.193 | −0.236 |
+| `sip_body` | 0.017 | −0.068 | −0.015 | +0.053 | −0.065 | 0.007 |
+| `sip_com` | 0.087 | −0.064 | −0.020 | +0.044 | −0.083 | −0.080 |
+| `sip_physical` | 0.087 | −0.049 | −0.027 | +0.021 | −0.068 | −0.020 |
+| `rpegs` | 0.017 | −0.064 | −0.066 | −0.002 | −0.152 | −0.011 |
+| `pos_acc_disengage` | 0.087 | −0.069 | −0.075 | −0.006 | −0.072 | −0.085 |
+| `sip_amb` | 0.062 | −0.055 | −0.091 | −0.036 | −0.092 | −0.067 |
+| `sip_house` | 0.076 | −0.075 | −0.124 | −0.049 | −0.247 | −0.123 |
+
+9 of 13 beat their floor, 7 by more than 0.05. **`lpegs` is the only measure that is
+unambiguously predictable**: held-out R² 0.173, +0.219 over floor, q=0.017, and a plain
+`RidgeCV` reproduces it (0.184). Everything else is a lift over a negative floor, i.e. better
+than guessing but still not explaining held-out variance in absolute terms.
+
+Note `ridge` ≈ `raw+elastic` throughout. The narrow *search* buys nothing over no search at all.
+
+**Method**: `~/.claude/jobs/0d3a7417/tmp/holdout_test.py`, per-split results in
+`holdout_test.csv`, per-target means in `holdout_by_target.csv`.
+
 ## What I would do next, in order
 
 1. **Merge PR #10.** Prerequisite for any 87-target run that has a held-out set.

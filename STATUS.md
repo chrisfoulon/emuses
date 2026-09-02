@@ -163,6 +163,22 @@ and should not be read as a result** — which alone explains `larapinch` at #1.
 narrow `optim_dict_predict` to one feature recipe + one estimator. (Also corrected: an earlier
 revision said UMAP-2 scored 1/11 as a *representation* — that was a custom-solver artefact.)
 
+**Held-out test (2026-09-02) — narrowing prevents losses, it does not create gains.** 25 repeats ×
+87 targets, 70/30 split, hyperparameter search *and* space choice made inside the 70% only.
+Mean held-out R²: full space **−0.221**, `raw_only`+ElasticNet **−0.131**, fixed `RidgeCV` −0.135,
+**mean predictor −0.133**. So the narrow config is indistinguishable from predicting the mean; what
+it avoids is the tail (8.7% of full-space splits below −0.5 vs 4.7%). It beats the full space on
+only 43% of paired splits while the paired mean difference is +0.090 (SE 0.017) — usually slightly
+worse, occasionally avoiding a catastrophe. **`auto` (pick the space by development CV) chose the
+narrow space in only 26% of splits and scored −0.227, i.e. no better than the full space — so the
+fix CANNOT be automated from the data, and `raw_only`+ElasticNet is a hindsight choice that must not
+be shipped as a default** (it would also contradict ADR §1.3). §9c's in-sample ranking was inflated:
+`rarapinch`, ranked #1 there at 0.144, scores −0.253 held-out against a floor of −0.323.
+**Only `lpegs` survives cleanly** — held-out R² 0.173, +0.219 over floor, q=0.017, and plain
+`RidgeCV` reproduces it (0.184). 9 of the 13 validated measures beat their own floor, 7 by >0.05,
+but as lifts over negative floors rather than real explained variance. Ship the stability guard, not
+the configuration. Detail: `dev-docs/issues/disconnectome_design_audit_2026_08.md` §10.
+
 **2-D still costs something, just less.** Full raw voxels are *worse* than PCA-10 (ridge at p≫n),
 so the optimum is a handful of components, not two and not 902,629. `optim_dict_disconnectome` hardcodes
 `n_components: {"value": 2}` (`optim_configs.py:254`). Raising it is a config change for the
