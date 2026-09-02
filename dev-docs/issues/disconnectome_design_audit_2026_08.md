@@ -445,6 +445,50 @@ nothing: narrow `optim_dict_predict` to one feature recipe and one estimator, an
 new subjects, no architecture change. Whether it composes with the PCA-10 representation of §7
 (8/11, +0.058) is untested — the two fixes are independent, so it is worth trying together.
 
+### 9c. The ranking under `raw_only` + ElasticNet
+
+All 87 measures, mean of 3 independent draws, EMUSES' own coordinates and folds.
+`floor` is the mean-predictor baseline for that measure's own n and folds; `q` is the
+BH-corrected permutation q-value from the 1000-permutation test. Full table:
+`~/.claude/jobs/0d3a7417/tmp/rank_raw_elastic.csv`.
+
+| # | measure | n | R² | spread | floor | q |
+|---|---|---|---|---|---|---|
+| 1 | `rarapinch` | 93 | 0.144 | 0.011 | −0.026 | **0.017** |
+| 2 | `lpegs` | 87 | 0.144 | 0.016 | −0.092 | **0.017** |
+| 3 | `lshflex` | 84 | 0.112 | 0.005 | −0.109 | 0.348 |
+| 4 | `sip_mob` | 86 | 0.083 | 0.001 | −0.035 | **0.077** |
+| 5 | `sip_emo` | 86 | 0.076 | 0.005 | −0.042 | **0.029** |
+| 6 | `raragrasp` | 93 | 0.073 | 0.015 | −0.125 | **0.087** |
+| 7 | `sip_psychosoc` | 86 | 0.057 | 0.008 | −0.045 | **0.017** |
+| 8 | `sip_body` | 86 | 0.043 | 0.004 | −0.075 | **0.017** |
+| 9 | `sip_social` | 86 | 0.029 | 0.010 | −0.044 | 0.116 |
+| 10 | `sip_com` | 86 | 0.023 | 0.002 | −0.060 | **0.087** |
+| 11 | `sip_physical` | 86 | 0.008 | 0.002 | −0.049 | **0.087** |
+
+**11 of 87 clear zero; 9 of those also clear q<0.10.** Against June's 8/87, none of
+which were permutation-validated except `lpegs`.
+
+Three things worth noting.
+
+**The degenerate-floor targets sort themselves out.** `larapinch`, which June ranked #1
+at 0.221, lands at −2.262 here (floor −2.563), and `raragrip` at −3.714 (floor −4.157).
+They sit at the bottom instead of the top. §4's warning about excluding them from the
+ranking still holds in principle, but this configuration does not manufacture the
+spurious positives that made the warning urgent.
+
+**`lshflex` at #3 is the one not to trust.** R²=0.112 looks respectable and it is stable
+across draws, but q=0.348 — it does not survive permutation testing. R² and significance
+are answering different questions and this row is where they disagree.
+
+**Stability is the real gain.** Median spread across three independent draws is **0.003**.
+Two exceptions: `laragrasp` (0.410) and `pos_acc_lv` (0.074), both deep in negative
+territory where nothing is being learned anyway.
+
+The surviving set is coherent: left/right pegboard and ARAT pinch/grasp on the motor
+side, and the SIP family (mobility, emotion, psychosocial, body care, communication,
+physical) on the self-reported function side. Effects remain small — 0.14 at best.
+
 ## What I would do next, in order
 
 1. **Merge PR #10.** Prerequisite for any 87-target run that has a held-out set.
