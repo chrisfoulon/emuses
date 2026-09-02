@@ -146,11 +146,22 @@ validated measures, all on EMUSES' own folds: EMUSES as it ran **1/11** (median 
 EMUSES already has buys 5. Cause is visible in the saved pipelines — the feature union
 (`raw`/`gwd`/`corr`/`pca`/`kpca`/`poly`) and hyperparameters are re-searched inside each outer fold,
 and **0 of 87 targets have all five folds agree**, 79/87 give 4–5 distinct configs, ElasticNet
-`alpha` swinging 0.004→9.8 between folds of one target. At ~70 training rows that search is fitting
-selection noise. Cheapest real fix available: fix the feature union and estimator, tune one
-regularisation parameter. (Earlier revisions of this file said UMAP-2 scored 1/11 as a
-*representation* and blamed the embedding alone — that figure was a custom-solver artefact;
-corrected above.)
+`alpha` swinging 0.004→9.8 between folds of one target.
+
+**It is the breadth of the space, not the amount of searching — and June is not reproducible.**
+More trials *help* monotonically (mean outer R² −0.379 at 1 trial → −0.010 at 60 → −0.005 at 120)
+and the inner/outer gap stays flat at ~0.01, so the search is **not** overfitting its inner CV; an
+earlier revision of this file claimed it was. What works is narrowing: five independent draws at
+June's 60 trials give full space 2–5/11 (−0.004 to −0.028) against **`raw_only`+ElasticNet 7/11 on
+every draw (+0.020 to +0.024, spread 0.004)** and fixed `RidgeCV` 6/11 (+0.019). The full space
+injects the variance — median per-target range across draws **0.080**, the size of the effects
+themselves. June (1/11, −0.072) sits **outside all five draws**, with `sip_house` −0.344 against a
+draw range of −0.062..−0.021. Not a data difference: n and fold sizes match exactly, and the
+coordinates match those stored in June's own fitted `GWD` transformers to 1.6e-07 over 206 points.
+June's sampler seeds could not be reproduced, so **its per-target ranking is one unreproduced draw
+and should not be read as a result** — which alone explains `larapinch` at #1. Cheapest real fix:
+narrow `optim_dict_predict` to one feature recipe + one estimator. (Also corrected: an earlier
+revision said UMAP-2 scored 1/11 as a *representation* — that was a custom-solver artefact.)
 
 **2-D still costs something, just less.** Full raw voxels are *worse* than PCA-10 (ridge at p≫n),
 so the optimum is a handful of components, not two and not 902,629. `optim_dict_disconnectome` hardcodes

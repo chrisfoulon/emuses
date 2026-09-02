@@ -381,10 +381,7 @@ inside each outer fold. Across all 87 targets × 5 folds:
 - **79 of 87 produce 4 or 5 distinct configurations** out of 5 folds.
 - Selected ElasticNet `alpha` ranges from 0.004 to 9.8 *between folds of the same target*.
 
-At ~70 training subjects per fold, that search space is far larger than the data can resolve,
-so the inner selection is fitting noise and the choice does not transfer to the outer fold.
-This is the same small-n result as §5 seen from the other side: §5 found that flexible models
-lose to a fixed ridge; here the *search over* models loses to a fixed ridge too.
+At ~70 training subjects per fold, that search space is far larger than the data can resolve.
 
 One qualification that keeps this honest. Across all 87 measures EMUSES (8/87 above zero,
 median −0.120) and `RidgeCV` on its coordinates (7/87, median −0.094) are comparable. The
@@ -392,9 +389,61 @@ difference is concentrated in the measures that carry real signal, which is what
 expect: on a noise target every method scores about the same, and only on a signal target does
 an unstable selection fail to exploit what a stable estimator captures.
 
+### 9a. It is the *breadth* of the space, not the amount of searching
+
+The paragraph above originally claimed the inner search overfits, so more trials would make
+things worse. **Measured, that is wrong.** Replaying EMUSES' own space, objective, folds and
+coordinates while varying only the trial budget (TPE is sequential, so the first k trials of a
+120-trial study are a k-trial study):
+
+| trials | inner CV (believed) | outer fold (truth) | gap | measures > 0 |
+|---|---|---|---|---|
+| 1 | −0.361 | −0.379 | 0.018 | 0/11 |
+| 5 | −0.079 | −0.075 | −0.004 | 1/11 |
+| 10 | −0.064 | −0.055 | −0.009 | 3/11 |
+| 30 | −0.035 | −0.025 | −0.010 | 5/11 |
+| **60** (June's setting) | −0.022 | −0.010 | −0.012 | 6/11 |
+| 120 | −0.015 | −0.005 | −0.010 | 6/11 |
+
+More trials help monotonically, and the inner/outer gap stays flat at ~0.01 rather than
+widening — so the search is **not** overfitting its inner CV. What more trials buy, though, is
+only a return to the floor: at 120 trials the mean is −0.005, while a fixed `RidgeCV` on the
+same coordinates is already at +0.019 with no search at all.
+
+**Narrowing the space is what actually works.** Five independent draws of the whole nested
+search at June's 60 trials, full space versus one feature recipe and one estimator family
+(`raw_only` + ElasticNet):
+
+| configuration | measures > 0 | mean R² | spread over 5 draws |
+|---|---|---|---|
+| June, as it actually ran | 1 / 11 | −0.072 | (single draw) |
+| full space, 60 trials | 2–5 / 11 | −0.004 to −0.028 | mean range 0.024 |
+| **`raw_only` + ElasticNet, 60 trials** | **7 / 11, every draw** | **+0.020 to +0.024** | **mean range 0.004** |
+| fixed `RidgeCV`, no search | 6 / 11 | +0.019 | — |
+
+Restricting the space beats both the full search and the fixed ridge, and it is *stable*:
+7/11 on every seed, mean varying by 0.004. The full space is what injects the variance —
+median per-target range across draws **0.080**, comparable to the size of the effects being
+measured (0.05–0.15).
+
+### 9b. June sits outside the range of the procedure that produced it
+
+June scored worse than all five draws (worst draw −0.028, 2/11; June −0.072, 1/11), and two
+of its targets are far outside anything reproduced: `sip_house` −0.344 against a draw range of
+−0.062 to −0.021, `pos_acc_disengage` −0.240 against −0.062 to −0.043.
+
+This is not a data or fold difference. Non-NaN counts and fold sizes match June exactly
+(target_77 n=86, fold-0 train 68; target_43 n=88, train 70), and the coordinates match the
+ones stored inside June's own fitted `GWD` transformers to **1.6e-07** across 206 checked
+points. The divergence is in the Optuna trajectory: June's sampler seeds could not be
+reproduced from the recorded configuration, so June is one unreproduced draw among many.
+**Its per-target ranking should not be read as a result** — which is a sufficient explanation
+for `larapinch` landing at #1 without invoking the degenerate-floor argument of §4.
+
 **This is the most actionable finding in this document**, because unlike sample size it costs
-nothing to test: fix the feature union and the estimator, tune one regularisation parameter,
-and re-run. No new subjects, no architecture change.
+nothing: narrow `optim_dict_predict` to one feature recipe and one estimator, and re-run. No
+new subjects, no architecture change. Whether it composes with the PCA-10 representation of §7
+(8/11, +0.058) is untested — the two fixes are independent, so it is worth trying together.
 
 ## What I would do next, in order
 
