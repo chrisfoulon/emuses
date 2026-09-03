@@ -324,6 +324,12 @@ problem, the `enhanced-cli-typer` hang and repo pollution by test output are all
        half is now folded into 3f. Note the §10 held-out test found `larapinch`-style targets sort
        to the *bottom* under a stable configuration, so this is a ranking-hygiene fix rather than
        the sole explanation for June's ordering (that was irreproducibility — §9b).
+   **Implementation plan for 3d/3f/3g/3h/3i:**
+   `dev-docs/analysis-api/prediction-validity-reporting/{context,plan,feature_vars}.md` (2026-09-03,
+   not started). Four phases: floor, pre-flight power report, opt-in filter mode, screened seed
+   spread. **Blocked on PR #10** — at 87 targets the ordering bug would attach the right statistics
+   to the wrong measures. Three open questions there need CF's call (defaults for `--seed_spread`
+   and `--power_report`, where the warning surfaces).
    **Rationale for 3f–3i in one place:** `dev-docs/methodology/small_sample_prediction_validity.md`
    (2026-09-03) — what R² measures against, the three diagnostics and how they differ, the
    `DSD_repro` numbers, the six verified references. Read that rather than re-deriving from the

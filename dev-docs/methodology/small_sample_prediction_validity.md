@@ -133,6 +133,43 @@ model is a *lower bound* on the searched model's MDE. Like the floor check (§4.
 trustworthy **in one direction only** — failing it means no model could have worked; passing it does
 not mean the searched model can detect the effect.
 
+It also sharpens the verdict. Judged against **its own** MDE, the full search detects
+**0 of 87** targets — `lpegs` included, because the search scores 0.069 there where the fixed ridge
+scores 0.184, while needing a threshold twice as high. The "1 of 13" above is the `raw_only`+
+ElasticNet arm. **The configuration EMUSES actually runs detects nothing on this dataset.**
+
+### 3.2.2 A cheap pre-flight is safe to use as a filter — measured
+
+If the pre-flight is used to *skip* the expensive search, the failure that matters is the false
+negative: a target the reference model cannot see but the search would have found. The reference
+model is linear on a 2-D embedding, and the search space contains kernel and RF estimators
+precisely because the relationship might not be linear, so this cannot be argued away.
+
+Measured over 87 targets × 25 held-out splits, adding a fixed RBF `KernelRidge` (median-heuristic
+gamma, small alpha/gamma grid inside the development set, **49 s** for all 87 on 8 cores) as a
+second reference model:
+
+| gate: keep the target if a reference model clears its floor | kept | skipped | false negatives |
+|---|---|---|---|
+| `RidgeCV` only | 18 / 87 | 79 % | 4 |
+| `RidgeCV` **or** `KernelRidge` | 26 / 87 | 70 % | 3 |
+
+Four false negatives sounds like 25 % of what the full search finds. It is not a real loss. All
+four are targets where the search returns a *negative* R² that merely beats an even more negative
+floor — `laragrasp` −0.803 against a floor of −0.968, `walk_total` −0.018 against −0.023 — with
+permutation q of 0.65 to 0.99. **None of the three exceeds its own MDE.** The filter discards
+noise-level floor crossings on targets with no signal, which is what it is for.
+
+Two consequences for the design:
+
+- **Gate the filter on the floor, not on the MDE.** An MDE gate keeps 2 of 87 and skips 98 %. It
+  also loses nothing, but a criterion that discards 98 % of a run has no margin left if the
+  reference model is wrong for some future dataset. The floor gate saves 70 % with slack to spare.
+  Report the MDE as a warning; filter on the floor.
+- **This is one dataset.** n≈88, 2-D embedding, 87 targets. "The filter is safe" generalised from a
+  single dataset is exactly the kind of claim this audit exists to catch. Filter mode stays opt-in
+  until it has been replayed on a second dataset.
+
 This is consistent with the field, not a peculiarity of EMUSES.
 [Poldrack, Huckins & Varoquaux (2020)](https://doi.org/10.1001/jamapsychiatry.2019.3671) state
 that "prediction analyses should not be performed with samples smaller than several hundred
@@ -229,8 +266,9 @@ Measured on this dataset, 87 targets, fixed `RidgeCV` on the 2-D embedding:
 |---|---|---|
 | mean-predictor floor | 0.02 s | — |
 | repeated CV × 20 (gives the SD and MDE) | 13 s | ~2 s |
+| RBF `KernelRidge` reference, 25 repeats | — | 49 s |
 | permutation null, 1000 × 87 targets | 10.7 min | **1.3 min** |
-| **total** | **~11 min** | **~1.5 min** |
+| **total** | **~11 min** | **~2.5 min** |
 
 Against a ~19-hour pipeline run, the full diagnostic suite costs **under 0.1 % of runtime**.
 
@@ -238,6 +276,13 @@ The earlier scratch implementation took 4 h 28 m because it re-ran a 21-alpha ×
 selection inside every permutation. `RidgeCV`'s efficient leave-one-out removes that.
 Note the cost is only this low because the model is fixed — a 60-trial search inside each
 permutation multiplies it by roughly 300.
+
+**How this scales with n.** The floor is O(n) and the `RidgeCV` arm is O(n·d²) in the embedding
+dimension d, so both stay negligible at any n EMUSES will see. The `KernelRidge` arm is **O(n³)**
+with an n×n kernel matrix: at n≈88 it is 49 s, at n=10,000 it is neither affordable nor
+memory-feasible. The kernel reference therefore needs a subsample cap (or Nyström) above roughly
+n=2,000, and the permutation count needs to be a parameter rather than a constant. Cost is the
+reason these are toggleable, and the reason the defaults must be stated in the manifest.
 
 ---
 
