@@ -118,6 +118,21 @@ than drawing fresh ones, so true between-study variability is larger.
 
 **`DSD_repro` at n≈88 is underpowered for every measure except possibly `lpegs`.**
 
+The SD above is the `raw_only`+ElasticNet arm. The MDE depends on **which model you intend to
+report**, because a wider search is noisier:
+
+| SD measured from | median per-target SD | resulting median MDE |
+|---|---|---|
+| fixed `RidgeCV`, no search | 0.132 | **0.089** |
+| `raw_only` + ElasticNet, 60 trials | 0.142 | 0.096 |
+| full search space, 60 trials | **0.236** | **0.176** |
+
+The full search is **1.49×** noisier per target than the fixed model, so its detection threshold is
+roughly **double**. This matters for implementation: an MDE computed cheaply from a fixed reference
+model is a *lower bound* on the searched model's MDE. Like the floor check (§4.4), it is therefore
+trustworthy **in one direction only** — failing it means no model could have worked; passing it does
+not mean the searched model can detect the effect.
+
 This is consistent with the field, not a peculiarity of EMUSES.
 [Poldrack, Huckins & Varoquaux (2020)](https://doi.org/10.1001/jamapsychiatry.2019.3671) state
 that "prediction analyses should not be performed with samples smaller than several hundred
