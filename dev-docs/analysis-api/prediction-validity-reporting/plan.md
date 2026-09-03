@@ -1,11 +1,42 @@
 # Prediction Validity Reporting — Implementation Plan
 
-_Drafted 2026-09-03. Not started. Rationale and every number cited here:
-`dev-docs/methodology/small_sample_prediction_validity.md`._
+_Drafted 2026-09-03, consolidated same day. Not started._
 
-**Prerequisite: PR #10 must merge first.** At 87 targets the lexicographic ordering bug mis-pairs 85
-of them, so any validity report built on top of it would attach the right statistics to the wrong
-measures — the worst possible version of this feature.
+## Read this first (this plan is self-contained; do not reconstruct it from a conversation summary)
+
+- **Why any of this exists**, with every measurement and its references:
+  `dev-docs/methodology/small_sample_prediction_validity.md`. Read it before changing a threshold.
+- **The audit narrative** (how the conclusions were reached, including three of my own wrong
+  conclusions and what overturned them): `dev-docs/issues/disconnectome_design_audit_2026_08.md`.
+- **Settled; do not re-litigate.** Automated space-switching or halting on these metrics (measured,
+  26 % correct, rejected — STATUS 3g). Simulated effect sizes for the MDE (rejected; both terms are
+  measured from real `y`). Shipping `raw_only`+ElasticNet as a default (forbidden by ADR §1.3, and
+  narrowing reaches the floor without beating it). Bitwise reproducibility as a goal (ruled out
+  previously; use measured tolerances).
+- **The one-directional rule**, which governs the wording of every message this feature emits: a
+  model's score carries selection inflation from its own max-over-trials, the mean predictor's
+  carries none. *Failing* the floor is strong evidence; *passing* it is weak. Never phrase a pass as
+  validation.
+
+---
+
+## 0. Order of work
+
+**Step 0 — land PR #10 first.** It is `MERGEABLE` / `CLEAN`, `fast-tests` green, 15 commits ahead of
+`main` and 0 behind (checked 2026-09-03). It is the hard prerequisite: ground-truth columns pair with
+prediction columns **by position**, `sorted()` puts `target_10` before `target_2`, and at 87 targets
+that mis-pairs 85 of them. A validity report built on top would attach correct statistics to the
+wrong measures — confidently wrong beats missing, in the bad direction.
+
+Before merging, **fix the PR's own drift**: it carries 1 code commit (`b3d2054`, the multiclass
+held-out metrics fix) and 14 docs commits from this audit, while the body describes only the code
+fix. Update the title/body to say it also carries the audit and the methodology doc. Not worth
+splitting — the docs are `dev-docs/` + `STATUS.md`, touch no code, and conflict with nothing.
+
+**Then, in order:** phase 1 (floor) → phase 2 (pre-flight report) → phase 3 (filter, opt-in) →
+phase 4 (stability check, post-hoc). Each is independently landable and independently useful. Phases
+1–2 are the pair that would have prevented the June misreading; 3–4 are cost management and are
+optional to the scientific fix.
 
 ---
 
@@ -107,9 +138,51 @@ Seed spread means running the search under ≥2 sampler seeds and printing the r
 — a reproducibility error bar. `R² = 0.14 (0.10–0.18 across 2 seeds)` lets a reader see the margin
 sits inside the noise. Reporting a rank without it hides exactly the failure this audit found.
 
-Running two sampler seeds doubles a 19-hour run. Screening fixes that: run the second seed **only
-for targets that cleared their floor on pass one**. On `DSD_repro` that is 23 of 87, so **+25 %**
-rather than +100 %, and the spread only matters for targets you would actually report.
+### Phase 4 — a post-hoc stability check, NOT a pipeline default (decided 2026-09-03, CF)
+
+Running extra sampler seeds inside the pipeline doubles a 19-hour run. Screening by the floor would
+cut that to +25 % (23 of 87 targets on `DSD_repro`), but CF's call is that it is **too heavy to
+default on**, and there is a second objection that settles the design:
+
+**The seed clash.** EMUSES lets the user fix seeds: `--random_state` → `master_seed` →
+`default_rng(master_seed)` draws `prediction_seed`, `cv_seed`, `optuna_seed` in that order
+(`emuses_pipeline.py:76-92`). A user who fixes the seed is asking for the same answer every time.
+Varying the sampler seed inside that run answers a *different* question — how much the answer depends
+on the seed — and a user could reasonably read it as EMUSES ignoring the seed they set.
+
+Note what this objection is **not**: it is not a determinism problem. Appending a fourth draw to that
+same `root_rng` sequence leaves the first three untouched, so extra sampler seeds would be a
+deterministic function of `master_seed`, reproducible and backward compatible. The problem is
+conceptual, not technical — which is precisely why it belongs in an explicitly invoked tool rather
+than silently inside every run.
+
+**So build it as a separate command over an existing output folder.** `emuses stability-check
+<model_or_output_folder> --n_seeds 3`:
+
+- reads the saved embedding, scores, fold seeds and `optim_dict` from the folder — everything needed
+  is already persisted;
+- re-runs the search under K additional sampler seeds derived from the stored `master_seed`;
+- reports per target: the original score, the range across seeds, and whether the lift over floor
+  survives the spread.
+
+Three advantages over a flag: nobody pays for it who does not ask; it runs on **June's existing
+output right now**, without re-running 19 hours; and it cannot be confused with the seed the user
+fixed, because they invoked it themselves.
+
+Keep `--seed_spread [off|screened|all]` as an in-pipeline option **defaulting to `off`** for users who
+want it in one pass. Document both, and document that the spread is deterministic given
+`--random_state`.
+
+**The hint (this is the part that makes it discoverable).** After training, when a target's lift over
+floor is smaller than its sampling SD, emit: *"this result may not reproduce across sampler seeds —
+run `emuses stability-check` to quantify it."*
+
+Use the **phase-2 repeated-split SD** for this comparison, not the across-fold SD. This is not a
+style preference. The across-fold SD understates the true error bar (Varoquaux 2018; measured here,
+the permutation null understates it by 1.96×), so a trigger built on it fires **too rarely** and
+makes fragile results look reliable — failing in the one direction that matters. The repeated-split
+SD is already computed by phase 2 and costs nothing extra. If phase 2 was skipped
+(`--power_report off`), emit the hint unconditionally rather than computing a dishonest one.
 
 ---
 
@@ -120,7 +193,9 @@ Typer, `--snake_case`, str-Enum for choices — matching `emuses/cli/pipeline_op
 ```
 --power_report [off|report|filter]     default: report
 --power_permutations INT               default: 1000   (0 = skip the permutation part, keep SD/MDE)
---seed_spread [off|screened|all]       default: off    (see §6 - still open)
+--seed_spread [off|screened|all]       default: off    (decided: too heavy to default on)
+
+emuses stability-check <folder> --n_seeds 3               # phase 4, post-hoc, no pipeline re-run
 ```
 
 **Every knob must enforce something.** STATUS item 4 records `memory_limit_ratio` /
@@ -144,10 +219,11 @@ uncapped.
 | immediately after, only if `filter` | phase 3 — drop targets no reference model can see | saves ~70 % of the next row |
 | per target, before its own search | phase 1 — floor from the actual outer folds | 0.02 s total |
 | — | the search itself, unchanged | ~19 h |
-| second pass, floor-clearing targets only | phase 4 — seed spread | +25 % of the search |
-| at CSV generation | gated two-file ranking | milliseconds |
+| at CSV generation | gated two-file ranking, `WARNING.txt`, summary block | milliseconds |
+| at CSV generation | the phase-4 **hint** where lift < SD | free |
+| **separately, on demand** | phase 4 — `emuses stability-check` on an existing folder | ~+25 % of a search per extra seed, screened |
 
-Phases 1 + 2 together cost **under 0.1 %** of a full run.
+Phases 1 + 2 together cost **under 0.1 %** of a full run. Phase 4 costs nothing unless invoked.
 
 ---
 
@@ -212,7 +288,13 @@ clean pass and proves nothing (`feedback_silent_verification_failure`).
   filter`. It must appear in the output with a reason and be counted in the denominator. An absence
   is a failure.
 - **P3** — force zero targets to clear their floor. The run must complete and say **"0 of 87"**
-  loudly. A near-empty file that reads like a small clean result is the failure mode.
+  loudly, in the log *and* in `WARNING.txt`. A near-empty file that reads like a small clean result
+  is the failure mode.
+- **P4** (phase 4) — run `stability-check` twice with the same `--random_state` and confirm the two
+  reports are **identical**. The seeds are drawn from the stored `master_seed`, so a difference means
+  the derivation escaped the seeded RNG. Then confirm the first three derived seeds
+  (`prediction_seed`, `cv_seed`, `optuna_seed`) are **unchanged** from before the feature: appending
+  draws to `root_rng` must not shift them, or every existing seeded run silently changes its results.
 
 **End-to-end**: re-run `DSD_repro` with `--test_size 0.2` (June used 0.0 and so produced no held-out
 evaluation at all), ~19 h / 9.6 GB peak. Expected: 13 targets pass permutation at q<0.10, 0 exceed
@@ -254,13 +336,12 @@ output contract of every existing workflow**, which CF flagged as the thing to b
   breaking change is the ranking split in phase 1/§4.3, and it lands separately so its blast radius
   is legible in its own commit.
 
-### Still open — needs a call before phase 4
+**`--seed_spread` defaults to `off`, and phase 4 becomes a post-hoc command.** Two reasons, both
+CF's: the cost is too heavy to impose on every run, and varying a sampler seed inside a run where the
+user fixed `--random_state` invites exactly the wrong reading. Discoverability is handled by the hint
+(§1 phase 4) rather than by the default. Full reasoning in phase 4.
 
-1. **Default for `--seed_spread`.** Options: `off` (today's cost, spread invisible unless asked
-   for), `screened` (+25 %, spread on every target that would be reported), `all` (+100 %). The
-   audit's central finding is that rankings do not reproduce across seeds, which argues for
-   `screened` as the default with the cost stated in the log. Against: silently making every run
-   25 % longer is a real UX change. Explained to CF 2026-09-03; awaiting the call.
+### Nothing is open. Anything new goes here rather than into the phases above.
 
 ---
 

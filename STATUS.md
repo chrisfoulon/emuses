@@ -324,12 +324,17 @@ problem, the `enhanced-cli-typer` hang and repo pollution by test output are all
        half is now folded into 3f. Note the §10 held-out test found `larapinch`-style targets sort
        to the *bottom* under a stable configuration, so this is a ranking-hygiene fix rather than
        the sole explanation for June's ordering (that was irreproducibility — §9b).
-   **Implementation plan for 3d/3f/3g/3h/3i:**
+   **Implementation plan for 3d/3f/3g/3h/3i — read this instead of re-deriving:**
    `dev-docs/analysis-api/prediction-validity-reporting/{context,plan,feature_vars}.md` (2026-09-03,
-   not started). Four phases: floor, pre-flight power report, opt-in filter mode, screened seed
-   spread. **Blocked on PR #10** — at 87 targets the ordering bug would attach the right statistics
-   to the wrong measures. Three open questions there need CF's call (defaults for `--seed_spread`
-   and `--power_report`, where the warning surfaces).
+   consolidated, **no open questions**). Ordered: **step 0 = merge PR #10** (ready: MERGEABLE/CLEAN,
+   fast-tests green, 15 ahead / 0 behind; fix its body first — it carries 1 code commit and 14 docs
+   commits from this audit) → phase 1 floor → phase 2 pre-flight power report (default on, ~2.5 min)
+   → phase 3 filter mode (opt-in, stays opt-in until replayed on a second dataset) → phase 4
+   `emuses stability-check`, a **post-hoc command, not a pipeline default**. PR #10 is a hard
+   prerequisite: at 87 targets the ordering bug would attach correct statistics to the wrong measures.
+   Decided: warnings go to both the log and a top-level `WARNING.txt`; `--seed_spread` defaults to
+   `off` (too heavy, and it clashes with a user-fixed `--random_state` conceptually — though not
+   technically, see phase 4).
    **Rationale for 3f–3i in one place:** `dev-docs/methodology/small_sample_prediction_validity.md`
    (2026-09-03) — what R² measures against, the three diagnostics and how they differ, the
    `DSD_repro` numbers, the six verified references. Read that rather than re-deriving from the
