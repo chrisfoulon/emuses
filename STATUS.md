@@ -334,7 +334,13 @@ problem, the `enhanced-cli-typer` hang and repo pollution by test output are all
    prerequisite: at 87 targets the ordering bug would attach correct statistics to the wrong measures.
    Decided: warnings go to both the log and a top-level `WARNING.txt`; `--seed_spread` defaults to
    `off` (too heavy, and it clashes with a user-fixed `--random_state` conceptually — though not
-   technically, see phase 4).
+   technically, see phase 4). Phase 2 also writes `search_spaces.json` (resolved dicts + hash, reusing
+   `ModelIOManager._hash_config`): the spaces are currently persisted by **name only**
+   (`log/arguments_*.json`), and a name does not pin a definition.
+3j. [ ] **`model_manifest.json` under-describes its own run** (found 2026-09-03, pre-existing, small).
+       `training_context.random_seeds` is `{}` in June's folder while `random_seeds.json` at the root
+       is fully populated. `model_io.py:2018-2026` is meant to fill it by reading that file. Unrelated
+       to the validity feature but it lives in the same code path, so fix it in its own commit.
    **Rationale for 3f–3i in one place:** `dev-docs/methodology/small_sample_prediction_validity.md`
    (2026-09-03) — what R² measures against, the three diagnostics and how they differ, the
    `DSD_repro` numbers, the six verified references. Read that rather than re-deriving from the

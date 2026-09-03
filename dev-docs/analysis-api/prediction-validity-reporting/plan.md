@@ -84,9 +84,9 @@ because the relationship might not be linear.
 Writes `prediction_power_report.csv` **before the search starts**, one row per target:
 `target, measure, n, floor, ref_ridge, ref_kernel, sd, null_p95, p, q, mde, detectable`.
 
-Also writes **`prediction_search_space.json`** — the resolved prediction search space actually in
-force for this run. Not cosmetic: it is what makes phase 4 honest (see the gap recorded there), and
-today the space is recoverable from an output folder only as "the package default on the day".
+Also writes **`search_spaces.json`** — the *resolved* search space dictionaries in force for this run,
+plus a hash of each. Not cosmetic: today the spaces are persisted by **name only**, which does not pin
+a definition, and this is what makes phase 4 honest. Full reasoning and file shape in phase 4, part 2.
 
 On `DSD_repro` this would have printed, in about 2.5 minutes, that 13 of 87 measures carry signal
 and **0 of 87 are detectable by the configuration EMUSES actually runs** — before spending 19 hours.
@@ -171,18 +171,48 @@ than silently inside every run.
   an output folder, and follow the existing subcommand pattern (`workspace_app`, `admin_app`,
   `models_app`). No new CLI architecture.
 
-**Gap found, and it must be fixed in phase 1 or 2, not phase 4.** The *prediction* search space is
-**not persisted**. `command.txt` records `--optim_dict optim_dict_disconnectome` (UMAP/clustering) and
-`--optuna_trials 60`, but carries no `--prediction_optim_dict`, so the space is recoverable only as
-"whatever the package default was on the day of the run". If `optim_dict_predict` changes later,
-`stability-check` on an old folder silently re-runs a **different space** and reports a spread that
-conflates seed variation with space variation — a plausible wrong number, which is the failure class
-this whole feature exists to stop.
+**Gap found, and it must be fixed in phase 1 or 2, not phase 4.** The search space is persisted **by
+name only, never by content**. `log/arguments_*.json` does record
+`prediction_optim_dict: "optim_dict_predict"` and `optim_dict: "optim_dict_disconnectome"` (verified in
+June's folder, 2026-09-03) — but a name does not pin a definition. If `optim_dict_predict` changes in
+the package, an old folder still says `"optim_dict_predict"` while today's module is a different
+object, so `stability-check` silently re-runs a **different space** and reports a spread conflating
+seed variation with space variation. Undetectably. That is the exact failure class this feature exists
+to stop.
 
-So: **phase 1 or 2 writes the resolved prediction search space to `prediction_search_space.json`** in
-the output folder. Cheap, and it is the enabling change for phase 4. For folders that predate it —
-June's included, permanently — `stability-check` must **state which default it assumed** and mark the
-result as such, never silently assume today's.
+**Save the resolved dictionaries, not just their names** (CF, 2026-09-03) — and a hash of each, which
+is what turns silent drift into a reportable condition.
+
+**Where: a new `search_spaces.json` at the output root.** Not the manifest, and not appended to
+`log/arguments_*.json`. Reasoning, since "put it in the manifest" is the obvious alternative:
+
+- The output root already carries four small purpose-specific JSONs — `random_seeds.json`,
+  `embedding_scaling.json`, `best_trial_info.json`, `parameter_search_log.json`. This is the
+  established pattern; a fifth is consistent, and `optim_dict_predict` serialises to **1,259 bytes**.
+- `model_manifest.json` is a **derived summary, not a source**: `model_io.py:2018-2026` fills
+  `training_context.random_seeds` by *reading* `random_seeds.json` in a later pass. Putting the source
+  of truth in the manifest inverts that data flow. Writing `search_spaces.json` at the root and
+  letting the manifest pass pick it up matches how seeds already work.
+- The manifest is registry-facing and version-gated (`min_emuses_version: 2.0.0`), and the registry
+  indexes on configuration and content hashes. Growing its schema has consequences beyond this
+  feature.
+- `log/arguments_*.json` is a dump of CLI arguments. A resolved dictionary is not an argument, and
+  mixing them muddles what that file means.
+
+**Reuse the existing hasher**: `ModelIOManager._hash_config` (`model_io.py:1537`) —
+`json.dumps(config, sort_keys=True, default=str)` then `md5[:16]`. Already used for
+`training_context.config_hash`. Do not write a second one.
+
+Shape: `{"prediction": {"name":…, "hash":…, "space": {…}}, "umap_clustering": {…},
+"autoencoder": null}`. All three config modules exist (`optim_configs`, `optim_configs_ae`,
+`optim_configs_predict`), so save all three rather than only the one this feature needs.
+
+For folders that predate this — June's, permanently — `stability-check` must **state which default it
+assumed** and mark the result accordingly, never silently assume today's.
+
+**Adjacent pre-existing defect, not this feature's job but worth a STATUS line:**
+`training_context.random_seeds` is `{}` in June's manifest while `random_seeds.json` is fully
+populated. The manifest under-describes the run it claims to describe.
 - re-runs the search under K additional sampler seeds derived from the stored `master_seed`;
 - reports per target: the original score, the range across seeds, and whether the lift over floor
   survives the spread.
