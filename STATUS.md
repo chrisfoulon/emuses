@@ -324,6 +324,10 @@ problem, the `enhanced-cli-typer` hang and repo pollution by test output are all
        half is now folded into 3f. Note the §10 held-out test found `larapinch`-style targets sort
        to the *bottom* under a stable configuration, so this is a ranking-hygiene fix rather than
        the sole explanation for June's ordering (that was irreproducibility — §9b).
+   **Rationale for 3f–3i in one place:** `dev-docs/methodology/small_sample_prediction_validity.md`
+   (2026-09-03) — what R² measures against, the three diagnostics and how they differ, the
+   `DSD_repro` numbers, the six verified references. Read that rather than re-deriving from the
+   550-line audit narrative.
 3f. [ ] **Two numbers every prediction score should be printed next to** (2026-09-02, the fix the
        §10 held-out test argues for — see `disconnectome_design_audit_2026_08.md` §10). Supersedes
        the "report R² relative to the floor" half of 3d.
@@ -376,6 +380,15 @@ problem, the `enhanced-cli-typer` hang and repo pollution by test output are all
        affordable **with a fixed model**: 1000 permutations × 87 targets is trivial when each
        permutation refits one estimator on precomputed folds, and prohibitive if it re-runs a
        60-trial search each time. Another reason the search is the wrong place to spend compute.
+3i. [ ] **Report the minimum detectable effect, and warn when nothing clears it.** `MDE = null_p95 +
+       0.84 × SD`, both terms measured — no simulated effect sizes (the earlier simulated version was
+       rejected by CF, correctly). SD comes from **repeated splits**, not from the across-fold SD and
+       not from the permutation null: measured, the null's SD is 0.064 against the real 0.142, low by
+       **1.96×**, because it holds the folds fixed and shuffles only y. On `DSD_repro` the MDE median
+       is 0.096 and **1 of 13** permutation-validated measures exceeds its own MDE (`lpegs`, by
+       0.029). This is the diagnostic that says *"no model would have worked"* rather than *"this
+       model didn't"*. It needs fits on real y, so it cannot run before training — but with a fixed
+       model those fits cost seconds, so it can run before committing to the expensive search.
 3e. [ ] **Re-run DSD_repro properly** once PR #10 is merged: `--test_size 0.2` (June used 0.0 and so
        produced no held-out evaluation at all) and expect ~19 h / 9.6 GB peak. PR #10 is a hard
        prerequisite: at 87 targets the lexicographic ordering bug mis-pairs 85 of them.
