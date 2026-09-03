@@ -416,6 +416,19 @@ class HeatmapStage(PipelineStage):
                     Y_binary[:, i] = (Y[:, 0] == class_label).astype(int)
 
                 Y = Y_binary
+
+                # Record the mapping so the test split can be expanded the SAME way
+                # at handover (see _prepare_inference_context). Without this the
+                # stage produced n_classes prediction columns against a 1-column
+                # ground truth, and _calculate_multi_target_validation_metrics
+                # bailed with a single WARNING -- an exit-0 run with no held-out
+                # metric at all (measured 2026-08-25 on the digits run).
+                #
+                # It is the TRAINING classes that are stored, deliberately. A test
+                # split that happens to miss a class would give np.unique a shorter
+                # list and silently shift every column one place, scoring each
+                # target against the wrong digit.
+                context["prediction_ovr_classes"] = unique_classes
                 logger.info(
                     "HeatmapStage: optimising %d binary classification targets",
                     Y.shape[1],
@@ -779,11 +792,17 @@ class HeatmapStage(PipelineStage):
         prediction_train_features = context.get("prediction_train_features")
         prediction_train_labels = context.get("prediction_train_labels")
 
+        # The models were trained against one-vs-rest columns, so the ground truth
+        # handed over has to be expanded the same way or it cannot be scored at all.
+        ovr_classes = context.get("prediction_ovr_classes")
+
         if prediction_test_features is not None:
             # Use test data for inference (preferred for validation)
             context["inference_features"] = prediction_test_features
             if prediction_test_labels is not None:
-                context["inference_labels"] = prediction_test_labels
+                context["inference_labels"] = self._expand_ovr_labels(
+                    prediction_test_labels, ovr_classes, context, logger
+                )
             logger.info(
                 "Prepared prediction test data for inference stage."
             )
@@ -791,12 +810,68 @@ class HeatmapStage(PipelineStage):
             # Fallback to train data if no test data available
             context["inference_features"] = prediction_train_features
             if prediction_train_labels is not None:
-                context["inference_labels"] = prediction_train_labels
+                context["inference_labels"] = self._expand_ovr_labels(
+                    prediction_train_labels, ovr_classes, context, logger
+                )
             logger.info(
                 "Prepared prediction training data for inference stage (fallback)."
             )
         else:
             logger.warning("No prediction features found - inference stage may fail")
+
+    @staticmethod
+    def _expand_ovr_labels(labels, ovr_classes, context, logger):
+        """Expand a multi-class label column into the one-vs-rest columns the
+        models were trained against.
+
+        Returns ``labels`` unchanged when no one-vs-rest conversion happened
+        (regression, binary classification, or genuinely multi-target input).
+
+        ``ovr_classes`` must be the classes derived from the *training* labels.
+        Recomputing them here from whatever split is being handed over would
+        silently mis-align every column whenever a split does not contain all
+        classes -- the metric would still be produced, and would be wrong, which
+        is worse than the missing metric this replaces.
+
+        The original class column is kept in the context as
+        ``inference_labels_multiclass`` so InferenceStage can also report a
+        single multi-class score (argmax over the per-class columns), which is
+        the number a user asking "how accurately does it predict the digit"
+        actually wants -- the per-column binary scores do not answer it.
+        """
+        if ovr_classes is None:
+            return labels
+
+        arr = np.asarray(labels)
+        if arr.ndim == 2 and arr.shape[1] == 1:
+            arr = arr[:, 0]
+        elif arr.ndim != 1:
+            # Already multi-target; nothing was expanded on the training side.
+            return labels
+
+        binary = np.zeros((arr.shape[0], len(ovr_classes)), dtype=int)
+        for i, class_label in enumerate(ovr_classes):
+            binary[:, i] = (arr == class_label).astype(int)
+
+        context["inference_labels_multiclass"] = arr
+        context["inference_ovr_classes"] = np.asarray(ovr_classes)
+
+        unseen = sorted(set(np.unique(arr)) - set(np.asarray(ovr_classes).tolist()))
+        if unseen:
+            logger.warning(
+                "Handover split contains %d class(es) absent from training %s; "
+                "those rows are all-zero across every one-vs-rest column and "
+                "cannot be predicted correctly by any of them.",
+                len(unseen),
+                unseen,
+            )
+
+        logger.info(
+            "Expanded %d ground-truth labels into %d one-vs-rest columns for scoring.",
+            arr.shape[0],
+            binary.shape[1],
+        )
+        return binary
 
     def _generate_performance_csv_files(self, context, task, n_targets, logger):
         """

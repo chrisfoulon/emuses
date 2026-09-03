@@ -54,6 +54,44 @@ removed. Three contracts are now recorded in ADR §2.5b, including that **normal
 in the pipeline** — doing it in the stage as well is what the withdrawn "constant predictions" claim
 was really about. Details: `dev-docs/issues/phase4_science_path_triage.md`.
 
+### First full real-data run: digits, 10 classes (2026-08-25)
+
+`emuses full` on sklearn digits (1797 x 64, exported to CSV by `scripts/export_digits_dataset.py`),
+`--classification` with 10 classes, `--umap_trials 100 --hdbscan_trials 100 --optuna_trials 15`.
+**3 h 35 m wall, 1413 % CPU, peak RSS 3.03 GB, exit 0** — the first measured memory profile at
+realistic size, which is what item 4 below was waiting on. 30 GB is not the binding constraint for
+data of this shape.
+
+**Held-out accuracy 97.50 % (351/360)**, balanced 97.61 %, against **93.33 % in the arXiv preprint**
+(arXiv 2406.14309, Fig. 1c). Errors concentrate on 8→1 (x3) and 9→{4,5,7}; digits 0, 2, 3 perfect.
+
+Two measurements worth not re-deriving:
+
+- **The UMAP/HDBSCAN search is cheap; the prediction stage is not.** 100x100 trials took 17 minutes.
+  The remaining 3 h 18 m was 10 targets x 5 folds x 15 Optuna trials x 5 inner folds. At the default
+  `--optuna_trials 60` this run would take ~10-11 h, and at 3 trials the per-fold balanced accuracy
+  was already 0.9895-1.0000 — the search saturates early on this data.
+- **The prediction stage reproduced kNN exactly.** `KNeighborsClassifier(3)` on the same embedding
+  gives the same 97.50 %, the same 9 errors, and **agrees on all 360 predictions** (1.0000), in
+  0.01 s. Mechanism: 24 of the 50 winning folds were `kernel` with median sigma 0.0585 on a unit-square
+  embedding, which is a nearest-neighbour lookup in disguise. This does *not* generalise to
+  "the prediction stage is redundant" — digits is ten tight islands, where kNN is near-optimal and
+  nothing can beat it by much. It is untested on a continuous target, which is the regime the
+  neuroimaging application needs. On raw 61-D features an RBF SVM gets 98.61 % in 0.04 s; the 1.1-point
+  gap is the 2-D bottleneck, not the classifier.
+
+**Held-out metrics now actually get written (2026-08-25, ADR §2.5c).** The one-vs-rest expansion was
+a local variable, so 10 prediction columns met a 1-column ground truth,
+`_calculate_multi_target_validation_metrics` bailed, and the run wrote a metadata file containing
+**only timing** — no held-out performance at all, announced by one WARNING inside a 3.7 MB log with
+exit 0. The 97.50 % above had to be computed by hand from the predictions CSV. `HeatmapStage` now
+expands the ground truth at the handover using the **training** classes (recomputing them from the
+split silently shifts every column when a class is missing), targets are ordered numerically
+(`sorted()` puts `target_10` before `target_2`, mis-scoring 10 of 12 targets — perturbed and
+confirmed), a multi-class argmax score is reported alongside the per-target ones, and validation
+reports balanced accuracy since that is what training optimises. Verified against an oracle computed
+*before* the fix existed, and end-to-end on a 3-class run.
+
 **Scope decision (2026-08-24): scientific plausibility is Chris's call, and not now.** The goal is
 that the pipelines run; Chris judges the results once he can train and infer freely. Observations
 about result *quality* get recorded, not acted on.
@@ -171,10 +209,21 @@ problem, the `enhanced-cli-typer` hang and repo pollution by test output are all
 3. [ ] **Recorded, not being acted on** (result-quality judgements are Chris's call): degenerate
        fits are never reported, and off-manifold input collapses the UMAP transform silently.
        Supersedes the older "highest priority" framing — revisit once a real-data run is stable.
-4. [ ] **Resource controls, after the scientific-validity runs.** Two separate pieces (2026-08-25):
-       *memory-aware execution* is a researcher's control, blocked on nothing, and needs a measured
-       memory profile — **capture peak RSS per stage during those runs**, since they are the
-       real-data runs at realistic size (`memory_aware_execution_2026_08.md`). The *service
+3b. [ ] **The continuous-target gap — the one that blocks publication.** The preprint's three datasets
+       already separate by target type: digits (categorical, ten tight clusters) 93.3 % → now 97.5 %;
+       stroke disconnectomes (continuous CoC) r = 0.65; **Chicago faces (continuous attractiveness)
+       r = 0.09**, i.e. nothing. Digits therefore does not license "statistics can be extracted from
+       UMAP space" in general — it licenses it for well-separated categorical targets, and the same
+       pipeline's own counterexample is in Fig. 2c. Reviewers will find it. The missing control is a
+       **continuous target with known ground truth** — cheapest version: predict a continuous property
+       of the digit images that is certainly present in the pixels (ink quantity = mean pixel value,
+       or stroke width), reusing the saved UMAP model. Recovers well → the regression path works and
+       faces was a data/embedding problem; fails → the faces failure reproduces where the signal is
+       known to exist, which is far easier to debug. Either outcome is publishable.
+4. [ ] **Resource controls.** Two separate pieces (2026-08-25): *memory-aware execution* is a
+       researcher's control, blocked on nothing. **Peak RSS is now measured: 3.03 GB for the 10-class
+       digits run** (1797 x 64, 3 h 35 m), so the profile that was blocking it exists
+       (`memory_aware_execution_2026_08.md`). The *service
        timeout* is an operator's control and is blocked on deciding how many pipelines the service
        may run at once (`inert_pipeline_timeout_2026_08.md`). Until either enforces something,
        `memory_limit_ratio` / `cpu_percent_limit` / `max_workers` should be deleted rather than
