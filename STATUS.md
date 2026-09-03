@@ -336,6 +336,21 @@ problem, the `enhanced-cli-typer` hang and repo pollution by test output are all
              effects themselves.
        - [ ] **Gate the *ranking*, not the run.** A target that does not beat its floor gets listed
              as "not predictable at this n" instead of receiving a rank. No fitting changes.
+       - [ ] **Split the output into two files, and keep the denominator in both.**
+             `performance_target_rankings` holds only targets that clear their floor, *ranked*.
+             `performance_targets_below_floor` holds the rest as an **unranked list** — a rank
+             implies an ordering by quality, and ordering noise is what put `larapinch` at #1.
+             Both carry a header line naming the split: "13 of 87 targets exceeded their floor".
+             **Do not simply drop the below-floor targets.** Two reasons, both load-bearing:
+             (i) "87 tested, 13 carry signal" is the scientific claim; "here are 13 measures" with
+             no denominator is selective reporting and a reviewer will treat it as such;
+             (ii) if a run fails entirely, silently dropping everything yields a near-empty file
+             that reads like a small clean result — the exact silence-looks-like-success failure
+             this project keeps paying for. "0 of 87" must be impossible to miss.
+       - [ ] **Show the margin, don't just threshold it.** Lift over floor is an estimate; a target
+             just above and one just below are not different. Report lift *and* the seed spread so
+             the margin can be compared against the noise. Held-out reference: 23/87 beat their
+             floor but only 13 by more than 0.05.
        - [ ] ADR entry recording the above, and recording that automated space-switching was
              **measured and rejected** (below).
        **Working mode when this is implemented: accept-edits, not auto.** This is reporting on
@@ -354,6 +369,13 @@ problem, the `enhanced-cli-typer` hang and repo pollution by test output are all
        8.7 % → 4.7 %) rather than as improvement — narrowing reaches the floor, it does not beat it.
        **Never hard-stop a run on a noisy metric**: a completed run with a loud warning is
        diagnosable, a halted one is not, and silence is this project's recurring failure mode.
+3h. [ ] **Permutation testing is what actually establishes signal, and EMUSES does not do it.**
+       The floor check says a model beat guessing; only a permutation null says the association is
+       real. The 13-survivor result quoted throughout this audit came from a *scratch* script
+       (`~/.claude/jobs/0d3a7417/tmp/perm_test.py`), not from EMUSES. Worth adding — and it is only
+       affordable **with a fixed model**: 1000 permutations × 87 targets is trivial when each
+       permutation refits one estimator on precomputed folds, and prohibitive if it re-runs a
+       60-trial search each time. Another reason the search is the wrong place to spend compute.
 3e. [ ] **Re-run DSD_repro properly** once PR #10 is merged: `--test_size 0.2` (June used 0.0 and so
        produced no held-out evaluation at all) and expect ~19 h / 9.6 GB peak. PR #10 is a hard
        prerequisite: at 87 targets the lexicographic ordering bug mis-pairs 85 of them.
