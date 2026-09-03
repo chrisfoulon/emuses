@@ -92,9 +92,20 @@ targets with no signal.
 
 ### Phase 4 — seed spread, screened by the floor
 
-The audit's core finding is that the per-target ranking does not reproduce: five independent draws
-of the same nested search disagree by a median per-target range of **0.080**, the size of the effects
-themselves. Reporting a rank without that spread hides it.
+**What "seed spread" is.** The search picks models with Optuna's TPE sampler, which is stochastic:
+it draws trials randomly, guided by what it has already seen. A different sampler seed walks a
+different path through the search space, lands on a different model, and returns a different score —
+same data, same folds, same trial budget, just a different draw.
+
+The audit's core finding is that this dominates. Five independent draws differing **only** in the
+sampler seed disagree by a median per-target range of **0.080**, which is the size of the effects
+themselves. The R² EMUSES prints for a target is therefore one sample from a distribution about as
+wide as the thing being measured, and the ranking built from it does not reproduce: `larapinch` at
+#1 was a property of June's seed, not of `larapinch`.
+
+Seed spread means running the search under ≥2 sampler seeds and printing the range beside the score
+— a reproducibility error bar. `R² = 0.14 (0.10–0.18 across 2 seeds)` lets a reader see the margin
+sits inside the noise. Reporting a rank without it hides exactly the failure this audit found.
 
 Running two sampler seeds doubles a 19-hour run. Screening fixes that: run the second seed **only
 for targets that cleared their floor on pass one**. On `DSD_repro` that is 23 of 87, so **+25 %**
@@ -109,7 +120,7 @@ Typer, `--snake_case`, str-Enum for choices — matching `emuses/cli/pipeline_op
 ```
 --power_report [off|report|filter]     default: report
 --power_permutations INT               default: 1000   (0 = skip the permutation part, keep SD/MDE)
---seed_spread [off|screened|all]       default: off    (see open question 1)
+--seed_spread [off|screened|all]       default: off    (see §6 - still open)
 ```
 
 **Every knob must enforce something.** STATUS item 4 records `memory_limit_ratio` /
@@ -209,18 +220,47 @@ their MDE, `larapinch` in the below-floor file rather than at rank #1.
 
 ---
 
-## 6. Open questions — need Chris's call before phase 4
+## 6. Decisions taken (2026-09-03, CF)
 
-1. **Default for `--seed_spread`.** `screened` costs +25 % on every run but means users stop reading
-   rankings that do not reproduce, which is the audit's central finding. `off` keeps runs at today's
-   cost and leaves the spread invisible unless asked for. Recommendation: `screened`, with the cost
-   in the log line — but silently making every run 25 % longer is a real UX change and it is your
-   call, not mine.
-2. **Where the warning surfaces.** Log only, or also a top-level `WARNING.txt` in the output folder?
-   The log is where it belongs; the file is what actually gets read.
-3. **Should `report` mode be the default at all**, or should the first release be `off` by default
-   with the report opt-in? 2.5 minutes on 19 hours argues for on-by-default, but it changes the
-   output contract of every existing workflow.
+**Warnings surface in both places.** The run log *and* a top-level `WARNING.txt` in the output
+folder. The log is where a warning belongs; the file is what actually gets read. `WARNING.txt` is
+written only when there is something to say, and its absence must not be load-bearing — the
+end-of-run summary block (§4.5) is written unconditionally either way.
+
+**`--power_report report` is the default.** 2.5 minutes against a 19-hour run. This **changes the
+output contract of every existing workflow**, which CF flagged as the thing to be careful about, so:
+
+- Any existing test asserting on the *set* of files in an output folder, or on the *columns* of the
+  performance CSVs, will fail. Those failures are expected and legitimate to update, because the
+  contract intentionally changed. **G002 still applies**: a test updated to match an intended
+  contract change is fine; a test weakened until it passes is not. Each such edit must be justified
+  in the commit message by naming the contract change, not by naming the failure.
+- **Affected tests, enumerated 2026-09-03 — the blast radius is near zero.** Four files reference
+  the performance CSVs, and none of them breaks:
+  - `tests/regression/regression_metrics.py:91` reads the summary CSV by **header name**
+    (`dict(zip(header, row))`) and keeps only the fields in `SCORE_FIELDS` (line 31). Added columns
+    are ignored, so nothing breaks — **and adding `Floor`/`Lift` to `SCORE_FIELDS` is how the floor
+    gets pinned by the existing numerical guard.** That is the extension point for phase 1's
+    regression test; prefer it to a new file.
+  - `tests/integration/test_hcp_api_current.py:132` and `test_hcp_api_real.py:164` list the summary
+    CSV in a *download-if-present* block guarded by `if any(...)`. Not assertions.
+  - `tests/integration/test_real_world_pipeline.py:290` is a comment.
+  - **Nothing in `tests/` reads `performance_target_rankings` at all**, so the phase-1 ranking split
+    — the one genuine contract change — breaks no existing test. That is a gap, not a licence: the
+    split is exactly what needs a new test.
+  Re-run this enumeration if the phase order changes; a count discovered mid-refactor is how "just
+  update the tests" turns into G002.
+- The new files are **additive**. Nothing existing is renamed or removed in phase 2. The one genuine
+  breaking change is the ranking split in phase 1/§4.3, and it lands separately so its blast radius
+  is legible in its own commit.
+
+### Still open — needs a call before phase 4
+
+1. **Default for `--seed_spread`.** Options: `off` (today's cost, spread invisible unless asked
+   for), `screened` (+25 %, spread on every target that would be reported), `all` (+100 %). The
+   audit's central finding is that rankings do not reproduce across seeds, which argues for
+   `screened` as the default with the cost stated in the log. Against: silently making every run
+   25 % longer is a real UX change. Explained to CF 2026-09-03; awaiting the call.
 
 ---
 
