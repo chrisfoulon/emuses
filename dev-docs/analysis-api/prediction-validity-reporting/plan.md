@@ -84,6 +84,10 @@ because the relationship might not be linear.
 Writes `prediction_power_report.csv` **before the search starts**, one row per target:
 `target, measure, n, floor, ref_ridge, ref_kernel, sd, null_p95, p, q, mde, detectable`.
 
+Also writes **`prediction_search_space.json`** — the resolved prediction search space actually in
+force for this run. Not cosmetic: it is what makes phase 4 honest (see the gap recorded there), and
+today the space is recoverable from an output folder only as "the package default on the day".
+
 On `DSD_repro` this would have printed, in about 2.5 minutes, that 13 of 87 measures carry signal
 and **0 of 87 are detectable by the configuration EMUSES actually runs** — before spending 19 hours.
 
@@ -159,8 +163,26 @@ than silently inside every run.
 **So build it as a separate command over an existing output folder.** `emuses stability-check
 <model_or_output_folder> --n_seeds 3`:
 
-- reads the saved embedding, scores, fold seeds and `optim_dict` from the folder — everything needed
-  is already persisted;
+- reads the saved embedding, scores and fold seeds from the folder. **Verified present** in a real
+  run folder (2026-09-03, June's `new_pred_pipeline_12-06-2026`): `embeddings.npy`,
+  `split_dataset/train_labelled_scores.npy`, and `random_seeds.json` carrying `master_seed`,
+  `cv_seed`, `optuna_seed`, `prediction_seed`. The folds are exactly reconstructible.
+- **Reuse `emuses rerun`** (`emuses/cli/main.py:495`), which already reconstructs an invocation from
+  an output folder, and follow the existing subcommand pattern (`workspace_app`, `admin_app`,
+  `models_app`). No new CLI architecture.
+
+**Gap found, and it must be fixed in phase 1 or 2, not phase 4.** The *prediction* search space is
+**not persisted**. `command.txt` records `--optim_dict optim_dict_disconnectome` (UMAP/clustering) and
+`--optuna_trials 60`, but carries no `--prediction_optim_dict`, so the space is recoverable only as
+"whatever the package default was on the day of the run". If `optim_dict_predict` changes later,
+`stability-check` on an old folder silently re-runs a **different space** and reports a spread that
+conflates seed variation with space variation — a plausible wrong number, which is the failure class
+this whole feature exists to stop.
+
+So: **phase 1 or 2 writes the resolved prediction search space to `prediction_search_space.json`** in
+the output folder. Cheap, and it is the enabling change for phase 4. For folders that predate it —
+June's included, permanently — `stability-check` must **state which default it assumed** and mark the
+result as such, never silently assume today's.
 - re-runs the search under K additional sampler seeds derived from the stored `master_seed`;
 - reports per target: the original score, the range across seeds, and whether the lift over floor
   survives the spread.
