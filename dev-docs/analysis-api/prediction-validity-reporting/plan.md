@@ -125,9 +125,9 @@ targets with no signal.
   **one** dataset (n≈88, 2-D embedding, 87 targets). Replay it on a second dataset — the 10-class
   digits run (1797×64, peak RSS 3.03 GB) is the obvious candidate — before that is even discussed.
 
-### Phase 4 — seed spread, screened by the floor
+### Phase 4, part 1 — what "seed spread" is (background; skip if you already know)
 
-**What "seed spread" is.** The search picks models with Optuna's TPE sampler, which is stochastic:
+The search picks models with Optuna's TPE sampler, which is stochastic:
 it draws trials randomly, guided by what it has already seen. A different sampler seed walks a
 different path through the search space, lands on a different model, and returns a different score —
 same data, same folds, same trial budget, just a different draw.
@@ -142,7 +142,7 @@ Seed spread means running the search under ≥2 sampler seeds and printing the r
 — a reproducibility error bar. `R² = 0.14 (0.10–0.18 across 2 seeds)` lets a reader see the margin
 sits inside the noise. Reporting a rank without it hides exactly the failure this audit found.
 
-### Phase 4 — a post-hoc stability check, NOT a pipeline default (decided 2026-09-03, CF)
+### Phase 4, part 2 — a post-hoc stability check, NOT a pipeline default (decided 2026-09-03, CF)
 
 Running extra sampler seeds inside the pipeline doubles a 19-hour run. Screening by the floor would
 cut that to +25 % (23 of 87 targets on `DSD_repro`), but CF's call is that it is **too heavy to
