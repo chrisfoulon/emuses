@@ -1,5 +1,5 @@
 # STATUS — EMUSES
-_Last touched: 2026-08-25_
+_Last touched: 2026-09-02_
 
 ## Goal
 
@@ -103,6 +103,95 @@ degenerate fits are never reported (`confidence = 1.0 - std(across folds)`, so a
 useless models reads as certainty), and off-manifold input collapses the UMAP transform silently.
 `test_data/` is rank-1 and `tests/regression` baselines sit at negative R², so a passing suite is not
 evidence that prediction works. `dev-docs/issues/inference_constant_predictions_2026_08.md`, ADR §3.1b.
+
+### Disconnectome signal audit (2026-08-26) — the real test, measured
+
+`DSD_repro` is the target dataset: 1333 unlabelled + 133 labelled subjects, 902,629 voxels each
+(no masking, 1.8% nonzero, 9.6 GB dense), 87 neuropsych measures, **33% of the score matrix NaN**
+(median 45 missing per measure, so effective n ≈ 88 per target). The June 2026 run
+(`new_pred_pipeline_12-06-2026`, ~19 h) reported `Overall_Mean_Performance = -0.1884`.
+
+**That number was read against the wrong baseline.** At n≈88 with 5-fold CV the floor is not
+R²=0: simply predicting the training mean scores median **−0.086**, mean −0.237. EMUSES' −0.188
+is therefore roughly *at* the floor, not far below it.
+
+**There is real signal, but it is weak and EMUSES is largely finding the wrong targets.**
+1000-permutation test per measure, BH-corrected across 87: **13 survive q<0.10, 6 at q<0.05**
+(18 at p<0.05 vs 4.4 expected). Strongest: `lpegs` R²=0.245 (q=0.017), then the `sip_*` family
+(`sip_psychosoc` 0.153, `sip_body` 0.146, `sip_emo` 0.117). Of the 11 validated measures with a
+non-degenerate floor, **EMUSES June scored >0 on 1** (`lpegs`); its median on them is −0.069
+against PCA-10's +0.063.
+
+**Disconnection PATTERN beats lesion VOLUME — the project's premise survives.** On the 11 validated
+measures (RidgeCV, EMUSES' folds): lesion volume alone **2/11** (median −0.052), disconnection load
+alone 5/11 (−0.016), volume+load 4/11 (−0.032), **pattern (morphospace PCA-10) 8/11 (+0.058)**,
+volume+pattern 9/11 (+0.044). Volume adds essentially nothing once pattern is present, so spatial
+location carries information burden does not. Effect is small and thins out across all 87
+(pattern 10/87 vs volume 4/87). DSD_repro has **no age/NIHSS**, so "imaging beats clinical" is
+*untested* here — only "pattern beats volume". Subject order recovered by fingerprinting
+disconnection load; all 133 matched uniquely, corr(volume, load)=0.766 as the check.
+
+**EMUSES' own top-6 is all left-side motor** (larapinch 0.221, lpegs 0.181, lgrip, lshflex,
+laragrip, laragrasp) and **only `lpegs` overlaps the permutation-validated set**. The other five
+are ARAT/motor measures with ceiling-bound distributions where the mean-predictor floor is
+catastrophic (larapinch floor −2.56); a positive R² there is not evidence of prediction. Any
+future ranking must exclude degenerate-floor targets or it will keep promoting them.
+Lesion laterality does *not* explain the left-motor pattern — the cohort is mixed (72 right /
+57 left / 4 bilateral).
+
+**The per-fold model search costs more than the embedding does.** Splitting the gap on the 11
+validated measures, all on EMUSES' own folds: EMUSES as it ran **1/11** (median −0.069); a plain
+`RidgeCV` on **EMUSES' own UMAP-2 coordinates** **6/11** (+0.013); `RidgeCV` on morphospace PCA-10
+**8/11** (+0.058). Changing the embedding buys 2 measures; changing the *predictor* on coordinates
+EMUSES already has buys 5. Cause is visible in the saved pipelines — the feature union
+(`raw`/`gwd`/`corr`/`pca`/`kpca`/`poly`) and hyperparameters are re-searched inside each outer fold,
+and **0 of 87 targets have all five folds agree**, 79/87 give 4–5 distinct configs, ElasticNet
+`alpha` swinging 0.004→9.8 between folds of one target.
+
+**It is the breadth of the space, not the amount of searching — and June is not reproducible.**
+More trials *help* monotonically (mean outer R² −0.379 at 1 trial → −0.010 at 60 → −0.005 at 120)
+and the inner/outer gap stays flat at ~0.01, so the search is **not** overfitting its inner CV; an
+earlier revision of this file claimed it was. What works is narrowing: five independent draws at
+June's 60 trials give full space 2–5/11 (−0.004 to −0.028) against **`raw_only`+ElasticNet 7/11 on
+every draw (+0.020 to +0.024, spread 0.004)** and fixed `RidgeCV` 6/11 (+0.019). The full space
+injects the variance — median per-target range across draws **0.080**, the size of the effects
+themselves. June (1/11, −0.072) sits **outside all five draws**, with `sip_house` −0.344 against a
+draw range of −0.062..−0.021. Not a data difference: n and fold sizes match exactly, and the
+coordinates match those stored in June's own fitted `GWD` transformers to 1.6e-07 over 206 points.
+June's sampler seeds could not be reproduced, so **its per-target ranking is one unreproduced draw
+and should not be read as a result** — which alone explains `larapinch` at #1. Cheapest real fix:
+narrow `optim_dict_predict` to one feature recipe + one estimator. (Also corrected: an earlier
+revision said UMAP-2 scored 1/11 as a *representation* — that was a custom-solver artefact.)
+
+**Held-out test (2026-09-02) — narrowing prevents losses, it does not create gains.** 25 repeats ×
+87 targets, 70/30 split, hyperparameter search *and* space choice made inside the 70% only.
+Mean held-out R²: full space **−0.221**, `raw_only`+ElasticNet **−0.131**, fixed `RidgeCV` −0.135,
+**mean predictor −0.133**. So the narrow config is indistinguishable from predicting the mean; what
+it avoids is the tail (8.7% of full-space splits below −0.5 vs 4.7%). It beats the full space on
+only 43% of paired splits while the paired mean difference is +0.090 (SE 0.017) — usually slightly
+worse, occasionally avoiding a catastrophe. **`auto` (pick the space by development CV) chose the
+narrow space in only 26% of splits and scored −0.227, i.e. no better than the full space — so the
+fix CANNOT be automated from the data, and `raw_only`+ElasticNet is a hindsight choice that must not
+be shipped as a default** (it would also contradict ADR §1.3). §9c's in-sample ranking was inflated:
+`rarapinch`, ranked #1 there at 0.144, scores −0.253 held-out against a floor of −0.323.
+**Only `lpegs` survives cleanly** — held-out R² 0.173, +0.219 over floor, q=0.017, and plain
+`RidgeCV` reproduces it (0.184). 9 of the 13 validated measures beat their own floor, 7 by >0.05,
+but as lifts over negative floors rather than real explained variance. Ship the stability guard, not
+the configuration. Detail: `dev-docs/issues/disconnectome_design_audit_2026_08.md` §10.
+
+**2-D still costs something, just less.** Full raw voxels are *worse* than PCA-10 (ridge at p≫n),
+so the optimum is a handful of components, not two and not 902,629. `optim_dict_disconnectome` hardcodes
+`n_components: {"value": 2}` (`optim_configs.py:254`). Raising it is a config change for the
+*prediction* path, but the heatmap/effect-size machinery grids the embedding
+(`emuses_utils.py:113`) and is 2-D/3-D in practice — **decide the architecture before changing
+it, do not just raise the number** (cf. ADR, atomic-model constraint).
+
+Method: `~/.claude/jobs/0d3a7417/tmp/{signal_check2,umap_signal,perm_test}.py`. All comparisons use
+EMUSES' own protocol (per-target NaN drop, `KFold(5, shuffle, random_state=1859786276)`, r2). PCA is
+derived from the 133×133 Gram matrix and **verified against sklearn to 1.5e-14** before use.
+Permutation nulls reuse each fold's PCA, so only the y-correspondence is broken.
+
+`--test_size 0.0` in the June command means that run produced **no held-out evaluation at all**.
 
 ### What works now
 
@@ -220,6 +309,106 @@ problem, the `enhanced-cli-typer` hang and repo pollution by test output are all
        or stroke width), reusing the saved UMAP model. Recovers well → the regression path works and
        faces was a data/embedding problem; fails → the faces failure reproduces where the signal is
        known to exist, which is far easier to debug. Either outcome is publishable.
+3c. [ ] **Disconnectome: the embedding dimensionality decision.** The 2026-08-26 audit (above) shows
+       PCA-10 recovering signal that UMAP-2 returns ≈0 on, so `n_components: 2` is costing real
+       results on the target dataset. This is the same continuous-target gap as 3b, now measured on
+       the data that matters. Before changing anything, decide: does the heatmap/effect-size stage
+       stay 2-D while prediction uses more components, or does the whole embedding move? The grid in
+       `emuses_utils.py:113` is generic but explodes as r^d, and every plot path assumes 2-D/3-D.
+       **Confirm the architectural intent first — do not just raise the number.**
+3d. [ ] **Degenerate-floor targets poison the ranking.** ARAT-family measures (larapinch, laragrasp,
+       raragrip, rarapinch …) are ceiling-bound; their mean-predictor floor reaches −2.5, so they
+       surface at the top of `performance_target_rankings` on noise. EMUSES ranked larapinch #1
+       (0.221) and it fails permutation testing. Either exclude targets whose floor is below some
+       threshold, or report R² relative to the mean-predictor floor rather than to 0 — the latter
+       half is now folded into 3f. Note the §10 held-out test found `larapinch`-style targets sort
+       to the *bottom* under a stable configuration, so this is a ranking-hygiene fix rather than
+       the sole explanation for June's ordering (that was irreproducibility — §9b).
+   **Implementation plan for 3d/3f/3g/3h/3i — read this instead of re-deriving:**
+   `dev-docs/analysis-api/prediction-validity-reporting/{context,plan,feature_vars}.md` (2026-09-03,
+   consolidated, **no open questions**). Ordered: **step 0 = merge PR #10** (ready: MERGEABLE/CLEAN,
+   fast-tests green, 15 ahead / 0 behind; fix its body first — it carries 1 code commit and 14 docs
+   commits from this audit) → phase 1 floor → phase 2 pre-flight power report (default on, ~2.5 min)
+   → phase 3 filter mode (opt-in, stays opt-in until replayed on a second dataset) → phase 4
+   `emuses stability-check`, a **post-hoc command, not a pipeline default**. PR #10 is a hard
+   prerequisite: at 87 targets the ordering bug would attach correct statistics to the wrong measures.
+   Decided: warnings go to both the log and a top-level `WARNING.txt`; `--seed_spread` defaults to
+   `off` (too heavy, and it clashes with a user-fixed `--random_state` conceptually — though not
+   technically, see phase 4). Phase 2 also writes `search_spaces.json` (resolved dicts + hash, reusing
+   `ModelIOManager._hash_config`): the spaces are currently persisted by **name only**
+   (`log/arguments_*.json`), and a name does not pin a definition.
+3j. [ ] **`model_manifest.json` under-describes its own run** (found 2026-09-03, pre-existing, small).
+       `training_context.random_seeds` is `{}` in June's folder while `random_seeds.json` at the root
+       is fully populated. `model_io.py:2018-2026` is meant to fill it by reading that file. Unrelated
+       to the validity feature but it lives in the same code path, so fix it in its own commit.
+   **Rationale for 3f–3i in one place:** `dev-docs/methodology/small_sample_prediction_validity.md`
+   (2026-09-03) — what R² measures against, the three diagnostics and how they differ, the
+   `DSD_repro` numbers, the six verified references. Read that rather than re-deriving from the
+   550-line audit narrative.
+3f. [ ] **Two numbers every prediction score should be printed next to** (2026-09-02, the fix the
+       §10 held-out test argues for — see `disconnectome_design_audit_2026_08.md` §10). Supersedes
+       the "report R² relative to the floor" half of 3d.
+       - [ ] **Mean-predictor floor** per target, on that target's own n and folds. R²=0 is not the
+             baseline at n≈88 (median −0.086), and for ceiling-bound targets it reaches −2.5. This
+             is the single number whose absence caused this whole audit: June's −0.1884 was read as
+             "poor but plausible" when it was *at* the floor.
+       - [ ] **Spread across ≥2 sampler seeds.** June's per-target ranking does not reproduce; five
+             independent draws of the same procedure disagree by a median of 0.080, the size of the
+             effects themselves.
+       - [ ] **Gate the *ranking*, not the run.** A target that does not beat its floor gets listed
+             as "not predictable at this n" instead of receiving a rank. No fitting changes.
+       - [ ] **Split the output into two files, and keep the denominator in both.**
+             `performance_target_rankings` holds only targets that clear their floor, *ranked*.
+             `performance_targets_below_floor` holds the rest as an **unranked list** — a rank
+             implies an ordering by quality, and ordering noise is what put `larapinch` at #1.
+             Both carry a header line naming the split: "13 of 87 targets exceeded their floor".
+             **Do not simply drop the below-floor targets.** Two reasons, both load-bearing:
+             (i) "87 tested, 13 carry signal" is the scientific claim; "here are 13 measures" with
+             no denominator is selective reporting and a reviewer will treat it as such;
+             (ii) if a run fails entirely, silently dropping everything yields a near-empty file
+             that reads like a small clean result — the exact silence-looks-like-success failure
+             this project keeps paying for. "0 of 87" must be impossible to miss.
+       - [ ] **Show the margin, don't just threshold it.** Lift over floor is an estimate; a target
+             just above and one just below are not different. Report lift *and* the seed spread so
+             the margin can be compared against the noise. Held-out reference: 23/87 beat their
+             floor but only 13 by more than 0.05.
+       - [ ] ADR entry recording the above, and recording that automated space-switching was
+             **measured and rejected** (below).
+       **Working mode when this is implemented: accept-edits, not auto.** This is reporting on
+       scientific output, where "it ran and looks finished" is exactly the untrustworthy signal.
+3g. [ ] **Do NOT automate space-switching, narrowing, or halting on these metrics — measured.**
+       The `auto` arm of the §10 test did exactly that (pick the space by development CV) and chose
+       correctly in **26 %** of splits, scoring −0.227 against the full space's −0.221: no better
+       than not trying. Reason it fails: a wide space's dev-CV score is inflated by its own
+       max-over-60-trials selection, and a narrow space's is inflated less, so the comparison is
+       biased toward the wider space by precisely the amount that makes it look good.
+       The floor check is only trustworthy **in one direction** — the model's score carries that
+       same selection inflation while the mean predictor carries none, so *failing* the floor is
+       strong evidence and *passing* it is weak. Flag failures; never treat a pass as validation.
+       If space breadth is ever tied to `n`, it must be a **documented default visible in the
+       manifest**, not a silent runtime switch, and sold as tail-risk reduction (catastrophic splits
+       8.7 % → 4.7 %) rather than as improvement — narrowing reaches the floor, it does not beat it.
+       **Never hard-stop a run on a noisy metric**: a completed run with a loud warning is
+       diagnosable, a halted one is not, and silence is this project's recurring failure mode.
+3h. [ ] **Permutation testing is what actually establishes signal, and EMUSES does not do it.**
+       The floor check says a model beat guessing; only a permutation null says the association is
+       real. The 13-survivor result quoted throughout this audit came from a *scratch* script
+       (`~/.claude/jobs/0d3a7417/tmp/perm_test.py`), not from EMUSES. Worth adding — and it is only
+       affordable **with a fixed model**: 1000 permutations × 87 targets is trivial when each
+       permutation refits one estimator on precomputed folds, and prohibitive if it re-runs a
+       60-trial search each time. Another reason the search is the wrong place to spend compute.
+3i. [ ] **Report the minimum detectable effect, and warn when nothing clears it.** `MDE = null_p95 +
+       0.84 × SD`, both terms measured — no simulated effect sizes (the earlier simulated version was
+       rejected by CF, correctly). SD comes from **repeated splits**, not from the across-fold SD and
+       not from the permutation null: measured, the null's SD is 0.064 against the real 0.142, low by
+       **1.96×**, because it holds the folds fixed and shuffles only y. On `DSD_repro` the MDE median
+       is 0.096 and **1 of 13** permutation-validated measures exceeds its own MDE (`lpegs`, by
+       0.029). This is the diagnostic that says *"no model would have worked"* rather than *"this
+       model didn't"*. It needs fits on real y, so it cannot run before training — but with a fixed
+       model those fits cost seconds, so it can run before committing to the expensive search.
+3e. [ ] **Re-run DSD_repro properly** once PR #10 is merged: `--test_size 0.2` (June used 0.0 and so
+       produced no held-out evaluation at all) and expect ~19 h / 9.6 GB peak. PR #10 is a hard
+       prerequisite: at 87 targets the lexicographic ordering bug mis-pairs 85 of them.
 4. [ ] **Resource controls.** Two separate pieces (2026-08-25): *memory-aware execution* is a
        researcher's control, blocked on nothing. **Peak RSS is now measured: 3.03 GB for the 10-class
        digits run** (1797 x 64, 3 h 35 m), so the profile that was blocking it exists
