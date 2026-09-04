@@ -213,6 +213,19 @@ def _shared_pipeline_options(
             ),
         ),
     ] = False,
+    record_cohort_ids: Annotated[
+        bool,
+        typer.Option(
+            "--record_cohort_ids",
+            help=(
+                "Also store subject identifiers in cohort.json. OFF by default: that "
+                "file ships inside the shared model folder, and clinical ids come from "
+                "small guessable spaces, so hashing them would not make them safe. The "
+                "default record identifies the cohort by a digest of the feature matrix "
+                "and contains no per-subject data at all."
+            ),
+        ),
+    ] = False,
     umap_trials: Annotated[
         int,
         typer.Option(

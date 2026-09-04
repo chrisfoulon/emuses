@@ -90,6 +90,7 @@ class PipelineRunner:
         args.allow_nd_without_heatmaps = bool(
             config_dict.get("allow_nd_without_heatmaps", False)
         )
+        args.record_cohort_ids = bool(config_dict.get("record_cohort_ids", False))
         args.hdbscan_trials = int(config_dict.get("hdbscan_trials", 5))
         args.optuna_trials = int(config_dict.get("optuna_trials", 10))
         args.prediction_optim_dict = str(

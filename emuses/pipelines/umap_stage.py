@@ -12,6 +12,9 @@ from emuses.observability import (get_logger, track_optimization_trial,
                                   track_scientific_operation)
 from emuses.pipelines.pipeline_stage import PipelineStage
 from emuses.tools.clustering_utils import load_hdbscan_model
+from emuses.tools.cohort_identity import (build_cohort_record, cohorts_match,
+                                          read_cohort_record,
+                                          write_cohort_record)
 from emuses.tools.embedding_dimensionality import (
     check_embedding_matches_stages, declared_n_components,
     validate_metrics_for_dimensionality)
@@ -143,6 +146,11 @@ class UMAPStage(PipelineStage):
         embeddings_file = self.config.output_folder / f"{prefix}embeddings.npy"
         cluster_labels_file = self.config.output_folder / f"{prefix}cluster_labels.npy"
 
+        # Which folder, if any, this run's morphospace came from. None means it
+        # was trained here, in which case the labels belong to this cohort by
+        # construction and the cohort check below must not second-guess them.
+        reused_from = None
+
         # An explicitly supplied morphospace wins over both the output-folder
         # detection below and training. --load_umap was declared in
         # cli/pipeline_options.py, stored on PipelineConfig, plumbed through
@@ -188,12 +196,19 @@ class UMAPStage(PipelineStage):
                 explicit_umap_path.parent, model_name="hdbscan_model"
             )
             self.cluster_model_path = explicit_umap_path.parent
-            # Labels are deliberately left unset. The saved cluster_labels.npy
-            # describes the subjects the morphospace was BUILT on; this run may
-            # have a different cohort, and pairing n_old labels with n_new
-            # coordinates is a silent wrong answer. They are assigned from the
-            # loaded clusterer once the current subjects' coordinates exist.
-            self.cluster_labels = None
+            reused_from = explicit_umap_path.parent
+            # The saved cluster_labels.npy describes the subjects the morphospace
+            # was BUILT on. Until cohort.json existed there was no way to tell
+            # whether this run has those same subjects, so these were left unset
+            # and always re-derived -- correct, but it threw away HDBSCAN's actual
+            # fitted labelling even when the cohort was identical, and
+            # approximate_predict does not always reproduce it near cluster
+            # boundaries. Load them now; the cohort check below decides whether
+            # they may be used, and re-derives when it cannot confirm the match.
+            sibling_labels = reused_from / "cluster_labels.npy"
+            self.cluster_labels = (
+                np.load(sibling_labels) if sibling_labels.is_file() else None
+            )
 
         # If output files exist, load them and skip training. `_newest` returns
         # None when nothing matched, so these are identity checks, not .exists().
@@ -212,6 +227,7 @@ class UMAPStage(PipelineStage):
                 cluster_model_file.parent, model_name="hdbscan_model"
             )
             self.cluster_labels = np.load(cluster_labels_file)
+            reused_from = self.config.output_folder
         else:
             # Load or generate the optimization dictionary.
             if "optim_dict" in context and context["optim_dict"]:
@@ -342,14 +358,46 @@ class UMAPStage(PipelineStage):
         # morphospace was built with. When the cohort differs, that pairs n_old
         # labels with n_new coordinates.
         #
-        # Length is the only signal available here, so this closes the case where
-        # the cohorts differ in size. Two cohorts of EQUAL size still slip
-        # through, because nothing in the context carries subject identity -- the
-        # audit had to fingerprint subjects by disconnection load to recover their
-        # order. Fixing that properly needs identity in the saved artefacts.
+        # Length alone used to be the only signal, which caught cohorts of
+        # DIFFERENT size and missed cohorts of the same size entirely. cohort.json
+        # closes that: a digest of the feature matrix identifies the cohort (and
+        # its preprocessing) without storing anything about any subject.
+        #
+        # `cohorts_match` returns None for "unknown" -- no record, an older
+        # folder, an unreadable one. Unknown is treated exactly like a mismatch:
+        # every folder written before this existed has no record, and absence of
+        # evidence of a change is not evidence of no change. Re-assigning when we
+        # did not need to costs a cheap approximate_predict; trusting stale labels
+        # costs a silently wrong answer.
+        current_cohort = build_cohort_record(
+            train_features,
+            ids=context.get("scores_indices"),
+            record_ids=getattr(self.config, "record_cohort_ids", False),
+        )
+        cohort_verdict = None
+        if reused_from is not None:
+            cohort_verdict = cohorts_match(
+                read_cohort_record(reused_from), current_cohort
+            )
+            if cohort_verdict is False:
+                logger.warning(
+                    f"The morphospace in {reused_from} was built on a different cohort "
+                    f"(feature digest differs). Cluster labels will be re-derived for "
+                    f"this run's subjects rather than reused."
+                )
+            elif cohort_verdict is None:
+                logger.info(
+                    f"No usable cohort record in {reused_from}, so this run cannot "
+                    f"confirm the stored labels describe its subjects. Re-deriving them."
+                )
+
         needs_assignment = (
             self.cluster_labels is None
             or len(self.cluster_labels) != len(self.embeddings)
+            # Only ever applies to a reused morphospace: a freshly trained one
+            # produced these labels from these subjects, so there is nothing to
+            # verify and nothing to second-guess.
+            or (reused_from is not None and cohort_verdict is not True)
         )
         if needs_assignment and self.best_clusterer is not None:
             n_labels = None if self.cluster_labels is None else len(self.cluster_labels)
@@ -421,6 +469,13 @@ class UMAPStage(PipelineStage):
             logger.info(f"Cluster labels saved at: {cluster_labels_file}")
         if self.cluster_labels_path is None:
             self.cluster_labels_path = cluster_labels_file
+
+        # Record which cohort this folder describes, so the NEXT run reusing it
+        # can tell. Written on every route, including a fresh training run --
+        # that is the folder a later reuse will read.
+        cohort_path = write_cohort_record(self.config.output_folder, current_cohort)
+        if cohort_path is not None:
+            logger.info(f"Cohort record saved at: {cohort_path}")
 
         # Rescale embeddings.
         self.min_embeddings = self.embeddings.min(axis=0)

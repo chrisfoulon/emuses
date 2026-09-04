@@ -92,6 +92,10 @@ class PipelineConfig:
     # the run being refused. Prediction training is dimension-agnostic; only the
     # heatmap needs two axes.
     allow_nd_without_heatmaps: bool = False
+    # Store subject identifiers in cohort.json. Off by default because that file
+    # ships inside the shared model folder; see emuses/tools/cohort_identity.py
+    # for why hashing the ids would not make storing them safe.
+    record_cohort_ids: bool = False
 
     # Dataset processing parameters
     input_header: int = None  # Header row for spreadsheet data
