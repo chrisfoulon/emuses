@@ -21,6 +21,10 @@ from emuses.observability import get_logger, track_scientific_operation
 from emuses.pipelines.pipeline_stage import PipelineStage
 from emuses.tools.ae_optuna import optimize_ae_pretraining
 from emuses.tools.data_preproc import filter_nan_rows
+from emuses.tools.run_index import build_run_entry, record_run
+from emuses.tools.target_resume import (build_target_fingerprint,
+                                        load_completed_target,
+                                        write_target_artefacts)
 from emuses.tools.embedding_dimensionality import (
     HEATMAP_N_COMPONENTS, EmbeddingDimensionalityError,
     check_embedding_matches_stages, record_skipped_heatmaps)
@@ -90,6 +94,27 @@ def _optimise_target(
     optuna_seed = random_seeds.get("optuna_seed", cv_seed)
     prediction_seed = random_seeds.get("prediction_seed", cv_seed)
 
+    # Targets are independent, so an interrupted run can be resumed a whole
+    # target at a time. Opt-in: skipping a search silently is exactly the class
+    # of behaviour this codebase has been paying for, and one flag is cheap.
+    # The fingerprint covers the coordinates, the target values, the search
+    # space, the fold count, the trial budget and the seeds -- anything that
+    # would make the stored result answer a different question.
+    fingerprint = build_target_fingerprint(
+        X=Xi,
+        y=yi,
+        task=task,
+        outer_folds=cfg.outer_folds,
+        optuna_trials=cfg.optuna_trials,
+        optim_dict=optim_dict,
+        seeds={"cv_seed": cv_seed, "optuna_seed": optuna_seed,
+               "prediction_seed": prediction_seed},
+    )
+    if getattr(cfg, "resume_targets", False):
+        reused = load_completed_target(out_dir, tag, fingerprint, logger=logger)
+        if reused is not None:
+            return tag, reused[0], reused[1]
+
     scores, pipes = nested_optuna_cv(
         Xi,
         yi,
@@ -108,6 +133,12 @@ def _optimise_target(
     logger.info(
         "%s  kept %d / %d rows  -  mean=%.3f", tag, len(yi), len(Y), scores.mean()
     )
+
+    # Written unconditionally, not only under --resume_targets: the run that can
+    # be resumed is the one that already crashed, and it had no reason to expect
+    # it. Full precision, because the per-fold CSV rounds to 4 decimals and
+    # resuming from that would change the numbers a resumed run reports.
+    write_target_artefacts(out_dir, tag, scores, fingerprint)
 
     return tag, scores, pipes
 
@@ -1057,6 +1088,26 @@ class HeatmapStage(PipelineStage):
                     f"Aggregated individual fold scores saved: {folds_filename}"
                 )
                 aggregated_csv_files.append(str(folds_path))
+
+            # Say which run these timestamped files came from. The folder keeps
+            # every run's aggregates (deleting them would destroy the comparison
+            # they exist for), so without an index "the results" is a filename
+            # picked by eye, and the per-target CSVs have meanwhile been
+            # overwritten by whichever run went last.
+            index_path = record_run(
+                self.config.output_folder,
+                build_run_entry(
+                    timestamp=timestamp,
+                    task=task,
+                    n_targets=n_targets,
+                    summary_file=summary_filename,
+                    folds_file=(folds_filename if individual_fold_data else None),
+                    config=self.config,
+                    context=context,
+                ),
+            )
+            if index_path is not None:
+                logger.info(f"Run recorded in {index_path}")
 
             # File 3: Overall Statistics (if multiple targets)
             if len(summary_data) > 1:

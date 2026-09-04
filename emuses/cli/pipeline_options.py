@@ -226,6 +226,19 @@ def _shared_pipeline_options(
             ),
         ),
     ] = False,
+    resume_targets: Annotated[
+        bool,
+        typer.Option(
+            "--resume_targets",
+            help=(
+                "Skip the nested-CV search for targets a previous run in this output "
+                "folder already finished. A target is reused only when the coordinates, "
+                "target values, search space, fold count, trial budget and seeds are all "
+                "unchanged; anything else re-runs it. Useful after an interrupted long "
+                "run - the search is the expensive half of EMUSES."
+            ),
+        ),
+    ] = False,
     umap_trials: Annotated[
         int,
         typer.Option(

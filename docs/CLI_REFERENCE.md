@@ -99,6 +99,69 @@ emuses umap embeddings_output/ brain_features.csv
 - **Quality control**: Check data clustering before full analysis
 - **Preprocessing**: Create embeddings for downstream analysis
 
+---
+
+## ♻️ **Reusing Work Between Runs**
+
+The morphospace and the prediction search are reused separately, and the rules
+differ. Both are worth knowing before you point a run at a folder that already
+has results in it.
+
+### Reusing a morphospace
+
+**Explicitly, with `--load_umap`** — the recommended route:
+
+```bash
+# Build the morphospace once
+emuses umap morphospace/ features.csv
+
+# Reuse it later, with labelled data, to build prediction models
+emuses full analysis/ features.csv --scores scores.csv --load_umap morphospace/
+```
+
+`--load_umap` accepts the run folder or the model file. It does **not** fall back
+to training if the path is unusable — it fails, because reusing a specific
+morphospace and building a new one are different experiments.
+
+**Implicitly, by reusing an output folder.** If a folder already contains a UMAP
+model, a clusterer, embeddings and cluster labels, a new run into that folder
+loads them and skips UMAP training. This is easy to trigger by accident, so the
+run logs `Found existing output files` when it happens. Use a fresh folder, or
+`--load_umap`, when you want to be sure which morphospace you got.
+
+**Cluster labels and cohorts.** Coordinates are always re-derived for the current
+subjects. Cluster labels are only reused when `cohort.json` confirms the cohort
+is unchanged; otherwise they are re-derived from the saved clusterer. A folder
+written before `cohort.json` existed cannot confirm anything, so its labels are
+re-derived rather than trusted. `cohort.json` stores **no subject identifiers** by
+default — only a digest of the feature matrix — because the model folder is what
+you share. `--record_cohort_ids` adds them if you can share them.
+
+### Reusing the prediction search — `--resume_targets`
+
+The nested-CV search is the expensive half of EMUSES. Targets are independent, so
+an interrupted run can pick up a target at a time:
+
+```bash
+emuses full analysis/ features.csv --scores scores.csv --resume_targets
+```
+
+Opt-in on purpose. A target is reused only when everything that determined its
+result is unchanged: the coordinates, the target values, the search space, the
+fold count, the trial budget and the seeds. Change `--optuna_trials` or
+`--prediction_optim_dict` and the stored result is rejected and re-run.
+
+Resuming is per **target**, not per fold — a target interrupted midway is redone.
+
+### Telling several runs apart in one folder
+
+`performance_summary/` keeps one timestamped pair of CSVs per run, and the
+per-target CSVs under `target_N/performance/` are overwritten by whichever run
+went last. `performance_summary/runs.json` records what each run was —
+embedding width, search spaces, budgets, seeds — with `latest` naming the current
+results. Read it before comparing numbers from a folder that has been run more
+than once.
+
 ### `emuses models list` - View Available Models
 
 List all models in your registry with completeness indicators.

@@ -96,6 +96,10 @@ class PipelineConfig:
     # ships inside the shared model folder; see emuses/tools/cohort_identity.py
     # for why hashing the ids would not make storing them safe.
     record_cohort_ids: bool = False
+    # Reuse per-target prediction searches a previous run finished, when nothing
+    # that determined their result has changed. Opt-in; see
+    # emuses/tools/target_resume.py.
+    resume_targets: bool = False
 
     # Dataset processing parameters
     input_header: int = None  # Header row for spreadsheet data

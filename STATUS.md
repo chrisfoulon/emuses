@@ -11,11 +11,12 @@ flags say, and the same command twice gives the same answer.
 
 ## State of play
 
-**All work is on `main`; no branches outstanding** (2026-08-25). Six branches converged that day —
-Phase 1F (PR #9), Phase 4, Phase 5 (the extras move), the `n_jobs` Arm B evidence, the regression
-conftest fix and the parallelism backend scope. Plan:
-`~/.claude/plans/playful-watching-naur.md` (consolidated 2026-08-24 — read that, not the older
-per-phase notes).
+**One branch outstanding: `fix/nd-embedding-gate-and-load-umap`** (2026-09-04, unpushed) — the N-D
+gate and its opt-in, the `--load_umap` and resume fixes, cohort identity, per-target resume and the
+run index. Everything else is on `main`; six branches converged on 2026-08-25 — Phase 1F (PR #9),
+Phase 4, Phase 5 (the extras move), the `n_jobs` Arm B evidence, the regression conftest fix and the
+parallelism backend scope. Plan: `~/.claude/plans/playful-watching-naur.md` (consolidated
+2026-08-24 — read that, not the older per-phase notes).
 
 ### EMUSES runs end to end (measured 2026-08-24)
 
@@ -230,7 +231,25 @@ time, before anything trains, naming the optim_dict to change and `emuses umap` 
 A UMAP-only run may be N-D — that is a supported output. `HeatmapStage` carries the same check
 independently for direct drivers (`tests/regression`), and `HeatmapStage.run` re-raises that one
 error specifically while still tolerating genuine grid failures. Every guard is
-perturbation-verified in `tests/test_embedding_dimensionality.py` (27 tests).
+perturbation-verified in `tests/test_embedding_dimensionality.py` (37 tests).
+
+**`--allow_nd_without_heatmaps` is the way to run the N-D experiment** (2026-09-04). The gate as
+first built refused the very run item 3c needs — comparing prediction quality at d ∈ {2,3,5,10} —
+because the shipped dicts enable the heatmap and the flag to say "I know, skip them" did not exist.
+The opt-in **does not fork the pipeline**: the full training stage runs unchanged at any width, and
+only the 2-D-only grid section is skipped, so there is one code path to maintain and the d=2 and
+d=5 arms of the comparison differ in the embedding alone. The default still refuses; the skip
+writes `heatmaps_skipped.json` naming the width, so a folder without heatmaps says why. The trap
+here is that the natural implementation — return early from the skip branch — also skips the
+`inference_features` handoff below it, silently dropping held-out validation on exactly the runs
+being compared. `TestSkipDoesNotStealTheInferenceHandoff` reads the source with `ast` and fails if
+that return comes back.
+
+**`test_data` cannot answer the dimensionality question.** d=2 and d=5 give bit-identical scores
+there, which looks like the flag doing nothing. It is not: max |r| between any feature and any
+target is **0.090**, the mean-predictor 5-fold R² is **−0.187**, and every fold model collapses to
+its training mean. Identical scores are the correct answer on signal-free data. Run item 3c on
+`DSD_repro`; a null on `test_data` would prove nothing.
 
 **`emuses umap` genuinely runs at N-D** (2026-09-04, measured on `test_data`, not read off code):
 d = 2, 3, 5 and 10 each produce a valid morphospace with clusters. Three things had to be fixed to
@@ -502,9 +521,8 @@ problem, the `enhanced-cli-typer` hang and repo pollution by test output are all
          `cluster_labels.npy`, so a reuse run with a different cohort paired n_old labels with n_new
          coordinates. `UMAPStage` now assigns the current subjects via `hdbscan.approximate_predict`
          whenever the count disagrees, and raises a named error if the saved clusterer lacks
-         `prediction_data=True`. **Residual gap, deliberately left**: two cohorts of *equal size*
-         still slip through, because nothing in the artefacts carries subject identity — the audit
-         had to fingerprint subjects by disconnection load to recover their order.
+         `prediction_data=True`. The equal-size-cohort hole this left is closed below by
+         `cohort.json`.
        - **FIXED: the output-folder detection was dead code.** It looked for the bare filename
          `best_umap_model.joblib`; saved models are version-suffixed, so the branch was unreachable
          and every implicit resume retrained in silence. Now globs for the newest match. Pinned by
@@ -516,8 +534,36 @@ problem, the `enhanced-cli-typer` hang and repo pollution by test output are all
          is now idempotent and outside it.
        - **Run end to end** (2026-09-04, `test_data`): reuse via `--load_umap` takes 0.0 s against
          12.1 s to train, produces aligned embeddings and labels for the current cohort, and a 5-D
-         morphospace with the heatmap enabled is refused before any prediction search. The residual
-         equal-size-cohort gap above is still open; a real different-cohort run is still worth doing.
+         morphospace with the heatmap enabled is refused before any prediction search.
+       - **FIXED: the equal-size cohort gap is closed.** `cohort.json` identifies the cohort by a
+         SHA-256 over the feature matrix. It stores **no per-subject data by default** — that file
+         ships inside the shared model folder, and hashing clinical ids would not help, since they
+         come from small guessable spaces and per-subject digests are recoverable by enumeration.
+         `--record_cohort_ids` opts in. Unknown counts as a mismatch, so pre-existing folders
+         re-derive rather than trust. Verified on a real second cohort of identical shape: same
+         subjects reuse, different subjects are caught. Side effect: `--load_umap` can now reuse
+         HDBSCAN's *fitted* labels when the cohort matches, which it previously always discarded.
+       - **FIXED: `--resume_targets` reuses finished prediction searches.** Per target, opt-in, and
+         only when the coordinates, target values, search space, fold count, trial budget and seeds
+         are all unchanged. Full-precision `cv_scores.npy` is written because the per-fold CSV
+         rounds to 4 dp. Per-fold or partial-study resume is deliberately **not** attempted — it
+         means owning Optuna's study state machine for a much smaller saving.
+       - **FIXED: several runs in one folder can be told apart.** `performance_summary/runs.json`
+         records each run's embedding width, search spaces, budgets and seeds, with `latest` naming
+         the current results. The timestamped aggregates are kept, not pruned: comparing
+         configurations is why a folder holds more than one.
+       - **Documented** in `docs/CLI_REFERENCE.md` under "Reusing Work Between Runs", including the
+         implicit output-folder resume, which was previously invisible to users.
+       - **`emuses inference` already runs standalone** and is verified: `--model <folder>` loads,
+         scales, predicts and writes predictions plus confidence. Caveat for anyone testing it on
+         `test_data`: every prediction comes out identical there, which looks exactly like the
+         2025-08-27 "all predictions identical" bug and is not. The fold models genuinely are
+         constant — they return one value for coordinates spanning the whole morphospace, and those
+         constants are the per-fold training means of a target whose raw mean is 0.8146. That is
+         correct behaviour on a signal-free target, and it means `test_data` cannot verify that
+         predictions *vary*.
+       - **Open**: those constant models report a confidence score of 0.9934. A mean-predictor
+         claiming 99.3% confidence is misleading and deserves its own look.
    **Rationale for 3f–3i in one place:** `dev-docs/methodology/small_sample_prediction_validity.md`
    (2026-09-03) — what R² measures against, the three diagnostics and how they differ, the
    `DSD_repro` numbers, the six verified references. Read that rather than re-deriving from the
