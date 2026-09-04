@@ -87,6 +87,9 @@ class PipelineRunner:
         args.umap_trials = int(config_dict.get("umap_trials", 10))
         _n_components = config_dict.get("umap_n_components", None)
         args.umap_n_components = None if _n_components is None else int(_n_components)
+        args.allow_nd_without_heatmaps = bool(
+            config_dict.get("allow_nd_without_heatmaps", False)
+        )
         args.hdbscan_trials = int(config_dict.get("hdbscan_trials", 5))
         args.optuna_trials = int(config_dict.get("optuna_trials", 10))
         args.prediction_optim_dict = str(
@@ -594,6 +597,9 @@ class PipelineRunner:
                             resolved_optim_dict,
                             enabled_stages,
                             optim_dict_name=optim_dict_name,
+                            allow_nd_without_heatmaps=config_dict.get(
+                                "allow_nd_without_heatmaps", False
+                            ),
                         )
                         if declared is not None and declared != {2}:
                             self.logger.warning(

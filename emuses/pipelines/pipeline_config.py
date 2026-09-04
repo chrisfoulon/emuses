@@ -87,6 +87,11 @@ class PipelineConfig:
     # emuses/tools/embedding_dimensionality.py for why, and for the check that
     # enforces it before any training happens.
     umap_n_components: int = None
+    # Opt in to training predictions in an N-D morphospace, accepting that the
+    # grid section is skipped and recorded in heatmaps_skipped.json rather than
+    # the run being refused. Prediction training is dimension-agnostic; only the
+    # heatmap needs two axes.
+    allow_nd_without_heatmaps: bool = False
 
     # Dataset processing parameters
     input_header: int = None  # Header row for spreadsheet data

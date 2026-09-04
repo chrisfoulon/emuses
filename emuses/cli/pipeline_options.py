@@ -198,6 +198,21 @@ def _shared_pipeline_options(
             ),
         ),
     ] = None,
+    allow_nd_without_heatmaps: Annotated[
+        bool,
+        typer.Option(
+            "--allow_nd_without_heatmaps",
+            help=(
+                "Train prediction models in an N-D morphospace and accept that no "
+                "heatmaps are produced. Without this, an embedding wider than 2 is "
+                "refused before training whenever the heatmap stage is enabled. The "
+                "nested-CV search is dimension-agnostic and runs normally; only the "
+                "2-D grid section is skipped, and the run writes heatmaps_skipped.json "
+                "into the output folder recording why. Use this to compare prediction "
+                "performance across embedding widths."
+            ),
+        ),
+    ] = False,
     umap_trials: Annotated[
         int,
         typer.Option(

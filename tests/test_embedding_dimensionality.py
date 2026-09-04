@@ -395,3 +395,123 @@ class TestResumeDetectionMatchesWhatIsActuallyWritten:
         assert found_umap and found_hdb, "the glob must match the real saved names"
         # and the old exact-name test must NOT match, which is why it was dead
         assert not (tmp_path / "best_umap_model.joblib").exists()
+
+
+class TestNDWithoutHeatmapsOptIn:
+    """`--allow_nd_without_heatmaps`: predictions in N-D, heatmaps declared absent.
+
+    Prediction training is the first half of `HeatmapStage.run` and
+    `PredictionStage` is retired, so before this opt-in existed there was no way
+    to obtain a prediction score at d>2 at all -- the refusal above also blocked
+    the experiment it was built to protect. The opt-in must unblock that WITHOUT
+    reintroducing the original defect, so what these pin is the difference
+    between an absence you must notice and an absence the folder states.
+    """
+
+    def test_default_still_refuses(self):
+        """The opt-in must be opt-IN. A default that allows N-D is the old bug."""
+        d = {"param": {"umap": {"n_components": {"value": 5}}}}
+        with pytest.raises(EmbeddingDimensionalityError):
+            check_embedding_dimensionality(d, ["umap", "heatmap"])
+
+    def test_opt_in_allows_the_configuration(self):
+        d = {"param": {"umap": {"n_components": {"value": 5}}}}
+        assert check_embedding_dimensionality(
+            d, ["umap", "heatmap"], allow_nd_without_heatmaps=True
+        ) == {5}
+
+    def test_refusal_message_names_the_opt_in(self):
+        """A refusal that does not say how to proceed sends people to the source."""
+        d = {"param": {"umap": {"n_components": {"value": 5}}}}
+        with pytest.raises(EmbeddingDimensionalityError) as exc:
+            check_embedding_dimensionality(d, ["umap", "heatmap"])
+        assert "--allow_nd_without_heatmaps" in str(exc.value)
+
+    def test_width_check_returns_the_width_instead_of_raising(self):
+        assert check_embedding_matches_stages(
+            np.zeros((10, 5)), heatmap_enabled=True, allow_nd_without_heatmaps=True
+        ) == 5
+
+    def test_opt_in_does_not_change_the_two_d_path(self):
+        """A 2-D run must be bit-for-bit unaffected by the flag being present."""
+        assert check_embedding_matches_stages(
+            np.zeros((10, 2)), heatmap_enabled=True, allow_nd_without_heatmaps=True
+        ) is None
+
+    def test_a_malformed_embedding_still_raises_even_with_the_opt_in(self):
+        """The opt-in forgives width, not a non-embedding. 1-D is not a morphospace."""
+        with pytest.raises(EmbeddingDimensionalityError):
+            check_embedding_matches_stages(
+                np.zeros(10), heatmap_enabled=True, allow_nd_without_heatmaps=True
+            )
+
+    def test_marker_records_the_reason_on_disk(self, tmp_path):
+        import json
+
+        from emuses.tools.embedding_dimensionality import (
+            SKIPPED_MARKER_FILENAME, record_skipped_heatmaps)
+
+        marker = record_skipped_heatmaps(tmp_path, 5, targets=["target_0"])
+        assert marker == tmp_path / SKIPPED_MARKER_FILENAME
+        payload = json.loads(marker.read_text())
+        assert payload["n_components"] == 5
+        assert payload["opted_in_with"] == "--allow_nd_without_heatmaps"
+        # The folder must say the SCORES are still good, or a reader finding this
+        # file has no way to tell whether the whole run is suspect.
+        assert payload["predictions_trained"] is True
+        assert "heatmap_visualizations" in payload["skipped"]
+
+    def test_marker_failure_never_loses_a_completed_search(self):
+        """Writing the marker is bookkeeping; the search behind it took hours."""
+        from emuses.tools.embedding_dimensionality import record_skipped_heatmaps
+
+        assert record_skipped_heatmaps(None, 5) is None
+        assert record_skipped_heatmaps("/proc/nonexistent/nope", 5) is None
+
+
+class TestSkipDoesNotStealTheInferenceHandoff:
+    """The skip must not return early out of `HeatmapStage.run`.
+
+    Everything after the grid section prepares `inference_features` /
+    `inference_labels` for InferenceStage, which validates the models on the
+    held-out set. An early return there would silently drop held-out validation
+    on exactly the N-D runs that exist to be compared -- the same shape of defect
+    as the original, introduced while fixing it. This was caught in review, not
+    by a test, which is why it gets one.
+    """
+
+    def test_the_skip_branch_contains_no_return(self):
+        import ast
+        import textwrap
+
+        from emuses.pipelines.heatmap_stage import HeatmapStage
+
+        tree = ast.parse(textwrap.dedent(inspect.getsource(HeatmapStage.run)))
+        guards = [
+            node for node in ast.walk(tree)
+            if isinstance(node, ast.If)
+            and "skipped_width" in ast.dump(node.test)
+            and any(isinstance(n, ast.Call) for n in ast.walk(node))
+        ]
+        assert guards, "no `skipped_width` guard found in HeatmapStage.run"
+        for guard in guards:
+            returns = [n for n in ast.walk(guard) if isinstance(n, ast.Return)]
+            assert not returns, (
+                "The N-D skip branch returns out of HeatmapStage.run. Everything "
+                "below it prepares inference_features/inference_labels for "
+                "InferenceStage, so returning here drops held-out validation on "
+                "N-D runs without saying so. Skip the grid section, do not leave "
+                "the method."
+            )
+
+    def test_the_inference_handoff_is_reachable_after_the_guard(self):
+        """Structural check above is only meaningful if the handoff is really below."""
+        from emuses.pipelines.heatmap_stage import HeatmapStage
+
+        source = inspect.getsource(HeatmapStage.run)
+        guard_at = source.index("skipped_width")
+        handoff_at = source.index('context["inference_features"]')
+        assert handoff_at > guard_at, (
+            "the inference handoff no longer follows the skip guard; the "
+            "no-early-return test above would stop meaning anything"
+        )

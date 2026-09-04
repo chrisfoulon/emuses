@@ -384,14 +384,24 @@ class UMAPStage(PipelineStage):
         # loaded from disk - a 5-D saved model reached through --load_umap would
         # sail past it and only fail inside HeatmapStage, after the entire
         # prediction search. This is the fail-fast for that case.
-        check_embedding_matches_stages(
+        # --allow_nd_without_heatmaps is honoured here too, or the run would be
+        # refused one stage before the stage that knows how to skip gracefully.
+        nd_opt_in = getattr(self.config, "allow_nd_without_heatmaps", False)
+        nd_width = check_embedding_matches_stages(
             self.embeddings,
             heatmap_enabled=getattr(self.config, "heatmap_stage_enabled", True),
             source=(
                 f"--load_umap {explicit_umap}" if explicit_umap
                 else "the loaded/trained UMAP model"
             ),
+            allow_nd_without_heatmaps=nd_opt_in,
         )
+        if nd_width is not None:
+            logger.warning(
+                f"Continuing with a {nd_width}-D morphospace because "
+                f"--allow_nd_without_heatmaps was given. Prediction training will run "
+                f"normally; the heatmap grid section will be skipped and recorded."
+            )
 
         # Persist the artefacts this run produced, if training did not already.
         #

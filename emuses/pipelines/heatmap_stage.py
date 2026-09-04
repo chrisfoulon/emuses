@@ -21,8 +21,9 @@ from emuses.observability import get_logger, track_scientific_operation
 from emuses.pipelines.pipeline_stage import PipelineStage
 from emuses.tools.ae_optuna import optimize_ae_pretraining
 from emuses.tools.data_preproc import filter_nan_rows
-from emuses.tools.embedding_dimensionality import (HEATMAP_N_COMPONENTS,
-                                                   EmbeddingDimensionalityError)
+from emuses.tools.embedding_dimensionality import (
+    HEATMAP_N_COMPONENTS, EmbeddingDimensionalityError,
+    check_embedding_matches_stages, record_skipped_heatmaps)
 from emuses.tools.inputs_utils import (get_array_info,
                                        load_and_preprocess_digits_dataset)
 from emuses.tools.kernel_regression_utils import (KernelLogisticRegressor,
@@ -506,29 +507,66 @@ class HeatmapStage(PipelineStage):
         # ------------------------------------------------------------------
         # TRIPLE GRID STATISTICAL ANALYSIS AFTER NESTED CV TRAINING
         # ------------------------------------------------------------------
-        logger.info("=== Starting Triple Grid Statistical Analysis ===")
-        
-        try:
-            # Execute triple grid analysis using current pipeline data
-            self._execute_triple_grid_analysis(
-                context=context,
-                embeddings=prediction_train_coords,  # Rescaled UMAP coordinates (0-1)
-                target_matrix=Y,  # Processed target matrix [n_samples, n_targets]
-                output_folder=self.config.output_folder,
-                logger=logger
+        # An N-D morphospace reaches here only when the run explicitly opted in
+        # with --allow_nd_without_heatmaps. Everything above this point is
+        # dimension-agnostic and has already produced valid prediction scores;
+        # only the grid section below needs exactly two axes. Skip it and say so
+        # on disk, so the folder answers "why are there no heatmaps in here?"
+        # without its console output.
+        skipped_width = check_embedding_matches_stages(
+            prediction_train_coords,
+            heatmap_enabled=True,
+            source="the morphospace this run was given",
+            allow_nd_without_heatmaps=getattr(
+                self.config, "allow_nd_without_heatmaps", False
+            ),
+        )
+        if skipped_width is not None:
+            marker = record_skipped_heatmaps(
+                getattr(self.config, "output_folder", None),
+                skipped_width,
+                targets=list(context.get("prediction_results", {})),
             )
-            logger.info("Triple grid statistical analysis completed successfully")
+            logger.warning(
+                f"Skipping the grid and heatmap section: the embedding is "
+                f"{skipped_width}-D and the grid requires {HEATMAP_N_COMPONENTS}. "
+                f"Prediction scores above are unaffected and valid. "
+                f"Recorded in {marker}."
+            )
+            context["heatmaps_skipped"] = {
+                "n_components": skipped_width,
+                "marker": str(marker) if marker else None,
+            }
 
-        except EmbeddingDimensionalityError:
-            # Deliberately NOT swallowed. Every other grid failure is a runtime
-            # problem this pipeline can survive without, but an embedding of the
-            # wrong width is a configuration error: continuing produces a run
-            # that exits 0 having silently dropped every heatmap it was asked
-            # for. Let it terminate the stage.
-            raise
-        except Exception as e:
-            logger.error(f"Triple grid analysis failed: {e}")
-            logger.warning("Continuing pipeline without statistical grid analysis")
+        # NOT an early return. Everything below the grid section prepares
+        # inference_features/inference_labels for InferenceStage (line ~860),
+        # which is what validates the models against the held-out set -- the one
+        # number an N-D-versus-2-D comparison actually turns on. Returning here
+        # would have skipped it on precisely the runs that need it, quietly.
+        if skipped_width is None:
+            logger.info("=== Starting Triple Grid Statistical Analysis ===")
+
+            try:
+                # Execute triple grid analysis using current pipeline data
+                self._execute_triple_grid_analysis(
+                    context=context,
+                    embeddings=prediction_train_coords,  # Rescaled UMAP coordinates (0-1)
+                    target_matrix=Y,  # Processed target matrix [n_samples, n_targets]
+                    output_folder=self.config.output_folder,
+                    logger=logger
+                )
+                logger.info("Triple grid statistical analysis completed successfully")
+
+            except EmbeddingDimensionalityError:
+                # Deliberately NOT swallowed. Every other grid failure is a runtime
+                # problem this pipeline can survive without, but an embedding of the
+                # wrong width is a configuration error: continuing produces a run
+                # that exits 0 having silently dropped every heatmap it was asked
+                # for. Let it terminate the stage.
+                raise
+            except Exception as e:
+                logger.error(f"Triple grid analysis failed: {e}")
+                logger.warning("Continuing pipeline without statistical grid analysis")
 
         # ------------------------------------------------------------------
 

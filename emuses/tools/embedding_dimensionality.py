@@ -28,6 +28,24 @@ An N-D morphospace on its own is useful and is **not** blocked: ``emuses umap``
 builds and saves it, and nothing downstream of that stage requires 2-D. Only a
 run that would also produce heatmaps is refused.
 
+The opt-in, and why it is not a hole in the gate
+------------------------------------------------
+Prediction training lives in the **first half** of ``HeatmapStage.run`` (the
+nested-CV search); the grid section it cannot do in N-D comes afterwards.
+``PredictionStage`` is retired, so that is the only route to a prediction model
+-- which meant the refusal above also made it impossible to ask *"do predictions
+improve in a wider morphospace?"*, the question the dimensionality work exists to
+answer. Measured 2026-09-04: at d=5 the models receive genuine ``(n, 5)``
+coordinates, fit, and score all folds; only the grid fails.
+
+``allow_nd_without_heatmaps`` therefore turns the refusal into a **declared
+skip**: predictions are trained, the grid section is not attempted, and
+``heatmaps_skipped.json`` is written into the output folder saying which width
+caused it. The default is unchanged and still refuses. The distinction being
+preserved is not "N-D is dangerous" but "a run must never quietly lack its main
+output" -- an absence you have to notice is the bug; an absence the folder
+states is a result.
+
 Do not "fix" a refusal by loosening the grid check
 --------------------------------------------------
 Making the heatmap N-D is a design question, not a validation to relax. Two
@@ -46,7 +64,15 @@ Background and the evidence that 2-D is not the binding constraint on this
 data: ``dev-docs/methodology/external_evidence_dsd.md`` section 7.2.
 """
 
+import json
+from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Dict, Iterable, Optional, Set
+
+# Written into the output folder when heatmaps were skipped on purpose. The name
+# is deliberately not a log line: the folder itself has to answer "why are there
+# no heatmaps in here?" months later, without the run's console output.
+SKIPPED_MARKER_FILENAME = "heatmaps_skipped.json"
 
 # The width every current heatmap consumer requires.
 HEATMAP_N_COMPONENTS = 2
@@ -141,6 +167,7 @@ def check_embedding_dimensionality(
     enabled_stages: Iterable[str],
     *,
     optim_dict_name: Optional[str] = None,
+    allow_nd_without_heatmaps: bool = False,
 ) -> Optional[Set[int]]:
     """Refuse a configuration whose embedding width no enabled stage can use.
 
@@ -166,6 +193,12 @@ def check_embedding_dimensionality(
         # N-D with no 2-D-only stage enabled: allowed, and the caller logs it.
         return declared
 
+    if allow_nd_without_heatmaps:
+        # Explicitly asked for: train predictions in an N-D morphospace and go
+        # without heatmaps. The stage records the skip in the output folder, so
+        # this is a stated result rather than a missing one.
+        return declared
+
     source = f" in optim_dict '{optim_dict_name}'" if optim_dict_name else ""
     widths = ", ".join(str(v) for v in sorted(declared))
     raise EmbeddingDimensionalityError(
@@ -184,6 +217,10 @@ def check_embedding_dimensionality(
         f"none of them require 2-D.)\n"
         f"  - Keep the heatmap: set n_components to {HEATMAP_N_COMPONENTS} in "
         f"the optim_dict and rerun.\n"
+        f"  - Train PREDICTIONS in this N-D morphospace and accept no heatmaps:\n"
+        f"    add --allow_nd_without_heatmaps. The nested-CV search is "
+        f"dimension-agnostic and runs normally; only the grid section is skipped, "
+        f"and the run records why in heatmaps_skipped.json.\n"
         f"\n"
         f"Making the heatmap N-D is an open design decision, not a check to "
         f"loosen -- see dev-docs/methodology/external_evidence_dsd.md section 7.2.",
@@ -251,8 +288,12 @@ def validate_metrics_for_dimensionality(
 
 
 def check_embedding_matches_stages(
-    embeddings, *, heatmap_enabled: bool, source: str = "the embedding"
-) -> None:
+    embeddings,
+    *,
+    heatmap_enabled: bool,
+    source: str = "the embedding",
+    allow_nd_without_heatmaps: bool = False,
+) -> Optional[int]:
     """Refuse an embedding whose ACTUAL width no enabled stage can consume.
 
     The configuration-time gate reads the declared `n_components`, which says
@@ -261,12 +302,21 @@ def check_embedding_matches_stages(
     and would only fail inside HeatmapStage, after the whole prediction search.
     This checks the artefact rather than the declaration, so every route is
     covered by one call.
+
+    Returns None when there is nothing to do. When `allow_nd_without_heatmaps`
+    is set and the embedding is wider than the heatmap can use, returns that
+    **width** instead of raising: the caller has opted into training predictions
+    without heatmaps, and must record the skip (see `record_skipped_heatmaps`).
+    Returning a value rather than a bool keeps the reason available for that
+    record without the caller re-deriving it.
     """
     if embeddings is None:
-        return
+        return None
     width = embeddings.shape[1] if getattr(embeddings, "ndim", 0) == 2 else None
     if width == HEATMAP_N_COMPONENTS or not heatmap_enabled:
-        return
+        return None
+    if width is not None and allow_nd_without_heatmaps:
+        return width
     if width is None:
         raise EmbeddingDimensionalityError(
             f"{source} produced an array of shape {getattr(embeddings, 'shape', None)}; "
@@ -291,3 +341,46 @@ def check_embedding_matches_stages(
         declared={width},
         blocking_stages=("heatmap",),
     )
+
+
+def record_skipped_heatmaps(output_folder, width: int, *, targets=None) -> Optional[Path]:
+    """State in the output folder that heatmaps were skipped, and why.
+
+    Without this the opt-in would recreate the original defect from the other
+    direction: a run that finishes cleanly, carries prediction scores, and simply
+    has no heatmaps in it. Reading the folder later, "no heatmaps" and "heatmaps
+    failed" look identical. This makes the skip a fact on disk.
+
+    Returns the path written, or None when there is no output folder to write to
+    (some direct drivers construct a stage without one). Never raises: failing to
+    write a marker must not lose a completed prediction search.
+    """
+    if not output_folder:
+        return None
+    try:
+        folder = Path(output_folder)
+        folder.mkdir(parents=True, exist_ok=True)
+        marker = folder / SKIPPED_MARKER_FILENAME
+        payload = {
+            "skipped": ["prediction_grids", "correlation_grids", "statistical_maps",
+                        "heatmap_visualizations", "interactive_plots"],
+            "reason": (
+                f"The embedding is {width}-D. The heatmap grid requires exactly "
+                f"{HEATMAP_N_COMPONENTS} and has no N-D form yet."
+            ),
+            "n_components": int(width),
+            "opted_in_with": "--allow_nd_without_heatmaps",
+            "predictions_trained": True,
+            "note": (
+                "Prediction scores in this folder ARE valid: the nested-CV search is "
+                "dimension-agnostic and ran normally against the N-D coordinates. Only "
+                "the 2-D grid section was skipped."
+            ),
+            "written_at": datetime.now(timezone.utc).isoformat(),
+        }
+        if targets:
+            payload["targets"] = list(targets)
+        marker.write_text(json.dumps(payload, indent=2))
+        return marker
+    except Exception:  # noqa: BLE001 - see docstring: never lose the search
+        return None
