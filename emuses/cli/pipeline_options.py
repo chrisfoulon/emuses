@@ -184,6 +184,20 @@ def _shared_pipeline_options(
         str,
         typer.Option("--optim_dict", help="Name of an optim_dict in optim_configs.py"),
     ] = "optim_dict_default",
+    umap_n_components: Annotated[
+        Optional[int],
+        typer.Option(
+            "--umap_n_components",
+            help=(
+                "Embedding dimensionality, overriding n_components in the optim_dict. "
+                "Only `emuses umap` can use anything other than 2: the heatmap builds a "
+                "2-D grid over the morphospace and has no N-D form yet. Note the default "
+                "optim_dicts score trials partly on `entropy`, which is a histogram over "
+                "n_bins^d cells and stops being meaningful above 2-D - use optim_dict_nd, "
+                "which omits it."
+            ),
+        ),
+    ] = None,
     umap_trials: Annotated[
         int,
         typer.Option(

@@ -675,6 +675,29 @@ previously coordinates were re-derived for the new subjects while labels were lo
 the previous run. Equal-sized cohorts still slip through, because no artefact carries subject
 identity. Guards are perturbation-verified in `tests/test_embedding_dimensionality.py`.
 
+**The `entropy` UMAP metric is 2-D only, and refusing it is part of this gate.** It scores a trial
+with `np.histogramdd(emb, bins=n)`, allocating n^d cells. Measured on `DSD_repro` (1333 points): at
+d=4, 1332 points occupy a cell of their own, so the metric returns a value that no longer varies
+with embedding quality — the search would then optimise noise for the ~19 h it takes, and report a
+best trial. Every shipped optim_dict weights `entropy`, so an N-D run with any of them would have
+hit this. `validate_metrics_for_dimensionality` refuses the combination at configuration time
+(`GRID_BINNED_METRICS`), and `optim_configs.optim_dict_nd` is the N-D configuration: the
+disconnectome dict minus entropy, reweighted `eigen_spread` 3.0 / `density_variability` 2.0 /
+`spread` 1.0. **It is not a numerical match for the 2-D dicts** — scores from it are not comparable
+with scores from `optim_dict_default` or `optim_dict_disconnectome`. `--umap_n_components N`
+overrides `n_components` on a `deepcopy` of the dict, because optim dicts are module-level globals
+and the service process is long-lived; mutating one in place would leak into every later run.
+
+**Resume detection must match the filenames actually written.** The output-folder branch tested for
+`best_umap_model.joblib`, but `ModelIOManager` writes version-suffixed names
+(`best_umap_model_v1_0_0_joblib1_5_2.joblib`), so the branch was unreachable from the day it was
+written and every implicit resume silently retrained. Detection now globs for the newest match, and
+`tests/test_embedding_dimensionality.py::TestResumeDetectionMatchesWhatIsActuallyWritten` pins it
+against the source with comments and docstrings stripped. Reuse runs also wrote no `embeddings.npy`
+or `cluster_labels.npy`, because saving lived inside the training function; it is now idempotent and
+outside it, so a resumed run leaves a folder the next stage can consume. Both defects were reported
+as working from reading the code, and only a real run exposed them.
+
 ### 2.10 Core / Extras Boundary: Parked Features Stay, But Cost Nothing
 
 **Decision**: EMUSES has a declared **core** and a set of **parked (extras)** features. Parked code

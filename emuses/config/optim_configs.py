@@ -295,6 +295,60 @@ optim_dict_disconnectome = {
 }
 
 
+# For N-dimensional morphospaces (`emuses umap --umap_n_components N`).
+#
+# Identical to optim_dict_disconnectome except that **entropy is removed**. That
+# metric bins the embedding into n_bins**d cells with n_bins swept to 50, and it
+# fails twice over above 2-D (measured 2026-09-04 on 1333 points): it raises
+# MemoryError from d=5 (50**5 = 3.1e8 cells, 2.5 GB), and well before that it
+# stops meaning anything -- cell occupancy falls from 41% at d=2 to 0.02% at
+# d=4, where 1332 of 1333 points sit alone in their own cell, so every trial
+# scores alike and the value moves only with the log(n_bins**d) normaliser.
+#
+# The three metrics kept here were measured stable across d=2..6. Its weights
+# are entropy's redistributed onto them, so this is NOT a drop-in numerical
+# match for the 2-D dicts and must not be used to reproduce a 2-D run.
+optim_dict_nd = {
+    "param": {
+        "umap": {
+            "min_dist": {"name": "min_dist", "low": 0.0, "high": 0.5},
+            "n_neighbors": {"name": "n_neighbors", "low": 15, "high": 50},
+            # Overridden by --umap_n_components; 2 keeps the dict usable as-is.
+            "n_components": {"value": 2},
+            "metric": {"name": "metric", "choices": ["euclidean"]},
+        },
+        "hdbscan": {
+            "min_cluster_size": {"name": "min_cluster_size", "low": 15, "high": 100},
+            "min_samples": {"name": "min_samples", "low": 1, "high": 15},
+        },
+    },
+    "metrics": {
+        "umap": {
+            "eigen_spread": {
+                "weight": 3.0,
+            },
+            "density_variability": {"weight": 2.0, "target": 0.4, "epsilon": 0.2},
+            "spread": {"weight": 1.0, "target": 0.6, "epsilon": 0.2},
+        },
+        "hdbscan": {
+            "cluster_persistence": {
+                "weight": 2,
+            },
+            "noise_ratio": {
+                "weight": 1.0,
+                "target": 0.9,
+                "epsilon": 0.05,
+            },
+            "dbcv": {
+                "weight": 1.0,
+                "target": 1,
+                "epsilon": 0.5,
+            },
+        },
+    },
+}
+
+
 def generate_dynamic_metrics_configs(n_configs=10):
     """
     Generate a list of n_configs different metrics configurations for use in the composite score.

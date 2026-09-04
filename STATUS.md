@@ -229,8 +229,34 @@ section. Now `emuses/tools/embedding_dimensionality.py` refuses the combination 
 time, before anything trains, naming the optim_dict to change and `emuses umap` as what does work.
 A UMAP-only run may be N-D — that is a supported output. `HeatmapStage` carries the same check
 independently for direct drivers (`tests/regression`), and `HeatmapStage.run` re-raises that one
-error specifically while still tolerating genuine grid failures. Both halves are
-perturbation-verified in `tests/test_embedding_dimensionality.py` (15 tests).
+error specifically while still tolerating genuine grid failures. Every guard is
+perturbation-verified in `tests/test_embedding_dimensionality.py` (27 tests).
+
+**`emuses umap` genuinely runs at N-D** (2026-09-04, measured on `test_data`, not read off code):
+d = 2, 3, 5 and 10 each produce a valid morphospace with clusters. Three things had to be fixed to
+get there, each of them a silent-degradation instance rather than a crash:
+
+- **The `entropy` UMAP metric is unusable above 2-D**, and every shipped optim dict carries it. It
+  calls `np.histogramdd(emb, bins=n)`, which allocates n^d cells; at d=4 on 1333 points, 1332 sit
+  alone in their own cell, so entropy stops discriminating between trials **while still returning a
+  number** — the search would optimise noise. `validate_metrics_for_dimensionality` now refuses the
+  combination up front, and `optim_dict_nd` (disconnectome minus entropy, weights `eigen_spread`
+  3.0 / `density_variability` 2.0 / `spread` 1.0) is the N-D configuration. It is **not** a
+  numerical match for the 2-D dicts — do not compare scores across them.
+- **The output-folder resume path was dead code and always had been.** It tested for
+  `best_umap_model.joblib`, but saved models carry a version suffix
+  (`best_umap_model_v1_0_0_joblib1_5_2.joblib`), so the four-file condition could never be true and
+  every "resume" silently retrained. Detection now globs for the newest match. I had reported this
+  path as working from reading the code; running it is what showed otherwise.
+- **Reuse runs wrote no `embeddings.npy` / `cluster_labels.npy`** — those were saved only inside the
+  training function. Saving is now idempotent and outside it, so a resumed run leaves a complete
+  folder for the next stage.
+
+`--load_umap <folder-or-file>` now reuses rather than retrains (0.0 s vs 12.1 s), raises instead of
+falling back to training when the path is unusable, and assigns cluster labels for the current
+cohort via `hdbscan.approximate_predict`. `--umap_n_components N` overrides the dict on a deep copy
+(optim dicts are module globals and the service is long-lived). A 5-D morphospace loaded with the
+heatmap enabled is refused by the actual-embedding-width check, before any prediction search.
 
 **Prediction is reproducible** — two identical invocations at `--random_state 42` give bitwise
 identical scores. Five disconnections from the seed system were found and fixed; there is **one**
@@ -479,10 +505,19 @@ problem, the `enhanced-cli-typer` hang and repo pollution by test output are all
          `prediction_data=True`. **Residual gap, deliberately left**: two cohorts of *equal size*
          still slip through, because nothing in the artefacts carries subject identity — the audit
          had to fingerprint subjects by disconnection load to recover their order.
-       - **Still undocumented**: the output-folder detection (`umap_stage.py`, all four files
-         present ⇒ skip training) remains implicit. `--load_umap` is now the explicit route.
-       - **Not yet run end to end.** All of the above is verified by unit test and by reading; the
-         real check is `emuses umap` then a reuse run on a different cohort.
+       - **FIXED: the output-folder detection was dead code.** It looked for the bare filename
+         `best_umap_model.joblib`; saved models are version-suffixed, so the branch was unreachable
+         and every implicit resume retrained in silence. Now globs for the newest match. Pinned by
+         `TestResumeDetectionMatchesWhatIsActuallyWritten`, which reads the source with comments and
+         docstrings stripped — an earlier version of that test passed by matching the comment
+         *explaining* the bug.
+       - **FIXED: reuse runs left an incomplete folder** — `embeddings.npy` and `cluster_labels.npy`
+         were written only inside the training function, so a resumed run produced neither. Saving
+         is now idempotent and outside it.
+       - **Run end to end** (2026-09-04, `test_data`): reuse via `--load_umap` takes 0.0 s against
+         12.1 s to train, produces aligned embeddings and labels for the current cohort, and a 5-D
+         morphospace with the heatmap enabled is refused before any prediction search. The residual
+         equal-size-cohort gap above is still open; a real different-cohort run is still worth doing.
    **Rationale for 3f–3i in one place:** `dev-docs/methodology/small_sample_prediction_validity.md`
    (2026-09-03) — what R² measures against, the three diagnostics and how they differ, the
    `DSD_repro` numbers, the six verified references. Read that rather than re-deriving from the

@@ -85,6 +85,8 @@ class PipelineRunner:
 
         # Pipeline configuration with defaults and type conversion
         args.umap_trials = int(config_dict.get("umap_trials", 10))
+        _n_components = config_dict.get("umap_n_components", None)
+        args.umap_n_components = None if _n_components is None else int(_n_components)
         args.hdbscan_trials = int(config_dict.get("hdbscan_trials", 5))
         args.optuna_trials = int(config_dict.get("optuna_trials", 10))
         args.prediction_optim_dict = str(
@@ -576,6 +578,16 @@ class PipelineRunner:
                             f"and an unsupported n_components would only surface later."
                         )
                         resolved_optim_dict = None
+
+                    # --umap_n_components overrides the dict, so the check must see
+                    # the value that will actually be used, not the one on file.
+                    n_components_override = config_dict.get("umap_n_components", None)
+                    if n_components_override is not None:
+                        resolved_optim_dict = copy.deepcopy(resolved_optim_dict) or {}
+                        resolved_optim_dict.setdefault("param", {}).setdefault("umap", {})[
+                            "n_components"
+                        ] = {"value": int(n_components_override)}
+                        optim_dict_name = f"{optim_dict_name} (--umap_n_components override)"
 
                     if resolved_optim_dict is not None:
                         declared = check_embedding_dimensionality(

@@ -18,13 +18,15 @@ decision -- see ``dev-docs/methodology/external_evidence_dsd.md`` section 7.2.
 """
 
 import inspect
+import textwrap
 
 import numpy as np
 import pytest
 
 from emuses.tools.embedding_dimensionality import (
-    HEATMAP_N_COMPONENTS, EmbeddingDimensionalityError,
-    check_embedding_dimensionality, declared_n_components)
+    GRID_BINNED_METRICS, HEATMAP_N_COMPONENTS, EmbeddingDimensionalityError,
+    check_embedding_dimensionality, check_embedding_matches_stages,
+    declared_n_components, validate_metrics_for_dimensionality)
 
 
 class TestDeclaredNComponents:
@@ -198,3 +200,198 @@ class TestHeatmapStageDoesNotSwallowIt:
         assert source.index("except EmbeddingDimensionalityError:") < source.index(
             "logger.warning(\"Continuing pipeline without statistical grid analysis\")"
         ), "the specific handler must precede the catch-all it is protecting against"
+
+
+class TestLoadedModelWidth:
+    """The configuration gate cannot see a morphospace loaded from disk.
+
+    ``--load_umap``, ``--load_embeddings`` and the output-folder resume all
+    supply an embedding whose width is a property of the *file*, not of this
+    run's optim_dict. A 5-D saved model therefore sails past the config check
+    and, before this guard, would only fail inside HeatmapStage -- after the
+    entire prediction search.
+    """
+
+    def test_refuses_a_wide_loaded_embedding_when_heatmap_is_enabled(self):
+        emb = np.random.default_rng(0).random((50, 5))
+        with pytest.raises(EmbeddingDimensionalityError) as exc:
+            check_embedding_matches_stages(
+                emb, heatmap_enabled=True, source="--load_umap /some/model.joblib"
+            )
+        message = str(exc.value)
+        assert "5-D" in message
+        assert "/some/model.joblib" in message, "must name where the embedding came from"
+        assert "emuses umap" in message, "must name what does work"
+
+    def test_allows_a_wide_loaded_embedding_for_a_umap_only_run(self):
+        emb = np.random.default_rng(0).random((50, 5))
+        check_embedding_matches_stages(emb, heatmap_enabled=False)  # must not raise
+
+    def test_allows_two_d_with_heatmap(self):
+        emb = np.random.default_rng(0).random((50, 2))
+        check_embedding_matches_stages(emb, heatmap_enabled=True)  # must not raise
+
+    def test_umap_stage_calls_it_after_the_embedding_exists(self):
+        """Structural: the call must survive a refactor of UMAPStage.run.
+
+        Placement is the whole point -- it has to sit after every route that can
+        produce an embedding (train, --load_umap, --load_embeddings, resume) and
+        before the stage hands anything downstream.
+        """
+        from emuses.pipelines.umap_stage import UMAPStage
+
+        source = inspect.getsource(UMAPStage.run)
+        assert "check_embedding_matches_stages(" in source, (
+            "UMAPStage.run no longer checks the width of the embedding it actually "
+            "produced, so a wide model loaded from disk reaches HeatmapStage and only "
+            "fails there, after the prediction search."
+        )
+
+
+class TestGridBinnedMetricsAreRefusedInND:
+    """`entropy` is enabled by EVERY shipped optim_dict and is unusable above 2-D.
+
+    Measured 2026-09-04 on 1333 points: MemoryError from d=5 (50**5 cells), and
+    before that a silent collapse -- occupancy 41% at d=2, 1.06% at d=3, 0.02%
+    at d=4, where 1332 of 1333 points are alone in their own cell. The value
+    then moves only with the log(n_bins**d) normaliser, so trials stop being
+    distinguishable. Completing the search is the bad outcome here, not failing.
+    """
+
+    def _dict_with(self, metrics):
+        return {"param": {"umap": {}}, "metrics": {"umap": metrics}}
+
+    def test_refused_above_two_d(self):
+        d = self._dict_with({"entropy": {"weight": 3.0}, "eigen_spread": {"weight": 2.0}})
+        with pytest.raises(EmbeddingDimensionalityError) as exc:
+            validate_metrics_for_dimensionality(d, 5)
+        message = str(exc.value)
+        assert "entropy" in message
+        assert "optim_dict_nd" in message, "must name the dict that works"
+
+    def test_allowed_at_two_d(self):
+        d = self._dict_with({"entropy": {"weight": 3.0}})
+        validate_metrics_for_dimensionality(d, 2)  # must not raise
+
+    def test_dimension_stable_metrics_are_not_refused(self):
+        d = self._dict_with(
+            {"eigen_spread": {"weight": 3.0}, "density_variability": {}, "spread": {}}
+        )
+        validate_metrics_for_dimensionality(d, 10)  # must not raise
+
+    def test_shipped_nd_dict_is_actually_usable_in_nd(self):
+        """The escape hatch the error message points at must exist and work.
+
+        An error that names a remedy which does not work is worse than one that
+        names none.
+        """
+        from emuses.config.optim_configs import load_optim_dict
+
+        nd = load_optim_dict("optim_dict_nd")
+        enabled = set(nd["metrics"]["umap"])
+        assert not (enabled & set(GRID_BINNED_METRICS)), (
+            f"optim_dict_nd enables {enabled & set(GRID_BINNED_METRICS)}, which is the "
+            f"exact thing it exists to avoid."
+        )
+        for d in (3, 5, 10):
+            validate_metrics_for_dimensionality(nd, d)
+
+    def test_every_other_shipped_dict_still_carries_entropy_at_two_d(self):
+        """Guards against 'fixing' this by stripping entropy everywhere.
+
+        entropy is meaningful at 2-D (41% cell occupancy) and is weighted most
+        heavily in the default objective. Removing it from the 2-D dicts would
+        silently change every existing morphospace, and the regression baselines
+        pin those numbers.
+        """
+        from emuses.config import optim_configs
+
+        two_d_dicts = [
+            n for n in dir(optim_configs)
+            if n.startswith("optim_dict") and n != "optim_dict_nd"
+            and isinstance(getattr(optim_configs, n), dict)
+            and getattr(optim_configs, n).get("metrics", {}).get("umap")
+        ]
+        assert two_d_dicts, "scan found no dicts; the test is broken, not the code"
+        for name in two_d_dicts:
+            enabled = set(getattr(optim_configs, name)["metrics"]["umap"])
+            assert "entropy" in enabled, (
+                f"optim_configs.{name} lost its entropy metric. That changes the 2-D "
+                f"objective for every existing user; use optim_dict_nd for N-D instead."
+            )
+
+
+class TestResumeDetectionMatchesWhatIsActuallyWritten:
+    """The resume branch spent its whole life unreachable.
+
+    ``UMAPStage`` tested for ``best_umap_model.joblib`` / ``hdbscan_model.joblib``,
+    but models are saved with a version suffix -- ``best_umap_model_v1_0_0_
+    joblib1_5_2.joblib``. Those bare names are never written, so the four-file
+    condition could not be true and every "resume" silently retrained from
+    scratch. Nothing failed; it just quietly did the expensive thing.
+
+    Measured 2026-09-04 by listing a real run's output folder, after reading the
+    code had suggested the opposite.
+    """
+
+    @staticmethod
+    def _code_only(func):
+        """Source with comments and docstrings removed.
+
+        The first version of this test matched the *comment* that explains the
+        bug and failed against correct code -- the same colour-blind-grep trap
+        that has faked a clean result in this repo before. Tokenize instead.
+        """
+        import io
+        import tokenize
+
+        src = textwrap.dedent(inspect.getsource(func))
+        kept = []
+        prev_type = None
+        for tok in tokenize.generate_tokens(io.StringIO(src).readline):
+            if tok.type == tokenize.COMMENT:
+                continue
+            # a bare string statement is a docstring
+            if tok.type == tokenize.STRING and prev_type in (
+                None, tokenize.INDENT, tokenize.NEWLINE, tokenize.NL
+            ):
+                continue
+            kept.append(tok.string)
+            if tok.type not in (tokenize.NL, tokenize.NEWLINE, tokenize.INDENT):
+                prev_type = tok.type
+        return " ".join(kept)
+
+    def test_umap_stage_does_not_look_for_the_bare_model_names(self):
+        from emuses.pipelines.umap_stage import UMAPStage
+
+        code = self._code_only(UMAPStage.run)
+        # remove the legitimate globbed forms first, so only a bare use can match
+        code = code.replace("best_umap_model*.joblib", "").replace(
+            "hdbscan_model*.joblib", "")
+        for bare in ("best_umap_model.joblib", "hdbscan_model.joblib"):
+            assert bare not in code, (
+                f"UMAPStage.run looks for {bare!r}, which is never written -- saved "
+                f"models carry a version suffix. The resume branch becomes unreachable "
+                f"and every reuse silently retrains."
+            )
+
+    def test_it_globs_for_the_versioned_artefact(self):
+        from emuses.pipelines.umap_stage import UMAPStage
+
+        source = inspect.getsource(UMAPStage.run)
+        assert "best_umap_model*.joblib" in source
+        assert "hdbscan_model*.joblib" in source
+
+    def test_a_versioned_folder_is_recognised(self, tmp_path):
+        """Behavioural mirror of the two structural checks above.
+
+        Uses the real filename a run produced, not an invented one (G009).
+        """
+        (tmp_path / "best_umap_model_v1_0_0_joblib1_5_2.joblib").write_bytes(b"x")
+        (tmp_path / "hdbscan_model_v1_0_0_joblib1_5_2.joblib").write_bytes(b"x")
+
+        found_umap = sorted(tmp_path.glob("best_umap_model*.joblib"))
+        found_hdb = sorted(tmp_path.glob("hdbscan_model*.joblib"))
+        assert found_umap and found_hdb, "the glob must match the real saved names"
+        # and the old exact-name test must NOT match, which is why it was dead
+        assert not (tmp_path / "best_umap_model.joblib").exists()

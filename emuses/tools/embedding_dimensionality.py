@@ -190,3 +190,104 @@ def check_embedding_dimensionality(
         declared=set(declared),
         blocking_stages=blocking,
     )
+
+
+# Metrics that score a UMAP trial by binning the embedding into a grid of
+# n_bins**d cells. They are unusable above 2-D for two independent reasons,
+# both measured on 1333 points (the DSD_repro unlabelled cohort) on 2026-09-04:
+#
+#   * Memory. The sweep reaches n_bins=50, so d=5 asks for 50**5 = 3.1e8 cells
+#     (2.5 GB) and d=6 for 1.6e10 (125 GB). Both raised MemoryError.
+#   * Meaning, which fails EARLIER and silently. Occupancy collapses: 41% of
+#     cells hold a point at d=2, 1.06% at d=3, 0.02% at d=4 -- where 1332 of
+#     1333 points sit alone in their own cell. The metric then reports "the
+#     points are distinct", which is true of every trial, and its value drifts
+#     (0.94 -> 0.73 -> 0.56) only because the normaliser log(n_bins**d) grows.
+#     A run at d=3 or 4 would optimise happily against a metric that has
+#     stopped discriminating.
+#
+# The other three UMAP metrics (spread, eigen_spread, density_variability) were
+# measured stable across d=2..6 and are fine in N-D.
+GRID_BINNED_METRICS = ("entropy",)
+
+
+def validate_metrics_for_dimensionality(
+    optim_dict: Optional[Dict], n_components: int
+) -> None:
+    """Refuse a UMAP objective that cannot mean anything at this width.
+
+    Raises `EmbeddingDimensionalityError` when a grid-binned metric is enabled
+    above 2-D. Silence here would be the worst outcome available: the search
+    would run to completion and rank trials on noise.
+    """
+    if n_components <= HEATMAP_N_COMPONENTS or not isinstance(optim_dict, dict):
+        return
+
+    enabled = optim_dict.get("metrics", {}).get("umap", {})
+    if not isinstance(enabled, dict):
+        return
+
+    offending = [m for m in GRID_BINNED_METRICS if m in enabled]
+    if not offending:
+        return
+
+    raise EmbeddingDimensionalityError(
+        f"The UMAP objective includes {', '.join(offending)}, which cannot be "
+        f"computed meaningfully at n_components={n_components}.\n"
+        f"\n"
+        f"'{offending[0]}' bins the embedding into n_bins**d cells, sweeping n_bins to "
+        f"50. At d={n_components} that is {50 ** min(n_components, 12):.3g} cells, and "
+        f"well before it runs out of memory it stops measuring anything: at d=4, 1332 of "
+        f"1333 points already sit alone in their own cell, so every trial scores the "
+        f"same and the value moves only with the normaliser. Optimising against it would "
+        f"produce a morphospace selected by noise.\n"
+        f"\n"
+        f"Use an optim_dict whose metrics are dimension-stable -- `optim_dict_nd` is "
+        f"shipped for this and keeps spread, eigen_spread and density_variability:\n"
+        f"    emuses umap ... --optim_dict optim_dict_nd --umap_n_components {n_components}",
+        declared={n_components},
+        blocking_stages=tuple(offending),
+    )
+
+
+def check_embedding_matches_stages(
+    embeddings, *, heatmap_enabled: bool, source: str = "the embedding"
+) -> None:
+    """Refuse an embedding whose ACTUAL width no enabled stage can consume.
+
+    The configuration-time gate reads the declared `n_components`, which says
+    nothing about a model loaded from disk: a 5-D saved model reached through
+    `--load_umap`, `--load_embeddings` or the output-folder resume sails past it
+    and would only fail inside HeatmapStage, after the whole prediction search.
+    This checks the artefact rather than the declaration, so every route is
+    covered by one call.
+    """
+    if embeddings is None:
+        return
+    width = embeddings.shape[1] if getattr(embeddings, "ndim", 0) == 2 else None
+    if width == HEATMAP_N_COMPONENTS or not heatmap_enabled:
+        return
+    if width is None:
+        raise EmbeddingDimensionalityError(
+            f"{source} produced an array of shape {getattr(embeddings, 'shape', None)}; "
+            f"an embedding must be 2-dimensional (n_samples, n_components).",
+            declared=set(),
+            blocking_stages=("heatmap",),
+        )
+
+    raise EmbeddingDimensionalityError(
+        f"{source} produced a {width}-D embedding, but the heatmap stage is enabled and "
+        f"requires exactly {HEATMAP_N_COMPONENTS}.\n"
+        f"\n"
+        f"This is checked here, right after the embedding exists, because a morphospace "
+        f"loaded from disk carries its own width regardless of what this run's optim_dict "
+        f"declares -- so the configuration-time check cannot see it. Failing now costs "
+        f"seconds; the next check downstream is inside the heatmap, after the entire "
+        f"prediction search.\n"
+        f"\n"
+        f"What works today:\n"
+        f"  - Reuse this {width}-D morphospace without the heatmap:  emuses umap ...\n"
+        f"  - Use a {HEATMAP_N_COMPONENTS}-D morphospace for a run that includes the heatmap.",
+        declared={width},
+        blocking_stages=("heatmap",),
+    )

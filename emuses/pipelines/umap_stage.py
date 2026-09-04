@@ -1,3 +1,4 @@
+import copy
 import json
 import logging
 from pathlib import Path
@@ -11,6 +12,9 @@ from emuses.observability import (get_logger, track_optimization_trial,
                                   track_scientific_operation)
 from emuses.pipelines.pipeline_stage import PipelineStage
 from emuses.tools.clustering_utils import load_hdbscan_model
+from emuses.tools.embedding_dimensionality import (
+    check_embedding_matches_stages, declared_n_components,
+    validate_metrics_for_dimensionality)
 from emuses.tools.emuses_utils import rescale_embedding
 from emuses.tools.UMAP_utils import (
     load_umap_model, train_and_save_umap_optim_with_nested_clustering)
@@ -117,11 +121,26 @@ class UMAPStage(PipelineStage):
             if test_features is not None:
                 obs_ctx.set_attribute("test_samples", len(test_features))
 
-        # Determine file paths based on output folder and prefix
+        # Determine file paths based on output folder and prefix.
+        #
+        # Models are saved with a version suffix -- best_umap_model_v1_0_0_
+        # joblib1_5_2.joblib, not best_umap_model.joblib. This block used to
+        # test for the bare names, so the resume branch below could never be
+        # true and had never run: every "resume" silently retrained from
+        # scratch. Glob for the versioned artefact instead, taking the newest
+        # if several joblib versions accumulated in one folder.
         prefix = self.config.prefix if hasattr(self.config, "prefix") else ""
-        umap_model_file = self.config.output_folder / f"{prefix}best_umap_model.joblib"
+
+        def _newest(pattern):
+            matches = sorted(
+                self.config.output_folder.glob(pattern),
+                key=lambda p: p.stat().st_mtime,
+            )
+            return matches[-1] if matches else None
+
+        umap_model_file = _newest(f"{prefix}best_umap_model*.joblib")
+        cluster_model_file = _newest(f"{prefix}hdbscan_model*.joblib")
         embeddings_file = self.config.output_folder / f"{prefix}embeddings.npy"
-        cluster_model_file = self.config.output_folder / f"{prefix}hdbscan_model.joblib"
         cluster_labels_file = self.config.output_folder / f"{prefix}cluster_labels.npy"
 
         # An explicitly supplied morphospace wins over both the output-folder
@@ -134,11 +153,29 @@ class UMAPStage(PipelineStage):
         explicit_umap = getattr(self.config, "load_umap", None)
         if explicit_umap:
             explicit_umap_path = Path(explicit_umap).resolve()
-            if not explicit_umap_path.exists():
+            # Accept the run folder as well as the model file. Saved models carry
+            # a version suffix (best_umap_model_v1_0_0_joblib1_5_2.joblib), which
+            # nobody should have to type or hard-code into a script.
+            if explicit_umap_path.is_dir():
+                candidates = sorted(
+                    explicit_umap_path.glob("*best_umap_model*.joblib"),
+                    key=lambda p: p.stat().st_mtime,
+                )
+                if not candidates:
+                    raise FileNotFoundError(
+                        f"--load_umap points at a folder with no UMAP model in it: "
+                        f"{explicit_umap_path}. Expected a file matching "
+                        f"'*best_umap_model*.joblib', as written by `emuses umap`."
+                    )
+                explicit_umap_path = candidates[-1]
+            elif not explicit_umap_path.exists():
                 raise FileNotFoundError(
-                    f"--load_umap points at a file that does not exist: "
-                    f"{explicit_umap_path}. Not falling back to training: reusing a "
-                    f"specific morphospace and building a new one are different "
+                    f"--load_umap points at a path that does not exist: "
+                    f"{explicit_umap_path}. Note that saved models carry a version "
+                    f"suffix, so the file is named like "
+                    f"'best_umap_model_v1_0_0_joblib1_5_2.joblib'; passing the run "
+                    f"folder instead also works. Not falling back to training: reusing "
+                    f"a specific morphospace and building a new one are different "
                     f"experiments, and silently doing the second is how a run looks "
                     f"successful while answering a different question."
                 )
@@ -150,7 +187,7 @@ class UMAPStage(PipelineStage):
             self.best_clusterer, _ = load_hdbscan_model(
                 explicit_umap_path.parent, model_name="hdbscan_model"
             )
-            self.cluster_model_path = explicit_umap_path.parent / "hdbscan_model.joblib"
+            self.cluster_model_path = explicit_umap_path.parent
             # Labels are deliberately left unset. The saved cluster_labels.npy
             # describes the subjects the morphospace was BUILT on; this run may
             # have a different cohort, and pairing n_old labels with n_new
@@ -158,11 +195,12 @@ class UMAPStage(PipelineStage):
             # loaded clusterer once the current subjects' coordinates exist.
             self.cluster_labels = None
 
-        # If output files exist, load them and skip training.
+        # If output files exist, load them and skip training. `_newest` returns
+        # None when nothing matched, so these are identity checks, not .exists().
         elif (
-            umap_model_file.exists()
+            umap_model_file is not None
+            and cluster_model_file is not None
             and embeddings_file.exists()
-            and cluster_model_file.exists()
             and cluster_labels_file.exists()
         ):
             logger.info(
@@ -188,7 +226,32 @@ class UMAPStage(PipelineStage):
                     )
                     optim_dict = optim_dict_default
             else:
-                optim_dict = optim_dict_default  # Run nested optimization for UMAP + HDBSCAN.            # Get HDBSCAN reproducibility parameters from config
+                optim_dict = optim_dict_default  # Run nested optimization for UMAP + HDBSCAN.
+
+            # --umap_n_components overrides whatever the dict declares. Copy
+            # first: optim dicts are module-level globals, so mutating one in
+            # place would leak the override into every later run in the process
+            # (the service is long-lived).
+            n_components_override = getattr(self.config, "umap_n_components", None)
+            if n_components_override is not None:
+                optim_dict = copy.deepcopy(optim_dict)
+                optim_dict.setdefault("param", {}).setdefault("umap", {})[
+                    "n_components"
+                ] = {"value": int(n_components_override)}
+                logger.info(
+                    f"Overriding n_components with --umap_n_components="
+                    f"{int(n_components_override)}"
+                )
+
+            # Refuse a grid-binned objective at a width where it cannot mean
+            # anything. Checked against the EFFECTIVE width, so it covers both
+            # the CLI override and a dict that declares N-D on its own -- the
+            # latter is how someone would hit it without passing any new flag.
+            effective = declared_n_components(optim_dict)
+            if effective:
+                validate_metrics_for_dimensionality(optim_dict, max(effective))
+
+            # Get HDBSCAN reproducibility parameters from config
             approx_min_span_tree = getattr(
                 self.config, "hdbscan_approx_min_span_tree", True
             )
@@ -313,6 +376,41 @@ class UMAPStage(PipelineStage):
                 f"them from. Pass --load_clusterer alongside --load_umap, or let the "
                 f"stage train."
             )
+
+        # Check the width of the embedding that ACTUALLY exists, whatever route
+        # produced it: freshly trained, --load_umap, --load_embeddings, or the
+        # output-folder resume. The configuration-time gate in pipeline_runner
+        # reads the declared n_components, which says nothing about a model
+        # loaded from disk - a 5-D saved model reached through --load_umap would
+        # sail past it and only fail inside HeatmapStage, after the entire
+        # prediction search. This is the fail-fast for that case.
+        check_embedding_matches_stages(
+            self.embeddings,
+            heatmap_enabled=getattr(self.config, "heatmap_stage_enabled", True),
+            source=(
+                f"--load_umap {explicit_umap}" if explicit_umap
+                else "the loaded/trained UMAP model"
+            ),
+        )
+
+        # Persist the artefacts this run produced, if training did not already.
+        #
+        # embeddings.npy and cluster_labels.npy are written inside
+        # train_and_save_umap_optim_with_nested_clustering, so every path that
+        # SKIPS training (--load_umap, --load_embeddings) left its output folder
+        # without them: the coordinates and labels for this run's cohort existed
+        # only in memory. Downstream stages read the context rather than the
+        # files, so the run completed and the gap showed up later, as an output
+        # folder that no longer describes its own run.
+        if not embeddings_file.exists():
+            np.save(embeddings_file, self.embeddings)
+            logger.info(f"Embeddings saved at: {embeddings_file}")
+        self.embeddings_path = embeddings_file
+        if not cluster_labels_file.exists() and self.cluster_labels is not None:
+            np.save(cluster_labels_file, self.cluster_labels)
+            logger.info(f"Cluster labels saved at: {cluster_labels_file}")
+        if self.cluster_labels_path is None:
+            self.cluster_labels_path = cluster_labels_file
 
         # Rescale embeddings.
         self.min_embeddings = self.embeddings.min(axis=0)

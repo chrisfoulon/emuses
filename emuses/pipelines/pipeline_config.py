@@ -82,6 +82,11 @@ class PipelineConfig:
     hdbscan_jobs: int = 1  # Parallel jobs for the inner (HDBSCAN) Optuna search
     umap_trials: int = 50  # Number of UMAP optimization trials
     hdbscan_trials: int = 20  # Number of HDBSCAN optimization trials
+    # Overrides n_components in the optim_dict. None means "use the dict".
+    # Only a UMAP-only run may use anything but 2; see
+    # emuses/tools/embedding_dimensionality.py for why, and for the check that
+    # enforces it before any training happens.
+    umap_n_components: int = None
 
     # Dataset processing parameters
     input_header: int = None  # Header row for spreadsheet data
