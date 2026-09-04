@@ -21,6 +21,8 @@ from emuses.observability import get_logger, track_scientific_operation
 from emuses.pipelines.pipeline_stage import PipelineStage
 from emuses.tools.ae_optuna import optimize_ae_pretraining
 from emuses.tools.data_preproc import filter_nan_rows
+from emuses.tools.embedding_dimensionality import (HEATMAP_N_COMPONENTS,
+                                                   EmbeddingDimensionalityError)
 from emuses.tools.inputs_utils import (get_array_info,
                                        load_and_preprocess_digits_dataset)
 from emuses.tools.kernel_regression_utils import (KernelLogisticRegressor,
@@ -516,7 +518,14 @@ class HeatmapStage(PipelineStage):
                 logger=logger
             )
             logger.info("Triple grid statistical analysis completed successfully")
-            
+
+        except EmbeddingDimensionalityError:
+            # Deliberately NOT swallowed. Every other grid failure is a runtime
+            # problem this pipeline can survive without, but an embedding of the
+            # wrong width is a configuration error: continuing produces a run
+            # that exits 0 having silently dropped every heatmap it was asked
+            # for. Let it terminate the stage.
+            raise
         except Exception as e:
             logger.error(f"Triple grid analysis failed: {e}")
             logger.warning("Continuing pipeline without statistical grid analysis")
@@ -1112,6 +1121,25 @@ class HeatmapStage(PipelineStage):
         logger : logging.Logger
             Logger instance
         """
+        # Check the embedding width ONCE, before the per-target loop and outside
+        # every try block below. GridCreator and CorrelationGridCreator already
+        # reject d != 2, but both call sites catch bare Exception and only log,
+        # so an N-D embedding would otherwise produce a run that completes with
+        # exit 0, no heatmaps, and one error line per target. Raising here is
+        # what makes that impossible. pipeline_runner refuses the same case at
+        # configuration time; this covers HeatmapStage driven directly.
+        if embeddings.ndim != 2 or embeddings.shape[1] != HEATMAP_N_COMPONENTS:
+            raise EmbeddingDimensionalityError(
+                f"Grid analysis requires a {HEATMAP_N_COMPONENTS}-D embedding, got shape "
+                f"{embeddings.shape}. The heatmap grid has no N-D form yet; build the "
+                f"morphospace on its own with `emuses umap`, or set n_components="
+                f"{HEATMAP_N_COMPONENTS} in the optim_dict. Failing here rather than "
+                f"per target keeps this from completing as a successful run with no "
+                f"heatmaps. See emuses/tools/embedding_dimensionality.py.",
+                declared={int(embeddings.shape[1]) if embeddings.ndim == 2 else -1},
+                blocking_stages=("heatmap",),
+            )
+
         try:
             # Import triple grid analysis components
             from emuses.tools.grid_creator import GridCreator

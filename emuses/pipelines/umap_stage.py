@@ -2,6 +2,7 @@ import json
 import logging
 from pathlib import Path
 
+import hdbscan
 import numpy as np
 
 # Import the default optimization dictionary from your configuration module.
@@ -123,8 +124,42 @@ class UMAPStage(PipelineStage):
         cluster_model_file = self.config.output_folder / f"{prefix}hdbscan_model.joblib"
         cluster_labels_file = self.config.output_folder / f"{prefix}cluster_labels.npy"
 
+        # An explicitly supplied morphospace wins over both the output-folder
+        # detection below and training. --load_umap was declared in
+        # cli/pipeline_options.py, stored on PipelineConfig, plumbed through
+        # pipeline_runner and named by heatmap_stage.py's error message as the
+        # way to reuse a trained morphospace -- but nothing ever read it, so it
+        # silently retrained instead. Its three siblings (load_clusterer,
+        # load_cluster_labels, load_embeddings) are read further down.
+        explicit_umap = getattr(self.config, "load_umap", None)
+        if explicit_umap:
+            explicit_umap_path = Path(explicit_umap).resolve()
+            if not explicit_umap_path.exists():
+                raise FileNotFoundError(
+                    f"--load_umap points at a file that does not exist: "
+                    f"{explicit_umap_path}. Not falling back to training: reusing a "
+                    f"specific morphospace and building a new one are different "
+                    f"experiments, and silently doing the second is how a run looks "
+                    f"successful while answering a different question."
+                )
+            logger.info(f"Loading pre-trained UMAP model from --load_umap: {explicit_umap_path}")
+            self.trained_umap, _ = load_umap_model(explicit_umap_path)
+            self.umap_model_path = explicit_umap_path
+            # `emuses umap` writes the clusterer beside the UMAP model, so take
+            # the sibling unless --load_clusterer overrides it below.
+            self.best_clusterer, _ = load_hdbscan_model(
+                explicit_umap_path.parent, model_name="hdbscan_model"
+            )
+            self.cluster_model_path = explicit_umap_path.parent / "hdbscan_model.joblib"
+            # Labels are deliberately left unset. The saved cluster_labels.npy
+            # describes the subjects the morphospace was BUILT on; this run may
+            # have a different cohort, and pairing n_old labels with n_new
+            # coordinates is a silent wrong answer. They are assigned from the
+            # loaded clusterer once the current subjects' coordinates exist.
+            self.cluster_labels = None
+
         # If output files exist, load them and skip training.
-        if (
+        elif (
             umap_model_file.exists()
             and embeddings_file.exists()
             and cluster_model_file.exists()
@@ -237,20 +272,62 @@ class UMAPStage(PipelineStage):
         else:
             self.embeddings = self.trained_umap.transform(train_features)
 
+        # Assign the CURRENT subjects to the loaded clusters.
+        #
+        # Coordinates above are always re-derived for whoever is in this run, but
+        # cluster labels were not: on the reuse paths they came from the file the
+        # morphospace was built with. When the cohort differs, that pairs n_old
+        # labels with n_new coordinates.
+        #
+        # Length is the only signal available here, so this closes the case where
+        # the cohorts differ in size. Two cohorts of EQUAL size still slip
+        # through, because nothing in the context carries subject identity -- the
+        # audit had to fingerprint subjects by disconnection load to recover their
+        # order. Fixing that properly needs identity in the saved artefacts.
+        needs_assignment = (
+            self.cluster_labels is None
+            or len(self.cluster_labels) != len(self.embeddings)
+        )
+        if needs_assignment and self.best_clusterer is not None:
+            n_labels = None if self.cluster_labels is None else len(self.cluster_labels)
+            logger.info(
+                f"Assigning cluster labels for the current {len(self.embeddings)} subjects "
+                f"from the loaded clusterer (had {n_labels} stored labels)."
+            )
+            try:
+                self.cluster_labels, _ = hdbscan.approximate_predict(
+                    self.best_clusterer, self.embeddings
+                )
+            except AttributeError as e:
+                raise RuntimeError(
+                    f"The loaded HDBSCAN model cannot label new subjects: {e}. It was "
+                    f"fitted without prediction_data=True, so approximate_predict is "
+                    f"unavailable. Refit the morphospace, or run without reusing a "
+                    f"clusterer. Not falling back to the stored labels: they describe "
+                    f"the subjects the morphospace was built on, not this run's."
+                ) from e
+        elif needs_assignment:
+            raise RuntimeError(
+                f"Cluster labels are unavailable or do not match this run's "
+                f"{len(self.embeddings)} subjects, and no clusterer is loaded to derive "
+                f"them from. Pass --load_clusterer alongside --load_umap, or let the "
+                f"stage train."
+            )
+
         # Rescale embeddings.
         self.min_embeddings = self.embeddings.min(axis=0)
         self.max_embeddings = self.embeddings.max(axis=0)
-        
+
         # Save embedding scaling parameters for inference
         embedding_scaling = {
             'min_embeddings': self.min_embeddings.tolist(),
-            'max_embeddings': self.max_embeddings.tolist() 
+            'max_embeddings': self.max_embeddings.tolist()
         }
         scaling_file = self.config.output_folder / "embedding_scaling.json"
         with open(scaling_file, 'w') as f:
             json.dump(embedding_scaling, f)
         logger.info(f"Saved embedding scaling parameters to {scaling_file}")
-        
+
         self.embeddings = rescale_embedding(
             self.embeddings,
             preset_min=self.min_embeddings,

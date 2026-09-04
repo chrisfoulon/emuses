@@ -140,15 +140,33 @@ The bottleneck case was built on the digits run (61-D → 2-D cost 1.1 points) a
 **Hope et al. got R=0.31 out-of-sample at n=314 from a 2-D morphospace**: two dimensions
 demonstrably carry the real effect in this data. What EMUSES lacks is n, not dimensions.
 
-If N-D is ever revisited, the blocker is specific: the heatmap turns each patient's coordinate into a
-probability map over a **grid**, and grids are exponential in dimension (100 bins/axis: 2-D = 10⁴
-cells, 3-D = 10⁶, 5-D = 10¹⁰). Clustering in N-D and projecting to 2-D for display would work for the
-clusters but **breaks the thing that makes EMUSES worth using** — the heatmap would no longer explain
-the prediction, and a 2-D projection can place genuinely separate clusters on top of each other. A
-cleaner formulation exists (evaluate the correlation field at sample points in N-D, interpolate onto
-the 2-D projection for display only), but it changes what the heatmap *means*. Before any of it, run
-the cheap check: UMAP at `n_components` ∈ {2,3,5,10}, fixed ridge, the 13 validated measures. If 5-D
-does not beat 2-D the question is moot.
+**Correction (2026-09-04, measured).** An earlier revision of this section, and of `STATUS.md` 3c,
+said the blocker was that the heatmap grid "explodes as r^d". **That is wrong**, and it pointed at the
+wrong file. What is actually true, from reading and running the code:
+
+- The adaptive grid (`emuses_utils.compute_discrete_space` / `optimize_discrete_space`) is genuinely
+  N-D generic, and it does **not** explode — it *shrinks*. Its sizing criterion is point overlap, and
+  133 points in a 10-D cube essentially never collide, so it settles on the coarsest grid it will
+  accept: measured, 50×50 at d=2, 5⁵ at d=5, **2¹⁰ at d=10**. The failure mode is resolution
+  collapse into a meaningless heatmap, not memory.
+- That code is unreachable anyway: `DiscreteLatentSpace` is never instantiated.
+- The **live** path is `GridCreator` / `CorrelationGridCreator` at `grid_size=100`, which build a
+  fixed 100×100 mesh over exactly two axes and already raise `ValueError` on anything else. Only a
+  *fixed* grid is exponential — 4-D is 10⁸ cells (0.8 GB, allocates), 5-D is 10¹⁰ (80 GB, fails).
+
+So the real obstacle to N-D is **conceptual, not computational**: clustering in N-D and projecting to
+2-D for display would place genuinely separate clusters on top of each other, so the heatmap would no
+longer explain the prediction it sits beside. A cleaner formulation exists (evaluate the correlation
+field at sample points in N-D, interpolate onto the 2-D projection for display only), but it changes
+what the heatmap *means*. Before any of it, run the cheap check: UMAP at `n_components` ∈ {2,3,5,10},
+fixed ridge, the 13 validated measures. If 5-D does not beat 2-D the question is moot.
+
+**What was built instead (2026-09-04).** N-D is no longer silently broken. `emuses umap` may produce
+an N-D morphospace; a run that also enables the heatmap is refused at configuration time, before any
+training, by `emuses/tools/embedding_dimensionality.py`. This replaced a genuinely dangerous
+behaviour: the grid's `ValueError` fired per target *after* the full search and was caught by bare
+`except Exception` at both call sites and again around the whole grid section, so an N-D run
+completed with **exit 0 and no heatmaps**, announced only by error lines in a multi-MB log.
 
 **7.3 Exploration mode vs confirmation mode.** The wide space exists because shotgunning a new
 dataset is a legitimate thing to want. It should be an explicit mode, not the default:

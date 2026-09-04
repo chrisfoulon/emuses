@@ -622,6 +622,59 @@ retired and no longer advertised anywhere (`app.py` `valid_stages`, `service_cli
 at run time. The service defines `/api/v1/jobs/pipeline/{umap,heatmap}` as thin aliases onto the
 stage endpoint, not copies of it.
 
+**Update (2026-09-04): `--load_umap` now genuinely works.** This entry previously rested on the flag
+existing; it did not. `--load_umap` was declared in `cli/pipeline_options.py`, stored on
+`PipelineConfig`, plumbed through `pipeline_runner`, and named by `HeatmapStage`'s own refusal
+message as the remedy — while **no code read `config.load_umap`**, so a run that asked to reuse a
+morphospace silently retrained one. It is now handled first in `UMAPStage.run`, ahead of the
+implicit output-folder detection, and raises rather than falling back to training when the path is
+missing: reusing a specific morphospace and building a new one are different experiments, and
+silently substituting the second is how a run looks successful while answering another question.
+The standalone-`heatmap` decision above is **unchanged and still open**.
+
+### 2.12 An N-Dimensional Embedding Is Refused at Configuration Time, Not Discovered at Grid Time
+
+**Decision**: UMAP may be configured to produce any `n_components`, and a **UMAP-only run with an
+N-D morphospace is supported**. A run that also enables a stage requiring 2-D (currently the
+heatmap) is **refused before anything is trained**, by
+`emuses/tools/embedding_dimensionality.py`, with a message naming the optim_dict to change and
+`emuses umap` as the working alternative.
+
+**Rationale**: UMAP and the prediction search are dimension-agnostic; `GridCreator` and
+`CorrelationGridCreator` are not, and already raised `ValueError` on `d != 2`. That check was
+correct and nearly worthless: it fired **per target, after the full nested-CV search** (~19 h on
+`DSD_repro`), and `heatmap_stage.py` caught bare `Exception` at both grid call sites *and* around
+the whole grid section — so an N-D run **completed with exit 0 and no heatmaps**, announced only by
+error lines inside a multi-MB log. The defect was never the missing check; it was the placement and
+the four handlers above it. `HeatmapStage` therefore carries the check independently (for direct
+drivers such as `tests/regression`), and `HeatmapStage.run` re-raises `EmbeddingDimensionalityError`
+specifically while still tolerating genuine grid failures, which it is right to survive.
+
+**Do not resolve a refusal by loosening the check.** Making the heatmap N-D is a design question.
+Two measured facts (2026-09-04) that a future reader will otherwise re-derive wrongly:
+
+- The **adaptive** grid (`emuses_utils.compute_discrete_space` / `optimize_discrete_space`) is N-D
+  generic and does **not** explode with dimension — it *shrinks*. Its criterion is point overlap,
+  and 133 points in a 10-D cube never collide, so it settles at 50×50 for d=2, 5⁵ for d=5 and
+  **2¹⁰ for d=10**. The failure mode is resolution collapse, not memory. That code is also currently
+  unreachable: `DiscreteLatentSpace` is never instantiated. Earlier revisions of `STATUS.md` and the
+  methodology docs asserted an `r^d` explosion citing `emuses_utils.py:113`; that was wrong on both
+  the behaviour and the file.
+- Only a **fixed** grid is exponential, which is what the live creators use at `grid_size=100`:
+  d=4 is 10⁸ cells (0.8 GB, allocates), d=5 is 10¹⁰ (80 GB, fails).
+
+So the obstacle is conceptual rather than computational: clustering in N-D and projecting to 2-D for
+display would place genuinely separate clusters on top of each other, and the heatmap would stop
+explaining the prediction beside it. Evidence that 2-D is not the binding constraint on this data
+(an independent out-of-sample test recovered R=0.31 at n=314 from a 2-D morphospace):
+`dev-docs/methodology/external_evidence_dsd.md` §7.2.
+
+**Consequences.** `UMAPStage` assigns cluster labels for the **current** cohort via
+`hdbscan.approximate_predict` whenever the stored label count disagrees with the embedding count —
+previously coordinates were re-derived for the new subjects while labels were loaded wholesale from
+the previous run. Equal-sized cohorts still slip through, because no artefact carries subject
+identity. Guards are perturbation-verified in `tests/test_embedding_dimensionality.py`.
+
 ### 2.10 Core / Extras Boundary: Parked Features Stay, But Cost Nothing
 
 **Decision**: EMUSES has a declared **core** and a set of **parked (extras)** features. Parked code
