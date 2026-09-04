@@ -8,6 +8,13 @@ This document exists because a single number was read against the wrong baseline
 months. It sets out what R² actually measures, the three diagnostics that decide whether a
 result can be trusted, what they said about `DSD_repro`, and which design choices follow.
 
+**Companion:** `external_evidence_dsd.md` answers the question this one raises — *is there anything
+there to detect?* It is, from an independent out-of-sample test of the published DSD model
+(R² ≈ 0.10 at n=314), which lands exactly on the fixed-model MDE derived here and below the
+full-search one. Read it before concluding from this document that the method does not work. It also
+records that the same MAE%-against-nothing error analysed in §1 appears in the published literature,
+where its floor is 85 %.
+
 ---
 
 ## 1. R² = 0 is not the baseline

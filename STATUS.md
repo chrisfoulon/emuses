@@ -193,6 +193,28 @@ Permutation nulls reuse each fold's PCA, so only the y-correspondence is broken.
 
 `--test_size 0.0` in the June command means that run produced **no held-out evaluation at all**.
 
+### The effect EMUSES is missing is real, and EMUSES is not broken (2026-09-04)
+
+Settled by checking the DSD literature rather than by reasoning about EMUSES. Full write-up, with
+every number and the design conclusions: **`dev-docs/methodology/external_evidence_dsd.md`** — read
+that before re-opening "is the method sound", the DSD/Talozzi/Matsulevits papers, MAE%, whether to
+keep the model search, or UMAP dimensionality.
+
+- **The effect is real.** Hope et al. 2024 (*Brain* 147:e11–e13) ran the frozen, published DSD model
+  as a black box on PLORAS: naming R=0.31, fluency R=0.34, **n=314, p<0.001**, different cohort,
+  segmentation and instrument. A frozen model cannot overfit new data. That is **R² ≈ 0.10**.
+- **EMUSES is at the edge of its resolution, not broken.** Measured MDE at n≈88: **0.096 with a
+  fixed model, 0.176 with the full search.** The true effect sits exactly at the first and below the
+  second. The search is what turns a just-detectable effect into an undetectable one.
+- **The published metrics are inflated.** The MAE% both DSD papers report has a floor at
+  **85.0% mean / 86.3% median**, measured on `DSD_repro` by predicting the mean — Matsulevits'
+  out-of-sample 80.67% is *below* it. Their `t(85)=−1.663` is **p=0.100**, not the reported 0.009;
+  their in-sample R² is circular (|R|>0.2 voxel selection on y); their out-of-sample R² is on N=20,
+  which Talozzi explicitly refuses to do on that same cohort. Only a sign test survives (p=0.023).
+- **The two papers disagree on which domain predicts best** (Talozzi: language/visuospatial;
+  Matsulevits: motor). That is our own seed-spread instability appearing in print. Treat any
+  per-domain ranking at this n as unstable, ours included.
+
 ### What works now
 
 `emuses full`, `umap` and `inference` all run. `heatmap` refuses with an actionable message, which is
@@ -378,13 +400,19 @@ problem, the `enhanced-cli-typer` hang and repo pollution by test output are all
        or stroke width), reusing the saved UMAP model. Recovers well → the regression path works and
        faces was a data/embedding problem; fails → the faces failure reproduces where the signal is
        known to exist, which is far easier to debug. Either outcome is publishable.
-3c. [ ] **Disconnectome: the embedding dimensionality decision.** The 2026-08-26 audit (above) shows
-       PCA-10 recovering signal that UMAP-2 returns ≈0 on, so `n_components: 2` is costing real
-       results on the target dataset. This is the same continuous-target gap as 3b, now measured on
-       the data that matters. Before changing anything, decide: does the heatmap/effect-size stage
-       stay 2-D while prediction uses more components, or does the whole embedding move? The grid in
-       `emuses_utils.py:113` is generic but explodes as r^d, and every plot path assumes 2-D/3-D.
-       **Confirm the architectural intent first — do not just raise the number.**
+3c. [ ] **Disconnectome: the embedding dimensionality decision — DOWNGRADED 2026-09-04, do not act
+       on this before reading `dev-docs/methodology/external_evidence_dsd.md` §7.2.** The 2026-08-26
+       audit shows PCA-10 recovering signal UMAP-2 returns ≈0 on, and that still stands as a
+       measurement. What changed is its interpretation: **Hope et al. 2024 obtained R=0.31
+       out-of-sample at n=314 from a 2-D morphospace**, so 2-D demonstrably carries the real effect
+       in this data and the binding constraint is n, not dimensions. The argument that 2-D was a
+       bottleneck came from the digits run (61-D → 2-D cost 1.1 points) and does not transfer.
+       If ever revisited: the heatmap grids the embedding (`emuses_utils.py:113`) and grids are
+       exponential in d (100 bins/axis: 2-D 10⁴, 5-D 10¹⁰), and clustering in N-D with a 2-D
+       projection for display breaks what the heatmap *means*. **Confirm the architectural intent
+       first — do not just raise the number.** Cheap precondition before any of it: UMAP at
+       `n_components` ∈ {2,3,5,10}, fixed ridge, the 13 validated measures. If 5-D does not beat 2-D
+       the question is moot. Fixing the search (3f–3i) outranks this.
 3d. [ ] **Degenerate-floor targets poison the ranking.** ARAT-family measures (larapinch, laragrasp,
        raragrip, rarapinch …) are ceiling-bound; their mean-predictor floor reaches −2.5, so they
        surface at the top of `performance_target_rankings` on noise. EMUSES ranked larapinch #1
@@ -410,6 +438,30 @@ problem, the `enhanced-cli-typer` hang and repo pollution by test output are all
        `training_context.random_seeds` is `{}` in June's folder while `random_seeds.json` at the root
        is fully populated. `model_io.py:2018-2026` is meant to fill it by reading that file. Unrelated
        to the validity feature but it lives in the same code path, so fix it in its own commit.
+3k. [ ] **Stage separation ("build a morphospace now, add labelled data later") is half-built, and
+       the flag that advertises it is dead.** Checked 2026-09-04 by reading the code, not run.
+       - **`emuses umap` standalone works** — trains and saves the four morphospace artefacts.
+       - **`emuses heatmap` standalone refuses**, by architecture (ADR §2.11), which names the
+         resolution as *a deliberately open product decision*. This workflow is the use case that
+         decides it. Do not loosen the check; pick one of the three resolutions the ADR lists.
+       - **`--load_umap` is never read.** Declared `cli/pipeline_options.py:173`, stored
+         `pipeline_config.py:110`, plumbed `pipeline_runner.py:168` — and **recommended by
+         `heatmap_stage.py:141`'s error message as the fix** — but no code anywhere reads
+         `config.load_umap`. Its three siblings (`load_clusterer`, `load_cluster_labels`,
+         `load_embeddings`) are all read at `umap_stage.py:206/219/232`. So EMUSES tells the user to
+         reach for a flag that does nothing, and the "reuse" it names silently retrains.
+       - **The reuse that does work is implicit and undocumented**: `umap_stage.py:127-141` skips
+         training when all four files exist *in the output folder*, and `umap_stage.py:238` then
+         re-derives coordinates for the current subjects via `trained_umap.transform()`. So the
+         workflow is reachable today only as `emuses full` pointed at a folder already holding a
+         previous run's artefacts — a resume, not a "start from this morphospace".
+       - **Suspected defect on that path, not yet run:** `cluster_labels` is loaded from the *old*
+         subjects (`umap_stage.py:141`) and is the only assignment on that branch — embeddings are
+         recomputed for the new data but labels are not, and there is no `approximate_predict` call
+         for new subjects anywhere (only grid prediction in `kernel_regression_utils.py:1153`).
+         `embedding_train_cluster_labels` (`umap_stage.py:317`) would then carry n_old labels beside
+         n_new embeddings. **Verify by running before believing it** — a downstream guard may catch
+         it. If it does not, this is a silent wrong-answer path of the kind §3 already warns about.
    **Rationale for 3f–3i in one place:** `dev-docs/methodology/small_sample_prediction_validity.md`
    (2026-09-03) — what R² measures against, the three diagnostics and how they differ, the
    `DSD_repro` numbers, the six verified references. Read that rather than re-deriving from the
