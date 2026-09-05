@@ -369,6 +369,51 @@ problem, the `enhanced-cli-typer` hang and repo pollution by test output are all
 
 ## Open questions / next
 
+0. [ ] **Scope settled 2026-09-05, and the work queue that follows from it.** EMUSES is a local
+       tool, or a service an admin runs on one lab/university server with users submitting jobs
+       through it rather than all queueing EMUSES by hand. That validates
+       `emuses/multi_user_service/` (**10,948 lines, 23 files** — job_manager, quota_manager,
+       admin/task/workspace endpoints, token_manager): it is mostly *built*, so the question is
+       finish-and-maintain, not build. It does **not** imply `emuses/extras/` (**23 modules** —
+       GDPR compliance, academic compliance, community model manager, personalized ranking,
+       benchmarking), which is the public-registry/peer-review ambition.
+       Cheapest lever, measured: the cloud SDKs live in **one** file (`extras/cloud_storage.py`),
+       `hvac` in **one** (`multi_user_service/auth.py`), and **both are already lazy-imported
+       inside functions**. Only `requirements.in` says they are core. Fixing that packaging
+       mismatch is most of the alert reduction, at near-zero risk.
+       Alert arithmetic (from the API, 2026-09-05): 275 open = **113 distinct advisories across
+       27 packages**, inflated ~2.4x by one alert per lockfile. −74 when the collapsed
+       `requirements-prod.txt` lands (PR #15), −60 from streamlit-only deps (GitPython 44,
+       tornado 14, pyarrow 2) → ~141. Email notifications were switched off/digested on
+       2026-09-05; **read them with `gh api /repos/chrisfoulon/emuses/dependabot/alerts`**, which
+       is where those numbers came from — do not ask for the inbox.
+       - Decisions **Chris** owns, because they gate the dependency work:
+         - [ ] **D1** public registry / peer-review / community: live, parked, or dead?
+               *Recommended: park explicitly — move to `extras_require`, delete nothing.*
+         - [ ] **D2** Vault (`hvac`) or env/file secrets on a single lab server?
+               *Recommended: optional extra, env by default.*
+         - [ ] **D3** multi-user orchestration: finish or freeze? *Recommended: keep — it is the
+               end state; minimum is auth + job queue + quotas, workspaces/admin analytics lag.*
+         - [ ] **D7** formatter: adopt the 86-file diff, or stay report-only? *Recommended: adopt,
+               in a quiet window.*
+         - [ ] **D10** GUI shape. *Recommended: front-end served by the existing FastAPI app —
+               ~110 routes with OpenAPI already exist; streamlit costs 66 alerts for 4 lines.*
+       - Then, in this order — **A before B, and C alone**:
+         - [ ] **PR A** dependency scope: streamlit, cloud SDKs, `hvac`, `moto`/`testcontainers`/
+               `pytest-servers` out of `requirements.in` into `extras_require`; streamlit's 4 uses
+               in `tools/visualisation.py` behind a lazy import. Gate on local `--core`: this
+               changes the import graph of a module five science modules import.
+         - [ ] **PR B** the owed `pip-compile` under 3.11, against the 12-item audit list above.
+               **After A**, so it does not recompile packages A removes. If `numba`/`llvmlite`
+               move, regenerate the baselines *in the same commit*.
+         - [ ] **PR C** formatter. Only with nothing else open — an 86-file reformat conflicts
+               with everything.
+         - [ ] **PR D** GUI. After A, which settles streamlit's fate.
+         - [ ] **D8** Grype back to `fail-build: true` once the backlog is small enough that a
+               failure means something new.
+         - [ ] **D9** numpy 2 — blocked by GPy/paramz (see the gpy note below), needs baseline
+               regeneration. Deferred deliberately, not forgotten.
+
 1. [~] **Known failures are now fenced off rather than gating (2026-09-05).** CI was red on
        every push to `main` for months, which made the red X meaningless — a genuine breakage
        would have looked identical. Two causes, both measured:
