@@ -209,13 +209,23 @@ jobs:
         mypy --version
 
     # REPORTS. `pip check` is the general form of the same question, but the dev
-    # lockfile carries seven pre-existing incoherences unrelated to this job
-    # (measured 2026-09-05: missing importlib-resources/arviz/pymc, and
-    # starlette/pillow/filelock/cffi pinned against what fastapi/streamlit/safety/
-    # cryptography ask for). Gating on those would block every push for reasons
-    # nobody has triaged, so this reports until the owed `pip-compile` under
-    # Python 3.11 is done -- the lockfile header says it was compiled under 3.12,
-    # which is a plausible source of exactly this class of mismatch.
+    # lockfile carries eight incoherences unrelated to what this job checks
+    # (measured on the runner 2026-09-05): missing importlib-resources/arviz/pymc,
+    # and starlette/pillow/filelock/cffi pinned against what fastapi/streamlit/
+    # safety/cryptography ask for. Gating on untriaged problems would block every
+    # push, so this reports until the owed `pip-compile` under Python 3.11 is done
+    # -- the lockfile header says 3.12, a plausible source of this class of
+    # mismatch.
+    #
+    # The eighth is ours and is EXPECTED, so do not go chasing it:
+    #   gpy 1.13.2 has requirement scipy<=1.12.0, but you have scipy 1.17.1
+    # scipy was bumped deliberately to the version the regression baselines were
+    # validated against. GPy's upper bound is conservative rather than real:
+    # measured against scipy 1.17.1, GPRegression fits and predicts finite values
+    # with positive variance (corr 0.9937 on a synthetic fit) and
+    # SparseGPClassification trains. GPy is on the science path
+    # (emuses/tools/stats_utils.py), so if that ever stops holding, the fix is to
+    # move GPy or revisit the scipy pin -- and regenerate the baselines with it.
     - name: Report dependency coherence
       continue-on-error: true
       run: |

@@ -425,14 +425,26 @@ problem, the `enhanced-cli-typer` hang and repo pollution by test output are all
          pipeline (~84 s) instead of deselecting its way to a 0.06 s green.
          The lockfile header still says it was compiled under **Python 3.12** while CI and the dev
          env both run 3.11 — a proper `pip-compile` under 3.11 is still owed, and there is now
-         hard evidence for why. `pip check` on the runner reports **seven incoherences** in
+         hard evidence for why. `pip check` on the runner reports **eight incoherences** in
          `requirements-dev.txt`: `importlib-resources`, `arviz` and `pymc` required but absent,
          and `starlette` 0.49.1 / `pillow` 12.1.1 / `filelock` 3.20.3 / `cffi` 1.17.1 pinned
          against what `fastapi` / `streamlit` / `safety` / `cryptography` ask for. Compiling under
          one interpreter and installing under another produces exactly this class of mismatch.
+         The **eighth is ours and is expected — do not chase it**: `gpy` 1.13.2 declares
+         `scipy<=1.12.0` while we pin 1.17.1 for the baselines. Measured 2026-09-05 against
+         scipy 1.17.1, GPy's `GPRegression` fits and predicts finite values with positive
+         variance (corr 0.9937 on a synthetic fit) and `SparseGPClassification` trains, so the
+         bound is conservative rather than real. GPy *is* on the science path
+         (`emuses/tools/stats_utils.py`), so if that stops holding, move GPy or revisit the
+         scipy pin — and regenerate the baselines with it.
          **Do not recompile `requirements.txt` casually** — it pins the numerical stack the
          regression baselines were validated against, and a recompile that moves `numba` or
          `llvmlite` invalidates them (regenerate in the same commit, or don't touch it).
+       - [ ] **`requirements-dev.txt` had drifted from `requirements.txt`** on all five bumped
+         pins, and `ci.yml`'s `test` job installs the *dev* lockfile — so it ran the core
+         contract on `numba` 0.61.2 while the PR gate ran it on 0.62.1. Two workflows, two
+         numerical stacks. Aligned in PR #14; both files now carry a header note saying a
+         recompile must not silently drop the hand-edits.
        - [x] **Baselines now record their provenance** (2026-09-05): `llvm_cpu_name` (the codegen
          target — the prime suspect), a digest of the CPU feature flags, Python, platform, and the
          numerical stack versions. Every numerical failure appends a diff of that against the

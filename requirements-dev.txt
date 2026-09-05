@@ -19,8 +19,12 @@
 #
 # 2. pathspec (see the note at its entry) -- black cannot import without it.
 #
-# `pip check` on the runner still reports seven other incoherences in this file;
-# a proper pip-compile under Python 3.11, not 3.12, is owed. See STATUS.md.
+# `pip check` on the runner reports eight incoherences in this file; a proper
+# pip-compile under Python 3.11, not 3.12, is owed. See STATUS.md. One of the
+# eight is expected and deliberate: gpy 1.13.2 declares scipy<=1.12.0 while we
+# pin 1.17.1, the version the regression baselines were validated against. That
+# bound is conservative, not real -- measured against 1.17.1, GPy's GPRegression
+# and SparseGPClassification both fit and predict finite, sane values.
 acres==0.5.0
     # via bidsschematools
 aiosqlite==0.22.1
