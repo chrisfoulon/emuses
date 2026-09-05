@@ -516,6 +516,13 @@ problem, the `enhanced-cli-typer` hang and repo pollution by test output are all
            Context drops 137 MB → 11 MB. It matters beyond bulk: CI builds from a clean checkout,
            but a *local* build would have baked untracked run outputs — `test_output/` was 9.1 MB
            of pipeline artifacts — and `docker/.env` into a **public** image.
+         - **Grype would have failed the job the moment the build started working.** It sat
+           downstream of the broken build with `fail-build: true` at severity `high`, against a
+           repo carrying **275 open Dependabot advisories (1 critical, 157 high)** — and it runs
+           *after* the push step, so it would have published a vulnerable image and gone red
+           anyway. Now report-not-gate, matching `quality`'s formatting steps, with the SARIF and
+           the SBOM uploaded so nothing is lost. **Flip it back to `fail-build: true` once the
+           Dependabot backlog is triaged** and a failure would mean something new.
          Verified without a full image build (only 7.2 GB free): every one of the 198 pins was
          checked for an installable artifact per platform, and `pip install --dry-run --no-deps`
          of the production set resolves clean at 198 distributions with the auth/cloud/Vault
