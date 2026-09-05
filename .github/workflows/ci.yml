@@ -98,7 +98,11 @@ jobs:
     # The core contract GATES: if it fails, the science path is broken and the red X
     # means something. Its suite list lives in scripts/dev_test_runner.py, which is
     # also what developers run locally, so "passes here" and "passes there" cannot
-    # drift apart.
+    # drift apart. `--foreign-machine` is the single documented exception: this
+    # runner did not produce tests/regression/baselines/, and on a different host
+    # CPU those numbers are not comparable at all -- not "comparable within a wider
+    # tolerance". The measurement is in tests/regression/test_numerical_regression.py.
+    # Numerical pinning is therefore enforced by the developer's pre-push --core.
     #
     # The whole-tree sweep REPORTS: it carries ~59 known failures concentrated in
     # tests/model_registry (32), tests/cli (16), tests/foundation_fastapi_service (10)
@@ -111,7 +115,7 @@ jobs:
     # Do NOT resolve a core-contract failure by moving a suite down here.
     - name: Core contract (gating)
       run: |
-        python scripts/dev_test_runner.py --core
+        python scripts/dev_test_runner.py --core --foreign-machine
 
     - name: Whole-tree sweep with coverage (reporting only, known failures)
       continue-on-error: true

@@ -81,4 +81,4 @@ jobs:
       run: |
         # The same command developers run before pushing, reading its suite list from
         # scripts/dev_test_runner.py so the local gate and this one cannot disagree.
-        python scripts/dev_test_runner.py --core
+        python scripts/dev_test_runner.py --core --foreign-machine

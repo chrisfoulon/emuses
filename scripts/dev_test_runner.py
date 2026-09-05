@@ -8,6 +8,25 @@ Two modes, and the point of this file is that CI runs the *same* commands, so
     python scripts/dev_test_runner.py          # smoke: syntax + parallelism, ~1 s
     python scripts/dev_test_runner.py --core   # the core contract, ~3 min
 
+    python scripts/dev_test_runner.py --core --foreign-machine   # what CI runs
+
+THE ONE PLACE LOCAL AND CI DIFFER
+---------------------------------
+`--foreign-machine` says "this machine did not produce tests/regression/baselines/",
+and deselects `machine_specific` -- the tests that compare a recorded number.
+
+This is a real asymmetry and it is deliberate, so it lives here, in the file both
+sides call, rather than in a workflow: the alternative is a second suite list in
+YAML, which drifts. The measurement behind it is in
+tests/regression/test_numerical_regression.py under "Why CI cannot check these
+numbers"; the short version is that a different host CPU changes UMAP's last bits,
+which changes which Optuna trial wins, which changes `composite_score` to a
+different quantity rather than a drifted one. No tolerance covers an argmax.
+
+**The consequence you have to accept:** numerical pinning is enforced by *your*
+pre-push `--core`, not by the PR gate. If you change anything on the science path,
+run it. CI will not catch a silent numerical change for you.
+
 THE CORE CONTRACT
 -----------------
 `CORE_SUITES` below is the definition of "the core pipeline still works", and it is
@@ -77,10 +96,18 @@ def run_command(cmd, description):
 def main():
     """Run development tests locally."""
     core = "--core" in sys.argv
+    foreign_machine = "--foreign-machine" in sys.argv
 
     if core:
         print("🚀 Running the EMUSES CORE CONTRACT")
         print("The suites that must stay green. ~3 minutes.")
+        if foreign_machine:
+            print(
+                "⚙️  --foreign-machine: deselecting `machine_specific`. The "
+                "numerical baselines were\n"
+                "   recorded on another CPU and cannot be compared here; see this "
+                "script's docstring."
+            )
     else:
         print("🚀 Running EMUSES Development Tests (smoke)")
         print("Syntax and parallelism only. Use --core before opening a PR.")
@@ -120,9 +147,22 @@ def main():
         # with it and say nothing about the others. `-p no:randomly` because the
         # contract is a pass/fail gate, and a randomised order that fails only
         # sometimes is not a gate.
+        # `-m "not machine_specific"` rather than dropping tests/regression from
+        # the list: the structural guards in that suite (does the baseline match
+        # this config, is the baseline degenerate) are machine-independent and
+        # must keep gating. Removing the suite would take them with it, which is
+        # the "only ever add" rule's whole point.
+        #
+        # "not extras and ..." is not redundant. pytest.ini's addopts carry
+        # `-m "not extras"`, and a second `-m` on the command line *replaces* it
+        # rather than combining -- so `-m "not machine_specific"` alone would
+        # quietly re-enable the parked marketplace/multi-user suites in the gate.
+        select = (
+            ' -m "not extras and not machine_specific"' if foreign_machine else ""
+        )
         for path, description in CORE_SUITES:
             if not run_command(
-                f"{py} -m pytest {path} -q -p no:randomly --tb=short",
+                f"{py} -m pytest {path}{select} -q -p no:randomly --tb=short",
                 f"Core: {description} ({path})",
             ):
                 all_passed = False

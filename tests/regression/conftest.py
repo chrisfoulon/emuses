@@ -14,6 +14,7 @@ import pytest
 
 from regression_config import DATASETS, REGRESSION_CONFIG, run_pipeline
 from regression_metrics import extract_metrics
+from regression_provenance import collect_provenance, describe_environment_drift
 
 BASELINE_DIR = Path(__file__).resolve().parent / "baselines"
 
@@ -53,6 +54,7 @@ def regression_results(regenerating):
         for dataset, metrics in results.items():
             payload = {
                 "config": REGRESSION_CONFIG,
+                "provenance": collect_provenance(),
                 "metrics": metrics,
             }
             path = BASELINE_DIR / f"{dataset}.json"
@@ -87,3 +89,20 @@ def baselines(regenerating):
             )
         loaded[dataset] = json.loads(path.read_text())
     return loaded
+
+
+@pytest.fixture(scope="session")
+def environment_note(baselines):
+    """A one-shot description of how this machine differs from the baseline's.
+
+    Appended to every numerical assertion message. Computed once because the
+    answer is the same for every test in the session, and because reading
+    package metadata per assertion is wasteful.
+
+    The baselines all record the same environment -- they are regenerated in a
+    single run -- so the first one answers for all of them.
+    """
+    if not baselines:  # regenerating; there is nothing to compare against
+        return ""
+    first = baselines[sorted(baselines)[0]]
+    return describe_environment_drift(first.get("provenance"))

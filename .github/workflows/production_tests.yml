@@ -84,7 +84,7 @@ jobs:
         # Same command developers run locally; the suite list lives in that script so
         # the two cannot drift. Previously this named tests/model_registry, which
         # carries 32 known failures and could not have passed.
-        python scripts/dev_test_runner.py --core
+        python scripts/dev_test_runner.py --core --foreign-machine
 
     - name: Run Security Tests
       if: ${{ github.event.inputs.test_category == 'security' || github.event.inputs.test_category == 'full' }}
