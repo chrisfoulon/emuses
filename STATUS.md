@@ -1,5 +1,5 @@
 # STATUS — EMUSES
-_Last touched: 2026-09-02_
+_Last touched: 2026-09-05_
 
 ## Goal
 
@@ -287,14 +287,83 @@ problem, the `enhanced-cli-typer` hang and repo pollution by test output are all
 
 ## Open questions / next
 
-1. [ ] The 33 remaining failures in `tests/cli` / `tests/foundation_fastapi_service` are
-       untriaged: 6 `test_enhanced_models_commands`, 5 `test_models_hdbscan`,
-       5 `test_inference_preprocessing_params`, 3 each in `test_security_validation`,
-       `test_models_commands`, `test_inference_integration`, and singles elsewhere.
-2. [ ] **Two error messages.** A header-bearing CSV fails with "No numeric data remaining" and never
-       mentions `--input_header`, which works. `.npy` is refused as an unsupported format, when the
-       real problem is that the file people reach for (`split_dataset/test_features.npy`) is stored
-       *after* normalization and is the wrong input regardless of format.
+1. [~] **Known failures are now fenced off rather than gating (2026-09-05).** CI was red on
+       every push to `main` for months, which made the red X meaningless — a genuine breakage
+       would have looked identical. Two causes, both measured:
+       - `production_tests.yml` installed `.[test]`; the extra in `setup.py` is named **`dev`**.
+         pip warns on an unknown extra and carries on, so pytest was never installed and every
+         run died at exit **127** — that workflow has **never executed a single test**. Fixed.
+       - `ci.yml` gated on the whole tree, which carries known failures unrelated to the pipeline.
+       Now there is a **core contract** — the suites that must stay green — defined once in
+       `scripts/dev_test_runner.py::CORE_SUITES` and run by all three workflows *and* the local
+       pre-push command, so "passes locally" and "passes in CI" cannot drift. Measured green
+       2026-09-05, 2 m 36 s: `tests/regression` 14, `tests/pipelines` 118, `tests/inference` 65,
+       `tests/flexible-inference-stage` 16, `tests/tools` 99, `tests/unit` 37, plus the
+       option-registration guard. The whole-tree sweep still runs on `main` under
+       `continue-on-error`, so the numbers stay visible without turning it red.
+       **Never fix a core-contract failure by removing a suite from the list** — that converts a
+       real failure into an invisible one, which is what the regression-conftest bug already cost.
+       A branch that adds tests adds them to `CORE_SUITES` in its own commit; nothing in the list
+       may name a path that does not exist yet, since pytest exits 4 on a missing path and the
+       whole contract would then fail for a bookkeeping reason.
+       - **What turning it on immediately found: the baselines belonged to an environment the
+         lockfile did not describe.** The first CI run of `tests/regression` failed **10 of 14** —
+         structurally, not by rounding. HDBSCAN found **4 clusters instead of 3**, adjusted Rand
+         index **0.21** against a floor of 0.95, `target_0_Mean_Score` −0.3554 → **−0.4272**, while
+         the embedding itself moved only slightly (pairwise-distance correlation 0.994). That
+         pattern — a small numerical perturbation crossing a clustering decision boundary and being
+         amplified downstream — is what to look for if this recurs.
+         **Cause: the host CPU. Library drift and thread count were both ruled out by
+         measurement** (supersedes the earlier "environment drift, not hardware" reading here,
+         which was wrong). Five pins were out of date and bumping them to the validated
+         combination did fix the *prediction scores*; the lockfile follows the validated
+         environment, so no pinned scientific number changed. But with both sides then on
+         identical versions, CI still diverged, and thread count had already been excluded (14/14
+         locally pinned to 4 cores). Two further experiments settled it:
+         - **Seeds, 5 runs, one machine, only `random_state` varying.** Seed 42 reproduced the
+           baseline exactly (so the experiment is sound); the other four gave cluster ARI −0.004 /
+           −0.030 / −0.027 / 0.059 and embedding distance correlation 0.043 / 0.050 / 0.062 /
+           0.176. **On 40 samples this config has no stable cluster structure at all.**
+         - **CI, same seed, same versions:** distance correlation **0.990299** — the same
+           embedding, perturbed in the last bits. Two orders of magnitude away from a reseed, so
+           the two causes *are* distinguishable, and this one is numba compiling UMAP's kernels
+           for a different `llvm_cpu_name`.
+         **Why no tolerance fixes it:** the perturbation crosses an HDBSCAN boundary (3 → 4
+         clusters), which changes every Optuna trial's score, so **a different trial wins**.
+         `composite_score` 0.4914 → 0.5297 is a different quantity, not a drifted one, and an
+         argmax flip has no tolerance. Bitwise-across-platforms was already out of scope (ADR
+         §2.9b); what is new is that "not bitwise" does **not** degrade into "within tolerance"
+         once a search selects on the result.
+         **Decided 2026-09-05:** the value comparisons are marked `machine_specific` and gate only
+         on the machine that owns the baselines — your pre-push `--core`. CI runs
+         `--core --foreign-machine` and deselects them. **The consequence to keep in mind: a green
+         PR does not mean the numbers held; your local `--core` is the numerical gate.**
+         `test_pipeline_produces_the_expected_outputs` replaces the lost CI coverage by comparing
+         the output's *shape* against the baseline and never a value, so CI still executes the
+         pipeline (~84 s) instead of deselecting its way to a 0.06 s green.
+         The lockfile header still says it was compiled under **Python 3.12** while CI and the dev
+         env both run 3.11 — a proper `pip-compile` under 3.11 is still owed.
+       - [x] **Baselines now record their provenance** (2026-09-05): `llvm_cpu_name` (the codegen
+         target — the prime suspect), a digest of the CPU feature flags, Python, platform, and the
+         numerical stack versions. Every numerical failure appends a diff of that against the
+         current environment, so it now says either "identical, this is a code change" or exactly
+         which of those moved. Regenerated and verified byte-identical across all 23 and 31
+         metrics — only the provenance block was added.
+       Remaining, outside the contract and untriaged: `tests/model_registry` **32**,
+       `tests/cli` **16**, `tests/foundation_fastapi_service` **10**, `tests/integration` **1**,
+       `tests/security` **1**.
+2. [~] **Error messages. The big one is FIXED (2026-09-05); one remains.**
+       - **FIXED: every pipeline failure reached the user as `Job failed: Unknown error`.** The
+         earlier note here — that the header-bearing-CSV error "never mentions `--input_header`" —
+         was **wrong about the cause**. The diagnostic is excellent and does name `--input_header 0`,
+         the file, the parsed shape and the dropped columns; the CLI was simply throwing it away.
+         The service records the reason under `message` (`JobManager.update_job_status`) and
+         `main.py:873` read only `error`, a key nothing ever writes. This affected **all** pipeline
+         failures, not just CSV headers. Verified by running a header CSV through `emuses umap`
+         before and after; `tests/cli` failure set unchanged (16, identical).
+       - [ ] `.npy` is refused as an unsupported format, when the real problem is that the file
+         people reach for (`split_dataset/test_features.npy`) is stored *after* normalization and is
+         the wrong input regardless of format.
 3. [ ] **Recorded, not being acted on** (result-quality judgements are Chris's call): degenerate
        fits are never reported, and off-manifold input collapses the UMAP transform silently.
        Supersedes the older "highest priority" framing — revisit once a real-data run is stable.

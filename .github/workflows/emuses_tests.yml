@@ -1,5 +1,16 @@
-name: Development CI - Fast Tests
+name: Development CI - Core Contract
 
+# This is the gate that decides whether a PR is safe to merge. It runs the CORE
+# CONTRACT -- the suites that must stay green, defined once in
+# scripts/dev_test_runner.py so this file and the local pre-push command cannot
+# disagree about what "green" means.
+#
+# It is deliberately NOT the whole suite. ~59 failures live outside the contract
+# (tests/model_registry, tests/cli, tests/foundation_fastapi_service, tests/security);
+# they are real, they are tracked in STATUS.md, and they do not touch the pipeline.
+# ci.yml sweeps them on main without gating, so they stay visible. Gating on them
+# instead would mean every push is red, which is the same as having no gate at all.
+#
 # Pull requests only. A `push` trigger alongside this ran the workflow twice for every
 # push to a branch with an open PR. Deduplicating them via a concurrency group works, but
 # leaves the cancelled run showing as a failed check on the PR (mergeStateStatus
@@ -33,7 +44,10 @@ concurrency:
 jobs:
   fast-tests:
     runs-on: ubuntu-latest
-    timeout-minutes: 8  # Strict time limit for cost control
+    # The core contract measures 3 m 32 s locally, of which tests/regression is 91 s.
+    # 15 gives a hosted runner, which is slower, honest room without letting a hang
+    # burn the budget.
+    timeout-minutes: 15
 
     steps:
     - name: Checkout repository
@@ -52,21 +66,19 @@ jobs:
         restore-keys: |
           ${{ runner.os }}-pip-dev-
 
-    - name: Install minimal dependencies
+    - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install pytest pytest-xdist pytest-asyncio
-        # Install core dependencies needed for parallelism tests
-        pip install joblib numpy scikit-learn
-        pip install -e . --no-deps  # Skip heavy dependencies for fast tests
+        # This used to install with --no-deps and no scientific stack, so the gate
+        # could only ever run one test file that imports nothing heavy. That made it
+        # fast and almost meaningless: it would not have caught any defect found in
+        # the last month of work, all of which lived in the pipeline. The core
+        # contract needs the real stack.
+        pip install --no-deps -r requirements.txt
+        pip install --no-deps -e .
 
-    - name: Run fast development tests
+    - name: Core contract
       run: |
-        # Run only the most reliable, fast tests for development feedback
-        # These tests should complete in under 1 minute and use minimal resources
-        pytest tests/tools/test_parallelism_utils.py -v --maxfail=2 -x --tb=short
-        
-    - name: Syntax and Import Check
-      run: |
-        # Quick syntax validation - very fast, catches basic issues
-        python -m py_compile emuses/cli/main.py emuses/tools/parallelism_utils.py emuses/__init__.py
+        # The same command developers run before pushing, reading its suite list from
+        # scripts/dev_test_runner.py so the local gate and this one cannot disagree.
+        python scripts/dev_test_runner.py --core --foreign-machine

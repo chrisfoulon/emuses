@@ -16,6 +16,43 @@ caveats before trusting a pass:
 * **Local run-to-run variation is exactly zero**, so every float tolerance below
   is a *chosen* cross-machine allowance, not a measured one. They are labelled
   individually. ADR 2.9b puts bitwise-across-platforms out of scope.
+* **This is a same-machine instrument.** Every test that compares a recorded
+  number is marked ``machine_specific``, and CI deselects those. They gate on
+  the machine that owns the baselines -- your pre-push
+  ``python scripts/dev_test_runner.py --core`` -- and report, without gating, on
+  a runner. Section "Why CI cannot check these numbers" below is the reason;
+  read it before promoting anything back.
+
+Every numerical assertion appends ``environment_note``, which says whether this
+machine matches the one that produced the baseline. See
+``regression_provenance.py``: the answer to "code change or machine change?"
+should not require a day of experiments twice.
+
+Why CI cannot check these numbers
+---------------------------------
+Measured 2026-09-05, after the environment was brought up to the pinned
+versions on both sides. Same code, same seed, same library versions; the only
+difference is the host CPU. Local reproduced the baseline **exactly**; the
+GitHub runner did not.
+
+The mechanism is amplification through an argmax, not float drift:
+
+1. numba compiles UMAP's kernels for the host CPU (``llvm_cpu_name``:
+   ``meteorlake`` here, something else on a runner), so the embedding differs
+   in the last bits -- pairwise-distance correlation 0.990299, i.e. the same
+   shape, slightly perturbed.
+2. That perturbation crosses HDBSCAN decision boundaries: cluster count 3 -> 4.
+3. Which changes each Optuna trial's score, so **a different trial wins**.
+   ``composite_score`` is the winning trial's score, and it moved 0.4914 ->
+   0.5297. That is not a 1e-6 drift of the same quantity; it is a different
+   quantity. No float tolerance can cover a change of argmax, and inventing one
+   loose enough to try would make the assertion pass on anything.
+
+So the choice is not "tight gate versus loose gate". It is "a gate on the
+machine that produced the baselines" versus "a gate that fires on the CPU model
+and teaches everyone to ignore it". ADR 2.9b already puts bitwise-across-
+platforms out of scope; what is new here is that "not bitwise" does not degrade
+gracefully into "within tolerance" once a search selects on the result.
 
 Config in ``regression_config.py``, deliberately not the shared
 ``emuses_pipeline_results`` fixture -- see that file for why.
@@ -39,12 +76,27 @@ PREDICTION_RTOL = 1e-3
 # CHOSEN. Cross-BLAS allowance for a different machine. Measured variation: 0.
 SEARCH_RTOL = 1e-6
 
-# CHOSEN. Measured 1.0 across every repeat; 0.95 allows one point of 40 to move
-# between clusters without failing the suite.
+# CHOSEN. Measured 1.0 across every repeat *on one machine*; 0.95 allows one
+# point of 40 to move between clusters. See the machine_specific mark below for
+# why a floor this tight is not a cross-machine gate.
 MIN_CLUSTER_ARI = 0.95
 
 # CHOSEN. Measured 1.0. Compared as distances, not coordinates, because UMAP is
 # defined only up to rotation and reflection.
+#
+# Keep it tight. This is the assertion with the most discriminating power in the
+# suite, measured 2026-09-05 with the same code and the same seed:
+#
+#     a different master seed  ->  0.043, 0.050, 0.062, 0.176
+#     a different CPU          ->  0.990299
+#     this machine, repeated   ->  1.000000
+#
+# Two orders of magnitude between "different draw" and "same draw, perturbed",
+# which is exactly the distinction a numerical regression suite needs to make.
+# Do not widen it to 0.95 to accommodate a runner: that would still exclude a
+# reseed, but it would also stop detecting a real change to the embedding, and
+# the runner problem is not solved by tolerance anyway (see the module
+# docstring).
 MIN_DISTANCE_CORR = 0.999
 
 # MEASURED. Zero variation, and an integer count has no float drift to allow.
@@ -55,6 +107,57 @@ CLUSTER_COUNT_EXACT = True
 def _skip_when_regenerating(regenerating):
     if regenerating:
         pytest.skip("regenerating baselines; nothing to assert against yet")
+
+
+@pytest.mark.parametrize("dataset", sorted(DATASETS))
+def test_pipeline_produces_the_expected_outputs(regression_results, baselines, dataset):
+    """The science path runs and emits everything it is supposed to emit.
+
+    Deliberately NOT ``machine_specific``: it compares the *shape* of the output
+    against the baseline, never a value, so it means the same thing on any CPU.
+
+    This is what keeps CI honest once the value comparisons are deselected.
+    Without it the core contract would deselect its way to running four
+    assertions in 0.06 s and never executing the pipeline at all -- green, fast,
+    and checking nothing, which is this project's signature failure. It catches a
+    stage that stopped writing its output, a metric that disappeared from the
+    search, a target that vanished from the summary CSV, and an embedding that
+    changed dimensionality: all real regressions, none of them detectable by
+    reading a number.
+    """
+    current = regression_results[dataset]
+    expected = baselines[dataset]["metrics"]
+
+    missing = sorted(set(expected) - set(current))
+    assert not missing, (
+        f"{dataset}: the pipeline no longer produces {missing}. Something stopped "
+        "writing an output, or a metric was dropped from the search."
+    )
+
+    assert current["embedding_shape"] == expected["embedding_shape"], (
+        f"{dataset}: embedding shape {current['embedding_shape']}, "
+        f"baseline {expected['embedding_shape']}"
+    )
+    assert len(current["_cluster_labels"]) == current["embedding_shape"][0], (
+        f"{dataset}: {len(current['_cluster_labels'])} cluster labels for "
+        f"{current['embedding_shape'][0]} embedded points"
+    )
+    assert set(current["umap_params"]) == set(expected["umap_params"]), (
+        f"{dataset}: UMAP search space changed, "
+        f"{sorted(current['umap_params'])} vs {sorted(expected['umap_params'])}"
+    )
+    assert set(current["hdbscan_params"]) == set(expected["hdbscan_params"]), (
+        f"{dataset}: HDBSCAN search space changed, "
+        f"{sorted(current['hdbscan_params'])} vs {sorted(expected['hdbscan_params'])}"
+    )
+
+    # Finite, not merely present. A NaN composite or score is how an
+    # all-noise clustering or a collapsed model reports itself, and it would
+    # satisfy every key-presence check above.
+    numeric = ["composite_score"] + [k for k in expected if k.startswith("metric_")]
+    numeric += [k for k in expected if k.endswith(SCORE_FIELDS)]
+    nonfinite = [k for k in numeric if not np.isfinite(current[k])]
+    assert not nonfinite, f"{dataset}: non-finite values for {nonfinite}"
 
 
 @pytest.mark.parametrize("dataset", sorted(DATASETS))
@@ -96,8 +199,34 @@ def test_baseline_is_not_degenerate(baselines, dataset):
     assert len(set(metrics["_cluster_labels"])) > 1
 
 
+# --- Below here: the value comparisons -- the actual pinning ------------------
+#
+# All four carry `machine_specific`, which means "runs everywhere, gates only on
+# the machine that owns the baselines". `scripts/dev_test_runner.py --core`
+# runs them; `--core --foreign-machine` (what CI passes) deselects them, and the
+# non-gating whole-tree sweep still runs and reports them.
+#
+# The reason is measured and is in the module docstring under "Why CI cannot
+# check these numbers". Two things follow from it that are easy to get wrong:
+#
+#   * Do not fix a red runner by loosening a tolerance here. The runner does not
+#     produce a drifted version of the same number; it produces the score of a
+#     different Optuna trial.
+#   * Do not delete these because CI does not run them. They are the only thing
+#     in the project that catches a silent change to a scientific result, and on
+#     the machine that owns the baselines they are exact -- repeated runs vary by
+#     zero, so a failure there is a code change, full stop.
+#
+# The route to a genuine cross-machine gate is a config whose search converges
+# to the same optimum from either side of a last-bit perturbation, not a wider
+# floor. On 40 samples this one does not: at four alternative master seeds the
+# cluster ARI against the baseline is -0.004, -0.030, -0.027, 0.059 and the
+# count moves 3 <-> 2, so there is no stable structure to pin in the first place.
+
+
+@pytest.mark.machine_specific
 @pytest.mark.parametrize("dataset", sorted(DATASETS))
-def test_prediction_scores(regression_results, baselines, dataset):
+def test_prediction_scores(regression_results, baselines, dataset, environment_note):
     """The number that matters: per-target predictive performance."""
     current = regression_results[dataset]
     expected = baselines[dataset]["metrics"]
@@ -112,17 +241,36 @@ def test_prediction_scores(regression_results, baselines, dataset):
             current[key],
             expected[key],
             rtol=PREDICTION_RTOL,
-            err_msg=f"{dataset}: {key} moved beyond the chosen tolerance",
+            err_msg=(
+                f"{dataset}: {key} moved beyond the chosen tolerance"
+                f"{environment_note[dataset]}"
+            ),
         )
 
 
+@pytest.mark.machine_specific
 @pytest.mark.parametrize("dataset", sorted(DATASETS))
-def test_composite_and_search_metrics(regression_results, baselines, dataset):
+def test_composite_and_search_metrics(
+    regression_results, baselines, dataset, environment_note
+):
     """Composite score and the UMAP/HDBSCAN metrics behind it."""
     current = regression_results[dataset]
     expected = baselines[dataset]["metrics"]
     keys = ["composite_score"] + sorted(
         key for key in expected if key.startswith("metric_")
+    )
+
+    # Which trial won, reported rather than asserted. `composite_score` is the
+    # winning trial's score, so if the search selected a different trial these
+    # numbers are not a drifted version of the baseline's -- they belong to a
+    # different point in the parameter space, and reading the delta as drift
+    # sends you looking for a tolerance that does not exist. Named in the
+    # failure so the next occurrence is diagnosed from the log.
+    trials = (
+        f"\n[search] winning trial: baseline {expected.get('trial_number')}, "
+        f"here {current.get('trial_number')}; "
+        f"umap params baseline {expected.get('umap_params')}, "
+        f"here {current.get('umap_params')}"
     )
 
     for key in keys:
@@ -131,20 +279,27 @@ def test_composite_and_search_metrics(regression_results, baselines, dataset):
             current[key],
             expected[key],
             rtol=SEARCH_RTOL,
-            err_msg=f"{dataset}: {key} moved beyond the chosen tolerance",
+            err_msg=(
+                f"{dataset}: {key} moved beyond the chosen tolerance"
+                f"{trials}{environment_note[dataset]}"
+            ),
         )
 
 
+@pytest.mark.machine_specific
 @pytest.mark.parametrize("dataset", sorted(DATASETS))
-def test_cluster_count(regression_results, baselines, dataset):
-    assert (
-        regression_results[dataset]["n_clusters"]
-        == baselines[dataset]["metrics"]["n_clusters"]
+def test_cluster_count(regression_results, baselines, dataset, environment_note):
+    current = regression_results[dataset]["n_clusters"]
+    expected = baselines[dataset]["metrics"]["n_clusters"]
+    assert current == expected, (
+        f"{dataset}: cluster count {current}, baseline {expected}"
+        f"{environment_note[dataset]}"
     )
 
 
+@pytest.mark.machine_specific
 @pytest.mark.parametrize("dataset", sorted(DATASETS))
-def test_cluster_structure(regression_results, baselines, dataset):
+def test_cluster_structure(regression_results, baselines, dataset, environment_note):
     """Compared label-invariantly: cluster ids are arbitrary."""
     ari = cluster_ari(
         baselines[dataset]["metrics"]["_cluster_labels"],
@@ -152,13 +307,17 @@ def test_cluster_structure(regression_results, baselines, dataset):
     )
     assert ari >= MIN_CLUSTER_ARI, (
         f"{dataset}: cluster structure changed, adjusted Rand index {ari:.4f} "
-        f"against a chosen floor of {MIN_CLUSTER_ARI}"
+        f"against a chosen floor of {MIN_CLUSTER_ARI}{environment_note[dataset]}"
     )
 
 
+@pytest.mark.machine_specific
 @pytest.mark.parametrize("dataset", sorted(DATASETS))
-def test_embedding_geometry(regression_results, baselines, dataset):
-    """Geometry, not coordinates: UMAP is fixed only up to rotation/reflection."""
+def test_embedding_geometry(regression_results, baselines, dataset, environment_note):
+    """Geometry, not coordinates: UMAP is fixed only up to rotation/reflection.
+
+    The discriminating assertion in this suite -- see MIN_DISTANCE_CORR.
+    """
     corr = distance_correlation(
         baselines[dataset]["metrics"]["_embedding_distances"],
         regression_results[dataset]["_embedding_distances"],
@@ -166,4 +325,5 @@ def test_embedding_geometry(regression_results, baselines, dataset):
     assert corr >= MIN_DISTANCE_CORR, (
         f"{dataset}: embedding geometry changed, pairwise-distance correlation "
         f"{corr:.6f} against a chosen floor of {MIN_DISTANCE_CORR}"
+        f"{environment_note[dataset]}"
     )

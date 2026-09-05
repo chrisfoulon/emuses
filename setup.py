@@ -74,6 +74,25 @@ setup(
     name="emuses",
     version=__version__,
     packages=find_packages(),
+    # Declared, because nothing declared it before: pip would install this on any
+    # interpreter it found, including ones where the numerical stack has no wheels.
+    # That is not a packaging nicety here -- a source-built or differently-versioned
+    # numba changes UMAP's floating-point output (see
+    # tests/regression/test_numerical_regression.py), so an undeclared interpreter
+    # is a route to quietly different scientific results, not to an install error.
+    #
+    # Floor 3.11: forced by the pinned scipy, which requires >=3.11, and it is the
+    # only version the suite has actually been run on (every workflow, and the dev
+    # environment). 3.12 is admitted because every pin supports it, not because it
+    # has been tested. Ceiling excludes 3.13: unverified, and "probably fine" is
+    # precisely how the numba variable got in. Raise it after a green run there.
+    python_requires=">=3.11,<3.13",
+    classifiers=[
+        "Programming Language :: Python :: 3.11",
+        "Programming Language :: Python :: 3.12",
+        "Intended Audience :: Science/Research",
+        "Topic :: Scientific/Engineering :: Medical Science Apps.",
+    ],
     entry_points={
         "console_scripts": [
             "emuses=emuses.cli.main:main",

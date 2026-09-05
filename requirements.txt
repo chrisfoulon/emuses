@@ -4,6 +4,33 @@
 #
 #    pip-compile --output-file=requirements.txt requirements.in
 #
+# HAND-EDITED AFTERWARDS -- five pins, deliberately, do not let a recompile drop them
+# without regenerating tests/regression/baselines/ in the same breath:
+#
+#     joblib 1.5.1 -> 1.5.2      llvmlite 0.44.0 -> 0.45.1    numba 0.61.2 -> 0.62.1
+#     scikit-learn 1.7.1 -> 1.7.2                             scipy 1.12.0 -> 1.17.1
+#
+# Why (measured 2026-09-05, the first time CI ever ran tests/regression): the numerical
+# baselines were generated on the maintainer's environment, which had drifted off this
+# lockfile. Installed faithfully from the OLD pins, 10 of 14 regression tests failed --
+# and not by rounding. HDBSCAN found 4 clusters instead of 3, the adjusted Rand index
+# against the baseline clustering was 0.21 against a floor of 0.95, and every downstream
+# score shifted (target_0_Mean_Score -0.3554 -> -0.4272). The embedding itself was only
+# slightly perturbed (pairwise-distance correlation 0.994), which is the signature of a
+# small numerical change crossing a clustering decision boundary and being amplified.
+#
+# Mechanism: UMAP's core is numba-JIT compiled, so a numba/llvmlite bump changes
+# floating-point codegen. Ruled out by measurement, not assumption -- the same suite
+# passes 14/14 locally when pinned to 4 cores, so thread count is NOT the cause.
+#
+# These five versions are not a guess: they are the combination the baselines were
+# actually validated against and which is proven to coexist. Changing them means
+# regenerating the baselines (`pytest tests/regression --regen-baselines`), which
+# changes what the numerical pinning asserts -- a scientific decision, not a chore.
+#
+# A proper `pip-compile` under Python 3.11 (this file says 3.12, while CI and the dev
+# environment both run 3.11) is still owed; see STATUS.md.
+#
 acres==0.5.0
     # via bidsschematools
 aiosqlite==0.22.1
@@ -190,7 +217,7 @@ jmespath==1.0.1
     # via
     #   boto3
     #   botocore
-joblib==1.5.1
+joblib==1.5.2
     # via
     #   -r requirements.in
     #   bcblib
@@ -212,7 +239,7 @@ lightgbm==4.6.0
     # via -r requirements.in
 limits==5.4.0
     # via slowapi
-llvmlite==0.44.0
+llvmlite==0.45.1
     # via
     #   numba
     #   pynndescent
@@ -268,7 +295,7 @@ nilearn==0.12.0
     #   bcblib
 num2words==0.5.14
     # via pybids
-numba==0.61.2
+numba==0.62.1
     # via
     #   pynndescent
     #   umap-learn
@@ -499,7 +526,7 @@ rsa==4.9.1
     # via google-auth
 s3transfer==0.13.1
     # via boto3
-scikit-learn==1.7.1
+scikit-learn==1.7.2
     # via
     #   -r requirements.in
     #   bcblib
@@ -509,7 +536,7 @@ scikit-learn==1.7.1
     #   optuna-integration
     #   pynndescent
     #   umap-learn
-scipy==1.12.0
+scipy==1.17.1
     # via
     #   -r requirements.in
     #   bcblib

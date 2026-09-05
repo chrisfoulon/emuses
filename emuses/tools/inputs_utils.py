@@ -19,6 +19,50 @@ from emuses.tools.data_preproc import find_min_resolution
 from emuses.tools.model_io import ModelIOManager
 
 
+_CANDIDATE_SEPARATORS = {";": "semicolon", "\t": "tab", "|": "pipe", ",": "comma"}
+
+
+def _detect_separator_mismatch(
+    columns: Optional[list], separator: Optional[str], file_path: str
+) -> Optional[str]:
+    """Name the delimiter a file appears to actually use, if it is not the one in use.
+
+    A wrong ``--arg_separator`` fails with "No numeric data remaining", whose generic
+    advice sends the user to ``--input_header`` -- which is not the problem, and which
+    they can spend a long time not fixing. The signature is unmistakable and worth
+    reading off directly: the file parsed into a handful of columns whose *names* still
+    contain an unused delimiter, e.g. a single column called ``col1;col2;col3``.
+
+    Semicolon files are the common case rather than an exotic one: that is what Excel
+    exports under any locale using the comma as a decimal mark.
+
+    Returns the hint text, or None when the evidence does not clearly point at the
+    separator -- a wrong guess here would send the user somewhere else useless.
+    """
+    if not columns or not str(file_path).lower().endswith((".csv", ".txt", ".tsv")):
+        return None
+    # Only meaningful when almost nothing parsed; several real columns that happen to
+    # contain a semicolon are not evidence of anything.
+    if len(columns) > 2:
+        return None
+
+    joined = "".join(str(c) for c in columns)
+    for char, name in _CANDIDATE_SEPARATORS.items():
+        if char == (separator or ","):
+            continue
+        # Two or more occurrences: one stray character in a column name is noise,
+        # a repeated one is a delimiter that pandas never split on.
+        if joined.count(char) >= 2:
+            shown = "\\t" if char == "\t" else char
+            return (
+                f"❗ THIS LOOKS LIKE A SEPARATOR MISMATCH. The column name(s) still "
+                f"contain '{shown}', so the file is probably {name}-separated while "
+                f"EMUSES split on '{separator or ','}'.\n"
+                f"   Fix: add --arg_separator '{shown}'\n"
+            )
+    return None
+
+
 def _format_data_loading_error(
     base_message: str,
     file_path: str,
@@ -453,10 +497,16 @@ def spreadsheet_to_input_df(
 
     # Check if we have any data left after removing unprocessable columns
     if df.empty or df.shape[1] == 0:
+        # Put the separator hint first when the evidence supports it: the generic
+        # header/index advice below is correct in general and misleading in this case.
+        separator_hint = _detect_separator_mismatch(
+            columns_to_remove, spreadsheet_separator, str(file_path)
+        )
         error_msg = _format_data_loading_error(
             base_message=(
                 "❌ ERROR: No numeric data remaining after processing the file.\n"
-                "🔧 LIKELY CAUSES:\n"
+                + (separator_hint or "")
+                + "🔧 LIKELY CAUSES:\n"
                 "   - Header row not properly specified\n"
                 "   - Index column not properly specified\n"
                 "   - File contains only text data or headers\n"

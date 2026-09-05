@@ -14,6 +14,7 @@ import pytest
 
 from regression_config import DATASETS, REGRESSION_CONFIG, run_pipeline
 from regression_metrics import extract_metrics
+from regression_provenance import collect_provenance, describe_environment_drift
 
 BASELINE_DIR = Path(__file__).resolve().parent / "baselines"
 
@@ -53,6 +54,7 @@ def regression_results(regenerating):
         for dataset, metrics in results.items():
             payload = {
                 "config": REGRESSION_CONFIG,
+                "provenance": collect_provenance(),
                 "metrics": metrics,
             }
             path = BASELINE_DIR / f"{dataset}.json"
@@ -87,3 +89,25 @@ def baselines(regenerating):
             )
         loaded[dataset] = json.loads(path.read_text())
     return loaded
+
+
+@pytest.fixture(scope="session")
+def environment_note(baselines):
+    """Per-dataset description of how this machine differs from the baseline's.
+
+    Appended to every numerical assertion message; index it by dataset.
+
+    Keyed per dataset rather than computed once from the first baseline, even
+    though a regeneration writes them all in one run and they therefore agree.
+    The single-value version read whichever dataset sorted first, so perturbing
+    any *other* baseline's provenance changed nothing and the note kept
+    reporting "identical" -- a check that silently does nothing, reporting
+    success. Caught by perturbing it, which is the only way that class of bug
+    ever is.
+    """
+    if not baselines:  # regenerating; there is nothing to compare against
+        return {dataset: "" for dataset in DATASETS}
+    return {
+        dataset: describe_environment_drift(payload.get("provenance"))
+        for dataset, payload in baselines.items()
+    }
