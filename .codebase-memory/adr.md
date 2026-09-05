@@ -622,6 +622,157 @@ retired and no longer advertised anywhere (`app.py` `valid_stages`, `service_cli
 at run time. The service defines `/api/v1/jobs/pipeline/{umap,heatmap}` as thin aliases onto the
 stage endpoint, not copies of it.
 
+**Update (2026-09-04): `--load_umap` now genuinely works.** This entry previously rested on the flag
+existing; it did not. `--load_umap` was declared in `cli/pipeline_options.py`, stored on
+`PipelineConfig`, plumbed through `pipeline_runner`, and named by `HeatmapStage`'s own refusal
+message as the remedy — while **no code read `config.load_umap`**, so a run that asked to reuse a
+morphospace silently retrained one. It is now handled first in `UMAPStage.run`, ahead of the
+implicit output-folder detection, and raises rather than falling back to training when the path is
+missing: reusing a specific morphospace and building a new one are different experiments, and
+silently substituting the second is how a run looks successful while answering another question.
+The standalone-`heatmap` decision above is **unchanged and still open**.
+
+### 2.12 An N-Dimensional Embedding Is Refused at Configuration Time, Not Discovered at Grid Time
+
+**Decision**: UMAP may be configured to produce any `n_components`, and a **UMAP-only run with an
+N-D morphospace is supported**. A run that also enables a stage requiring 2-D (currently the
+heatmap) is **refused before anything is trained**, by
+`emuses/tools/embedding_dimensionality.py`, with a message naming the optim_dict to change and
+`emuses umap` as the working alternative.
+
+**Rationale**: UMAP and the prediction search are dimension-agnostic; `GridCreator` and
+`CorrelationGridCreator` are not, and already raised `ValueError` on `d != 2`. That check was
+correct and nearly worthless: it fired **per target, after the full nested-CV search** (~19 h on
+`DSD_repro`), and `heatmap_stage.py` caught bare `Exception` at both grid call sites *and* around
+the whole grid section — so an N-D run **completed with exit 0 and no heatmaps**, announced only by
+error lines inside a multi-MB log. The defect was never the missing check; it was the placement and
+the four handlers above it. `HeatmapStage` therefore carries the check independently (for direct
+drivers such as `tests/regression`), and `HeatmapStage.run` re-raises `EmbeddingDimensionalityError`
+specifically while still tolerating genuine grid failures, which it is right to survive.
+
+**Do not resolve a refusal by loosening the check.** Making the heatmap N-D is a design question.
+Two measured facts (2026-09-04) that a future reader will otherwise re-derive wrongly:
+
+- The **adaptive** grid (`emuses_utils.compute_discrete_space` / `optimize_discrete_space`) is N-D
+  generic and does **not** explode with dimension — it *shrinks*. Its criterion is point overlap,
+  and 133 points in a 10-D cube never collide, so it settles at 50×50 for d=2, 5⁵ for d=5 and
+  **2¹⁰ for d=10**. The failure mode is resolution collapse, not memory. That code is also currently
+  unreachable: `DiscreteLatentSpace` is never instantiated. Earlier revisions of `STATUS.md` and the
+  methodology docs asserted an `r^d` explosion citing `emuses_utils.py:113`; that was wrong on both
+  the behaviour and the file.
+- Only a **fixed** grid is exponential, which is what the live creators use at `grid_size=100`:
+  d=4 is 10⁸ cells (0.8 GB, allocates), d=5 is 10¹⁰ (80 GB, fails).
+
+So the obstacle is conceptual rather than computational: clustering in N-D and projecting to 2-D for
+display would place genuinely separate clusters on top of each other, and the heatmap would stop
+explaining the prediction beside it. Evidence that 2-D is not the binding constraint on this data
+(an independent out-of-sample test recovered R=0.31 at n=314 from a 2-D morphospace):
+`dev-docs/methodology/external_evidence_dsd.md` §7.2.
+
+**Consequences.** `UMAPStage` assigns cluster labels for the **current** cohort via
+`hdbscan.approximate_predict` whenever the stored labels do not belong to it — previously
+coordinates were re-derived for the new subjects while labels were loaded wholesale from the
+previous run. "Do not belong to it" is decided by §2.13's cohort record, not by count alone.
+Guards are perturbation-verified in `tests/test_embedding_dimensionality.py`.
+
+**The refusal has an opt-in, and the opt-in does not fork the pipeline.**
+`--allow_nd_without_heatmaps` is what makes the dimensionality experiment (STATUS 3c: does d>2
+predict better?) runnable at all — without it the gate refuses every shipped dict, because they all
+enable the heatmap. The flag is deliberately **not** a separate N-D code path: the training stage,
+the nested-CV search and the inference handoff run unchanged at any width, and only the 2-D grid
+section is skipped, so the d=2 and d=5 arms of a comparison differ in the embedding and nothing
+else. The default still refuses; `heatmaps_skipped.json` records the width so a heatmap-less folder
+explains itself.
+
+**The skip must not become an early return.** The obvious implementation — return from `run()`
+once heatmaps are skipped — also skips the code *below* the grid section that populates
+`inference_features` / `inference_labels` for `InferenceStage`. The result is a run that completes,
+looks correct, and silently has no held-out validation, on exactly the N-D runs the flag exists to
+compare. This was written and caught in review, not hypothesised.
+`tests/test_embedding_dimensionality.py::TestSkipDoesNotStealTheInferenceHandoff` parses the source
+with `ast` and fails if that return returns.
+
+**`test_data` cannot validate this flag's effect.** d=2 and d=5 produce identical scores there;
+max |r| between any feature and any target is 0.090 and the mean-predictor 5-fold R² is −0.187, so
+every model collapses to its training mean and identical scores are the *correct* answer. Any
+dimensionality comparison must run on `DSD_repro`.
+
+**The `entropy` UMAP metric is 2-D only, and refusing it is part of this gate.** It scores a trial
+with `np.histogramdd(emb, bins=n)`, allocating n^d cells. Measured on `DSD_repro` (1333 points): at
+d=4, 1332 points occupy a cell of their own, so the metric returns a value that no longer varies
+with embedding quality — the search would then optimise noise for the ~19 h it takes, and report a
+best trial. Every shipped optim_dict weights `entropy`, so an N-D run with any of them would have
+hit this. `validate_metrics_for_dimensionality` refuses the combination at configuration time
+(`GRID_BINNED_METRICS`), and `optim_configs.optim_dict_nd` is the N-D configuration: the
+disconnectome dict minus entropy, reweighted `eigen_spread` 3.0 / `density_variability` 2.0 /
+`spread` 1.0. **It is not a numerical match for the 2-D dicts** — scores from it are not comparable
+with scores from `optim_dict_default` or `optim_dict_disconnectome`. `--umap_n_components N`
+overrides `n_components` on a `deepcopy` of the dict, because optim dicts are module-level globals
+and the service process is long-lived; mutating one in place would leak into every later run.
+
+**Resume detection must match the filenames actually written.** The output-folder branch tested for
+`best_umap_model.joblib`, but `ModelIOManager` writes version-suffixed names
+(`best_umap_model_v1_0_0_joblib1_5_2.joblib`), so the branch was unreachable from the day it was
+written and every implicit resume silently retrained. Detection now globs for the newest match, and
+`tests/test_embedding_dimensionality.py::TestResumeDetectionMatchesWhatIsActuallyWritten` pins it
+against the source with comments and docstrings stripped. Reuse runs also wrote no `embeddings.npy`
+or `cluster_labels.npy`, because saving lived inside the training function; it is now idempotent and
+outside it, so a resumed run leaves a folder the next stage can consume. Both defects were reported
+as working from reading the code, and only a real run exposed them.
+
+### 2.13 Reuse Between Runs Is Opt-In, Fingerprinted, and Refuses When It Cannot Confirm
+
+**Decision**: Anything a run reuses from a previous run — a morphospace, its cluster labels, a
+finished prediction search — is reused **only when a stored fingerprint proves it answers this
+run's question**. Every failure to confirm (missing file, damaged JSON, older schema, unreadable
+model) means *recompute*, never *assume*. Files are `cohort.json`
+(`emuses/tools/cohort_identity.py`), `<target>/search_fingerprint.json` +
+`<target>/cv_scores.npy` (`emuses/tools/target_resume.py`) and
+`performance_summary/runs.json` (`emuses/tools/run_index.py`).
+
+**Rationale**: the cost of recomputing is time; the cost of wrongly reusing is a run that completes
+and reports another experiment's numbers. Those are not comparable, so the tie always breaks the
+same way. This is why `cohorts_match` returns `True`/`False`/**`None` for unknown** and the caller
+treats `None` like `False`: a folder written before this file existed is not evidence that nothing
+changed.
+
+**Cohort identity, and why it is a digest rather than ids.** Nothing in the morphospace artefacts
+carried subject identity, so two cohorts of equal size were indistinguishable and a reuse run paired
+one cohort's labels with another's coordinates. `cohort.json` stores a SHA-256 over the feature
+matrix (shape, dtype, C-contiguous bytes), and **no per-subject data by default**. That file ships
+inside the shared model folder, and hashing clinical ids would not make them safe: ids come from
+small, guessable spaces (sequential integers, site prefixes, a known cohort list), so per-subject
+digests are recoverable by enumeration in seconds. `--record_cohort_ids` is the explicit opt-in for
+users who can share them. Side effect worth keeping: when the cohort *does* match, `--load_umap`
+can now reuse HDBSCAN's **fitted** labels, which it previously always discarded in favour of
+`approximate_predict` — the two can disagree near cluster boundaries.
+
+**Prediction resume is per target, and no finer.** `--resume_targets` skips `nested_optuna_cv` for
+a target whose coordinates, target values, resolved search space, fold count, trial budget and
+seeds are all unchanged. Targets are independent, so "already done" is answerable one column at a
+time with no reasoning about partial state. Per-fold or mid-study resume is **deliberately
+declined**: it means owning Optuna's study state machine for a much smaller saving. Scores are
+reloaded from `cv_scores.npy` at full precision — the per-fold CSV rounds to 4 dp, so resuming from
+it would quietly change the numbers a run reports. Verified decisively by rigging `nested_optuna_cv`
+to raise: a resumed run completes without ever calling it, while changing `--optuna_trials`
+correctly rejects the stored result. Identical scores alone prove nothing here, since the search is
+seeded.
+
+**Several runs may share one output folder, and the folder must say which is which.**
+`performance_summary/` accumulates timestamped aggregates; nothing distinguished them, and the
+per-target files under `target_N/performance/` are overwritten by whichever run went last.
+`runs.json` records each run's embedding width, sample count, search spaces, budgets, seeds and
+whether it skipped heatmaps, with `latest` naming the current results. Older files are **kept, not
+pruned** — comparing configurations is the reason a folder holds more than one. The index is
+descriptive only: nothing reads it back to make a decision, so a damaged index costs information,
+not correctness, and both it and the target artefacts are written inside `try/except` that never
+raises. Losing an hours-long search to a bookkeeping error would be the worse trade by a wide
+margin.
+
+**Documented for users** in `docs/CLI_REFERENCE.md` § "Reusing Work Between Runs", which also
+documents the *implicit* output-folder resume — reusing a morphospace merely because the output
+folder happens to contain one, which had never been stated anywhere.
+
 ### 2.10 Core / Extras Boundary: Parked Features Stay, But Cost Nothing
 
 **Decision**: EMUSES has a declared **core** and a set of **parked (extras)** features. Parked code
@@ -720,6 +871,13 @@ embeddings with target std 0.07 there is no signal, so zeroing the coefficients 
    `confidence = 1.0` describe a model that knows nothing and claims certainty. Confidence is
    `1.0 - std(across fold predictions)` (`inference_stage.py:1455`), so perfect agreement between
    useless models reads as perfect confidence. The evidence exists at training time; report it there.
+   **Reproduced end to end on 2026-09-04** while verifying standalone `emuses inference`: all 50
+   predictions identical, at confidence **0.9934**. The models are genuinely constant — isolated
+   from the pipeline, each fold estimator returns one value for coordinates spanning the whole
+   morphospace, and those values are the per-fold **training means** of a target whose raw mean is
+   0.8146. So inference is reporting faithfully and the number is still misleading. Note for anyone
+   testing inference: on `test_data` this outcome is *expected*, and looks exactly like the
+   2025-08-27 "all predictions identical" bug. Do not diagnose it as that bug again.
 2. **Feeding EMUSES' own splits back into inference silently double-normalizes.** Measured: the
    pre-normalized split yields **1** distinct embedding from `umap.transform`, the same rows raw yield
    10, all 50 raw rows yield 50. Off-manifold input collapses the transform with no error.

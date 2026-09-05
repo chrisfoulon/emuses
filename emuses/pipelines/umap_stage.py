@@ -1,7 +1,9 @@
+import copy
 import json
 import logging
 from pathlib import Path
 
+import hdbscan
 import numpy as np
 
 # Import the default optimization dictionary from your configuration module.
@@ -10,6 +12,12 @@ from emuses.observability import (get_logger, track_optimization_trial,
                                   track_scientific_operation)
 from emuses.pipelines.pipeline_stage import PipelineStage
 from emuses.tools.clustering_utils import load_hdbscan_model
+from emuses.tools.cohort_identity import (build_cohort_record, cohorts_match,
+                                          read_cohort_record,
+                                          write_cohort_record)
+from emuses.tools.embedding_dimensionality import (
+    check_embedding_matches_stages, declared_n_components,
+    validate_metrics_for_dimensionality)
 from emuses.tools.emuses_utils import rescale_embedding
 from emuses.tools.UMAP_utils import (
     load_umap_model, train_and_save_umap_optim_with_nested_clustering)
@@ -116,18 +124,98 @@ class UMAPStage(PipelineStage):
             if test_features is not None:
                 obs_ctx.set_attribute("test_samples", len(test_features))
 
-        # Determine file paths based on output folder and prefix
+        # Determine file paths based on output folder and prefix.
+        #
+        # Models are saved with a version suffix -- best_umap_model_v1_0_0_
+        # joblib1_5_2.joblib, not best_umap_model.joblib. This block used to
+        # test for the bare names, so the resume branch below could never be
+        # true and had never run: every "resume" silently retrained from
+        # scratch. Glob for the versioned artefact instead, taking the newest
+        # if several joblib versions accumulated in one folder.
         prefix = self.config.prefix if hasattr(self.config, "prefix") else ""
-        umap_model_file = self.config.output_folder / f"{prefix}best_umap_model.joblib"
+
+        def _newest(pattern):
+            matches = sorted(
+                self.config.output_folder.glob(pattern),
+                key=lambda p: p.stat().st_mtime,
+            )
+            return matches[-1] if matches else None
+
+        umap_model_file = _newest(f"{prefix}best_umap_model*.joblib")
+        cluster_model_file = _newest(f"{prefix}hdbscan_model*.joblib")
         embeddings_file = self.config.output_folder / f"{prefix}embeddings.npy"
-        cluster_model_file = self.config.output_folder / f"{prefix}hdbscan_model.joblib"
         cluster_labels_file = self.config.output_folder / f"{prefix}cluster_labels.npy"
 
-        # If output files exist, load them and skip training.
-        if (
-            umap_model_file.exists()
+        # Which folder, if any, this run's morphospace came from. None means it
+        # was trained here, in which case the labels belong to this cohort by
+        # construction and the cohort check below must not second-guess them.
+        reused_from = None
+
+        # An explicitly supplied morphospace wins over both the output-folder
+        # detection below and training. --load_umap was declared in
+        # cli/pipeline_options.py, stored on PipelineConfig, plumbed through
+        # pipeline_runner and named by heatmap_stage.py's error message as the
+        # way to reuse a trained morphospace -- but nothing ever read it, so it
+        # silently retrained instead. Its three siblings (load_clusterer,
+        # load_cluster_labels, load_embeddings) are read further down.
+        explicit_umap = getattr(self.config, "load_umap", None)
+        if explicit_umap:
+            explicit_umap_path = Path(explicit_umap).resolve()
+            # Accept the run folder as well as the model file. Saved models carry
+            # a version suffix (best_umap_model_v1_0_0_joblib1_5_2.joblib), which
+            # nobody should have to type or hard-code into a script.
+            if explicit_umap_path.is_dir():
+                candidates = sorted(
+                    explicit_umap_path.glob("*best_umap_model*.joblib"),
+                    key=lambda p: p.stat().st_mtime,
+                )
+                if not candidates:
+                    raise FileNotFoundError(
+                        f"--load_umap points at a folder with no UMAP model in it: "
+                        f"{explicit_umap_path}. Expected a file matching "
+                        f"'*best_umap_model*.joblib', as written by `emuses umap`."
+                    )
+                explicit_umap_path = candidates[-1]
+            elif not explicit_umap_path.exists():
+                raise FileNotFoundError(
+                    f"--load_umap points at a path that does not exist: "
+                    f"{explicit_umap_path}. Note that saved models carry a version "
+                    f"suffix, so the file is named like "
+                    f"'best_umap_model_v1_0_0_joblib1_5_2.joblib'; passing the run "
+                    f"folder instead also works. Not falling back to training: reusing "
+                    f"a specific morphospace and building a new one are different "
+                    f"experiments, and silently doing the second is how a run looks "
+                    f"successful while answering a different question."
+                )
+            logger.info(f"Loading pre-trained UMAP model from --load_umap: {explicit_umap_path}")
+            self.trained_umap, _ = load_umap_model(explicit_umap_path)
+            self.umap_model_path = explicit_umap_path
+            # `emuses umap` writes the clusterer beside the UMAP model, so take
+            # the sibling unless --load_clusterer overrides it below.
+            self.best_clusterer, _ = load_hdbscan_model(
+                explicit_umap_path.parent, model_name="hdbscan_model"
+            )
+            self.cluster_model_path = explicit_umap_path.parent
+            reused_from = explicit_umap_path.parent
+            # The saved cluster_labels.npy describes the subjects the morphospace
+            # was BUILT on. Until cohort.json existed there was no way to tell
+            # whether this run has those same subjects, so these were left unset
+            # and always re-derived -- correct, but it threw away HDBSCAN's actual
+            # fitted labelling even when the cohort was identical, and
+            # approximate_predict does not always reproduce it near cluster
+            # boundaries. Load them now; the cohort check below decides whether
+            # they may be used, and re-derives when it cannot confirm the match.
+            sibling_labels = reused_from / "cluster_labels.npy"
+            self.cluster_labels = (
+                np.load(sibling_labels) if sibling_labels.is_file() else None
+            )
+
+        # If output files exist, load them and skip training. `_newest` returns
+        # None when nothing matched, so these are identity checks, not .exists().
+        elif (
+            umap_model_file is not None
+            and cluster_model_file is not None
             and embeddings_file.exists()
-            and cluster_model_file.exists()
             and cluster_labels_file.exists()
         ):
             logger.info(
@@ -139,6 +227,7 @@ class UMAPStage(PipelineStage):
                 cluster_model_file.parent, model_name="hdbscan_model"
             )
             self.cluster_labels = np.load(cluster_labels_file)
+            reused_from = self.config.output_folder
         else:
             # Load or generate the optimization dictionary.
             if "optim_dict" in context and context["optim_dict"]:
@@ -153,7 +242,32 @@ class UMAPStage(PipelineStage):
                     )
                     optim_dict = optim_dict_default
             else:
-                optim_dict = optim_dict_default  # Run nested optimization for UMAP + HDBSCAN.            # Get HDBSCAN reproducibility parameters from config
+                optim_dict = optim_dict_default  # Run nested optimization for UMAP + HDBSCAN.
+
+            # --umap_n_components overrides whatever the dict declares. Copy
+            # first: optim dicts are module-level globals, so mutating one in
+            # place would leak the override into every later run in the process
+            # (the service is long-lived).
+            n_components_override = getattr(self.config, "umap_n_components", None)
+            if n_components_override is not None:
+                optim_dict = copy.deepcopy(optim_dict)
+                optim_dict.setdefault("param", {}).setdefault("umap", {})[
+                    "n_components"
+                ] = {"value": int(n_components_override)}
+                logger.info(
+                    f"Overriding n_components with --umap_n_components="
+                    f"{int(n_components_override)}"
+                )
+
+            # Refuse a grid-binned objective at a width where it cannot mean
+            # anything. Checked against the EFFECTIVE width, so it covers both
+            # the CLI override and a dict that declares N-D on its own -- the
+            # latter is how someone would hit it without passing any new flag.
+            effective = declared_n_components(optim_dict)
+            if effective:
+                validate_metrics_for_dimensionality(optim_dict, max(effective))
+
+            # Get HDBSCAN reproducibility parameters from config
             approx_min_span_tree = getattr(
                 self.config, "hdbscan_approx_min_span_tree", True
             )
@@ -237,20 +351,146 @@ class UMAPStage(PipelineStage):
         else:
             self.embeddings = self.trained_umap.transform(train_features)
 
+        # Assign the CURRENT subjects to the loaded clusters.
+        #
+        # Coordinates above are always re-derived for whoever is in this run, but
+        # cluster labels were not: on the reuse paths they came from the file the
+        # morphospace was built with. When the cohort differs, that pairs n_old
+        # labels with n_new coordinates.
+        #
+        # Length alone used to be the only signal, which caught cohorts of
+        # DIFFERENT size and missed cohorts of the same size entirely. cohort.json
+        # closes that: a digest of the feature matrix identifies the cohort (and
+        # its preprocessing) without storing anything about any subject.
+        #
+        # `cohorts_match` returns None for "unknown" -- no record, an older
+        # folder, an unreadable one. Unknown is treated exactly like a mismatch:
+        # every folder written before this existed has no record, and absence of
+        # evidence of a change is not evidence of no change. Re-assigning when we
+        # did not need to costs a cheap approximate_predict; trusting stale labels
+        # costs a silently wrong answer.
+        current_cohort = build_cohort_record(
+            train_features,
+            ids=context.get("scores_indices"),
+            record_ids=getattr(self.config, "record_cohort_ids", False),
+        )
+        cohort_verdict = None
+        if reused_from is not None:
+            cohort_verdict = cohorts_match(
+                read_cohort_record(reused_from), current_cohort
+            )
+            if cohort_verdict is False:
+                logger.warning(
+                    f"The morphospace in {reused_from} was built on a different cohort "
+                    f"(feature digest differs). Cluster labels will be re-derived for "
+                    f"this run's subjects rather than reused."
+                )
+            elif cohort_verdict is None:
+                logger.info(
+                    f"No usable cohort record in {reused_from}, so this run cannot "
+                    f"confirm the stored labels describe its subjects. Re-deriving them."
+                )
+
+        needs_assignment = (
+            self.cluster_labels is None
+            or len(self.cluster_labels) != len(self.embeddings)
+            # Only ever applies to a reused morphospace: a freshly trained one
+            # produced these labels from these subjects, so there is nothing to
+            # verify and nothing to second-guess.
+            or (reused_from is not None and cohort_verdict is not True)
+        )
+        if needs_assignment and self.best_clusterer is not None:
+            n_labels = None if self.cluster_labels is None else len(self.cluster_labels)
+            logger.info(
+                f"Assigning cluster labels for the current {len(self.embeddings)} subjects "
+                f"from the loaded clusterer (had {n_labels} stored labels)."
+            )
+            try:
+                self.cluster_labels, _ = hdbscan.approximate_predict(
+                    self.best_clusterer, self.embeddings
+                )
+            except AttributeError as e:
+                raise RuntimeError(
+                    f"The loaded HDBSCAN model cannot label new subjects: {e}. It was "
+                    f"fitted without prediction_data=True, so approximate_predict is "
+                    f"unavailable. Refit the morphospace, or run without reusing a "
+                    f"clusterer. Not falling back to the stored labels: they describe "
+                    f"the subjects the morphospace was built on, not this run's."
+                ) from e
+        elif needs_assignment:
+            raise RuntimeError(
+                f"Cluster labels are unavailable or do not match this run's "
+                f"{len(self.embeddings)} subjects, and no clusterer is loaded to derive "
+                f"them from. Pass --load_clusterer alongside --load_umap, or let the "
+                f"stage train."
+            )
+
+        # Check the width of the embedding that ACTUALLY exists, whatever route
+        # produced it: freshly trained, --load_umap, --load_embeddings, or the
+        # output-folder resume. The configuration-time gate in pipeline_runner
+        # reads the declared n_components, which says nothing about a model
+        # loaded from disk - a 5-D saved model reached through --load_umap would
+        # sail past it and only fail inside HeatmapStage, after the entire
+        # prediction search. This is the fail-fast for that case.
+        # --allow_nd_without_heatmaps is honoured here too, or the run would be
+        # refused one stage before the stage that knows how to skip gracefully.
+        nd_opt_in = getattr(self.config, "allow_nd_without_heatmaps", False)
+        nd_width = check_embedding_matches_stages(
+            self.embeddings,
+            heatmap_enabled=getattr(self.config, "heatmap_stage_enabled", True),
+            source=(
+                f"--load_umap {explicit_umap}" if explicit_umap
+                else "the loaded/trained UMAP model"
+            ),
+            allow_nd_without_heatmaps=nd_opt_in,
+        )
+        if nd_width is not None:
+            logger.warning(
+                f"Continuing with a {nd_width}-D morphospace because "
+                f"--allow_nd_without_heatmaps was given. Prediction training will run "
+                f"normally; the heatmap grid section will be skipped and recorded."
+            )
+
+        # Persist the artefacts this run produced, if training did not already.
+        #
+        # embeddings.npy and cluster_labels.npy are written inside
+        # train_and_save_umap_optim_with_nested_clustering, so every path that
+        # SKIPS training (--load_umap, --load_embeddings) left its output folder
+        # without them: the coordinates and labels for this run's cohort existed
+        # only in memory. Downstream stages read the context rather than the
+        # files, so the run completed and the gap showed up later, as an output
+        # folder that no longer describes its own run.
+        if not embeddings_file.exists():
+            np.save(embeddings_file, self.embeddings)
+            logger.info(f"Embeddings saved at: {embeddings_file}")
+        self.embeddings_path = embeddings_file
+        if not cluster_labels_file.exists() and self.cluster_labels is not None:
+            np.save(cluster_labels_file, self.cluster_labels)
+            logger.info(f"Cluster labels saved at: {cluster_labels_file}")
+        if self.cluster_labels_path is None:
+            self.cluster_labels_path = cluster_labels_file
+
+        # Record which cohort this folder describes, so the NEXT run reusing it
+        # can tell. Written on every route, including a fresh training run --
+        # that is the folder a later reuse will read.
+        cohort_path = write_cohort_record(self.config.output_folder, current_cohort)
+        if cohort_path is not None:
+            logger.info(f"Cohort record saved at: {cohort_path}")
+
         # Rescale embeddings.
         self.min_embeddings = self.embeddings.min(axis=0)
         self.max_embeddings = self.embeddings.max(axis=0)
-        
+
         # Save embedding scaling parameters for inference
         embedding_scaling = {
             'min_embeddings': self.min_embeddings.tolist(),
-            'max_embeddings': self.max_embeddings.tolist() 
+            'max_embeddings': self.max_embeddings.tolist()
         }
         scaling_file = self.config.output_folder / "embedding_scaling.json"
         with open(scaling_file, 'w') as f:
             json.dump(embedding_scaling, f)
         logger.info(f"Saved embedding scaling parameters to {scaling_file}")
-        
+
         self.embeddings = rescale_embedding(
             self.embeddings,
             preset_min=self.min_embeddings,

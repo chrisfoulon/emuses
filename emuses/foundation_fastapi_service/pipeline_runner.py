@@ -85,6 +85,13 @@ class PipelineRunner:
 
         # Pipeline configuration with defaults and type conversion
         args.umap_trials = int(config_dict.get("umap_trials", 10))
+        _n_components = config_dict.get("umap_n_components", None)
+        args.umap_n_components = None if _n_components is None else int(_n_components)
+        args.allow_nd_without_heatmaps = bool(
+            config_dict.get("allow_nd_without_heatmaps", False)
+        )
+        args.record_cohort_ids = bool(config_dict.get("record_cohort_ids", False))
+        args.resume_targets = bool(config_dict.get("resume_targets", False))
         args.hdbscan_trials = int(config_dict.get("hdbscan_trials", 5))
         args.optuna_trials = int(config_dict.get("optuna_trials", 10))
         args.prediction_optim_dict = str(
@@ -527,18 +534,18 @@ class PipelineRunner:
                 # prediction stage and no scores, and adding inference to it failed with
                 # "No inference features found in context".
                 if ("heatmap" in enabled_stages and
-                    config_dict.get("inference_stage_enabled", True) and 
-                    config_dict.get("test_size", 0.0) > 0.0 and 
+                    config_dict.get("inference_stage_enabled", True) and
+                    config_dict.get("test_size", 0.0) > 0.0 and
                     config_dict.get("label_dataset") is None):  # Classic mode only
-                    
+
                     from emuses.pipelines.inference_stage import InferenceStage
-                    
+
                     # HeatmapStage copies prediction_test_features/labels into inference_features
                     # and inference_labels; InferenceStage reads those. It refuses a context that
                     # only holds the prediction_test_* keys, which is why it is gated on heatmap.
                     pipeline.add_stage(InferenceStage(pipeline.config))
                     enabled_stages.append("inference")
-                    
+
                     self.logger.info(f"Added InferenceStage for automatic validation (test_size={config_dict.get('test_size', 0.0)})")
 
                 # PredictionStage retired - replaced by HeatmapStage + InferenceStage
@@ -549,6 +556,60 @@ class PipelineRunner:
                     # enabled_stages.append("prediction")
 
                 obs_ctx.set_attribute("enabled_stages", enabled_stages)
+
+                # Refuse an embedding width the enabled stages cannot consume,
+                # BEFORE anything is trained. The heatmap grid already raises on
+                # d != 2, but only per target, after the full nested-CV search,
+                # and heatmap_stage.py catches bare Exception around both call
+                # sites - so without this an N-D run burns the whole search and
+                # then exits 0 with no heatmaps. See
+                # emuses/tools/embedding_dimensionality.py for why this is not
+                # fixed by loosening the grid check.
+                if "umap" in enabled_stages:
+                    from emuses.config.optim_configs import load_optim_dict
+                    from emuses.tools.embedding_dimensionality import (
+                        check_embedding_dimensionality)
+
+                    optim_dict_name = config_dict.get("optim_dict", "optim_dict_default")
+                    try:
+                        resolved_optim_dict = load_optim_dict(optim_dict_name)
+                    except Exception as exc:
+                        # Resolution failures are UMAPStage's to report; it has
+                        # its own fallback to the default dict. Skipping the
+                        # check must be visible rather than silent.
+                        self.logger.warning(
+                            f"Could not resolve optim_dict '{optim_dict_name}' for the "
+                            f"embedding-dimensionality check ({exc}); the check was SKIPPED "
+                            f"and an unsupported n_components would only surface later."
+                        )
+                        resolved_optim_dict = None
+
+                    # --umap_n_components overrides the dict, so the check must see
+                    # the value that will actually be used, not the one on file.
+                    n_components_override = config_dict.get("umap_n_components", None)
+                    if n_components_override is not None:
+                        resolved_optim_dict = copy.deepcopy(resolved_optim_dict) or {}
+                        resolved_optim_dict.setdefault("param", {}).setdefault("umap", {})[
+                            "n_components"
+                        ] = {"value": int(n_components_override)}
+                        optim_dict_name = f"{optim_dict_name} (--umap_n_components override)"
+
+                    if resolved_optim_dict is not None:
+                        declared = check_embedding_dimensionality(
+                            resolved_optim_dict,
+                            enabled_stages,
+                            optim_dict_name=optim_dict_name,
+                            allow_nd_without_heatmaps=config_dict.get(
+                                "allow_nd_without_heatmaps", False
+                            ),
+                        )
+                        if declared is not None and declared != {2}:
+                            self.logger.warning(
+                                f"UMAP will produce an embedding of n_components="
+                                f"{sorted(declared)}. No 2-D-only stage is enabled, so this "
+                                f"run is allowed, but the resulting morphospace cannot "
+                                f"currently feed the heatmap stage."
+                            )
 
                 # Create progress callback adapter if needed
                 emuses_progress_callback = None
