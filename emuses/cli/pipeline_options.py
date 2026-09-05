@@ -184,6 +184,61 @@ def _shared_pipeline_options(
         str,
         typer.Option("--optim_dict", help="Name of an optim_dict in optim_configs.py"),
     ] = "optim_dict_default",
+    umap_n_components: Annotated[
+        Optional[int],
+        typer.Option(
+            "--umap_n_components",
+            help=(
+                "Embedding dimensionality, overriding n_components in the optim_dict. "
+                "Only `emuses umap` can use anything other than 2: the heatmap builds a "
+                "2-D grid over the morphospace and has no N-D form yet. Note the default "
+                "optim_dicts score trials partly on `entropy`, which is a histogram over "
+                "n_bins^d cells and stops being meaningful above 2-D - use optim_dict_nd, "
+                "which omits it."
+            ),
+        ),
+    ] = None,
+    allow_nd_without_heatmaps: Annotated[
+        bool,
+        typer.Option(
+            "--allow_nd_without_heatmaps",
+            help=(
+                "Train prediction models in an N-D morphospace and accept that no "
+                "heatmaps are produced. Without this, an embedding wider than 2 is "
+                "refused before training whenever the heatmap stage is enabled. The "
+                "nested-CV search is dimension-agnostic and runs normally; only the "
+                "2-D grid section is skipped, and the run writes heatmaps_skipped.json "
+                "into the output folder recording why. Use this to compare prediction "
+                "performance across embedding widths."
+            ),
+        ),
+    ] = False,
+    record_cohort_ids: Annotated[
+        bool,
+        typer.Option(
+            "--record_cohort_ids",
+            help=(
+                "Also store subject identifiers in cohort.json. OFF by default: that "
+                "file ships inside the shared model folder, and clinical ids come from "
+                "small guessable spaces, so hashing them would not make them safe. The "
+                "default record identifies the cohort by a digest of the feature matrix "
+                "and contains no per-subject data at all."
+            ),
+        ),
+    ] = False,
+    resume_targets: Annotated[
+        bool,
+        typer.Option(
+            "--resume_targets",
+            help=(
+                "Skip the nested-CV search for targets a previous run in this output "
+                "folder already finished. A target is reused only when the coordinates, "
+                "target values, search space, fold count, trial budget and seeds are all "
+                "unchanged; anything else re-runs it. Useful after an interrupted long "
+                "run - the search is the expensive half of EMUSES."
+            ),
+        ),
+    ] = False,
     umap_trials: Annotated[
         int,
         typer.Option(

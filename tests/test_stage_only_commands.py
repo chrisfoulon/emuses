@@ -18,6 +18,13 @@ The defects, in the order the run hit them:
 Standalone ``heatmap`` remains unsupported *by design*: it fits against UMAP embeddings, and
 ``--load_umap``/``--load_embeddings`` are read by UMAPStage, which a heatmap-only run does
 not execute. So the test pins the quality of the refusal, not a success.
+
+Correction (2026-09-04): the sentence above was only half true when it was written.
+``--load_embeddings`` was read by UMAPStage; ``--load_umap`` was read by **nothing** -- it was
+declared, stored on PipelineConfig, plumbed through the service, and named by the refusal
+message below as the remedy, while silently retraining instead. It is now genuinely wired, so
+the refusal message stopped promising something that did not happen. Kept as a reminder that
+"the error message says so" is not evidence that a flag does anything.
 """
 
 import numpy as np

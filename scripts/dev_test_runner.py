@@ -70,6 +70,14 @@ CORE_SUITES = [
     ("tests/tools", "Shared tools"),
     ("tests/unit", "Unit tests"),
     ("tests/test_pytest_option_registration.py", "Pinning stays armed in whole-tree runs"),
+    # Added by fix/nd-embedding-gate-and-load-umap. Each guards a defect that shipped
+    # silently: an N-D embedding reaching a trainer that assumes 2-D, a morphospace
+    # that could not say which cohort built it, a resume that redid finished targets,
+    # and an output folder shared between runs that could not be told apart.
+    ("tests/test_embedding_dimensionality.py", "N-D embeddings are gated before training"),
+    ("tests/test_cohort_identity.py", "A morphospace identifies its cohort"),
+    ("tests/test_target_resume.py", "Resume skips finished prediction targets"),
+    ("tests/test_run_index.py", "A shared output folder stays legible"),
     # A branch that adds tests adds them here, in its own commit. Nothing here may
     # name a path that does not exist yet: pytest exits 4 on a missing path, so the
     # whole contract would fail for a bookkeeping reason and teach everyone to

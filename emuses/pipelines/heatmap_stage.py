@@ -21,6 +21,13 @@ from emuses.observability import get_logger, track_scientific_operation
 from emuses.pipelines.pipeline_stage import PipelineStage
 from emuses.tools.ae_optuna import optimize_ae_pretraining
 from emuses.tools.data_preproc import filter_nan_rows
+from emuses.tools.run_index import build_run_entry, record_run
+from emuses.tools.target_resume import (build_target_fingerprint,
+                                        load_completed_target,
+                                        write_target_artefacts)
+from emuses.tools.embedding_dimensionality import (
+    HEATMAP_N_COMPONENTS, EmbeddingDimensionalityError,
+    check_embedding_matches_stages, record_skipped_heatmaps)
 from emuses.tools.inputs_utils import (get_array_info,
                                        load_and_preprocess_digits_dataset)
 from emuses.tools.kernel_regression_utils import (KernelLogisticRegressor,
@@ -87,6 +94,27 @@ def _optimise_target(
     optuna_seed = random_seeds.get("optuna_seed", cv_seed)
     prediction_seed = random_seeds.get("prediction_seed", cv_seed)
 
+    # Targets are independent, so an interrupted run can be resumed a whole
+    # target at a time. Opt-in: skipping a search silently is exactly the class
+    # of behaviour this codebase has been paying for, and one flag is cheap.
+    # The fingerprint covers the coordinates, the target values, the search
+    # space, the fold count, the trial budget and the seeds -- anything that
+    # would make the stored result answer a different question.
+    fingerprint = build_target_fingerprint(
+        X=Xi,
+        y=yi,
+        task=task,
+        outer_folds=cfg.outer_folds,
+        optuna_trials=cfg.optuna_trials,
+        optim_dict=optim_dict,
+        seeds={"cv_seed": cv_seed, "optuna_seed": optuna_seed,
+               "prediction_seed": prediction_seed},
+    )
+    if getattr(cfg, "resume_targets", False):
+        reused = load_completed_target(out_dir, tag, fingerprint, logger=logger)
+        if reused is not None:
+            return tag, reused[0], reused[1]
+
     scores, pipes = nested_optuna_cv(
         Xi,
         yi,
@@ -105,6 +133,12 @@ def _optimise_target(
     logger.info(
         "%s  kept %d / %d rows  -  mean=%.3f", tag, len(yi), len(Y), scores.mean()
     )
+
+    # Written unconditionally, not only under --resume_targets: the run that can
+    # be resumed is the one that already crashed, and it had no reason to expect
+    # it. Full precision, because the per-fold CSV rounds to 4 decimals and
+    # resuming from that would change the numbers a resumed run reports.
+    write_target_artefacts(out_dir, tag, scores, fingerprint)
 
     return tag, scores, pipes
 
@@ -504,22 +538,66 @@ class HeatmapStage(PipelineStage):
         # ------------------------------------------------------------------
         # TRIPLE GRID STATISTICAL ANALYSIS AFTER NESTED CV TRAINING
         # ------------------------------------------------------------------
-        logger.info("=== Starting Triple Grid Statistical Analysis ===")
-        
-        try:
-            # Execute triple grid analysis using current pipeline data
-            self._execute_triple_grid_analysis(
-                context=context,
-                embeddings=prediction_train_coords,  # Rescaled UMAP coordinates (0-1)
-                target_matrix=Y,  # Processed target matrix [n_samples, n_targets]
-                output_folder=self.config.output_folder,
-                logger=logger
+        # An N-D morphospace reaches here only when the run explicitly opted in
+        # with --allow_nd_without_heatmaps. Everything above this point is
+        # dimension-agnostic and has already produced valid prediction scores;
+        # only the grid section below needs exactly two axes. Skip it and say so
+        # on disk, so the folder answers "why are there no heatmaps in here?"
+        # without its console output.
+        skipped_width = check_embedding_matches_stages(
+            prediction_train_coords,
+            heatmap_enabled=True,
+            source="the morphospace this run was given",
+            allow_nd_without_heatmaps=getattr(
+                self.config, "allow_nd_without_heatmaps", False
+            ),
+        )
+        if skipped_width is not None:
+            marker = record_skipped_heatmaps(
+                getattr(self.config, "output_folder", None),
+                skipped_width,
+                targets=list(context.get("prediction_results", {})),
             )
-            logger.info("Triple grid statistical analysis completed successfully")
-            
-        except Exception as e:
-            logger.error(f"Triple grid analysis failed: {e}")
-            logger.warning("Continuing pipeline without statistical grid analysis")
+            logger.warning(
+                f"Skipping the grid and heatmap section: the embedding is "
+                f"{skipped_width}-D and the grid requires {HEATMAP_N_COMPONENTS}. "
+                f"Prediction scores above are unaffected and valid. "
+                f"Recorded in {marker}."
+            )
+            context["heatmaps_skipped"] = {
+                "n_components": skipped_width,
+                "marker": str(marker) if marker else None,
+            }
+
+        # NOT an early return. Everything below the grid section prepares
+        # inference_features/inference_labels for InferenceStage (line ~860),
+        # which is what validates the models against the held-out set -- the one
+        # number an N-D-versus-2-D comparison actually turns on. Returning here
+        # would have skipped it on precisely the runs that need it, quietly.
+        if skipped_width is None:
+            logger.info("=== Starting Triple Grid Statistical Analysis ===")
+
+            try:
+                # Execute triple grid analysis using current pipeline data
+                self._execute_triple_grid_analysis(
+                    context=context,
+                    embeddings=prediction_train_coords,  # Rescaled UMAP coordinates (0-1)
+                    target_matrix=Y,  # Processed target matrix [n_samples, n_targets]
+                    output_folder=self.config.output_folder,
+                    logger=logger
+                )
+                logger.info("Triple grid statistical analysis completed successfully")
+
+            except EmbeddingDimensionalityError:
+                # Deliberately NOT swallowed. Every other grid failure is a runtime
+                # problem this pipeline can survive without, but an embedding of the
+                # wrong width is a configuration error: continuing produces a run
+                # that exits 0 having silently dropped every heatmap it was asked
+                # for. Let it terminate the stage.
+                raise
+            except Exception as e:
+                logger.error(f"Triple grid analysis failed: {e}")
+                logger.warning("Continuing pipeline without statistical grid analysis")
 
         # ------------------------------------------------------------------
 
@@ -1011,6 +1089,26 @@ class HeatmapStage(PipelineStage):
                 )
                 aggregated_csv_files.append(str(folds_path))
 
+            # Say which run these timestamped files came from. The folder keeps
+            # every run's aggregates (deleting them would destroy the comparison
+            # they exist for), so without an index "the results" is a filename
+            # picked by eye, and the per-target CSVs have meanwhile been
+            # overwritten by whichever run went last.
+            index_path = record_run(
+                self.config.output_folder,
+                build_run_entry(
+                    timestamp=timestamp,
+                    task=task,
+                    n_targets=n_targets,
+                    summary_file=summary_filename,
+                    folds_file=(folds_filename if individual_fold_data else None),
+                    config=self.config,
+                    context=context,
+                ),
+            )
+            if index_path is not None:
+                logger.info(f"Run recorded in {index_path}")
+
             # File 3: Overall Statistics (if multiple targets)
             if len(summary_data) > 1:
                 overall_stats = {
@@ -1112,6 +1210,25 @@ class HeatmapStage(PipelineStage):
         logger : logging.Logger
             Logger instance
         """
+        # Check the embedding width ONCE, before the per-target loop and outside
+        # every try block below. GridCreator and CorrelationGridCreator already
+        # reject d != 2, but both call sites catch bare Exception and only log,
+        # so an N-D embedding would otherwise produce a run that completes with
+        # exit 0, no heatmaps, and one error line per target. Raising here is
+        # what makes that impossible. pipeline_runner refuses the same case at
+        # configuration time; this covers HeatmapStage driven directly.
+        if embeddings.ndim != 2 or embeddings.shape[1] != HEATMAP_N_COMPONENTS:
+            raise EmbeddingDimensionalityError(
+                f"Grid analysis requires a {HEATMAP_N_COMPONENTS}-D embedding, got shape "
+                f"{embeddings.shape}. The heatmap grid has no N-D form yet; build the "
+                f"morphospace on its own with `emuses umap`, or set n_components="
+                f"{HEATMAP_N_COMPONENTS} in the optim_dict. Failing here rather than "
+                f"per target keeps this from completing as a successful run with no "
+                f"heatmaps. See emuses/tools/embedding_dimensionality.py.",
+                declared={int(embeddings.shape[1]) if embeddings.ndim == 2 else -1},
+                blocking_stages=("heatmap",),
+            )
+
         try:
             # Import triple grid analysis components
             from emuses.tools.grid_creator import GridCreator

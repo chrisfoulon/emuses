@@ -82,6 +82,24 @@ class PipelineConfig:
     hdbscan_jobs: int = 1  # Parallel jobs for the inner (HDBSCAN) Optuna search
     umap_trials: int = 50  # Number of UMAP optimization trials
     hdbscan_trials: int = 20  # Number of HDBSCAN optimization trials
+    # Overrides n_components in the optim_dict. None means "use the dict".
+    # Only a UMAP-only run may use anything but 2; see
+    # emuses/tools/embedding_dimensionality.py for why, and for the check that
+    # enforces it before any training happens.
+    umap_n_components: int = None
+    # Opt in to training predictions in an N-D morphospace, accepting that the
+    # grid section is skipped and recorded in heatmaps_skipped.json rather than
+    # the run being refused. Prediction training is dimension-agnostic; only the
+    # heatmap needs two axes.
+    allow_nd_without_heatmaps: bool = False
+    # Store subject identifiers in cohort.json. Off by default because that file
+    # ships inside the shared model folder; see emuses/tools/cohort_identity.py
+    # for why hashing the ids would not make storing them safe.
+    record_cohort_ids: bool = False
+    # Reuse per-target prediction searches a previous run finished, when nothing
+    # that determined their result has changed. Opt-in; see
+    # emuses/tools/target_resume.py.
+    resume_targets: bool = False
 
     # Dataset processing parameters
     input_header: int = None  # Header row for spreadsheet data

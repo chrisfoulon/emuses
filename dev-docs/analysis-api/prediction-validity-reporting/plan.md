@@ -8,6 +8,14 @@ _Drafted 2026-09-03, consolidated same day. Not started._
   `dev-docs/methodology/small_sample_prediction_validity.md`. Read it before changing a threshold.
 - **The audit narrative** (how the conclusions were reached, including three of my own wrong
   conclusions and what overturned them): `dev-docs/issues/disconnectome_design_audit_2026_08.md`.
+- **Why this feature is worth building rather than abandoning the method**:
+  `dev-docs/methodology/external_evidence_dsd.md` (2026-09-04). The effect EMUSES is failing to
+  detect is real — an independent group got R=0.31 out-of-sample at n=314 from the frozen published
+  DSD model — and EMUSES's measured MDE is 0.096 with a fixed model against 0.176 with the full
+  search. **That arithmetic is this feature's justification**: the search moves the true effect from
+  just-detectable to undetectable. Also settles two questions that will otherwise be re-opened: keep
+  the search but stop selecting per fold (§7.1), and **do not change the UMAP dimensionality** (§7.2,
+  reverses an earlier recommendation of mine).
 - **Settled; do not re-litigate.** Automated space-switching or halting on these metrics (measured,
   26 % correct, rejected — STATUS 3g). Simulated effect sizes for the MDE (rejected; both terms are
   measured from real `y`). Shipping `raw_only`+ElasticNet as a default (forbidden by ADR §1.3, and
