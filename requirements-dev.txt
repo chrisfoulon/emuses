@@ -4,6 +4,23 @@
 #
 #    pip-compile --output-file=requirements-dev.txt requirements-dev.in
 #
+# HAND-EDITED AFTERWARDS. Two sets of changes a recompile must not silently drop:
+#
+# 1. The five numerical pins (joblib, llvmlite, numba, scikit-learn, scipy) are
+#    held identical to requirements.txt, which pins the stack the regression
+#    baselines were validated against. They had drifted: requirements.txt was
+#    bumped on 2026-09-05 and this file was not, so ci.yml's `test` job -- which
+#    installs THIS lockfile -- ran the core contract on numba 0.61.2 while the PR
+#    gate ran it on 0.62.1. Two jobs, two numerical stacks, both reporting on the
+#    same code. Nothing failed only because CI deselects the value comparisons
+#    (`--foreign-machine`), which is luck, not design.
+#    If you change them here, change them there, and regenerate
+#    tests/regression/baselines/ in the same breath.
+#
+# 2. pathspec (see the note at its entry) -- black cannot import without it.
+#
+# `pip check` on the runner still reports seven other incoherences in this file;
+# a proper pip-compile under Python 3.11, not 3.12, is owed. See STATUS.md.
 acres==0.5.0
     # via bidsschematools
 aiosqlite==0.22.1
@@ -219,7 +236,7 @@ jmespath==1.1.0
     # via
     #   boto3
     #   botocore
-joblib==1.5.1
+joblib==1.5.2
     # via
     #   -r requirements.in
     #   bcblib
@@ -242,7 +259,7 @@ lightgbm==4.6.0
     # via -r requirements.in
 limits==5.4.0
     # via slowapi
-llvmlite==0.44.0
+llvmlite==0.45.1
     # via
     #   numba
     #   pynndescent
@@ -310,7 +327,7 @@ nltk==3.9.3
     # via safety
 num2words==0.5.14
     # via pybids
-numba==0.61.2
+numba==0.62.1
     # via
     #   pynndescent
     #   umap-learn
@@ -595,7 +612,7 @@ safety==3.6.0
     # via -r requirements-dev.in
 safety-schemas==0.0.14
     # via safety
-scikit-learn==1.7.1
+scikit-learn==1.7.2
     # via
     #   -r requirements.in
     #   bcblib
@@ -605,7 +622,7 @@ scikit-learn==1.7.1
     #   optuna-integration
     #   pynndescent
     #   umap-learn
-scipy==1.12.0
+scipy==1.17.1
     # via
     #   -r requirements.in
     #   bcblib
