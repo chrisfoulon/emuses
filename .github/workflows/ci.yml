@@ -190,7 +190,21 @@ jobs:
       run: |
         # See the note in the test job: pip-sync is broken against current pip.
         pip install --no-deps -r requirements-dev.txt
-    
+
+    # --no-deps above means pip installs whatever the lockfile says without
+    # checking the result is coherent. It was not: requirements-dev.txt pinned
+    # black 26.3.1 next to pathspec 0.12.1, and black needs >=1.0.0, so `black`
+    # died on import and this job had never once checked any formatting. Same
+    # shape as the `.[test]` extra that silently skipped installing pytest.
+    # `pip check` is the cheap general guard against that whole class, and it
+    # gates deliberately -- a broken toolchain must not read as a passing job.
+    - name: Verify the installed environment is coherent
+      run: |
+        pip check
+        black --version
+        isort --version-number
+        flake8 --version
+
     - name: Check code formatting with Black
       run: |
         black --check --diff emuses/
