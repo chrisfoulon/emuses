@@ -4,6 +4,27 @@
 #
 #    pip-compile --output-file=requirements-dev.txt requirements-dev.in
 #
+# HAND-EDITED AFTERWARDS. Two sets of changes a recompile must not silently drop:
+#
+# 1. The five numerical pins (joblib, llvmlite, numba, scikit-learn, scipy) are
+#    held identical to requirements.txt, which pins the stack the regression
+#    baselines were validated against. They had drifted: requirements.txt was
+#    bumped on 2026-09-05 and this file was not, so ci.yml's `test` job -- which
+#    installs THIS lockfile -- ran the core contract on numba 0.61.2 while the PR
+#    gate ran it on 0.62.1. Two jobs, two numerical stacks, both reporting on the
+#    same code. Nothing failed only because CI deselects the value comparisons
+#    (`--foreign-machine`), which is luck, not design.
+#    If you change them here, change them there, and regenerate
+#    tests/regression/baselines/ in the same breath.
+#
+# 2. pathspec (see the note at its entry) -- black cannot import without it.
+#
+# `pip check` on the runner reports eight incoherences in this file; a proper
+# pip-compile under Python 3.11, not 3.12, is owed. See STATUS.md. One of the
+# eight is expected and deliberate: gpy 1.13.2 declares scipy<=1.12.0 while we
+# pin 1.17.1, the version the regression baselines were validated against. That
+# bound is conservative, not real -- measured against 1.17.1, GPy's GPRegression
+# and SparseGPClassification both fit and predict finite, sane values.
 acres==0.5.0
     # via bidsschematools
 aiosqlite==0.22.1
@@ -219,7 +240,7 @@ jmespath==1.1.0
     # via
     #   boto3
     #   botocore
-joblib==1.5.1
+joblib==1.5.2
     # via
     #   -r requirements.in
     #   bcblib
@@ -242,7 +263,7 @@ lightgbm==4.6.0
     # via -r requirements.in
 limits==5.4.0
     # via slowapi
-llvmlite==0.44.0
+llvmlite==0.45.1
     # via
     #   numba
     #   pynndescent
@@ -310,7 +331,7 @@ nltk==3.9.3
     # via safety
 num2words==0.5.14
     # via pybids
-numba==0.61.2
+numba==0.62.1
     # via
     #   pynndescent
     #   umap-learn
@@ -428,10 +449,17 @@ pandas==2.3.1
     #   streamlit
 paramz==0.9.6
     # via gpy
-pathspec==0.12.1
+pathspec==1.1.1
     # via
     #   black
     #   mypy
+    # Was 0.12.1, which black 26.3.1 cannot import: it needs pathspec>=1.0.0 and
+    # dies at `from black import patched_main` with
+    # `ModuleNotFoundError: No module named 'pathspec.patterns.gitignore'`.
+    # This lockfile was internally inconsistent, and `pip install --no-deps`
+    # installed it anyway without a word -- the same shape as the `.[test]` extra
+    # that silently skipped installing pytest. mypy 1.17.1 wants only >=0.9.0, so
+    # 1.1.1 satisfies both. `pip check` in the quality job now catches this class.
 patsy==1.0.1
     # via statsmodels
 pbr==6.1.1
@@ -588,7 +616,7 @@ safety==3.6.0
     # via -r requirements-dev.in
 safety-schemas==0.0.14
     # via safety
-scikit-learn==1.7.1
+scikit-learn==1.7.2
     # via
     #   -r requirements.in
     #   bcblib
@@ -598,7 +626,7 @@ scikit-learn==1.7.1
     #   optuna-integration
     #   pynndescent
     #   umap-learn
-scipy==1.12.0
+scipy==1.17.1
     # via
     #   -r requirements.in
     #   bcblib

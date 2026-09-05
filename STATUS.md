@@ -424,13 +424,50 @@ problem, the `enhanced-cli-typer` hang and repo pollution by test output are all
          the output's *shape* against the baseline and never a value, so CI still executes the
          pipeline (~84 s) instead of deselecting its way to a 0.06 s green.
          The lockfile header still says it was compiled under **Python 3.12** while CI and the dev
-         env both run 3.11 — a proper `pip-compile` under 3.11 is still owed.
+         env both run 3.11 — a proper `pip-compile` under 3.11 is still owed, and there is now
+         hard evidence for why. `pip check` on the runner reports **eight incoherences** in
+         `requirements-dev.txt`: `importlib-resources`, `arviz` and `pymc` required but absent,
+         and `starlette` 0.49.1 / `pillow` 12.1.1 / `filelock` 3.20.3 / `cffi` 1.17.1 pinned
+         against what `fastapi` / `streamlit` / `safety` / `cryptography` ask for. Compiling under
+         one interpreter and installing under another produces exactly this class of mismatch.
+         The **eighth is ours and is expected — do not chase it**: `gpy` 1.13.2 declares
+         `scipy<=1.12.0` while we pin 1.17.1 for the baselines. Measured 2026-09-05 against
+         scipy 1.17.1, GPy's `GPRegression` fits and predicts finite values with positive
+         variance (corr 0.9937 on a synthetic fit) and `SparseGPClassification` trains, so the
+         bound is conservative rather than real. GPy *is* on the science path
+         (`emuses/tools/stats_utils.py`), so if that stops holding, move GPy or revisit the
+         scipy pin — and regenerate the baselines with it.
+         **Do not recompile `requirements.txt` casually** — it pins the numerical stack the
+         regression baselines were validated against, and a recompile that moves `numba` or
+         `llvmlite` invalidates them (regenerate in the same commit, or don't touch it).
+       - [ ] **`requirements-dev.txt` had drifted from `requirements.txt`** on all five bumped
+         pins, and `ci.yml`'s `test` job installs the *dev* lockfile — so it ran the core
+         contract on `numba` 0.61.2 while the PR gate ran it on 0.62.1. Two workflows, two
+         numerical stacks. Aligned in PR #14; both files now carry a header note saying a
+         recompile must not silently drop the hand-edits.
        - [x] **Baselines now record their provenance** (2026-09-05): `llvm_cpu_name` (the codegen
          target — the prime suspect), a digest of the CPU feature flags, Python, platform, and the
          numerical stack versions. Every numerical failure appends a diff of that against the
          current environment, so it now says either "identical, this is a code change" or exactly
          which of those moved. Regenerated and verified byte-identical across all 23 and 31
          metrics — only the provenance block was added.
+       - [~] **Turning the gate on kept finding jobs that had never executed.** After #12 merged,
+         `main`'s `ci.yml` went red — but the gating `test (3.11)` job **passed**; the failures
+         were `quality` and `security`, which both `needs: test` and had therefore been *skipped*,
+         not failing, on every previous run. `security` died because
+         `actions/upload-artifact@v3` is auto-failed by GitHub (fixed by merging dependabot PR #6,
+         12 action bumps; now green). `quality` could never run **black**: `requirements-dev.txt`
+         pinned `black==26.3.1` beside `pathspec==0.12.1` while black needs `>=1.0.0`, so it died
+         at import and **no formatting has ever been checked**. `pip install --no-deps` installed
+         the contradiction silently — the same shape as the `.[test]` extra. Fixed to
+         `pathspec==1.1.1` (branch `ci/quality-job-can-run`, PR pending).
+         **Consequence, and a decision to revisit:** with black able to start, the backlog is
+         black **86 of 123 files**, isort **51 files**, flake8 **2421 findings**. Those steps are
+         `continue-on-error` (report, don't gate) so `main` is not permanently red; adopting a
+         formatter across 86 files is a real decision with a large diff and wants its own PR,
+         ideally after #13 lands to avoid conflicts. What *does* gate is
+         `black/isort/flake8/mypy --version` — a toolchain that cannot start must never read as
+         a passing job.
        Remaining, outside the contract and untriaged: `tests/model_registry` **32**,
        `tests/cli` **16**, `tests/foundation_fastapi_service` **10**, `tests/integration` **1**,
        `tests/security` **1**.
