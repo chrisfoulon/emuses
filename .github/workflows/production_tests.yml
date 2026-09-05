@@ -53,15 +53,15 @@ jobs:
 
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v4
+      uses: actions/checkout@v7
     
     - name: Set up Python
-      uses: actions/setup-python@v5
+      uses: actions/setup-python@v7
       with:
         python-version: 3.11
     
     - name: Cache pip dependencies
-      uses: actions/cache@v3
+      uses: actions/cache@v6
       with:
         path: ~/.cache/pip
         key: ${{ runner.os }}-pip-prod-${{ hashFiles('requirements*.txt') }}
@@ -105,7 +105,7 @@ jobs:
 
     - name: Upload coverage to Codecov
       if: ${{ github.event.inputs.test_category == 'full' }}
-      uses: codecov/codecov-action@v3
+      uses: codecov/codecov-action@v7
       with:
         file: ./coverage.xml
         flags: production-tests
