@@ -430,13 +430,25 @@ problem, the `enhanced-cli-typer` hang and repo pollution by test output are all
          and `starlette` 0.49.1 / `pillow` 12.1.1 / `filelock` 3.20.3 / `cffi` 1.17.1 pinned
          against what `fastapi` / `streamlit` / `safety` / `cryptography` ask for. Compiling under
          one interpreter and installing under another produces exactly this class of mismatch.
-         The **eighth is ours and is expected — do not chase it**: `gpy` 1.13.2 declares
-         `scipy<=1.12.0` while we pin 1.17.1 for the baselines. Measured 2026-09-05 against
-         scipy 1.17.1, GPy's `GPRegression` fits and predicts finite values with positive
+         A fuller audit on 2026-09-05 (resolve every pin's declared deps against the lockfile,
+         rather than against what happens to be installed) found **12** in `requirements-dev.txt`
+         and **9** in `requirements.txt`; the extras are unpinned transitives — `black` needs
+         `pytokens~=0.4.0`, `nibabel` needs `importlib-resources`, `bcblib` needs `arviz` and
+         `pymc>=5`. With `--no-deps` everywhere those are simply absent at runtime, which is the
+         same trap as `pathspec`: use that list as the checklist when the recompile happens.
+         Two of them are *not* real and must not be "fixed" by bumping: `fastapi` 0.116.1 with
+         `starlette` 0.49.1 was measured working (routing and OpenAPI both 200), and the `gpy`
+         one below is unfixable outright.
+         The **eighth is ours, is expected, and is NOT FIXABLE — do not chase it**: `gpy` 1.13.2
+         declares `scipy<=1.12.0` while we pin 1.17.1 for the baselines. Measured 2026-09-05
+         against scipy 1.17.1, GPy's `GPRegression` fits and predicts finite values with positive
          variance (corr 0.9937 on a synthetic fit) and `SparseGPClassification` trains, so the
-         bound is conservative rather than real. GPy *is* on the science path
-         (`emuses/tools/stats_utils.py`), so if that stops holding, move GPy or revisit the
-         scipy pin — and regenerate the baselines with it.
+         bound is conservative rather than real. **The obvious fix does not exist**, which is new
+         (2026-09-05): `gpy` 1.14.2 drops the scipy bound entirely, but needs `paramz>0.9.6`, and
+         the only `paramz` above 0.9.6 is 0.10.0, which needs **`numpy>=2`** against our pinned
+         1.26.4. No `gpy` accepts both scipy 1.17.1 and numpy 1.26.4. The override is therefore
+         permanent until numpy 2 — which is a baseline-regeneration decision, not a dependency
+         fix — and it is *why* every install path uses `--no-deps`.
          **Do not recompile `requirements.txt` casually** — it pins the numerical stack the
          regression baselines were validated against, and a recompile that moves `numba` or
          `llvmlite` invalidates them (regenerate in the same commit, or don't touch it).
@@ -468,6 +480,34 @@ problem, the `enhanced-cli-typer` hang and repo pollution by test output are all
          ideally after #13 lands to avoid conflicts. What *does* gate is
          `black/isort/flake8/mypy --version` — a toolchain that cannot start must never read as
          a passing job.
+       - [x] **The `build` job had never executed either, and the image it would have shipped was
+         broken (2026-09-05).** It is gated `if: push && ref == main`, so every `workflow_dispatch`
+         run had skipped it; the first real push ran it and it failed. Three separate defects, all
+         hidden behind that:
+         - The `Dockerfile` used **`pip-sync`**, which *resolves* instead of installing the pinned
+           set, so it died on the deliberate `gpy`/`scipy` override with `ResolutionImpossible`.
+           `ci.yml` had already abandoned `pip-sync` for a different reason months earlier. Now
+           `pip install --no-deps -r requirements-prod.txt`, matching all three workflows.
+         - **`requirements-prod.txt` was stale from `f499567`** and had never been recompiled as
+           `requirements.in` grew. It was missing **46 packages** that `requirements.txt` has —
+           the entire auth stack (`fastapi-users`, `pwdlib`, `bcrypt`, `argon2-cffi`, `pyjwt`),
+           all three cloud backends, `hvac`, `redis`, `pymemcache`, `structlog`. The multi-user
+           service could not have started in that image. It had also drifted on all five
+           numerical pins — **`numba` 0.61.2 / `llvmlite` 0.44.0** against the validated 0.62.1 /
+           0.45.1, i.e. the exact codegen path that causes the embedding divergence. Rewritten as
+           six lines: `-r requirements.txt` plus `gunicorn`, the four `uvicorn[standard]` extras
+           and `importlib-resources`, so **the two can no longer diverge**. Do not
+           `pip-compile requirements-prod.in`; it would undo this (the `.in` says so too).
+         - **`linux/arm64` was impossible, not merely slow.** torch pulls `triton==3.3.1`, which
+           publishes no aarch64 wheel *and no sdist* — nothing to install or build — and
+           `requirements.txt` pins it bare, with no platform marker. `gpy`, `hdbscan` and
+           `pykrige` also lack aarch64 wheels. Now `linux/amd64` only; restoring arm64 means
+           marker-gating triton, not just re-adding the platform.
+         Verified without a full image build (only 7.2 GB free): every one of the 198 pins was
+         checked for an installable artifact per platform, and `pip install --dry-run --no-deps`
+         of the production set resolves clean at 198 distributions with the auth/cloud/Vault
+         packages present and the numerical stack matching `requirements.txt` exactly.
+         **Once it publishes, the GHCR package must be flipped private → public by hand.**
        Remaining, outside the contract and untriaged: `tests/model_registry` **32**,
        `tests/cli` **16**, `tests/foundation_fastapi_service` **10**, `tests/integration` **1**,
        `tests/security` **1**.

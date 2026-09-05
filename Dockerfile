@@ -11,10 +11,28 @@ RUN apt-get update && apt-get install -y \
 RUN python -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
-# Copy requirements and install Python dependencies with pip-tools
-COPY requirements.txt requirements-prod.txt .
-RUN pip install --no-cache-dir --upgrade pip setuptools wheel pip-tools && \
-    pip-sync requirements-prod.txt
+# Copy requirements and install the pinned production set.
+#
+# requirements-prod.txt starts with `-r requirements.txt`, so both files are
+# needed here and pip reads them as one set.
+#
+# --no-deps is deliberate, and matches what all three workflows do. It is not a
+# shortcut: the lockfile is the complete pinned set, and re-resolving it fails on
+# purpose-built overrides. gpy 1.13.2 declares scipy<=1.12.0 while the pipeline is
+# pinned to scipy 1.17.1 -- the version every regression baseline was validated
+# against -- and that bound is conservative rather than real (GPRegression and
+# SparseGPClassification both verified against 1.17.1). It cannot be resolved
+# away either: gpy 1.14.2 drops the bound but requires paramz>0.9.6, and the only
+# such paramz (0.10.0) requires numpy>=2, which would invalidate every baseline.
+#
+# `pip-sync` was used here before and had never once worked. It resolves rather
+# than installing the pinned set, so it died on that override with
+# ResolutionImpossible -- see ci.yml, which abandoned pip-sync for a second
+# reason (pip-tools imports stdlib_pkgs from pip._internal.utils.compat, which
+# current pip no longer provides).
+COPY requirements.txt requirements-prod.txt ./
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel && \
+    pip install --no-cache-dir --no-deps -r requirements-prod.txt
 
 # Production stage
 FROM python:3.11-slim

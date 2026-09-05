@@ -532,6 +532,27 @@ carrying ~150 known failures, so it read as one more piece of known breakage. Re
 verified by perturbation — a drifted baseline now fails the **whole-tree** run naming the metric.
 `tests/test_pytest_option_registration.py` fails if the hook is ever moved back down.
 
+**Every install path uses `pip install --no-deps`, and that is a decision, not a shortcut**
+(recorded 2026-09-05). `gpy` 1.13.2 declares `scipy<=1.12.0`; the pipeline pins scipy 1.17.1
+because that is what the baselines were validated against. The bound is conservative rather than
+real — measured against 1.17.1, `GPRegression` fits and predicts finite values with positive
+variance and `SparseGPClassification` trains — and it **cannot be resolved away**: `gpy` 1.14.2
+drops the bound but requires `paramz>0.9.6`, and the only such `paramz` (0.10.0) requires
+`numpy>=2` against our pinned 1.26.4. No `gpy` release accepts both. Any tool that *resolves*
+rather than installing the pinned set therefore fails by construction, which is exactly how the
+`Dockerfile`'s `pip-sync` behaved — it had never once succeeded. Moving to numpy 2 to clear this
+is a baseline-regeneration decision, not a dependency fix.
+
+**`requirements-prod.txt` is derived from `requirements.txt`, not compiled beside it.** It was an
+independent compiled lockfile until 2026-09-05 and it rotted invisibly, because its only consumer
+was a Docker build that had never succeeded: 46 packages that `requirements.txt` carried were
+missing from it, including the whole authentication stack, and it pinned `numba` 0.61.2 /
+`llvmlite` 0.44.0 against the validated 0.62.1 / 0.45.1 — the compiled-kernel path this very
+section is about. An image built from it would have run the pipeline on a stack no baseline had
+ever seen. It is now `-r requirements.txt` plus the handful of server-only packages, so the two
+cannot diverge; `pip-compile requirements-prod.in` must not be run. The general rule this
+instantiates: **two lockfiles that must agree should not be two lockfiles.**
+
 ### 2.9e The Backend Override Is Per-Context, Not Process-Wide
 
 **Decision**: `parallelism_utils._FORCED_BACKEND` is a `contextvars.ContextVar`, and
