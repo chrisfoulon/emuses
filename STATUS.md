@@ -503,6 +503,19 @@ problem, the `enhanced-cli-typer` hang and repo pollution by test output are all
            `requirements.txt` pins it bare, with no platform marker. `gpy`, `hdbscan` and
            `pykrige` also lack aarch64 wheels. Now `linux/amd64` only; restoring arm64 means
            marker-gating triton, not just re-adding the platform.
+         - **The image would then have crashed on startup.** `docker/startup.sh` ran
+           `pip install -e .` on *every container start*, after the Dockerfile had switched to the
+           non-root `emuses` user, into a root-owned `/opt/venv` (the `chown` covers `/app` only).
+           Reproduced in a container: `[Errno 13] Permission denied:
+           '.../__editable___..._finder.py'`. Broken twice over, since with no `--no-deps` it also
+           re-resolves and backtracks `gpy` to 1.10.0. EMUSES is now installed at build time, as
+           root, with `--no-deps` — which also drops the requirement that a production container
+           reach a package index at startup. **This one is a reminder that a resolvable lockfile
+           is not a working image**; only running the container finds this class of defect.
+         - Added a **`.dockerignore`** (there was none, and the Dockerfile does `COPY . .`).
+           Context drops 137 MB → 11 MB. It matters beyond bulk: CI builds from a clean checkout,
+           but a *local* build would have baked untracked run outputs — `test_output/` was 9.1 MB
+           of pipeline artifacts — and `docker/.env` into a **public** image.
          Verified without a full image build (only 7.2 GB free): every one of the 198 pins was
          checked for an installable artifact per platform, and `pip install --dry-run --no-deps`
          of the production set resolves clean at 198 distributions with the auth/cloud/Vault

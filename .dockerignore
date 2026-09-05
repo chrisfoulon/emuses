@@ -1,0 +1,63 @@
+# The Dockerfile does `COPY . .`, so without this file the whole working tree goes
+# into a PUBLIC image on ghcr.io. Two reasons that matters:
+#
+#  - Bulk. .git alone is 73 MB, tests 36 MB, docs and dev-docs another 4 MB. None
+#    of it is reachable at runtime; the container imports emuses/ and runs
+#    docker/startup.sh.
+#  - Local builds. CI builds from a clean checkout, so it only ever sees tracked
+#    files. A build run on a developer's machine sees the working tree, and this
+#    repo accumulates run outputs there -- test_output/ was 9.1 MB of untracked
+#    pipeline artifacts when this file was written. Those would be baked into a
+#    published image. Excluding them here means the local build and the CI build
+#    produce the same thing, which is the point.
+#
+# Keep in mind when editing: setup.py's find_packages() runs against whatever
+# survives this file, and `pip install --no-deps -e .` happens at build time.
+
+.git
+.github
+.gitignore
+.codebase-memory
+
+# Test suites, fixtures and their outputs
+tests/
+test_output/
+test_data/
+.pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# Documentation and project notes
+docs/
+dev-docs/
+notes/
+mkdocs.yml
+CLAUDE.md
+STATUS.md
+CHANGELOG.md
+
+# Superseded code, kept in the repo for reference only
+legacy_archive/
+
+# Build and packaging artifacts -- stale copies of the package shadow the real one
+build/
+dist/
+*.egg-info/
+# ** is required: a bare `__pycache__/` matches only the context root, because
+# Docker matches patterns against the whole root-relative path.
+**/__pycache__
+**/*.py[cod]
+
+# Developer tooling that never runs in the container
+scripts/
+vscode_wsl_settings.json
+get-docker.sh
+
+# Compose stacks orchestrate the image; they are not part of it
+docker-compose*.yml
+
+# Local environment files. docker/.env in particular must never be published.
+.env
+*.env
+docker/.env

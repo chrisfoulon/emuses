@@ -5,11 +5,18 @@ set -e
 
 echo "🚀 Starting EMUSES Service..."
 
-# Install EMUSES package
-echo "📦 Installing EMUSES package..."
-pip install -e .
-
-# Check if we can import EMUSES
+# EMUSES is installed into /opt/venv at *build* time (see the Dockerfile), not here.
+#
+# This script used to run `pip install -e .` on every container start. It could
+# never have worked: by this point the Dockerfile has switched to the non-root
+# `emuses` user, and /opt/venv is root-owned -- the Dockerfile's chown covers /app
+# only -- so pip died with
+#   [Errno 13] Permission denied: '.../__editable___emuses_..._finder.py'
+# It was broken a second way too: with no --no-deps it re-resolves emuses's
+# unpinned requirements, which backtracks gpy to 1.10.0 and fails to build on 3.11
+# (the same trap ci.yml documents). Installing at build time fixes both, and drops
+# the requirement that a production container have a package index reachable at
+# startup.
 echo "🔍 Validating EMUSES installation..."
 python -c "import emuses; print('✅ EMUSES imported successfully')"
 

@@ -1,5 +1,5 @@
 # Multi-stage build for EMUSES API service
-FROM python:3.11-slim as builder
+FROM python:3.11-slim AS builder
 
 # Install system dependencies needed for building
 RUN apt-get update && apt-get install -y \
@@ -55,6 +55,16 @@ WORKDIR /app
 
 # Copy application code
 COPY . .
+
+# Install EMUSES itself into the venv, at build time and as root.
+#
+# --no-deps because requirements-prod.txt above already provides the whole pinned
+# set; re-resolving here would backtrack gpy to 1.10.0 and fail (see ci.yml).
+#
+# This must happen before the USER switch: /opt/venv is root-owned, so the same
+# command as the `emuses` user fails with EACCES. startup.sh used to attempt
+# exactly that on every container start.
+RUN pip install --no-cache-dir --no-deps -e .
 
 # Create necessary directories and set permissions
 RUN mkdir -p /app/storage /app/logs && \
