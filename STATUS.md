@@ -11,9 +11,12 @@ flags say, and the same command twice gives the same answer.
 
 ## State of play
 
-**One branch outstanding: `fix/nd-embedding-gate-and-load-umap`** (2026-09-04, unpushed) — the N-D
-gate and its opt-in, the `--load_umap` and resume fixes, cohort identity, per-target resume and the
-run index. Everything else is on `main`; six branches converged on 2026-08-25 — Phase 1F (PR #9),
+**One PR open: #13, `fix/nd-embedding-gate-and-load-umap`** (2026-09-05) — the N-D gate and its
+opt-in, the `--load_umap` and resume fixes, cohort identity, per-target resume and the run index.
+Rebased onto `main` after **PR #12 merged** (the core contract, the "Unknown error" CLI fix, the
+separator hint, and the regression-suite provenance/gating decision in item 1 below); the two
+commits that duplicated #12's work were dropped in the rebase. Six branches converged on
+2026-08-25 — Phase 1F (PR #9),
 Phase 4, Phase 5 (the extras move), the `n_jobs` Arm B evidence, the regression conftest fix and the
 parallelism backend scope. Plan: `~/.claude/plans/playful-watching-naur.md` (consolidated
 2026-08-24 — read that, not the older per-phase notes).
