@@ -291,10 +291,18 @@ problem, the `enhanced-cli-typer` hang and repo pollution by test output are all
        untriaged: 6 `test_enhanced_models_commands`, 5 `test_models_hdbscan`,
        5 `test_inference_preprocessing_params`, 3 each in `test_security_validation`,
        `test_models_commands`, `test_inference_integration`, and singles elsewhere.
-2. [ ] **Two error messages.** A header-bearing CSV fails with "No numeric data remaining" and never
-       mentions `--input_header`, which works. `.npy` is refused as an unsupported format, when the
-       real problem is that the file people reach for (`split_dataset/test_features.npy`) is stored
-       *after* normalization and is the wrong input regardless of format.
+2. [~] **Error messages. The big one is FIXED (2026-09-05); one remains.**
+       - **FIXED: every pipeline failure reached the user as `Job failed: Unknown error`.** The
+         earlier note here — that the header-bearing-CSV error "never mentions `--input_header`" —
+         was **wrong about the cause**. The diagnostic is excellent and does name `--input_header 0`,
+         the file, the parsed shape and the dropped columns; the CLI was simply throwing it away.
+         The service records the reason under `message` (`JobManager.update_job_status`) and
+         `main.py:873` read only `error`, a key nothing ever writes. This affected **all** pipeline
+         failures, not just CSV headers. Verified by running a header CSV through `emuses umap`
+         before and after; `tests/cli` failure set unchanged (16, identical).
+       - [ ] `.npy` is refused as an unsupported format, when the real problem is that the file
+         people reach for (`split_dataset/test_features.npy`) is stored *after* normalization and is
+         the wrong input regardless of format.
 3. [ ] **Recorded, not being acted on** (result-quality judgements are Chris's call): degenerate
        fits are never reported, and off-manifold input collapses the UMAP transform silently.
        Supersedes the older "highest priority" framing — revisit once a real-data run is stable.

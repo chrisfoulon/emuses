@@ -870,7 +870,17 @@ async def _poll_job_completion(service_client, job_id: str, shutdown_handler) ->
                 print("✓ Pipeline completed successfully")
                 break
             elif status["status"] == "failed":
-                error_msg = status.get("error", "Unknown error")
+                # The service records the failure reason under "message" (see
+                # JobManager.update_job_status); nothing ever writes "error". Reading
+                # only "error" meant every failure reached the user as "Job failed:
+                # Unknown error" while a fully actionable diagnostic -- the one naming
+                # --input_header for a header-bearing CSV, for instance -- sat in the
+                # job record unread. Keep "error" first in case a backend adds it.
+                error_msg = (
+                    status.get("error")
+                    or status.get("message")
+                    or "Unknown error (the service recorded no reason)"
+                )
                 raise ServiceClientError(f"Job failed: {error_msg}")
             elif status["status"] == "cancelled":
                 raise ServiceClientError("Job was cancelled")
