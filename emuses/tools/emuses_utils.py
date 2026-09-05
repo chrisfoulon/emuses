@@ -14,77 +14,20 @@ from tqdm import tqdm
 from emuses.tools.stats_utils import process_column
 from emuses.tools.visualisation import plot_embeddings
 
-# def rescale_embedding(embedding, margin=0, max_coordinates=None, min_coordinates=None):
-#     if max_coordinates is None:
-#         max_coordinates = np.max(embedding, axis=0)
-#     if min_coordinates is None:
-#         min_coordinates = np.min(embedding, axis=0)
+# Re-exported, not defined here. The canonical implementations live in
+# emuses.tools.embedding_spaces, alongside the loader that knows which coordinate
+# system each artefact on disk is in, and alongside the explanation of why there are
+# two of them. That module imports only numpy, so scripts and light test runs can reach
+# the coordinate conversions without pulling in umap, matplotlib and statsmodels
+# through this one.
 #
-#     # Rescale the embedding between 0 and 1
-#     rescaled_embedding = (embedding - min_coordinates) / (max_coordinates - min_coordinates)
-#
-#     if margin != 0:
-#         # Compute the margin in the rescaled space
-#         margin_rescaled = margin / 100
-#
-#         # Subtract the margin from the maximum coordinates and add the margin to the minimum coordinates
-#         rescaled_embedding = rescaled_embedding * (1 - 2 * margin_rescaled) + margin_rescaled
-#
-#     return rescaled_embedding
-
-
-def rescale_embedding(embedding, margin=0, preset_max=None, preset_min=None):
-    if preset_max is None:
-        max_value = np.max(embedding)
-    else:
-        max_value = preset_max
-
-    if preset_min is None:
-        min_value = np.min(embedding)
-    else:
-        min_value = preset_min
-
-    # Rescale the embedding between 0 and 1 while keeping proportions
-    rescaled_embedding = (embedding - min_value) / (max_value - min_value)
-
-    if margin != 0:
-        # Compute the margin in the rescaled space
-        margin_rescaled = margin / 100
-
-        # Subtract the margin from the maximum coordinates and add the margin to the minimum coordinates
-        rescaled_embedding = (
-            rescaled_embedding * (1 - 2 * margin_rescaled) + margin_rescaled
-        )
-
-    return rescaled_embedding
-
-
-# def inverse_rescale_embedding(rescaled_embedding, margin=0, max_coordinates=None, min_coordinates=None):
-#     if margin != 0:
-#         # Reverse the margin scaling
-#         margin_rescaled = margin / 100
-#         rescaled_embedding = (rescaled_embedding - margin_rescaled) / (1 - 2 * margin_rescaled)
-#
-#     # Perform the inverse of the rescaling operation
-#     embedding = rescaled_embedding * (max_coordinates - min_coordinates) + min_coordinates
-#
-#     return embedding
-
-
-def inverse_rescale_embedding(
-    rescaled_embedding, margin=0, max_value=None, min_value=None
-):
-    if margin != 0:
-        # Reverse the margin scaling
-        margin_rescaled = margin / 100
-        rescaled_embedding = (rescaled_embedding - margin_rescaled) / (
-            1 - 2 * margin_rescaled
-        )
-
-    # Perform the inverse of the rescaling operation
-    embedding = rescaled_embedding * (max_value - min_value) + min_value
-
-    return embedding
+# Import from either path; this alias exists so the pipeline's existing imports keep
+# working. New code should prefer `from emuses.tools.embedding_spaces import ...`, and
+# `load_embeddings` over reading the .npy files directly.
+from emuses.tools.embedding_spaces import (  # noqa: F401
+    inverse_rescale_embedding,
+    rescale_embedding,
+)
 
 
 def project_embeddings(rescaled_embeddings, cells_per_dimension):
