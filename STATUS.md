@@ -408,6 +408,41 @@ problem, the `enhanced-cli-typer` hang and repo pollution by test output are all
 
 ## Open questions / next
 
+00. [ ] **Embedding scaling + kernel boundary bias — plan agreed 2026-09-06.** Full plan, with the
+        measurements behind it and the per-step verification protocol:
+        **`dev-docs/methodology/embedding_scaling_and_boundary_bias_plan.md`**. Read that rather
+        than re-deriving; the numbers in it cost a session to measure.
+
+    Two defects, both silent, both changing published numbers:
+    - **Per-axis 0–1 rescaling is ill-posed on a UMAP embedding.** UMAP is fixed only up to
+      rotation, so per-axis min/max depends on the arbitrary orientation the optimiser landed in.
+      Rotating the same embedding 45° and re-normalising distorts pairwise distances by up to
+      **37%** (isotropic: 0.0%). The pipeline also disagrees with itself: HDBSCAN clusters on raw
+      coordinates (`umap_stage.py:302/409`) while the predictors use per-axis-rescaled ones (`:510`).
+    - **Nadaraya-Watson is boundary-biased.** LOO on swiss, σ=0.1: edge bias **+0.2152** vs interior
+      **−0.1239**; local linear gives **+0.0110 / −0.0329**. The maps feed threshold → regions →
+      sample sets → voxelwise stats, so this reaches the scientific claim.
+
+    Steps: **1** reuse wiring (baseline-neutral, lands first) · **2** isotropic rescaling ·
+    **3** real confidence · **4** local linear · **5** support masking. Re-record and measure after
+    each — bundling makes "did the science change" unanswerable.
+
+    **Blast radius, checked against `regression_metrics.py`:** only `target_0_*_Score` moves.
+    `_embedding_distances`, `composite_score`, `metric_*`, `_cluster_labels` all derive from **raw**
+    pre-rescale coordinates and must stay bit-identical — that invariant is a stronger check than
+    the re-recorded numbers.
+
+    **Three dead routes found, two to delete** (ADR §2.4b): `min_embeddings_` on the UMAP model
+    (`inference_stage.py:263-264`) is set **only by a mock** in
+    `tests/inference/test_normalization_validation.py:63-64`; the context keys
+    `embedding_train_min_coords/max_coords` (`umap_stage.py:579-580`) have no production consumer.
+    Both looked wired because a test supplied its own input. Step 1 adds an AST guard for that
+    pattern.
+
+    **Live defect fixed on the way past:** for regression the grid's confidence map is a hardcoded
+    constant (`grid_creator.py:202`), so `visualization_threshold` filters nothing. The real
+    ensemble spread is computed at `:226` and discarded.
+
 0. [ ] **Scope settled 2026-09-05, and the work queue that follows from it.** EMUSES is a local
        tool, or a service an admin runs on one lab/university server with users submitting jobs
        through it rather than all queueing EMUSES by hand. That validates
