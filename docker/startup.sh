@@ -30,8 +30,11 @@ fi
 # Start the service based on deployment mode
 if [ "$EMUSES_DEPLOYMENT_MODE" = "production" ]; then
     echo "🌐 Starting production server with gunicorn..."
-    exec gunicorn emuses.api.main:create_app \
-        --factory \
+    # `--factory` is a uvicorn flag; gunicorn has no such option and exits 2 with
+    # "unrecognized arguments: --factory". gunicorn spells a factory by putting
+    # call parentheses in the APP_MODULE instead, so the quotes here are load-bearing.
+    # The production path had never been run, so this had never surfaced.
+    exec gunicorn "emuses.api.main:create_app()" \
         --bind $EMUSES_SERVICE_HOST:$EMUSES_SERVICE_PORT \
         --workers 4 \
         --worker-class uvicorn.workers.UvicornWorker \

@@ -523,10 +523,25 @@ problem, the `enhanced-cli-typer` hang and repo pollution by test output are all
            anyway. Now report-not-gate, matching `quality`'s formatting steps, with the SARIF and
            the SBOM uploaded so nothing is lost. **Flip it back to `fail-build: true` once the
            Dependabot backlog is triaged** and a failure would mean something new.
-         Verified without a full image build (only 7.2 GB free): every one of the 198 pins was
+         - **Two more that only a running container could find.** Building the image was possible
+           after all — Docker's data-root is `/home/docker` with 303 GB free, not the 7.2 GB on
+           `/` that `df /var/lib/docker` reports (that path does not exist here, so df silently
+           answered for `/`). Use `docker info`, not `df`. The built image is **7.32 GB**, so the
+           wrong reading would have been wrong by exactly enough to matter. With it running:
+           `gunicorn ... --factory` exits 2 with `unrecognized arguments: --factory` — that is a
+           uvicorn flag; gunicorn spells a factory as `"module:create_app()"`. And the HEALTHCHECK
+           probed `/health`, which 404s, because `create_app()` mounts the API under `/api`;
+           the container would have sat `unhealthy` forever, i.e. a restart loop under compose.
+         **Verified by building and running it** (2026-09-05): image builds clean, container
+         reports `Up (healthy)`, all four gunicorn workers reach "Application startup complete",
+         and `/api/health`, `/api/docs`, `/metrics` all return 200. Before that, statically:
+         every one of the 198 pins was
          checked for an installable artifact per platform, and `pip install --dry-run --no-deps`
          of the production set resolves clean at 198 distributions with the auth/cloud/Vault
          packages present and the numerical stack matching `requirements.txt` exactly.
+         **Six defects, each hidden behind the previous one** — the standing lesson is that a
+         resolvable lockfile, a clean lint and a green dry-run together still told us nothing
+         about whether the image ran.
          **Once it publishes, the GHCR package must be flipped private → public by hand.**
        Remaining, outside the contract and untriaged: `tests/model_registry` **32**,
        `tests/cli` **16**, `tests/foundation_fastapi_service` **10**, `tests/integration` **1**,
