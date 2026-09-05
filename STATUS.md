@@ -287,10 +287,28 @@ problem, the `enhanced-cli-typer` hang and repo pollution by test output are all
 
 ## Open questions / next
 
-1. [ ] The 33 remaining failures in `tests/cli` / `tests/foundation_fastapi_service` are
-       untriaged: 6 `test_enhanced_models_commands`, 5 `test_models_hdbscan`,
-       5 `test_inference_preprocessing_params`, 3 each in `test_security_validation`,
-       `test_models_commands`, `test_inference_integration`, and singles elsewhere.
+1. [~] **Known failures are now fenced off rather than gating (2026-09-05).** CI was red on
+       every push to `main` for months, which made the red X meaningless — a genuine breakage
+       would have looked identical. Two causes, both measured:
+       - `production_tests.yml` installed `.[test]`; the extra in `setup.py` is named **`dev`**.
+         pip warns on an unknown extra and carries on, so pytest was never installed and every
+         run died at exit **127** — that workflow has **never executed a single test**. Fixed.
+       - `ci.yml` gated on the whole tree, which carries known failures unrelated to the pipeline.
+       Now there is a **core contract** — the suites that must stay green — defined once in
+       `scripts/dev_test_runner.py::CORE_SUITES` and run by all three workflows *and* the local
+       pre-push command, so "passes locally" and "passes in CI" cannot drift. Measured green
+       2026-09-05, 2 m 36 s: `tests/regression` 14, `tests/pipelines` 118, `tests/inference` 65,
+       `tests/flexible-inference-stage` 16, `tests/tools` 99, `tests/unit` 37, plus the
+       option-registration guard. The whole-tree sweep still runs on `main` under
+       `continue-on-error`, so the numbers stay visible without turning it red.
+       **Never fix a core-contract failure by removing a suite from the list** — that converts a
+       real failure into an invisible one, which is what the regression-conftest bug already cost.
+       A branch that adds tests adds them to `CORE_SUITES` in its own commit; nothing in the list
+       may name a path that does not exist yet, since pytest exits 4 on a missing path and the
+       whole contract would then fail for a bookkeeping reason.
+       Remaining, outside the contract and untriaged: `tests/model_registry` **32**,
+       `tests/cli` **16**, `tests/foundation_fastapi_service` **10**, `tests/integration` **1**,
+       `tests/security` **1**.
 2. [~] **Error messages. The big one is FIXED (2026-09-05); one remains.**
        - **FIXED: every pipeline failure reached the user as `Job failed: Unknown error`.** The
          earlier note here — that the header-bearing-CSV error "never mentions `--input_header`" —

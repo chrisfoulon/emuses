@@ -151,15 +151,20 @@ The `feature/analysis-api-enhancement` branch this section once named no longer 
 ## Development Workflow
 
 ### **Testing Strategy**
-- **Pre-push**: `python scripts/dev_test_runner.py` (saves GitHub education credits)
-- **Full validation**: `pytest -q --tb=short` (when needed for comprehensive validation)
-- **Feature branches**: Lightweight CI (13 tests, ~1 minute)
-- **Main branch**: Full CI with services (~30 minutes)
+- **Smoke** (seconds): `python scripts/dev_test_runner.py` — syntax + parallelism only.
+- **Before any PR**: `python scripts/dev_test_runner.py --core` — **the core contract**, ~3.5 min.
+  This is the exact command CI runs, reading its suite list from `CORE_SUITES` in that file, so
+  local and CI cannot disagree about what green means. It must always pass.
+- **Whole tree**: `pytest -q -p no:randomly --tb=short` — carries ~60 known failures outside the
+  contract (`tests/model_registry`, `tests/cli`, `tests/foundation_fastapi_service`). Compare
+  **failure sets**, never counts. Non-gating on `main` by design.
+- **Never** fix a core-contract failure by deleting a suite from `CORE_SUITES`. Only ever add.
 
 ### **Development Pattern**
-1. Test locally first with `python scripts/dev_test_runner.py`
-2. Push to feature branch (fast feedback, minimal credits)
-3. Merge to main when ready (comprehensive validation)
+1. Smoke locally while working; `--core` before pushing.
+2. Push to a feature branch (no CI runs there — nothing is triggered until a PR exists).
+3. Open a PR: the core contract gates it.
+4. Merge to main: the whole-tree sweep reports without gating.
 
 ## Common Commands
 

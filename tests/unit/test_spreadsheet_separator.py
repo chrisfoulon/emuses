@@ -147,19 +147,44 @@ def test_backward_compatibility_no_separator_parameter(comma_csv):
     assert df['col1'].tolist() == [1, 4, 7]
 
 
-def test_wrong_separator_fails_gracefully(semicolon_csv):
-    """Test that using wrong separator produces incorrect results (expected behavior)."""
-    # Using comma separator on semicolon-separated file
-    df = spreadsheet_to_input_df(
-        semicolon_csv,
-        header=0,
-        columns_are_features=True,
-        spreadsheet_separator=","  # Wrong separator
-    )
+def test_wrong_separator_raises_and_names_the_separator(semicolon_csv):
+    """A wrong separator must fail loudly AND say the separator is the problem.
 
-    # Will parse entire line as single column (pandas behavior)
-    # This is expected - we're not trying to auto-detect, user must specify correct separator
-    assert df.shape[1] == 1  # Only one column detected
+    This test previously asserted the old behaviour -- that the call returned a
+    1-column frame of unparseable strings. Production stopped doing that and raises
+    instead, which is the better contract: a silent 1-column "morphospace" of text is
+    exactly the kind of run that completes and means nothing. The test had not
+    followed, so it sat failing.
+
+    What is pinned here is the part that was still wrong after the raise landed: the
+    message blamed --input_header, which does not fix a semicolon file, so the hint
+    has to name --arg_separator specifically.
+    """
+    with pytest.raises(ValueError) as excinfo:
+        spreadsheet_to_input_df(
+            semicolon_csv,
+            header=0,
+            columns_are_features=True,
+            spreadsheet_separator=","  # Wrong separator
+        )
+
+    message = str(excinfo.value)
+    assert "SEPARATOR MISMATCH" in message
+    assert "--arg_separator ';'" in message
+
+
+def test_separator_hint_stays_quiet_when_the_separator_is_right(comma_csv):
+    """The hint must not fire on a genuine header/index problem.
+
+    A hint that appears on every parse failure is worth nothing -- it would send
+    users to --arg_separator for problems it cannot fix. Reading a comma file with
+    the right separator but no header succeeds here, so the guard is that this does
+    not raise the separator error.
+    """
+    df = spreadsheet_to_input_df(
+        comma_csv, header=0, columns_are_features=True, spreadsheet_separator=","
+    )
+    assert df.shape[1] == 3
 
 
 def test_separator_with_transpose(semicolon_csv):
