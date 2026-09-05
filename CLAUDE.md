@@ -153,15 +153,25 @@ The `feature/analysis-api-enhancement` branch this section once named no longer 
 ### **Testing Strategy**
 - **Smoke** (seconds): `python scripts/dev_test_runner.py` — syntax + parallelism only.
 - **Before any PR**: `python scripts/dev_test_runner.py --core` — **the core contract**, ~3.5 min.
-  This is the exact command CI runs, reading its suite list from `CORE_SUITES` in that file, so
-  local and CI cannot disagree about what green means. It must always pass.
+  It reads its suite list from `CORE_SUITES` in that file, and CI calls the same script, so local
+  and CI cannot disagree about what green means. It must always pass.
+- **YOU are the numerical gate, not CI.** CI runs `--core --foreign-machine`, which deselects the
+  `machine_specific` tests: the ones comparing against `tests/regression/baselines/`. Those
+  baselines were recorded on a specific CPU, and on a different one numba compiles UMAP's kernels
+  differently → the embedding shifts in the last bits → HDBSCAN's cluster count changes → a
+  different Optuna trial wins → `composite_score` is a *different quantity*, not a drifted one.
+  No tolerance covers an argmax flip (measured 2026-09-05; see the docstring in
+  `tests/regression/test_numerical_regression.py`). **So if you touch the science path, run plain
+  `--core` locally. A green PR does not mean the numbers held.**
 - **Whole tree**: `pytest -q -p no:randomly --tb=short` — carries ~60 known failures outside the
   contract (`tests/model_registry`, `tests/cli`, `tests/foundation_fastapi_service`). Compare
   **failure sets**, never counts. Non-gating on `main` by design.
 - **Never** fix a core-contract failure by deleting a suite from `CORE_SUITES`. Only ever add.
+  Equally: never widen a tolerance in the regression suite to make a runner green.
 
 ### **Development Pattern**
-1. Smoke locally while working; `--core` before pushing.
+1. Smoke locally while working; `--core` before pushing — in full, on your own machine, because
+   that is the only place the numerical baselines mean anything.
 2. Push to a feature branch (no CI runs there — nothing is triggered until a PR exists).
 3. Open a PR: the core contract gates it.
 4. Merge to main: the whole-tree sweep reports without gating.

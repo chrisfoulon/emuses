@@ -93,16 +93,21 @@ def baselines(regenerating):
 
 @pytest.fixture(scope="session")
 def environment_note(baselines):
-    """A one-shot description of how this machine differs from the baseline's.
+    """Per-dataset description of how this machine differs from the baseline's.
 
-    Appended to every numerical assertion message. Computed once because the
-    answer is the same for every test in the session, and because reading
-    package metadata per assertion is wasteful.
+    Appended to every numerical assertion message; index it by dataset.
 
-    The baselines all record the same environment -- they are regenerated in a
-    single run -- so the first one answers for all of them.
+    Keyed per dataset rather than computed once from the first baseline, even
+    though a regeneration writes them all in one run and they therefore agree.
+    The single-value version read whichever dataset sorted first, so perturbing
+    any *other* baseline's provenance changed nothing and the note kept
+    reporting "identical" -- a check that silently does nothing, reporting
+    success. Caught by perturbing it, which is the only way that class of bug
+    ever is.
     """
     if not baselines:  # regenerating; there is nothing to compare against
-        return ""
-    first = baselines[sorted(baselines)[0]]
-    return describe_environment_drift(first.get("provenance"))
+        return {dataset: "" for dataset in DATASETS}
+    return {
+        dataset: describe_environment_drift(payload.get("provenance"))
+        for dataset, payload in baselines.items()
+    }

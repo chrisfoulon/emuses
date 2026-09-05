@@ -1,5 +1,5 @@
 # STATUS — EMUSES
-_Last touched: 2026-09-02_
+_Last touched: 2026-09-05_
 
 ## Goal
 
@@ -313,20 +313,42 @@ problem, the `enhanced-cli-typer` hang and repo pollution by test output are all
          the embedding itself moved only slightly (pairwise-distance correlation 0.994). That
          pattern — a small numerical perturbation crossing a clustering decision boundary and being
          amplified downstream — is what to look for if this recurs.
-         **Cause: environment drift, not hardware.** The dev env had `numba` 0.62.1 / `llvmlite`
-         0.45.1 / `scipy` 1.17.1 / `sklearn` 1.7.2 / `joblib` 1.5.2; `requirements.txt` pinned
-         0.61.2 / 0.44.0 / 1.12.0 / 1.7.1 / 1.5.1. UMAP's core is numba-JIT compiled, so a numba
-         bump changes floating-point codegen. **Thread count was ruled out by measurement** — the
-         same suite passes 14/14 locally pinned to 4 cores, matching the runner.
-         Resolved by bumping those five pins to the combination the baselines were validated
-         against (decided 2026-09-05: the lockfile follows the validated environment, so **no
-         pinned scientific number changed**). The lockfile header still says it was compiled under
-         **Python 3.12** while CI and the dev env both run 3.11 — a proper `pip-compile` under
-         3.11 is still owed.
-       - [ ] **`tests/regression/baselines/regression.json` records nothing about what produced
-         it** — no library versions, no Python version, no platform. That absence is why this took
-         a CI run to find rather than being obvious on inspection. Worth adding a provenance block
-         at the next regeneration.
+         **Cause: the host CPU. Library drift and thread count were both ruled out by
+         measurement** (supersedes the earlier "environment drift, not hardware" reading here,
+         which was wrong). Five pins were out of date and bumping them to the validated
+         combination did fix the *prediction scores*; the lockfile follows the validated
+         environment, so no pinned scientific number changed. But with both sides then on
+         identical versions, CI still diverged, and thread count had already been excluded (14/14
+         locally pinned to 4 cores). Two further experiments settled it:
+         - **Seeds, 5 runs, one machine, only `random_state` varying.** Seed 42 reproduced the
+           baseline exactly (so the experiment is sound); the other four gave cluster ARI −0.004 /
+           −0.030 / −0.027 / 0.059 and embedding distance correlation 0.043 / 0.050 / 0.062 /
+           0.176. **On 40 samples this config has no stable cluster structure at all.**
+         - **CI, same seed, same versions:** distance correlation **0.990299** — the same
+           embedding, perturbed in the last bits. Two orders of magnitude away from a reseed, so
+           the two causes *are* distinguishable, and this one is numba compiling UMAP's kernels
+           for a different `llvm_cpu_name`.
+         **Why no tolerance fixes it:** the perturbation crosses an HDBSCAN boundary (3 → 4
+         clusters), which changes every Optuna trial's score, so **a different trial wins**.
+         `composite_score` 0.4914 → 0.5297 is a different quantity, not a drifted one, and an
+         argmax flip has no tolerance. Bitwise-across-platforms was already out of scope (ADR
+         §2.9b); what is new is that "not bitwise" does **not** degrade into "within tolerance"
+         once a search selects on the result.
+         **Decided 2026-09-05:** the value comparisons are marked `machine_specific` and gate only
+         on the machine that owns the baselines — your pre-push `--core`. CI runs
+         `--core --foreign-machine` and deselects them. **The consequence to keep in mind: a green
+         PR does not mean the numbers held; your local `--core` is the numerical gate.**
+         `test_pipeline_produces_the_expected_outputs` replaces the lost CI coverage by comparing
+         the output's *shape* against the baseline and never a value, so CI still executes the
+         pipeline (~84 s) instead of deselecting its way to a 0.06 s green.
+         The lockfile header still says it was compiled under **Python 3.12** while CI and the dev
+         env both run 3.11 — a proper `pip-compile` under 3.11 is still owed.
+       - [x] **Baselines now record their provenance** (2026-09-05): `llvm_cpu_name` (the codegen
+         target — the prime suspect), a digest of the CPU feature flags, Python, platform, and the
+         numerical stack versions. Every numerical failure appends a diff of that against the
+         current environment, so it now says either "identical, this is a code change" or exactly
+         which of those moved. Regenerated and verified byte-identical across all 23 and 31
+         metrics — only the provenance block was added.
        Remaining, outside the contract and untriaged: `tests/model_registry` **32**,
        `tests/cli` **16**, `tests/foundation_fastapi_service` **10**, `tests/integration` **1**,
        `tests/security` **1**.

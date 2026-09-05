@@ -243,7 +243,7 @@ def test_prediction_scores(regression_results, baselines, dataset, environment_n
             rtol=PREDICTION_RTOL,
             err_msg=(
                 f"{dataset}: {key} moved beyond the chosen tolerance"
-                f"{environment_note}"
+                f"{environment_note[dataset]}"
             ),
         )
 
@@ -281,7 +281,7 @@ def test_composite_and_search_metrics(
             rtol=SEARCH_RTOL,
             err_msg=(
                 f"{dataset}: {key} moved beyond the chosen tolerance"
-                f"{trials}{environment_note}"
+                f"{trials}{environment_note[dataset]}"
             ),
         )
 
@@ -293,7 +293,7 @@ def test_cluster_count(regression_results, baselines, dataset, environment_note)
     expected = baselines[dataset]["metrics"]["n_clusters"]
     assert current == expected, (
         f"{dataset}: cluster count {current}, baseline {expected}"
-        f"{environment_note}"
+        f"{environment_note[dataset]}"
     )
 
 
@@ -307,7 +307,7 @@ def test_cluster_structure(regression_results, baselines, dataset, environment_n
     )
     assert ari >= MIN_CLUSTER_ARI, (
         f"{dataset}: cluster structure changed, adjusted Rand index {ari:.4f} "
-        f"against a chosen floor of {MIN_CLUSTER_ARI}{environment_note}"
+        f"against a chosen floor of {MIN_CLUSTER_ARI}{environment_note[dataset]}"
     )
 
 
@@ -325,5 +325,5 @@ def test_embedding_geometry(regression_results, baselines, dataset, environment_
     assert corr >= MIN_DISTANCE_CORR, (
         f"{dataset}: embedding geometry changed, pairwise-distance correlation "
         f"{corr:.6f} against a chosen floor of {MIN_DISTANCE_CORR}"
-        f"{environment_note}"
+        f"{environment_note[dataset]}"
     )

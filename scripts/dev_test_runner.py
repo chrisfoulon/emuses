@@ -60,7 +60,10 @@ from pathlib import Path
 # The core contract. See the module docstring before editing -- especially the
 # "only ever add" rule. Counts are what each suite measured on 2026-09-05.
 CORE_SUITES = [
-    ("tests/regression", "Numerical pinning (scores, clusters, embedding geometry)"),
+    # Under --foreign-machine this contributes only the structural checks (the
+    # pipeline ran and emitted what it should); the value comparisons need the
+    # machine that recorded the baselines.
+    ("tests/regression", "Numerical pinning + pipeline output structure"),
     ("tests/pipelines", "Pipeline stages"),
     ("tests/inference", "Inference path"),
     ("tests/flexible-inference-stage", "Inference stage flexibility"),

@@ -471,11 +471,47 @@ so embeddings are compared through pairwise distances, never coordinates.
 run-to-run variation is exactly **zero** on every metric, so every float tolerance is a *chosen*
 cross-machine allowance (per §2.9b), not a measured one, and each is labelled as such in the test
 file. `rtol=1e-3` on prediction scores (the CSVs are written to 4 dp), `rtol=1e-6` on the search
-metrics, ARI ≥ 0.95, distance correlation ≥ 0.999, cluster count exact.
+metrics, ARI ≥ 0.95, distance correlation ≥ 0.999, cluster count exact. **They are not
+cross-machine allowances in practice** — see the same-machine paragraph below, added 2026-09-05
+after the first real cross-machine measurement showed the failure is not of a kind tolerance can
+absorb.
 
 **Regenerating a baseline is a deliberate act** recorded in the commit message. A missing baseline
 fails rather than being written silently, otherwise the suite ratchets to whatever the code
 currently does. Each baseline records the config that produced it and fails if the two drift apart.
+
+**This is a same-machine instrument, and CI does not gate on the numbers** (decided 2026-09-05).
+Every test comparing a recorded value carries `machine_specific`; CI runs
+`dev_test_runner.py --core --foreign-machine`, which deselects them. Measured, with both sides on
+identical pinned versions and the same seed: this machine reproduces the baseline **exactly**, the
+GitHub runner does not. The mechanism is amplification through an argmax — numba compiles UMAP's
+kernels for the host CPU, the embedding shifts in its last bits (distance correlation 0.990299),
+that crosses an HDBSCAN boundary (3 → 4 clusters), every Optuna trial's score changes, and **a
+different trial wins**; `composite_score` 0.4914 → 0.5297 is then a different quantity, not a
+drifted one. No tolerance covers an argmax flip. §2.9b already put bitwise-across-platforms out of
+scope; what is added here is that "not bitwise" does **not** degrade gracefully into "within
+tolerance" once a search selects on the result.
+
+The distinction is measurable, which is why the tolerances stay tight rather than being widened:
+varying only the master seed on one machine gives distance correlation 0.043–0.176 and cluster ARI
+≈ 0, two orders of magnitude away from the 0.990 a different CPU produces. On 40 samples this
+config has **no stable cluster structure across seeds at all**, so the route to a genuine
+cross-machine gate is a config whose search converges to the same optimum from either side of a
+last-bit perturbation — not a looser floor, which would make the assertions pass on anything.
+
+**The cost, stated plainly: a green PR does not mean the numbers held.** Numerical pinning is
+enforced by the developer's pre-push `--core`. To stop CI deselecting its way to a fast green that
+executes nothing, `test_pipeline_produces_the_expected_outputs` is deliberately *not*
+`machine_specific`: it compares the output's **shape** against the baseline and never a value, so
+CI still runs the pipeline and catches a stage that stopped writing, a metric dropped from the
+search, or an embedding that changed dimensionality.
+
+**Baselines record their provenance** (added 2026-09-05, `tests/regression/regression_provenance.py`):
+`llvm_cpu_name` — the codegen target, the prime suspect — plus a digest of the CPU feature flags,
+Python version, platform, and the numerical stack versions. Every numerical failure appends a diff
+against the current environment, so it states either "identical to the baseline's, this is a code
+change" or exactly which of those moved. Recording only *what* the numbers were, and nothing about
+where they came from, is what made the 2026-09-05 diagnosis cost a day.
 
 **Worth knowing before trusting a pass**: a one-line production change (UMAP model seed shifted by
 one) failed the composite score, cluster structure and embedding geometry — while prediction scores
