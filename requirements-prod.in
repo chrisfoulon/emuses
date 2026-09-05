@@ -1,3 +1,17 @@
+# NOTE: requirements-prod.txt is no longer generated from this file.
+#
+# Do not run `pip-compile requirements-prod.in` -- it would overwrite
+# requirements-prod.txt with a freshly resolved lockfile and undo the reason that
+# file exists. Two independent compiled lockfiles drifted apart once already and
+# the divergence went unnoticed for as long as the Docker build stayed broken;
+# the full account is in the header of requirements-prod.txt.
+#
+# requirements-prod.txt now reads `-r requirements.txt` and adds the handful of
+# server-only packages by hand. Edit it directly.
+#
+# This file is kept only to record what production asks for on top of the
+# library's own requirements.
+
 # Base requirements
 -r requirements.in
 

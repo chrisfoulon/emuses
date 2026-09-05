@@ -217,15 +217,21 @@ jobs:
     # -- the lockfile header says 3.12, a plausible source of this class of
     # mismatch.
     #
-    # The eighth is ours and is EXPECTED, so do not go chasing it:
+    # The eighth is ours, is EXPECTED, and is NOT FIXABLE. Do not go chasing it:
     #   gpy 1.13.2 has requirement scipy<=1.12.0, but you have scipy 1.17.1
     # scipy was bumped deliberately to the version the regression baselines were
     # validated against. GPy's upper bound is conservative rather than real:
     # measured against scipy 1.17.1, GPRegression fits and predicts finite values
     # with positive variance (corr 0.9937 on a synthetic fit) and
-    # SparseGPClassification trains. GPy is on the science path
-    # (emuses/tools/stats_utils.py), so if that ever stops holding, the fix is to
-    # move GPy or revisit the scipy pin -- and regenerate the baselines with it.
+    # SparseGPClassification trains.
+    #
+    # The obvious fix does not exist. gpy 1.14.2 drops the scipy bound entirely,
+    # but requires paramz>0.9.6, and the only paramz above 0.9.6 is 0.10.0, which
+    # requires numpy>=2 -- against the pinned numpy 1.26.4, and moving numpy to 2.x
+    # would invalidate every regression baseline. There is no gpy that accepts both
+    # scipy 1.17.1 and numpy 1.26.4 (checked 2026-09-05). This is why the Dockerfile
+    # installs with --no-deps: the override is deliberate and permanent until numpy
+    # moves, which is a baseline-regeneration decision, not a dependency fix.
     - name: Report dependency coherence
       continue-on-error: true
       run: |
@@ -288,11 +294,21 @@ jobs:
           type=sha
           type=raw,value=latest,enable={{is_default_branch}}
     
+    # linux/amd64 only. The arm64 leg was not slow, it was impossible: torch pulls
+    # triton==3.3.1, which publishes no aarch64 wheel AND no sdist at all, so there
+    # is nothing pip could install or build. (requirements.txt pins it as a bare
+    # line with no platform marker, so --no-deps attempts it on every arch.) Three
+    # more -- gpy, hdbscan, pykrige -- ship sdists but no aarch64 wheel, so even
+    # without triton the leg would compile them under QEMU on every push.
+    #
+    # Measured 2026-09-05 against every pin in requirements.txt + requirements-prod.txt.
+    # Restoring arm64 means giving torch a `; platform_machine == "x86_64"` marker
+    # on triton and accepting the emulated builds -- not just adding the platform back.
     - name: Build and push Docker image
       uses: docker/build-push-action@v7
       with:
         context: .
-        platforms: linux/amd64,linux/arm64
+        platforms: linux/amd64
         push: true
         tags: ${{ steps.meta.outputs.tags }}
         labels: ${{ steps.meta.outputs.labels }}
@@ -301,26 +317,45 @@ jobs:
         build-args: |
           BUILDKIT_INLINE_CACHE=1
     
+    # REPORT, NOT GATE -- deliberate and revisitable, like the formatting steps in
+    # `quality`. This step has never run: it is downstream of a build that had
+    # never succeeded. It was set to fail-build: true at severity high, against a
+    # repository carrying 275 open Dependabot advisories (1 critical, 157 high,
+    # 2026-09-05). Turning the build green only to have Grype fail it on a
+    # pre-existing backlog would rebuild exactly the meaningless red X that the
+    # core contract was introduced to end -- and worse, it would fail *after* the
+    # push step, so a vulnerable image would be published and the job would go red
+    # anyway.
+    #
+    # The scan output and the SBOM are uploaded either way, so the information is
+    # not lost. Flip this back to fail-build: true once the Dependabot backlog is
+    # triaged and the count is small enough that a failure means something new.
     - name: Run Grype vulnerability scanner
+      id: grype
+      continue-on-error: true
       uses: anchore/scan-action@v7
       with:
         image: ghcr.io/${{ github.repository }}:${{ github.sha }}
-        fail-build: true
+        fail-build: false
         severity-cutoff: high
-        
+        output-format: sarif
+
     - name: Generate SBOM with Syft
       uses: anchore/sbom-action@v0
       with:
         image: ghcr.io/${{ github.repository }}:${{ github.sha }}
         format: spdx-json
         output-file: sbom.spdx.json
-    
+
     - name: Upload container security artifacts
+      if: always()
       uses: actions/upload-artifact@v7
       with:
         name: container-security-reports-${{ github.run_number }}
         path: |
           sbom.spdx.json
+          ${{ steps.grype.outputs.sarif }}
+        if-no-files-found: warn
         retention-days: 30
 
   notify:

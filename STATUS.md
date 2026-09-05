@@ -369,6 +369,51 @@ problem, the `enhanced-cli-typer` hang and repo pollution by test output are all
 
 ## Open questions / next
 
+0. [ ] **Scope settled 2026-09-05, and the work queue that follows from it.** EMUSES is a local
+       tool, or a service an admin runs on one lab/university server with users submitting jobs
+       through it rather than all queueing EMUSES by hand. That validates
+       `emuses/multi_user_service/` (**10,948 lines, 23 files** — job_manager, quota_manager,
+       admin/task/workspace endpoints, token_manager): it is mostly *built*, so the question is
+       finish-and-maintain, not build. It does **not** imply `emuses/extras/` (**23 modules** —
+       GDPR compliance, academic compliance, community model manager, personalized ranking,
+       benchmarking), which is the public-registry/peer-review ambition.
+       Cheapest lever, measured: the cloud SDKs live in **one** file (`extras/cloud_storage.py`),
+       `hvac` in **one** (`multi_user_service/auth.py`), and **both are already lazy-imported
+       inside functions**. Only `requirements.in` says they are core. Fixing that packaging
+       mismatch is most of the alert reduction, at near-zero risk.
+       Alert arithmetic (from the API, 2026-09-05): 275 open = **113 distinct advisories across
+       27 packages**, inflated ~2.4x by one alert per lockfile. −74 when the collapsed
+       `requirements-prod.txt` lands (PR #15), −60 from streamlit-only deps (GitPython 44,
+       tornado 14, pyarrow 2) → ~141. Email notifications were switched off/digested on
+       2026-09-05; **read them with `gh api /repos/chrisfoulon/emuses/dependabot/alerts`**, which
+       is where those numbers came from — do not ask for the inbox.
+       - Decisions **Chris** owns, because they gate the dependency work:
+         - [ ] **D1** public registry / peer-review / community: live, parked, or dead?
+               *Recommended: park explicitly — move to `extras_require`, delete nothing.*
+         - [ ] **D2** Vault (`hvac`) or env/file secrets on a single lab server?
+               *Recommended: optional extra, env by default.*
+         - [ ] **D3** multi-user orchestration: finish or freeze? *Recommended: keep — it is the
+               end state; minimum is auth + job queue + quotas, workspaces/admin analytics lag.*
+         - [ ] **D7** formatter: adopt the 86-file diff, or stay report-only? *Recommended: adopt,
+               in a quiet window.*
+         - [ ] **D10** GUI shape. *Recommended: front-end served by the existing FastAPI app —
+               ~110 routes with OpenAPI already exist; streamlit costs 66 alerts for 4 lines.*
+       - Then, in this order — **A before B, and C alone**:
+         - [ ] **PR A** dependency scope: streamlit, cloud SDKs, `hvac`, `moto`/`testcontainers`/
+               `pytest-servers` out of `requirements.in` into `extras_require`; streamlit's 4 uses
+               in `tools/visualisation.py` behind a lazy import. Gate on local `--core`: this
+               changes the import graph of a module five science modules import.
+         - [ ] **PR B** the owed `pip-compile` under 3.11, against the 12-item audit list above.
+               **After A**, so it does not recompile packages A removes. If `numba`/`llvmlite`
+               move, regenerate the baselines *in the same commit*.
+         - [ ] **PR C** formatter. Only with nothing else open — an 86-file reformat conflicts
+               with everything.
+         - [ ] **PR D** GUI. After A, which settles streamlit's fate.
+         - [ ] **D8** Grype back to `fail-build: true` once the backlog is small enough that a
+               failure means something new.
+         - [ ] **D9** numpy 2 — blocked by GPy/paramz (see the gpy note below), needs baseline
+               regeneration. Deferred deliberately, not forgotten.
+
 1. [~] **Known failures are now fenced off rather than gating (2026-09-05).** CI was red on
        every push to `main` for months, which made the red X meaningless — a genuine breakage
        would have looked identical. Two causes, both measured:
@@ -430,13 +475,25 @@ problem, the `enhanced-cli-typer` hang and repo pollution by test output are all
          and `starlette` 0.49.1 / `pillow` 12.1.1 / `filelock` 3.20.3 / `cffi` 1.17.1 pinned
          against what `fastapi` / `streamlit` / `safety` / `cryptography` ask for. Compiling under
          one interpreter and installing under another produces exactly this class of mismatch.
-         The **eighth is ours and is expected — do not chase it**: `gpy` 1.13.2 declares
-         `scipy<=1.12.0` while we pin 1.17.1 for the baselines. Measured 2026-09-05 against
-         scipy 1.17.1, GPy's `GPRegression` fits and predicts finite values with positive
+         A fuller audit on 2026-09-05 (resolve every pin's declared deps against the lockfile,
+         rather than against what happens to be installed) found **12** in `requirements-dev.txt`
+         and **9** in `requirements.txt`; the extras are unpinned transitives — `black` needs
+         `pytokens~=0.4.0`, `nibabel` needs `importlib-resources`, `bcblib` needs `arviz` and
+         `pymc>=5`. With `--no-deps` everywhere those are simply absent at runtime, which is the
+         same trap as `pathspec`: use that list as the checklist when the recompile happens.
+         Two of them are *not* real and must not be "fixed" by bumping: `fastapi` 0.116.1 with
+         `starlette` 0.49.1 was measured working (routing and OpenAPI both 200), and the `gpy`
+         one below is unfixable outright.
+         The **eighth is ours, is expected, and is NOT FIXABLE — do not chase it**: `gpy` 1.13.2
+         declares `scipy<=1.12.0` while we pin 1.17.1 for the baselines. Measured 2026-09-05
+         against scipy 1.17.1, GPy's `GPRegression` fits and predicts finite values with positive
          variance (corr 0.9937 on a synthetic fit) and `SparseGPClassification` trains, so the
-         bound is conservative rather than real. GPy *is* on the science path
-         (`emuses/tools/stats_utils.py`), so if that stops holding, move GPy or revisit the
-         scipy pin — and regenerate the baselines with it.
+         bound is conservative rather than real. **The obvious fix does not exist**, which is new
+         (2026-09-05): `gpy` 1.14.2 drops the scipy bound entirely, but needs `paramz>0.9.6`, and
+         the only `paramz` above 0.9.6 is 0.10.0, which needs **`numpy>=2`** against our pinned
+         1.26.4. No `gpy` accepts both scipy 1.17.1 and numpy 1.26.4. The override is therefore
+         permanent until numpy 2 — which is a baseline-regeneration decision, not a dependency
+         fix — and it is *why* every install path uses `--no-deps`.
          **Do not recompile `requirements.txt` casually** — it pins the numerical stack the
          regression baselines were validated against, and a recompile that moves `numba` or
          `llvmlite` invalidates them (regenerate in the same commit, or don't touch it).
@@ -468,6 +525,69 @@ problem, the `enhanced-cli-typer` hang and repo pollution by test output are all
          ideally after #13 lands to avoid conflicts. What *does* gate is
          `black/isort/flake8/mypy --version` — a toolchain that cannot start must never read as
          a passing job.
+       - [x] **The `build` job had never executed either, and the image it would have shipped was
+         broken (2026-09-05).** It is gated `if: push && ref == main`, so every `workflow_dispatch`
+         run had skipped it; the first real push ran it and it failed. Three separate defects, all
+         hidden behind that:
+         - The `Dockerfile` used **`pip-sync`**, which *resolves* instead of installing the pinned
+           set, so it died on the deliberate `gpy`/`scipy` override with `ResolutionImpossible`.
+           `ci.yml` had already abandoned `pip-sync` for a different reason months earlier. Now
+           `pip install --no-deps -r requirements-prod.txt`, matching all three workflows.
+         - **`requirements-prod.txt` was stale from `f499567`** and had never been recompiled as
+           `requirements.in` grew. It was missing **46 packages** that `requirements.txt` has —
+           the entire auth stack (`fastapi-users`, `pwdlib`, `bcrypt`, `argon2-cffi`, `pyjwt`),
+           all three cloud backends, `hvac`, `redis`, `pymemcache`, `structlog`. The multi-user
+           service could not have started in that image. It had also drifted on all five
+           numerical pins — **`numba` 0.61.2 / `llvmlite` 0.44.0** against the validated 0.62.1 /
+           0.45.1, i.e. the exact codegen path that causes the embedding divergence. Rewritten as
+           six lines: `-r requirements.txt` plus `gunicorn`, the four `uvicorn[standard]` extras
+           and `importlib-resources`, so **the two can no longer diverge**. Do not
+           `pip-compile requirements-prod.in`; it would undo this (the `.in` says so too).
+         - **`linux/arm64` was impossible, not merely slow.** torch pulls `triton==3.3.1`, which
+           publishes no aarch64 wheel *and no sdist* — nothing to install or build — and
+           `requirements.txt` pins it bare, with no platform marker. `gpy`, `hdbscan` and
+           `pykrige` also lack aarch64 wheels. Now `linux/amd64` only; restoring arm64 means
+           marker-gating triton, not just re-adding the platform.
+         - **The image would then have crashed on startup.** `docker/startup.sh` ran
+           `pip install -e .` on *every container start*, after the Dockerfile had switched to the
+           non-root `emuses` user, into a root-owned `/opt/venv` (the `chown` covers `/app` only).
+           Reproduced in a container: `[Errno 13] Permission denied:
+           '.../__editable___..._finder.py'`. Broken twice over, since with no `--no-deps` it also
+           re-resolves and backtracks `gpy` to 1.10.0. EMUSES is now installed at build time, as
+           root, with `--no-deps` — which also drops the requirement that a production container
+           reach a package index at startup. **This one is a reminder that a resolvable lockfile
+           is not a working image**; only running the container finds this class of defect.
+         - Added a **`.dockerignore`** (there was none, and the Dockerfile does `COPY . .`).
+           Context drops 137 MB → 11 MB. It matters beyond bulk: CI builds from a clean checkout,
+           but a *local* build would have baked untracked run outputs — `test_output/` was 9.1 MB
+           of pipeline artifacts — and `docker/.env` into a **public** image.
+         - **Grype would have failed the job the moment the build started working.** It sat
+           downstream of the broken build with `fail-build: true` at severity `high`, against a
+           repo carrying **275 open Dependabot advisories (1 critical, 157 high)** — and it runs
+           *after* the push step, so it would have published a vulnerable image and gone red
+           anyway. Now report-not-gate, matching `quality`'s formatting steps, with the SARIF and
+           the SBOM uploaded so nothing is lost. **Flip it back to `fail-build: true` once the
+           Dependabot backlog is triaged** and a failure would mean something new.
+         - **Two more that only a running container could find.** Building the image was possible
+           after all — Docker's data-root is `/home/docker` with 303 GB free, not the 7.2 GB on
+           `/` that `df /var/lib/docker` reports (that path does not exist here, so df silently
+           answered for `/`). Use `docker info`, not `df`. The built image is **7.32 GB**, so the
+           wrong reading would have been wrong by exactly enough to matter. With it running:
+           `gunicorn ... --factory` exits 2 with `unrecognized arguments: --factory` — that is a
+           uvicorn flag; gunicorn spells a factory as `"module:create_app()"`. And the HEALTHCHECK
+           probed `/health`, which 404s, because `create_app()` mounts the API under `/api`;
+           the container would have sat `unhealthy` forever, i.e. a restart loop under compose.
+         **Verified by building and running it** (2026-09-05): image builds clean, container
+         reports `Up (healthy)`, all four gunicorn workers reach "Application startup complete",
+         and `/api/health`, `/api/docs`, `/metrics` all return 200. Before that, statically:
+         every one of the 198 pins was
+         checked for an installable artifact per platform, and `pip install --dry-run --no-deps`
+         of the production set resolves clean at 198 distributions with the auth/cloud/Vault
+         packages present and the numerical stack matching `requirements.txt` exactly.
+         **Six defects, each hidden behind the previous one** — the standing lesson is that a
+         resolvable lockfile, a clean lint and a green dry-run together still told us nothing
+         about whether the image ran.
+         **Once it publishes, the GHCR package must be flipped private → public by hand.**
        Remaining, outside the contract and untriaged: `tests/model_registry` **32**,
        `tests/cli` **16**, `tests/foundation_fastapi_service` **10**, `tests/integration` **1**,
        `tests/security` **1**.
