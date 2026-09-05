@@ -306,6 +306,27 @@ problem, the `enhanced-cli-typer` hang and repo pollution by test output are all
        A branch that adds tests adds them to `CORE_SUITES` in its own commit; nothing in the list
        may name a path that does not exist yet, since pytest exits 4 on a missing path and the
        whole contract would then fail for a bookkeeping reason.
+       - **What turning it on immediately found: the baselines belonged to an environment the
+         lockfile did not describe.** The first CI run of `tests/regression` failed **10 of 14** —
+         structurally, not by rounding. HDBSCAN found **4 clusters instead of 3**, adjusted Rand
+         index **0.21** against a floor of 0.95, `target_0_Mean_Score` −0.3554 → **−0.4272**, while
+         the embedding itself moved only slightly (pairwise-distance correlation 0.994). That
+         pattern — a small numerical perturbation crossing a clustering decision boundary and being
+         amplified downstream — is what to look for if this recurs.
+         **Cause: environment drift, not hardware.** The dev env had `numba` 0.62.1 / `llvmlite`
+         0.45.1 / `scipy` 1.17.1 / `sklearn` 1.7.2 / `joblib` 1.5.2; `requirements.txt` pinned
+         0.61.2 / 0.44.0 / 1.12.0 / 1.7.1 / 1.5.1. UMAP's core is numba-JIT compiled, so a numba
+         bump changes floating-point codegen. **Thread count was ruled out by measurement** — the
+         same suite passes 14/14 locally pinned to 4 cores, matching the runner.
+         Resolved by bumping those five pins to the combination the baselines were validated
+         against (decided 2026-09-05: the lockfile follows the validated environment, so **no
+         pinned scientific number changed**). The lockfile header still says it was compiled under
+         **Python 3.12** while CI and the dev env both run 3.11 — a proper `pip-compile` under
+         3.11 is still owed.
+       - [ ] **`tests/regression/baselines/regression.json` records nothing about what produced
+         it** — no library versions, no Python version, no platform. That absence is why this took
+         a CI run to find rather than being obvious on inspection. Worth adding a provenance block
+         at the next regeneration.
        Remaining, outside the contract and untriaged: `tests/model_registry` **32**,
        `tests/cli` **16**, `tests/foundation_fastapi_service` **10**, `tests/integration` **1**,
        `tests/security` **1**.
