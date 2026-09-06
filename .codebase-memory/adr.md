@@ -209,15 +209,59 @@ called "rescaled embeddings" in the code. `mode` in the JSON disambiguates.
 the conversions without importing umap/matplotlib/statsmodels) and are re-exported from
 `emuses_utils` for the existing call sites.
 
-**Known gap (open)**: `umap_stage.py` recomputes min/max from the current cohort
-unconditionally, including on the `--load_umap` and `--load_embeddings` paths. A run
-reusing another run's morphospace therefore gets identical raw coordinates in a
-*different* [0, 1] space, while the source run's `embedding_scaling.json` sits unread —
-only `inference_stage` reads it. Anything comparing heatmaps or reusing cluster labels
-across two such runs is comparing different coordinate systems. Fixing this moves
-numbers, so it is deliberately not bundled with the loader.
-
 **Code**: `emuses/tools/embedding_spaces.py`, `tests/unit/test_embedding_spaces.py`
+
+---
+
+### 2.4c The Run That Trained a Morphospace Owns Its Scaling Factors
+
+**Decision**: `UMAPStage` computes the [0, 1] factors from its own embedding **only when
+it trained the morphospace**. Every reuse route — `--load_umap`, `--load_embeddings`,
+and resuming into an existing output folder — reads the source run's
+`embedding_scaling.json` through `embedding_spaces.load_scaling()` and writes it out
+again unchanged. A reuse route pointed at a folder with no such file **raises**; it does
+not fall back to recomputation. (Closes the gap recorded as open in §2.4b, 2026-09-06.)
+
+**Rationale**:
+- The factors are not a summary of the coordinates, they *are* the coordinate system.
+  A kernel bandwidth, a grid cell and a region boundary all mean something only relative
+  to them.
+- On a reuse route the coordinates in hand are *this* cohort pushed through *that*
+  model. Recomputing redefines [0, 1] against whoever happens to be in this run, so the
+  same subject lands somewhere different depending on its neighbours, and inference —
+  which reads the file rather than recomputing — disagrees with the training run it was
+  fitted on.
+- Nothing errors when this goes wrong. Min-max rescaling a valid embedding always yields
+  a valid embedding in exactly the expected range, so the run completes and answers a
+  different question. Hence a raise on the missing-file case: a silent fallback here
+  reproduces the defect.
+
+**Three mechanisms existed for carrying these factors; two were dead**, and each had a
+passing test that made it look wired:
+
+1. `umap_model.min_embeddings_` / `max_embeddings_`, read with `getattr` in
+   `inference_stage`. Nothing in `emuses/` ever set them — the only assignment in the
+   tree was on a `Mock` in `tests/inference/test_normalization_validation.py`. In
+   production the read returned `None`, so **pipeline-integrated inference skipped the
+   rescale entirely** and fed raw coordinates to predictors fitted on rescaled ones.
+2. Context keys `embedding_train_min_coords` / `embedding_train_max_coords`, published
+   by `umap_stage` and read by no stage. Asserted only in
+   `tests/inference/test_normalization_analysis.py`, against a context that test built
+   itself.
+3. `embedding_scaling.json` — the live one, and now the only one.
+
+**The generalisable lesson, which is why this has a structural test rather than a note**:
+a test that constructs its own input can validate a *consumer* while no *producer*
+exists. It proves "if X were set we would use it"; it never proves "X is set". Review
+does not catch it, because every individual site reads correctly.
+`tests/test_scaling_single_source.py` asserts, by AST, that the banned attribute names
+appear nowhere and that no stage writes a context key nothing reads. Fourteen
+pre-existing write-only keys are listed there as known debt, not endorsed.
+
+**Code**: `emuses/pipelines/umap_stage.py`, `emuses/pipelines/inference_stage.py`
+(`_scaling_dir` / `_read_scaling_into`, one reader replacing three hand-rolled JSON
+parses), `tests/test_reused_morphospace_keeps_its_scaling.py`,
+`tests/test_scaling_single_source.py`
 
 ---
 

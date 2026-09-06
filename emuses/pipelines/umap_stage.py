@@ -18,6 +18,7 @@ from emuses.tools.cohort_identity import (build_cohort_record, cohorts_match,
 from emuses.tools.embedding_dimensionality import (
     check_embedding_matches_stages, declared_n_components,
     validate_metrics_for_dimensionality)
+from emuses.tools.embedding_spaces import SCALING_FILENAME, load_scaling
 from emuses.tools.emuses_utils import rescale_embedding
 from emuses.tools.UMAP_utils import (
     load_umap_model, train_and_save_umap_optim_with_nested_clustering)
@@ -478,8 +479,59 @@ class UMAPStage(PipelineStage):
             logger.info(f"Cohort record saved at: {cohort_path}")
 
         # Rescale embeddings.
-        self.min_embeddings = self.embeddings.min(axis=0)
-        self.max_embeddings = self.embeddings.max(axis=0)
+        #
+        # WHERE THE FACTORS COME FROM -- and why "this run's embedding" is the wrong
+        # answer whenever the morphospace was not trained here.
+        #
+        # The morphospace defines a coordinate system, so the run that TRAINED it
+        # defines the scaling of that system. On a reuse route the coordinates above
+        # were produced by pushing THIS cohort through THAT model; taking their min/max
+        # redefines [0, 1] against whoever happens to be in this run. A subject then
+        # lands at a different rescaled coordinate depending on its neighbours, a
+        # kernel bandwidth stops meaning the same thing across runs of the same
+        # morphospace, and inference -- which reads the factors from the file rather
+        # than recomputing them -- disagrees with the training run it was fitted on.
+        # None of that errors: min-max rescaling a valid embedding always yields a
+        # valid embedding, so the run succeeds and answers a different question.
+        #
+        # Fresh factors are therefore computed only when training happened here.
+        # Otherwise they are read back from the source run, whose
+        # embedding_scaling.json is the single place they are recorded (ADR 2.4b), and
+        # written out again unchanged so this folder records the factors it used.
+        scaling_source = reused_from
+        if getattr(self.config, "load_embeddings", None):
+            # --load_embeddings names the .npy; the scaling sits beside it. This route
+            # sets no `reused_from` (it reuses no clusterer) but the coordinates are
+            # still someone else's, so it needs someone else's factors too.
+            scaling_source = Path(self.config.load_embeddings).resolve().parent
+
+        inherited_scaling = None
+        if scaling_source is not None:
+            try:
+                inherited_scaling = load_scaling(scaling_source)
+            except FileNotFoundError as e:
+                raise RuntimeError(
+                    f"This run reuses the morphospace in {scaling_source}, but that "
+                    f"folder has no {SCALING_FILENAME}, so the scaling of the reused "
+                    f"coordinate system is unknown. Not recomputing it from this "
+                    f"run's subjects: that silently defines a DIFFERENT [0, 1] space "
+                    f"from the one the reused model's predictors were fitted in, and "
+                    f"the run would look successful. Point at a run folder written by "
+                    f"a completed UMAP stage, or retrain."
+                ) from e
+
+        if inherited_scaling is not None:
+            self.min_embeddings = np.asarray(inherited_scaling["min_embeddings"])
+            self.max_embeddings = np.asarray(inherited_scaling["max_embeddings"])
+            rescale_margin = inherited_scaling.get("margin", 0)
+            logger.info(
+                f"Reusing the embedding scaling recorded in {scaling_source} rather "
+                f"than recomputing it from this run's {len(self.embeddings)} subjects."
+            )
+        else:
+            self.min_embeddings = self.embeddings.min(axis=0)
+            self.max_embeddings = self.embeddings.max(axis=0)
+            rescale_margin = 0
 
         # Save embedding scaling parameters for inference.
         #
@@ -490,19 +542,22 @@ class UMAPStage(PipelineStage):
         # one as the other is silent -- per-axis rescaling is idempotent, so nothing
         # errors and the numbers merely stop meaning anything. Recording it here is
         # what makes emuses.tools.embedding_spaces.load_embeddings able to convert.
-        # Bound to a name rather than written twice: the value recorded in the JSON and
-        # the value actually applied below have to be the same number, and a literal in
-        # each place is a standing invitation for them to drift apart.
-        rescale_margin = 0
-        embedding_scaling = {
-            'min_embeddings': self.min_embeddings.tolist(),
-            'max_embeddings': self.max_embeddings.tolist(),
-            'mode': 'per_axis',
+        # `margin` is bound to a name rather than written twice: the value recorded in
+        # the JSON and the value actually applied below have to be the same number, and
+        # a literal in each place is a standing invitation for them to drift apart.
+        #
+        # On a reuse route this reproduces the source run's file field for field, so
+        # `A/embedding_scaling.json == B/embedding_scaling.json` is a usable assertion.
+        embedding_scaling = dict(inherited_scaling) if inherited_scaling else {}
+        embedding_scaling.update({
+            'min_embeddings': np.asarray(self.min_embeddings).tolist(),
+            'max_embeddings': np.asarray(self.max_embeddings).tolist(),
             'margin': rescale_margin,
             'embeddings_npy_space': 'raw',
             'test_embeddings_npy_space': 'rescaled',
-        }
-        scaling_file = self.config.output_folder / "embedding_scaling.json"
+        })
+        embedding_scaling.setdefault('mode', 'per_axis')
+        scaling_file = self.config.output_folder / SCALING_FILENAME
         with open(scaling_file, 'w') as f:
             json.dump(embedding_scaling, f)
         logger.info(f"Saved embedding scaling parameters to {scaling_file}")
@@ -575,9 +630,13 @@ class UMAPStage(PipelineStage):
                 # Standardized naming for clustering data
                 "embedding_train_clusterer": self.best_clusterer,
                 "embedding_train_cluster_labels": self.cluster_labels,
-                # Standardized naming for scaling information
-                "embedding_train_min_coords": self.min_embeddings,
-                "embedding_train_max_coords": self.max_embeddings,
+                # No scaling keys here on purpose. "embedding_train_min_coords" /
+                # "embedding_train_max_coords" used to be published at this point and
+                # no stage ever read them -- a dead route that looked wired because
+                # tests/inference/test_normalization_analysis.py asserted on a context
+                # it had built itself. The factors have exactly one home,
+                # embedding_scaling.json, written a few lines above (ADR 2.4b).
+                # tests/test_scaling_single_source.py fails if either comes back.
                 # File paths - keep naming as is since these are implementation details
                 "cluster_model_path": self.cluster_model_path,
                 "cluster_labels_path": self.cluster_labels_path,

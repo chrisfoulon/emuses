@@ -1,5 +1,5 @@
 # STATUS — EMUSES
-_Last touched: 2026-09-05_
+_Last touched: 2026-09-06_
 
 ## Goal
 
@@ -253,10 +253,20 @@ gets a `TypeError` instead of the wrong array. `embedding_scaling.json` now also
 `margin` and which space each `.npy` is in. Additive: no array contents change, baselines hold.
 Rationale and the open gap in ADR §2.4b.
 
-**Still open, deliberately not bundled:** `--load_umap` / `--load_embeddings` recompute min/max from
-the *current* cohort, so a run reusing another run's morphospace lands in a different [0, 1] space
-while the source run's `embedding_scaling.json` sits unread. Cross-run heatmap and cluster-label
-comparisons are affected. Fixing it moves numbers → separate branch, full local `--core`.
+**Reuse wiring fixed 2026-09-06** on `fix/reused-morphospace-keeps-its-scaling` (Step 1 of the plan
+in item 00 below). The run that **trained** a morphospace owns its scaling factors; `--load_umap`,
+`--load_embeddings` and output-folder resume now read the source run's `embedding_scaling.json` and
+write it back unchanged, and a reuse route pointed at a folder without that file **raises** rather
+than recomputing. Baseline-neutral as predicted: `tests/regression` 16 passed with
+`tests/regression/baselines/` untouched. ADR §2.4c.
+
+Two of the three mechanisms carrying those factors were **dead**, and deleting them found a live
+defect: `inference_stage` read `umap_model.min_embeddings_`, which nothing in `emuses/` has ever
+set — the only assignment in the tree was on a `Mock` — so **pipeline-integrated inference skipped
+the rescale entirely** and fed raw coordinates to predictors fitted on rescaled ones. It now reads
+the run folder's file, through one reader that replaced three hand-rolled copies of the same JSON
+parse. `tests/test_scaling_single_source.py` guards the pattern by AST (a test that builds its own
+input can validate a consumer while no producer exists).
 
 ### What works now
 
@@ -426,6 +436,17 @@ problem, the `enhanced-cli-typer` hang and repo pollution by test output are all
     Steps: **1** reuse wiring (baseline-neutral, lands first) · **2** isotropic rescaling ·
     **3** real confidence · **4** local linear · **5** support masking. Re-record and measure after
     each — bundling makes "did the science change" unanswerable.
+
+    **Step 1 DONE 2026-09-06** on `fix/reused-morphospace-keeps-its-scaling`. Baseline-neutral,
+    confirmed: `tests/regression` 16 passed with the baselines unmodified. Both dead routes deleted;
+    deleting the first one exposed a live defect (pipeline-integrated inference was never rescaling
+    — see the coordinate-systems section above). Two new suites in `CORE_SUITES`. Every perturbation
+    done and recorded: reverting the reuse load fails 3 of the reuse tests; each of the four
+    structural guards fails when its defect is reintroduced. One test was found **inert** by its
+    perturbation (`--load_embeddings` pointed at the *full* `embeddings.npy` recomputes the source's
+    own factors exactly, so it passed with the branch deleted) and was rewritten to load a
+    **subgroup**, which is both the real use case and the only version that can fail.
+    Step 2 (isotropic) is next and **does** move `target_0_*`.
 
     **Blast radius, checked against `regression_metrics.py`:** only `target_0_*_Score` moves.
     `_embedding_distances`, `composite_score`, `metric_*`, `_cluster_labels` all derive from **raw**

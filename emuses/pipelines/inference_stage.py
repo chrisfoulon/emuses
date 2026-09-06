@@ -8,7 +8,6 @@ validation vs pure inference modes, leveraging the observability infrastructure
 for performance tracking and research insights.
 """
 
-import json
 import logging
 import time
 from datetime import datetime
@@ -27,6 +26,7 @@ from rich.progress import (
 )
 
 from emuses.pipelines.pipeline_stage import PipelineStage
+from emuses.tools.embedding_spaces import SCALING_FILENAME, load_scaling
 from emuses.tools.emuses_utils import rescale_embedding
 from emuses.tools.model_io import ModelIOManager
 from emuses.tools.UMAP_utils import load_umap_model
@@ -258,32 +258,25 @@ class InferenceStage(PipelineStage):
         if umap_model is not None:
             models['umap_model'] = umap_model
             logger.info("Using UMAP model from pipeline context (fast)")
-            
-            # Get scaling parameters from context or model attributes
-            models['metadata']['min_embeddings'] = getattr(umap_model, 'min_embeddings_', None)
-            models['metadata']['max_embeddings'] = getattr(umap_model, 'max_embeddings_', None)
+
+            # From the run folder, not from the model object. This used to read
+            # `umap_model.min_embeddings_` / `max_embeddings_`, attributes that
+            # nothing in emuses/ has ever set -- the only assignment in the tree was
+            # on a Mock in tests/inference/test_normalization_validation.py, which is
+            # why the route looked alive. In production the getattr returned None on
+            # every call, so pipeline-integrated inference skipped the rescale and
+            # fed RAW coordinates to predictors fitted on rescaled ones.
+            self._read_scaling_into(models, self._scaling_dir())
         else:
             # 2. Load UMAP model from disk only if not in context (standalone mode)
             umap_model = self._load_umap_from_disk()
             if umap_model is not None:
                 models['umap_model'] = umap_model
                 logger.info("Loaded UMAP model from disk (slower)")
-                
-                # Load scaling parameters needed for rescaling
-                embedding_scaling_file = Path(self.model_path) / "embedding_scaling.json"
-                if embedding_scaling_file.exists():
-                    with open(embedding_scaling_file, 'r') as f:
-                        scaling_params = json.load(f)
-                    models['metadata']['min_embeddings'] = np.array(scaling_params['min_embeddings'])
-                    models['metadata']['max_embeddings'] = np.array(scaling_params['max_embeddings'])
-                    logger.info(f"Loaded embedding scaling parameters from {embedding_scaling_file}")
-                else:
-                    models['metadata']['min_embeddings'] = None
-                    models['metadata']['max_embeddings'] = None
-                    logger.warning("No embedding scaling parameters found - raw embeddings will be used")
+                self._read_scaling_into(models, self._scaling_dir())
             else:
                 logger.warning("UMAP model not available - inference will be limited")
-            
+
         if prediction_models is not None and len(prediction_models) > 0:
             models['prediction_models'] = prediction_models
             logger.info(f"Using {len(prediction_models)} prediction models from pipeline context (fast)")
@@ -295,6 +288,59 @@ class InferenceStage(PipelineStage):
         self._load_normalization_scalers(models, context)
             
         return models
+
+    def _scaling_dir(self):
+        """The run folder whose embedding_scaling.json describes this morphospace.
+
+        Standalone inference is pointed at a model folder; pipeline-integrated
+        inference has just trained one into the output folder and may carry no
+        model_path at all. Both are the folder UMAPStage wrote the file into.
+        """
+        for candidate in (self.model_path, getattr(self.config, "output_folder", None)):
+            if candidate:
+                return Path(candidate)
+        return None
+
+    def _read_scaling_into(self, models, run_dir):
+        """Put a run's embedding scaling factors into `models['metadata']`.
+
+        One reader for every route into this stage. There were three hand-rolled
+        copies of this JSON parse, which is how one of them (the pipeline-context
+        route) came to read a model attribute nobody sets instead.
+
+        A missing file leaves the factors as None, and `_transform_features` then
+        warns and uses raw coordinates. That fallback is inherited, not endorsed:
+        raw coordinates fed to predictors fitted on rescaled ones is precisely the
+        "every prediction is identical" failure. It is left alone here because
+        tightening it changes behaviour for model folders written before
+        embedding_scaling.json existed, which is not this change's business.
+        """
+        models.setdefault('metadata', {})
+        try:
+            scaling = load_scaling(run_dir) if run_dir is not None else None
+        except FileNotFoundError:
+            scaling = None
+
+        if scaling is None:
+            models['metadata']['min_embeddings'] = None
+            models['metadata']['max_embeddings'] = None
+            logger.warning(
+                f"No {SCALING_FILENAME} in {run_dir} - inference will use RAW "
+                f"embedding coordinates, which the prediction models were not fitted "
+                f"on. Expect predictions that barely vary between samples."
+            )
+            return
+
+        models['metadata']['min_embeddings'] = scaling['min_embeddings']
+        models['metadata']['max_embeddings'] = scaling['max_embeddings']
+        # Carried even though it is 0 everywhere today: the rescale applied here has
+        # to be the same map the training run applied, and a margin silently dropped
+        # on one side of that is a shift nothing would report.
+        models['metadata']['scaling_margin'] = scaling.get('margin', 0)
+        logger.info(
+            f"Loaded embedding scaling parameters from {run_dir} "
+            f"(mode={scaling.get('mode', 'per_axis')})"
+        )
 
     def _load_umap_from_disk(self):
         """
@@ -505,18 +551,7 @@ class InferenceStage(PipelineStage):
                 models['umap_model'] = umap_model
                 logger.info(f"Successfully loaded UMAP model from {umap_path}")
 
-                # Load scaling parameters needed for rescaling
-                embedding_scaling_file = model_dir / "embedding_scaling.json"
-                if embedding_scaling_file.exists():
-                    with open(embedding_scaling_file, 'r') as f:
-                        scaling_params = json.load(f)
-                    models['metadata']['min_embeddings'] = np.array(scaling_params['min_embeddings'])
-                    models['metadata']['max_embeddings'] = np.array(scaling_params['max_embeddings'])
-                    logger.info(f"Loaded embedding scaling parameters from {embedding_scaling_file}")
-                else:
-                    models['metadata']['min_embeddings'] = None
-                    models['metadata']['max_embeddings'] = None
-                    logger.warning("No embedding scaling parameters found - raw embeddings will be used")
+                self._read_scaling_into(models, model_dir)
             else:
                 logger.warning("UMAP model not found - inference will be limited")
 
@@ -709,6 +744,7 @@ class InferenceStage(PipelineStage):
             # embeddings_before_rescale = embeddings.copy()
             embeddings = rescale_embedding(
                 embeddings,
+                margin=models.get('metadata', {}).get('scaling_margin', 0),
                 preset_min=min_embeddings,
                 preset_max=max_embeddings
             )

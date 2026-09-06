@@ -78,6 +78,13 @@ CORE_SUITES = [
     ("tests/test_cohort_identity.py", "A morphospace identifies its cohort"),
     ("tests/test_target_resume.py", "Resume skips finished prediction targets"),
     ("tests/test_run_index.py", "A shared output folder stays legible"),
+    # Added by fix/reused-morphospace-keeps-its-scaling. A reused morphospace used to
+    # recompute the 0-1 scaling from whoever was in the current run, silently
+    # redefining the coordinate system the reused model's predictors were fitted in.
+    # The structural guard is the cheap half: two of the three mechanisms for carrying
+    # those factors were dead, and each had a passing test that built its own input.
+    ("tests/test_reused_morphospace_keeps_its_scaling.py", "Reuse keeps the source scaling"),
+    ("tests/test_scaling_single_source.py", "Scaling factors have exactly one home"),
     # A branch that adds tests adds them here, in its own commit. Nothing here may
     # name a path that does not exist yet: pytest exits 4 on a missing path, so the
     # whole contract would fail for a bookkeeping reason and teach everyone to
