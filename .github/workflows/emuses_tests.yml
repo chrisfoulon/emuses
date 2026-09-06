@@ -44,9 +44,16 @@ concurrency:
 jobs:
   fast-tests:
     runs-on: ubuntu-latest
-    # The core contract measures 3 m 32 s locally, of which tests/regression is 91 s.
-    # 15 gives a hosted runner, which is slower, honest room without letting a hang
-    # burn the budget.
+    # The core contract measures 4 m 24 s locally, of which tests/regression is 132 s,
+    # and 6 m 39 s on a hosted runner (measured 2026-09-06, run 34053559752). 15 gives
+    # honest room for a slower runner without letting a hang burn the budget.
+    #
+    # It grew from 3 m 32 s / 91 s when tests/regression gained a third dataset on
+    # 2026-09-06. Note --foreign-machine does NOT save that time: it deselects the value
+    # comparisons, but `regression_results` is session-scoped and
+    # test_pipeline_produces_the_expected_outputs is deliberately not machine_specific,
+    # so every dataset's pipeline still runs here. That is the point -- a gate that
+    # deselected its way to not executing the pipeline would be checking nothing.
     timeout-minutes: 15
 
     steps:

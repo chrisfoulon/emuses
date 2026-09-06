@@ -45,9 +45,157 @@ def _first(root, name):
     return hits[0] if hits else None
 
 
+def prediction_liveness(out_dir):
+    """Do the fitted models actually read the embedding coordinates?
+
+    Returns ``(n_models, n_dead, depends_on_coordinates)``.
+
+    THE MEASUREMENT THIS EXISTS FOR. A regression suite pins a number; it cannot
+    tell you whether that number is *capable* of moving. On the two 40-sample
+    datasets it was not: in every fold the winning ElasticNet has all coefficients
+    exactly zero, so the model is a constant intercept -- the training-fold mean --
+    and its score is a function of the fold split alone, mathematically independent
+    of the coordinates it was handed. Every prediction baseline on those datasets
+    therefore survives *any* change to the coordinate system, which is how the
+    isotropic rescale passed 16 tests bit-identically while moving one axis from
+    spanning 1.0 to spanning 0.24. ADR 2.9d.
+
+    WHAT IT DETECTS, EXACTLY: a final estimator that exposes ``coef_`` with every
+    entry zero. That is the failure that actually occurred. A model with no
+    ``coef_`` (``KernelRegressor``) is counted as live, because a kernel over the
+    embedding reads coordinates by construction -- but note this cannot detect a
+    kernel degenerate in some other way, e.g. a bandwidth so wide every prediction
+    is the global mean. Do not read a True here as "the prediction path is sound".
+    It means "at least one model is not the specific constant that fooled us".
+
+    Nothing filename-derived is returned: the saved pipelines carry the joblib
+    version in their names (``..._joblib1_5_2.joblib``), so a baseline recording
+    one would break on a dependency bump for no scientific reason.
+    """
+    import joblib
+
+    n_models = 0
+    n_dead = 0
+    for path in sorted(Path(out_dir).rglob("best_pipeline_*.joblib")):
+        try:
+            estimator = joblib.load(path)
+        except Exception as e:
+            # Deliberately NOT skipped. Skipping would drop this model from both
+            # the numerator and the denominator, so a run where most pipelines
+            # failed to load could still report a healthy liveness ratio from the
+            # one that did -- a check quietly measuring less than it claims, which
+            # is the failure mode this whole exercise exists to remove. A saved
+            # pipeline that will not load is anomalous on its own; say so.
+            raise RuntimeError(
+                f"could not load {path.name} to check whether the prediction "
+                f"reads the embedding coordinates: {e}. This is not a numerical "
+                f"regression -- the pipeline the run just wrote cannot be read "
+                f"back. Fix that before reading anything else in this suite."
+            ) from e
+        final = estimator.steps[-1][1] if hasattr(estimator, "steps") else estimator
+        n_models += 1
+        coef = getattr(final, "coef_", None)
+        if coef is not None and not np.any(np.asarray(coef)):
+            n_dead += 1
+
+    return n_models, n_dead, n_models > 0 and n_dead < n_models
+
+
 def pairwise_distances(points):
     diff = points[:, None, :] - points[None, :, :]
     return np.sqrt((diff**2).sum(-1))
+
+
+def confidence_liveness(out_dir):
+    """Does the grid confidence map say anything, and does it say the right thing?
+
+    Returns ``(n_maps, n_constant, sparsity_corr)``, where ``sparsity_corr`` is the
+    correlation between a grid point's distance to the nearest training sample and its
+    confidence, pooled over every map found (``nan`` if none, or if every map is flat).
+
+    WHY THESE TWO, EXACTLY:
+
+    - **Constant.** ``create_statistical_maps`` selects regions by a *percentile*
+      threshold on ``predictions * confidence``, and a percentile is invariant to
+      multiplication by a positive constant. So a confidence map with zero variance is
+      not a weak contribution to region selection, it is arithmetically none: the
+      regions come out identical to a run with no confidence at all. That was the state
+      of the code until 2026-09-06, when every regression model was assigned a literal
+      0.8 and the aggregation took the standard deviation of identical constants.
+    - **Sign of the correlation.** A varying map could still vary the wrong way. The
+      claim the confidence is making is that the surface is less trustworthy where the
+      training data is sparse, so the correlation must be negative. Pinning the sign
+      rather than the value keeps this off the machine-specific list -- the value moves
+      with the embedding, the sign does not.
+
+    Reads only files the run already wrote, so it costs no pipeline time.
+    """
+    from scipy.spatial import cKDTree
+
+    out_dir = Path(out_dir)
+    scaling_path = _first(out_dir, "embedding_scaling.json")
+    emb_path = _first(out_dir, "embeddings.npy")
+
+    n_maps = 0
+    n_constant = 0
+    distances = []
+    confidences = []
+
+    train = None
+    if scaling_path and emb_path:
+        scaling = json.loads(scaling_path.read_text())
+        raw = np.load(emb_path)
+        # embeddings.npy is the RAW training embedding (the scaling file says so in
+        # `embeddings_npy_space`); the grid lives in the rescaled space, so it has to be
+        # put through the same transform or "distance to the nearest training point" is
+        # measured in the wrong units. The bounding-box assertion below is what proves
+        # the transform was the right one -- the grid was built from exactly these
+        # points, so its extent and theirs must agree.
+        lo = np.array(scaling["min_embeddings"], dtype=float)
+        hi = np.array(scaling["max_embeddings"], dtype=float)
+        train = (raw - lo) / float(np.max(hi - lo))
+
+    for conf_path in sorted(out_dir.rglob("confidence_values.npy")):
+        conf = np.load(conf_path)
+        n_maps += 1
+        # Peak-to-peak, not std, and against a tolerance rather than exactly zero.
+        # `multi_target_regression`'s target_1 map holds 10000 copies of one value
+        # (np.unique gives 1 element, ptp is exactly 0), yet np.std returns 1.97e-31 --
+        # rounding in the variance of a tiny constant. An exact `std == 0` test called
+        # that map "varying", computed a correlation over what is numerically noise, and
+        # produced a confident-looking negative sign that meant nothing. Confidence is
+        # defined on [0, 1], so an absolute epsilon is meaningful here.
+        if float(np.ptp(conf)) < 1e-9:
+            n_constant += 1
+            continue
+        grid_path = conf_path.parent / "grid_coordinates.npy"
+        if train is None or not grid_path.exists():
+            continue
+        grid = np.load(grid_path)
+        if not (np.allclose(grid.min(axis=0), train.min(axis=0), atol=1e-9)
+                and np.allclose(grid.max(axis=0), train.max(axis=0), atol=1e-9)):
+            # Deliberately NOT skipped quietly. If these disagree the rescale above is
+            # not the one the pipeline used, and every distance computed from it is
+            # meaningless -- but a correlation would still come back as a plausible
+            # number, which is the failure mode this whole suite exists to catch.
+            raise RuntimeError(
+                f"{conf_path.parent.name}: the grid spans "
+                f"{grid.min(axis=0).tolist()}..{grid.max(axis=0).tolist()} but the "
+                f"rescaled training embedding spans {train.min(axis=0).tolist()}.."
+                f"{train.max(axis=0).tolist()}. The rescale used here is not the one "
+                f"the grid was built with, so a confidence-versus-sparsity correlation "
+                f"would be measured in the wrong coordinates."
+            )
+        d, _ = cKDTree(train).query(grid)
+        distances.append(d)
+        confidences.append(conf)
+
+    if distances:
+        corr = float(np.corrcoef(np.concatenate(distances),
+                                 np.concatenate(confidences))[0, 1])
+    else:
+        corr = float("nan")
+    return n_maps, n_constant, corr
 
 
 def extract_metrics(out_dir):
@@ -103,6 +251,21 @@ def extract_metrics(out_dir):
                     except ValueError:
                         pass
     metrics.update(scores)
+
+    n_models, n_dead, live = prediction_liveness(out_dir)
+    metrics["n_prediction_models"] = n_models
+    metrics["n_constant_prediction_models"] = n_dead
+    metrics["prediction_depends_on_coordinates"] = live
+
+    n_maps, n_flat, sparsity_corr = confidence_liveness(out_dir)
+    metrics["n_confidence_maps"] = n_maps
+    metrics["n_constant_confidence_maps"] = n_flat
+    # The sign, not the value: see confidence_liveness. Recorded as a bool so a
+    # machine that shifts the embedding cannot fail this on a tolerance.
+    metrics["confidence_falls_with_sparsity"] = (
+        bool(sparsity_corr < 0) if sparsity_corr == sparsity_corr else None
+    )
+
     return metrics
 
 

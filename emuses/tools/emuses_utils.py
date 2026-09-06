@@ -379,6 +379,24 @@ def compute_stats_on_corrected_clusters(
 
 
 class DiscreteLatentSpace:
+    """A discretised morphospace. **Not** the convention the pipeline uses.
+
+    This rescales with a single global scalar min and max over the whole array
+    (``self.raw_embeddings.max()`` / ``.min()`` below), which preserves proportions but
+    anchors only the widest axis at 0. The pipeline (``umap_stage``) subtracts each
+    axis's *own* minimum and divides by one global range, so every axis starts at 0 and
+    the widest spans exactly [0, 1] -- proportions equally preserved, tighter packing
+    against a grid. ``embedding_scaling.json`` records which was used, in ``mode``:
+    ``isotropic_global_range`` for the pipeline's.
+
+    The difference is a per-axis translation, so distances and shapes agree between the
+    two; absolute coordinates do not. Left as it is rather than reconciled because
+    nothing in ``emuses/``, ``tests/`` or ``scripts/`` constructs this class -- changing
+    a convention with no callers buys nothing and would make this note untrue. If it
+    acquires a caller that must share coordinates with a run folder, switch it to
+    ``embedding_spaces.load_scaling()`` rather than re-deriving the factors here.
+    """
+
     def __init__(self, trained_umap, raw_embeddings=None, margin=0):
         self.overlap = None
         self.margin = margin
