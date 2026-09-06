@@ -317,6 +317,7 @@ jobs:
     # Restoring arm64 means giving torch a `; platform_machine == "x86_64"` marker
     # on triton and accepting the emulated builds -- not just adding the platform back.
     - name: Build and push Docker image
+      id: build
       uses: docker/build-push-action@v7
       with:
         context: .
@@ -342,12 +343,18 @@ jobs:
     # The scan output and the SBOM are uploaded either way, so the information is
     # not lost. Flip this back to fail-build: true once the Dependabot backlog is
     # triaged and the count is small enough that a failure means something new.
+    # Both scanners address the image BY DIGEST, not by tag. The obvious
+    # `:${{ github.sha }}` is wrong and fails with `manifest unknown`: the tag
+    # list comes from metadata-action above, whose `type=sha` emits the short,
+    # prefixed `sha-4b975bf` -- the bare 40-char SHA is never a tag on this
+    # image. The digest is what the push just produced, so it cannot drift out
+    # of step with the tagging rules the way a hand-written tag did.
     - name: Run Grype vulnerability scanner
       id: grype
       continue-on-error: true
       uses: anchore/scan-action@v7
       with:
-        image: ghcr.io/${{ github.repository }}:${{ github.sha }}
+        image: ghcr.io/${{ github.repository }}@${{ steps.build.outputs.digest }}
         fail-build: false
         severity-cutoff: high
         output-format: sarif
@@ -355,7 +362,7 @@ jobs:
     - name: Generate SBOM with Syft
       uses: anchore/sbom-action@v0
       with:
-        image: ghcr.io/${{ github.repository }}:${{ github.sha }}
+        image: ghcr.io/${{ github.repository }}@${{ steps.build.outputs.digest }}
         format: spdx-json
         output-file: sbom.spdx.json
 
