@@ -77,10 +77,22 @@ class GridCreator:
             logger.warning(f"Embeddings may not be properly rescaled. Range: [{min_vals}, {max_vals}]. "
                            f"Expected approximately [0, 1].")
 
-        # Create linspace grids for both dimensions
-        # Use the actual range of embeddings with small padding
-        x_min, x_max = max(0, np.min(embeddings[:, 0]) - 0.05), min(1, np.max(embeddings[:, 0]) + 0.05)
-        y_min, y_max = max(0, np.min(embeddings[:, 1]) - 0.05), min(1, np.max(embeddings[:, 1]) + 0.05)
+        # The grid spans exactly the data, with no padding.
+        #
+        # There used to be a +/-0.05 pad clamped to [0, 1]. Under the old per-axis
+        # rescale the data spanned exactly [0, 1] on both axes, so the clamps cancelled
+        # the pad exactly and it did nothing -- it was inert for as long as it existed.
+        # Under the isotropic rescale (2026-09-06) the narrow axis no longer reaches 1,
+        # so the pad would have woken up ASYMMETRICALLY: still 0 at the bottom, where
+        # the clamp bites, and +0.05 at the top, where it does not. That is a grid
+        # silently off-centre against the data it describes.
+        #
+        # Its stated purpose was display -- making sure points on the edge stay
+        # visible. Matplotlib already does that: axes.xmargin/axes.ymargin default to
+        # exactly 0.05. Padding the DATA grid to solve a rendering problem also changes
+        # what gets predicted, thresholded and turned into regions.
+        x_min, x_max = np.min(embeddings[:, 0]), np.max(embeddings[:, 0])
+        y_min, y_max = np.min(embeddings[:, 1]), np.max(embeddings[:, 1])
 
         x_coords = np.linspace(x_min, x_max, self.grid_size)
         y_coords = np.linspace(y_min, y_max, self.grid_size)

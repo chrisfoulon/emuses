@@ -41,7 +41,10 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-from emuses.tools.embedding_spaces import SCALING_FILENAME, rescale_embedding
+from emuses.tools.embedding_spaces import (ISOTROPIC_GLOBAL_RANGE,
+                                           SCALING_FILENAME,
+                                           isotropic_scaling_factors,
+                                           rescale_embedding)
 
 N_SAMPLES = 120
 N_FEATURES = 8
@@ -240,15 +243,36 @@ class TestFreshTrainingStillComputesItsOwn:
 
         Without this, "always load from somewhere else" would pass every test above
         and leave nothing able to produce factors in the first place.
+
+        Note the convention this asserts: `max_embeddings` is NOT each axis's own
+        maximum. Since 2026-09-06 the rescale is isotropic, so `max = min + span` with
+        one shared span, and `max` is the corner of the square box mapped onto [0, 1].
+        This test asserted the per-axis convention until then and failed the moment the
+        mode changed, which is what it is for.
         """
         folder = tmp_path / "fresh"
         _run_stage(_config(folder), _context(seed=3))
 
         params = _scaling(folder)
         raw = np.load(folder / "embeddings.npy")
+        lower, upper = isotropic_scaling_factors(raw)
+
+        assert params["mode"] == ISOTROPIC_GLOBAL_RANGE
+        np.testing.assert_allclose(
+            params["min_embeddings"], lower, rtol=1e-6, atol=1e-6
+        )
+        np.testing.assert_allclose(
+            params["max_embeddings"], upper, rtol=1e-6, atol=1e-6
+        )
+        # Spelled out rather than only delegated, so the test still says what the
+        # convention IS if isotropic_scaling_factors is ever the thing that broke.
         np.testing.assert_allclose(
             params["min_embeddings"], raw.min(axis=0), rtol=1e-6, atol=1e-6
         )
-        np.testing.assert_allclose(
-            params["max_embeddings"], raw.max(axis=0), rtol=1e-6, atol=1e-6
+        divisor = np.asarray(params["max_embeddings"]) - np.asarray(
+            params["min_embeddings"]
+        )
+        assert np.allclose(divisor, divisor[0]), "every axis must share one divisor"
+        assert divisor[0] == pytest.approx(
+            (raw.max(axis=0) - raw.min(axis=0)).max(), rel=1e-6
         )

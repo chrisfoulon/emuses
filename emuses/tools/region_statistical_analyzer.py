@@ -235,30 +235,80 @@ class RegionStatisticalAnalyzer:
         boundary_points = np.column_stack(np.where(boundary))
         return boundary_points
 
+    @staticmethod
+    def _grid_axes(grid_coords: np.ndarray, grid_size: int):
+        """Recover the two 1-D axes of the grid that produced `grid_coords`.
+
+        `GridCreator` builds the grid as ``meshgrid(x_coords, y_coords)`` raveled
+        row-major, so entry ``k`` is ``(x[k % grid_size], y[k // grid_size])``. Taking
+        the first row and the strided first column recovers the axes exactly, whatever
+        bounds the grid was built over.
+
+        Returns ``(x_axis, y_axis)``, each of length `grid_size`.
+        """
+        grid_coords = np.asarray(grid_coords)
+        if grid_coords.ndim != 2 or grid_coords.shape[1] != 2:
+            raise ValueError(
+                f"grid_coords must have shape (grid_size**2, 2), got {grid_coords.shape}"
+            )
+        if len(grid_coords) != grid_size * grid_size:
+            raise ValueError(
+                f"grid_coords has {len(grid_coords)} points but the significance map "
+                f"implies a {grid_size}x{grid_size} grid. These describe the same grid "
+                f"and must agree; mapping regions back to coordinates with the wrong "
+                f"one silently selects the wrong training samples."
+            )
+        return grid_coords[:grid_size, 0], grid_coords[::grid_size, 1]
+
     def map_grid_to_training_samples(self,
                                      significance_values: np.ndarray,
                                      training_embeddings: np.ndarray,
                                      percentile_threshold: float,
-                                     significance_source: str) -> Dict[str, np.ndarray]:
+                                     significance_source: str,
+                                     grid_coords: np.ndarray) -> Dict[str, np.ndarray]:
         """
         Map significant grid regions to training samples using region-based approach.
 
-        COORDINATE SPACE: All operations in rescaled embedding space (0-1 range).
-        Grid indices (0-grid_size) map directly to coordinates via simple linear scaling: coord = index/grid_size.
+        COORDINATE SPACE: the rescaled embedding space, whatever extent the grid
+        actually covers. Grid indices are converted back through the grid's OWN axes
+        (`grid_coords`), which is the only thing that knows its bounds.
 
-        DISCONNECTED REGIONS: Uses connected components to handle multiple disconnected regions,
-        processing each region separately for point inclusion.
+        Three things were wrong with the previous conversion, ``region_coords /
+        grid_size``, and all three are silent -- they move which samples enter a
+        region, and therefore which voxels come out significant, without changing the
+        shape of any output:
+
+        1. **It assumed the grid spans exactly [0, 1].** That held only because the
+           embedding was rescaled per-axis. Under the isotropic rescale the narrow axis
+           stops short of 1, and the grid spans the data rather than the unit square,
+           so the assumption is simply false.
+        2. **It was off by one.** ``linspace(lo, hi, n)`` puts index ``n-1`` at ``hi``;
+           dividing by ``n`` puts it at ``(n-1)/n``. About 1% at grid_size=100, on top
+           of (1).
+        3. **It compared transposed axes.** ``significance_values.reshape(g, g)``
+           indexes ``[y, x]`` -- the grid is raveled row-major over y -- so
+           ``np.where`` returns ``(iy, ix)``, and that was compared column-for-column
+           against `training_embeddings`, whose columns are ``(x, y)``. Every region
+           was reflected about the diagonal. Invisible on a square grid over a square
+           extent with roughly symmetric data, which is what the old per-axis rescale
+           always produced.
+
+        DISCONNECTED REGIONS: Uses connected components to handle multiple disconnected
+        regions, processing each region separately for point inclusion.
 
         Parameters
         ----------
         significance_values : np.ndarray
             Flat array of significance values with shape (grid_size²,)
         training_embeddings : np.ndarray
-            Training sample coordinates in rescaled space (0-1 range) with shape (n_samples, 2)
+            Training sample coordinates in rescaled space with shape (n_samples, 2)
         percentile_threshold : float
             Percentile threshold for significance filtering (e.g., 5.0 for 5%-95% range)
         significance_source : str
             Source type: 'prediction' (uses both high+low regions) or 'correlation' (high only)
+        grid_coords : np.ndarray
+            The grid the significance values were evaluated on, shape (grid_size², 2).
+            Required: it is what says where index (0, 0) and (n-1, n-1) actually are.
 
         Returns
         -------
@@ -271,8 +321,18 @@ class RegionStatisticalAnalyzer:
         if grid_size * grid_size != len(significance_values):
             raise ValueError(f"significance_values length {len(significance_values)} is not a perfect square")
 
-        # Step 1: Create grid from flat values
+        # Step 1: Create grid from flat values. Row-major over y, so this indexes [y, x].
         significance_grid = significance_values.reshape(grid_size, grid_size)
+
+        # The grid's own axes. Index (iy, ix) is at (x_axis[ix], y_axis[iy]) -- note the
+        # order swap, which is the point.
+        x_axis, y_axis = self._grid_axes(grid_coords, grid_size)
+
+        def _to_embedding_coords(region_coords):
+            """(iy, ix) grid indices -> (x, y) coordinates, via the grid's real axes."""
+            return np.column_stack(
+                [x_axis[region_coords[:, 1]], y_axis[region_coords[:, 0]]]
+            )
 
         # Step 2: Compute percentile thresholds
         high_threshold = np.percentile(significance_values, 100 - percentile_threshold)
@@ -290,9 +350,7 @@ class RegionStatisticalAnalyzer:
                 region_coords = np.column_stack(np.where(region_mask))
 
                 if len(region_coords) > 0:
-                    # Convert grid indices to rescaled embedding coordinates (0-1 range)
-                    # Simple linear mapping: coordinate = grid_index / grid_size
-                    region_coords_scaled = region_coords / grid_size
+                    region_coords_scaled = _to_embedding_coords(region_coords)
 
                     # Create bounding box for efficiency
                     min_coords = region_coords_scaled.min(axis=0)
@@ -320,8 +378,7 @@ class RegionStatisticalAnalyzer:
                     region_coords = np.column_stack(np.where(region_mask))
 
                     if len(region_coords) > 0:
-                        # Convert grid indices to rescaled embedding coordinates
-                        region_coords_scaled = region_coords / grid_size
+                        region_coords_scaled = _to_embedding_coords(region_coords)
 
                         # Create bounding box
                         min_coords = region_coords_scaled.min(axis=0)
@@ -521,7 +578,8 @@ class RegionStatisticalAnalyzer:
             significance_values=significance_values,
             training_embeddings=training_embeddings,
             percentile_threshold=percentile_threshold,
-            significance_source=significance_source
+            significance_source=significance_source,
+            grid_coords=grid_coords
         )
 
         logger.info(f"Mapped to training samples: {len(significant_sample_indices['high'])} high significance, "

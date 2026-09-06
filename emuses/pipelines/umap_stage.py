@@ -18,7 +18,10 @@ from emuses.tools.cohort_identity import (build_cohort_record, cohorts_match,
 from emuses.tools.embedding_dimensionality import (
     check_embedding_matches_stages, declared_n_components,
     validate_metrics_for_dimensionality)
-from emuses.tools.embedding_spaces import SCALING_FILENAME, load_scaling
+from emuses.tools.embedding_spaces import (ISOTROPIC_GLOBAL_RANGE,
+                                           PER_AXIS, SCALING_FILENAME,
+                                           isotropic_scaling_factors,
+                                           load_scaling)
 from emuses.tools.emuses_utils import rescale_embedding
 from emuses.tools.UMAP_utils import (
     load_umap_model, train_and_save_umap_optim_with_nested_clustering)
@@ -524,14 +527,60 @@ class UMAPStage(PipelineStage):
             self.min_embeddings = np.asarray(inherited_scaling["min_embeddings"])
             self.max_embeddings = np.asarray(inherited_scaling["max_embeddings"])
             rescale_margin = inherited_scaling.get("margin", 0)
+            # A folder written before 2026-09-06 has no "mode" and is per-axis. Keep
+            # its convention rather than imposing the current one: its saved predictors
+            # were fitted in that space, and quietly re-rescaling would move every
+            # subject relative to them.
+            scaling_mode = inherited_scaling.get("mode", PER_AXIS)
             logger.info(
                 f"Reusing the embedding scaling recorded in {scaling_source} rather "
-                f"than recomputing it from this run's {len(self.embeddings)} subjects."
+                f"than recomputing it from this run's {len(self.embeddings)} subjects "
+                f"(mode={scaling_mode})."
             )
         else:
-            self.min_embeddings = self.embeddings.min(axis=0)
-            self.max_embeddings = self.embeddings.max(axis=0)
+            # ISOTROPIC. Each axis is shifted by its OWN minimum and every axis is
+            # divided by ONE range -- the largest. Both axes therefore start at 0, the
+            # widest spans exactly [0, 1], and the others span less. Proportions are
+            # preserved.
+            #
+            # This replaced an independent per-axis min-max on 2026-09-06, which is
+            # ill-posed on a UMAP embedding. UMAP's loss depends only on pairwise
+            # distances, so its solution is fixed only up to rotation, reflection and
+            # translation: any rotation of an embedding is an equally valid output of
+            # the same fit. Per-axis min-max therefore depends on the arbitrary
+            # orientation the optimiser happened to land in. Measured -- rotate an
+            # embedding 45 degrees and re-normalise, then compare pairwise distances
+            # against the unrotated normalisation:
+            #
+            #     per-axis    pearson r 0.9598, max distortion 37.0%, mean 11.9%
+            #     isotropic   pearson r 1.000000, max distortion  0.0%, mean  0.0%
+            #
+            # A circle in per-axis space is an ellipse in UMAP space whose orientation
+            # is set by the seed. Everything downstream is metric -- kernel bandwidths,
+            # distance-weighted regressors, region geometry -- so a distorted metric is
+            # a distorted result, silently.
+            #
+            # It also settles a disagreement the pipeline had with itself: HDBSCAN
+            # clusters on the RAW coordinates above, before this rescale, so under
+            # per-axis the clusterer and the predictors were using different metrics.
+            # An isotropic rescale is a similarity transform, so they now agree.
+            #
+            # Stored as min/max rather than as an offset and a scale so that
+            # embedding_scaling.json, rescale_embedding and inverse_rescale_embedding
+            # all keep working unchanged: rescale computes (X - min) / (max - min), so
+            # setting max = min + span makes that one denominator for every axis.
+            # `max_embeddings` is consequently the top of the SQUARE box mapped onto
+            # [0, 1], not each axis's own maximum -- which is what the `mode` field is
+            # recorded for. Do not read it as an extent.
+            #
+            # The arithmetic lives in embedding_spaces so the rotation-invariance
+            # property can be asserted on it directly, rather than only inferred from
+            # a pipeline run.
+            self.min_embeddings, self.max_embeddings = isotropic_scaling_factors(
+                self.embeddings
+            )
             rescale_margin = 0
+            scaling_mode = ISOTROPIC_GLOBAL_RANGE
 
         # Save embedding scaling parameters for inference.
         #
@@ -553,10 +602,10 @@ class UMAPStage(PipelineStage):
             'min_embeddings': np.asarray(self.min_embeddings).tolist(),
             'max_embeddings': np.asarray(self.max_embeddings).tolist(),
             'margin': rescale_margin,
+            'mode': scaling_mode,
             'embeddings_npy_space': 'raw',
             'test_embeddings_npy_space': 'rescaled',
         })
-        embedding_scaling.setdefault('mode', 'per_axis')
         scaling_file = self.config.output_folder / SCALING_FILENAME
         with open(scaling_file, 'w') as f:
             json.dump(embedding_scaling, f)

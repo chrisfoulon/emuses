@@ -437,6 +437,35 @@ problem, the `enhanced-cli-typer` hang and repo pollution by test output are all
     **3** real confidence · **4** local linear · **5** support masking. Re-record and measure after
     each — bundling makes "did the science change" unanswerable.
 
+    **Step 2 DONE 2026-09-06 — and it found that the regression baselines cannot see it.**
+    Isotropic rescale landed (`isotropic_global_range`; each axis shifted by its own minimum,
+    all axes divided by ONE range). Also removed the now-asymmetric 0.05 grid padding and fixed
+    `region_statistical_analyzer`'s grid→coordinate mapping, which was wrong **three** ways:
+    it assumed the grid spans [0,1], it was off by one, and **it compared transposed axes**
+    (`reshape(g,g)` indexes `[y,x]`; `training_embeddings` columns are `(x,y)`), so every
+    significant region was reflected about the diagonal. All three invisible under per-axis
+    scaling over a square extent — one wrong thing hiding another.
+
+    ⚠️ **`tests/regression` passed BIT-IDENTICALLY through this**, on both datasets, while the
+    narrow axis went from spanning 1.0 to 0.24 (anisotropy 4.1). Cause, measured: on both
+    regression datasets, in every fold, the winning ElasticNet has **all coefficients exactly
+    zero** — L1 zeroes them, the prediction is a constant intercept, so `target_0_*_Score` is a
+    function of the fold split alone and is mathematically independent of the coordinates. The
+    eight `target_0_*` baselines pin **nothing** about the coordinate→prediction path. The
+    raw-derived baselines (`_embedding_distances`, `composite_score`, `metric_*`,
+    `_cluster_labels`) are unaffected and did correctly stay bit-identical, which is what
+    confirmed the change had not leaked into the training path. **No baseline was re-recorded:
+    nothing moved.** ADR §2.9d.
+
+    Evidence for the change is therefore property-based, not baseline-based:
+    `tests/test_isotropic_rescaling.py` (rotation invariance to 1e-12, with the per-axis
+    counter-example kept in the suite — per-axis distorts pairwise distances 37% under a 45°
+    rotation, isotropic 0.0%), `tests/test_region_grid_coordinate_mapping.py` (each of the three
+    mapping defects perturbed and independently caught), and the swiss roll, where the signal is
+    real: **L0 0.9997, L1 0.9989, L2 0.998** — unchanged from per-axis, as a similarity
+    transform must be. Reverting the isotropic factors fails 6 tests; restoring the grid padding
+    fails 2.
+
     **Step 1 DONE 2026-09-06** on `fix/reused-morphospace-keeps-its-scaling`. Baseline-neutral,
     confirmed: `tests/regression` 16 passed with the baselines unmodified. Both dead routes deleted;
     deleting the first one exposed a live defect (pipeline-integrated inference was never rescaling
@@ -463,6 +492,24 @@ problem, the `enhanced-cli-typer` hang and repo pollution by test output are all
     **Live defect fixed on the way past:** for regression the grid's confidence map is a hardcoded
     constant (`grid_creator.py:202`), so `visualization_threshold` filters nothing. The real
     ensemble spread is computed at `:226` and discarded.
+
+0a. [ ] **The prediction baselines are degenerate — decide what to do about it.**
+       Found 2026-09-06 while landing the isotropic rescale. On BOTH regression datasets, in
+       every fold, the winning ElasticNet has all coefficients exactly zero, so
+       `target_0_*_Score` is a constant model's score: independent of the embedding
+       coordinates by construction. Any future change to how coordinates reach the predictors
+       will pass `tests/regression` regardless of whether it is right. **Do not read a green
+       `target_0_*` as confirmation that a coordinate-space change is inert.**
+
+       The prediction path itself is fine — the swiss roll reaches r = 0.998. It is the
+       40-sample regression fixtures that have nothing to fit. Two options, both of which
+       re-record every prediction baseline, which is why neither was done here:
+       (a) widen `quick_train_dict`'s alpha range downward so the L1 penalty stops zeroing
+       everything, or (b) pin the regression fixture to data with real signal (the swiss roll
+       is already wired and reproducible). (b) is the better test and the bigger change.
+       `test_baseline_is_not_degenerate` already guards the clustering; the equivalent for
+       prediction — assert the winning model has at least one non-zero coefficient — is the
+       cheap guard to add either way. Detail in ADR §2.9d.
 
 0. [ ] **Scope settled 2026-09-05, and the work queue that follows from it.** EMUSES is a local
        tool, or a service an admin runs on one lab/university server with users submitting jobs

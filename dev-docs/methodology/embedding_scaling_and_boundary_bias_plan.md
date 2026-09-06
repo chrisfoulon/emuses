@@ -162,21 +162,55 @@ with the baselines untouched.
   exactly [0,1]. True today *only because of* per-axis scaling. Derive coordinates from the
   grid's actual bounds. (It is also off by one — index 99 maps to 0.99 where `linspace` put
   it at 1.0. ~1% today; ~20% wrong after the switch.)
-- `emuses_utils.EmbeddingSpace` (`:400-401`) already uses a global scalar. Reconcile it with
+- `emuses_utils.DiscreteLatentSpace` (the class the plan mis-named `EmbeddingSpace`) already uses
+  a global scalar. Reconcile it with
   the new convention or document why it differs.
 
-**Verification**
+**Verification — DONE 2026-09-06, and item 1 did not go as forecast. Read this before
+planning Steps 3-5, because it changes what their verification can rely on.**
 
-1. `pytest tests/regression/ -q` **before** re-recording. Expect: `target_0_*` fail;
-   `composite_score`, `metric_*`, `_embedding_distances`, `_cluster_labels` **all pass
-   untouched**. If any of the latter move, stop — the change leaked.
-2. Re-record with `--regen-baselines`. **Commit the old baseline file first** so the diff is
-   reviewable and the before/after is recoverable.
-3. Full `--core` green.
-4. Rotation invariance test: rotate an embedding, rescale, assert pairwise-distance structure
-   is preserved to 1e-12. This is the property per-axis lacked and is the reason for the
-   change; it belongs in the suite, not just in this document.
-5. Re-run `scripts/swiss_roll_diagnostic.py`; L0/L1/L2 recorded in STATUS.md.
+1. `pytest tests/regression/ -q` before re-recording. **Forecast: `target_0_*` fail.
+   Actual: all 16 passed, bit-identically, on both datasets** — while the narrow axis went
+   from spanning 1.0 to spanning 0.24 (anisotropy 4.1). The forecast half that held was the
+   invariant: `composite_score`, `metric_*`, `_embedding_distances` and `_cluster_labels`
+   stayed bit-identical, confirming the change did not leak into the training path.
+
+   **Cause, measured, not inferred:** on both regression datasets, in every fold, the winning
+   ElasticNet has *all coefficients exactly zero*. The L1 penalty zeroes them, the prediction
+   is a constant intercept (the training-fold mean), so `target_0_*_Score` is a function of
+   the fold split alone and is mathematically independent of the coordinates the models were
+   handed. The eight `target_0_*` baselines pin nothing about the coordinate→prediction path.
+
+   **This invalidates the blast-radius table above for every remaining step.** "moves
+   `target_0_*`" was the wrong prediction for Step 2 and is the wrong prediction for Steps 3
+   and 4 too: local linear (Step 4) changes the `kernel` family, which never wins here, and
+   real confidence (Step 3) changes region selection, which feeds the maps rather than the CV
+   scores. **Steps 3-5 must bring their own evidence.** Recorded as an open decision in
+   `STATUS.md` item 0a and ADR §2.9d.
+
+2. Re-record with `--regen-baselines` — **not done, and correctly so: nothing moved.** The
+   baselines are untouched.
+3. Full `--core` green. Done. One expected failure on the way:
+   `test_a_training_run_derives_the_factors_from_its_own_embedding` pinned the per-axis
+   convention in Step 1 and failed the moment the mode changed, which is what it is for. It
+   now asserts the isotropic convention.
+4. Rotation invariance: `tests/test_isotropic_rescaling.py`. Preserved to 1e-12 at 15°, 45°,
+   90° and 137°, with the per-axis counter-example kept in the suite so the test cannot pass
+   vacuously. Perturbation: reverting `isotropic_scaling_factors` to per-axis fails 6 tests.
+5. `scripts/swiss_roll_diagnostic.py` re-run: **L0 0.9997, L1 0.9989, L2 0.998**, unchanged
+   from per-axis — which is what a similarity transform must do, and is the only place in the
+   verification where the prediction path actually fits something. Recorded in `STATUS.md`.
+
+**Also fixed here, and the reason the region mapper was in scope at all:** it was wrong three
+ways, not one. Beyond the [0, 1] assumption and the off-by-one that this plan named, it
+**compared transposed axes** — `reshape(g, g)` indexes `[y, x]` while `training_embeddings`
+columns are `(x, y)`, so every significant region was reflected about the diagonal. Invisible
+on a square grid over a square extent, which per-axis always produced. It now maps through the
+grid's own axes, recovered from the `grid_coords` the values were evaluated on rather than
+reconstructed. Each of the three defects was perturbed separately and each is caught by
+`tests/test_region_grid_coordinate_mapping.py`. This overlaps item **G2** in
+`heatmaps_clusters_and_effect_size_maps.md`, which that document owns — the transposition is
+new information for it.
 
 ---
 

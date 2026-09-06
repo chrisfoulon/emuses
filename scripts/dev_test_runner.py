@@ -85,6 +85,13 @@ CORE_SUITES = [
     # those factors were dead, and each had a passing test that built its own input.
     ("tests/test_reused_morphospace_keeps_its_scaling.py", "Reuse keeps the source scaling"),
     ("tests/test_scaling_single_source.py", "Scaling factors have exactly one home"),
+    # Added with the isotropic rescale. These carry the whole numerical burden of that
+    # change: tests/regression cannot see it, because on both regression datasets the
+    # winning ElasticNet zeroes every coefficient, so target_0_*_Score is a constant
+    # model's score and is independent of the coordinates by construction. See the
+    # 2026-09-06 note in STATUS.md before trusting a green regression run here.
+    ("tests/test_isotropic_rescaling.py", "Rescaling is rotation-invariant"),
+    ("tests/test_region_grid_coordinate_mapping.py", "Grid indices map back to real coordinates"),
     # A branch that adds tests adds them here, in its own commit. Nothing here may
     # name a path that does not exist yet: pytest exits 4 on a missing path, so the
     # whole contract would fail for a bookkeeping reason and teach everyone to

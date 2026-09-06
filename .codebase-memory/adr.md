@@ -201,7 +201,7 @@ space=...)`, where `space` is keyword-only with **no default**.
 **Two rescaling modes exist and are not interchangeable**, both reached through
 `rescale_embedding`: *per-axis* (presets passed as arrays, what the pipeline uses; each
 dimension independently spans [0, 1], aspect ratio not preserved) and *global* (presets
-omitted, what `EmbeddingSpace` uses; one scalar min/max, proportions preserved). Both are
+omitted, what `DiscreteLatentSpace` uses; one scalar min/max, proportions preserved). Both are
 called "rescaled embeddings" in the code. `mode` in the JSON disambiguates.
 
 **Single implementation**: `rescale_embedding` / `inverse_rescale_embedding` live in
@@ -262,6 +262,75 @@ pre-existing write-only keys are listed there as known debt, not endorsed.
 (`_scaling_dir` / `_read_scaling_into`, one reader replacing three hand-rolled JSON
 parses), `tests/test_reused_morphospace_keeps_its_scaling.py`,
 `tests/test_scaling_single_source.py`
+
+---
+
+### 2.4d Rescaling Is Isotropic, Because Per-Axis Is Ill-Posed on a UMAP Embedding
+
+**Decision** (2026-09-06): `UMAPStage` rescales by subtracting each axis's own minimum
+and dividing every axis by a **single** range — the largest. Both axes start at 0, the
+widest spans exactly [0, 1], proportions are preserved.
+`embedding_scaling.json` records `"mode": "isotropic_global_range"`. Folders written
+before this keep `"per_axis"` and are still read under their own convention; a reuse
+route inherits the source run's mode rather than imposing the current one, because the
+source's saved predictors were fitted in that space.
+
+Implemented as `embedding_spaces.isotropic_scaling_factors`, returning a `(min, max)`
+pair with `max = min + span`, so the shared denominator falls out of
+`rescale_embedding`'s `(X - min) / (max - min)` and every existing reader keeps working.
+**`max_embeddings` is therefore the corner of the square box mapped onto [0, 1], not
+each axis's own maximum** — that is what `mode` exists to disambiguate.
+
+**Rationale**: UMAP's loss depends only on pairwise distances, so its solution is fixed
+only up to rotation, reflection and translation — any rotation of an embedding is an
+equally valid output of the same fit. Per-axis min-max stretches each dimension
+independently and therefore depends on the arbitrary orientation the optimiser landed
+in. Measured, rotating an embedding 45° and re-normalising:
+
+| | pearson r of pairwise distances | max distortion | mean |
+|---|---|---|---|
+| per-axis | 0.9598 | **37.0%** | 11.9% |
+| isotropic | 1.000000 | 0.0% | 0.0% |
+
+Everything downstream is metric — kernel bandwidths, distance-weighted regressors, grid
+and region geometry — so a distorted metric is a distorted result, silently. It also
+settles a disagreement the pipeline had with itself: HDBSCAN clusters on the **raw**
+coordinates, before the rescale, so under per-axis the clusterer and the predictors were
+using different metrics. An isotropic rescale is a similarity transform, so they agree.
+
+**Two consequences fixed in the same change**, both of which were inert under per-axis
+and would have woken up wrong:
+- `grid_creator` padded the grid by ±0.05 clamped to [0, 1]. Under per-axis the data
+  spanned exactly [0, 1] so the clamps cancelled the pad exactly and it did nothing.
+  Isotropic would have made it **asymmetric** — 0 at the bottom, +0.05 at the top of the
+  narrow axis. Removed; matplotlib's own `axes.xmargin`/`ymargin` default is already
+  0.05, and padding the data grid to solve a rendering problem changes what gets
+  predicted and thresholded.
+- `region_statistical_analyzer` converted grid indices back to coordinates with
+  `region_coords / grid_size`. Wrong three ways: it assumed the grid spans [0, 1] (true
+  only under per-axis); it was off by one (`linspace` puts index `n-1` at `hi`); and it
+  **compared transposed axes** — `reshape(g, g)` indexes `[y, x]` while
+  `training_embeddings` columns are `(x, y)`, so every region was reflected about the
+  diagonal. It now maps through the grid's own axes, recovered from the `grid_coords`
+  it was evaluated on. The transposition was invisible on a square grid over a square
+  extent with roughly symmetric data — precisely what per-axis always produced.
+
+**⚠ The numerical regression suite cannot see any of this, and that is not a statement
+about the change.** Measured 2026-09-06: `tests/regression` passed **bit-identically**
+under the switch, on both datasets, despite the narrow axis going from spanning 1.0 to
+spanning 0.24 (anisotropy 4.1). The reason is that on both regression datasets the
+winning ElasticNet has **all coefficients exactly zero in every fold** — the L1 penalty
+zeroes them, the prediction is a constant intercept, and `target_0_*_Score` is therefore
+a function of the fold split alone, mathematically independent of the coordinates. The
+eight `target_0_*` baselines pin nothing about the coordinate→prediction path. See
+§2.9d. The evidence for this change is consequently the property tests
+(`tests/test_isotropic_rescaling.py`, rotation invariance to 1e-12, with the per-axis
+counter-example kept in the suite) and the swiss-roll diagnostic, where the signal is
+real: L1 0.9989 and L2 0.998, unchanged from per-axis, as a similarity transform must be.
+
+**Code**: `emuses/tools/embedding_spaces.py`, `emuses/pipelines/umap_stage.py`,
+`emuses/tools/grid_creator.py`, `emuses/tools/region_statistical_analyzer.py`,
+`tests/test_isotropic_rescaling.py`, `tests/test_region_grid_coordinate_mapping.py`
 
 ---
 
@@ -558,6 +627,37 @@ is 1.0 by construction, so a cluster assertion there could never fail. The regre
 `midbudget-serial` arm — the only measured config that is both reproducible (20/20 over three
 repeats) and non-degenerate (3 clusters, `noise_fraction` 0.1). `test_baseline_is_not_degenerate`
 fails if it ever drifts back.
+
+**⚠ The `target_0_*_Score` block pins nothing about the coordinate path** (measured
+2026-09-06). On both regression datasets, in every fold, the winning ElasticNet has **all
+coefficients exactly zero** — the L1 penalty zeroes them and the prediction is a constant
+intercept, the training-fold mean. The recorded scores are therefore a function of the
+fold split alone and are mathematically independent of the embedding coordinates the
+models were handed.
+
+How this surfaced: the per-axis→isotropic rescale (§2.4d) changed the narrow axis from
+spanning 1.0 to spanning 0.24 — a factor-4 change in the geometry every predictor sees —
+and all sixteen regression tests passed **bit-identically**. That green was not evidence
+the change was safe; it was evidence the suite cannot see this class of change at all.
+
+What this does and does not invalidate:
+- The raw-derived baselines (`_embedding_distances`, `composite_score`, `metric_*`,
+  `_cluster_labels`, `n_clusters`) are unaffected and remain the suite's real value. They
+  correctly stayed bit-identical across the rescale, which is what confirmed the change
+  had not leaked into the training path.
+- `test_baseline_is_not_degenerate` checks the *clustering* is non-degenerate. Nothing
+  checked the *prediction* was, and it is not.
+- Any future change that moves only how coordinates reach the predictors will pass this
+  suite regardless of correctness. Such changes need their own evidence — property tests,
+  or a dataset where the prediction path actually fits something (the swiss-roll
+  diagnostic reaches r = 0.998, so the path works; it is the 40-sample regression
+  fixtures that have nothing to fit).
+
+Not fixed here, because making the fixture non-degenerate re-records every prediction
+baseline and is a separate decision: either widen `quick_train_dict`'s alpha range
+downward, or pin the regression fixture to data with real signal. Recorded as open in
+`STATUS.md`. **Do not treat a green `target_0_*` as confirmation that a coordinate-space
+change is inert.**
 
 **Rationale for the comparison forms**: cluster ids are arbitrary, so structure is compared by
 adjusted Rand index rather than label equality. UMAP is defined only up to rotation and reflection,
