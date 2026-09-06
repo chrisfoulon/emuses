@@ -94,6 +94,29 @@ class GridCreator:
         x_min, x_max = np.min(embeddings[:, 0]), np.max(embeddings[:, 0])
         y_min, y_max = np.min(embeddings[:, 1]), np.max(embeddings[:, 1])
 
+        # Removing the pad exposed a case it had been hiding: with no extent at all,
+        # linspace(v, v, n) returns n copies of v, so every grid point is the SAME
+        # coordinate. Predictions, confidences and regions are then all computed on one
+        # location and reported as a map. The pad made that look like a real grid.
+        #
+        # Refused rather than padded, matching isotropic_scaling_factors, which raises on
+        # exactly this input for the same reason. One degenerate axis is allowed: an
+        # embedding collapsed onto a line is pathological but still has structure to
+        # place, and the rescale survives it.
+        spans = np.array([x_max - x_min, y_max - y_min], dtype=float)
+        if not np.isfinite(spans).all() or spans.max() <= 0:
+            raise ValueError(
+                f"The embedding has no extent to grid (axis ranges {spans.tolist()}). "
+                f"Every sample sits at the same coordinate, so there is no morphospace "
+                f"to lay a grid over: linspace would return {self.grid_size**2} copies "
+                f"of one point and everything downstream would report a map of it."
+            )
+        if spans.min() <= 0:
+            logger.warning(
+                f"Embedding is degenerate on one axis (ranges {spans.tolist()}); the "
+                f"grid is a line, and any region found on it has no width."
+            )
+
         x_coords = np.linspace(x_min, x_max, self.grid_size)
         y_coords = np.linspace(y_min, y_max, self.grid_size)
 

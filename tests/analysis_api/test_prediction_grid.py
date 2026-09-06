@@ -105,21 +105,44 @@ class TestGridCreator:
         assert "may not be properly rescaled" in caplog.text
         assert grid_coords.shape == (10000, 2)
     
-    def test_generate_coordinate_grid_edge_cases(self):
-        """Test coordinate grid generation with edge case embeddings."""
+    def test_generate_coordinate_grid_refuses_a_collapsed_embedding(self):
+        """An embedding with no extent has no grid, and saying so beats inventing one.
+
+        CHANGED 2026-09-06, and the direction matters: this test previously asserted
+        the grid still had spread here, which was true only because of a +/-0.05 pad.
+        That pad was inert everywhere else (the old per-axis rescale made the data span
+        exactly [0, 1], so the clamps cancelled it) and would have gone asymmetric under
+        the isotropic rescale, so it was removed.
+
+        Removing it exposed what the pad had been hiding: with every sample at one
+        coordinate, ``linspace(v, v, n)`` returns n copies of v, so all 25 grid points
+        are the same location and every prediction, confidence and region downstream
+        describes that single point while being reported as a map. The old assertion
+        called that "reasonable spread".
+
+        So this is not the same assertion relaxed -- it is a stronger one. Refusing
+        matches ``isotropic_scaling_factors``, which raises on exactly this input.
+        """
         creator = GridCreator(grid_size=5)
-        
-        # All embeddings at same point
         embeddings = np.array([[0.5, 0.5], [0.5, 0.5], [0.5, 0.5]])
+
+        with pytest.raises(ValueError, match="no extent to grid"):
+            creator.generate_coordinate_grid(embeddings)
+
+    def test_generate_coordinate_grid_allows_a_collapsed_axis(self):
+        """One flat axis is pathological but still has structure to place.
+
+        The refusal above must not widen to this: an embedding on a line has a real
+        extent to grid along x, and the rescale survives it. Warned, not refused.
+        """
+        creator = GridCreator(grid_size=5)
+        embeddings = np.array([[0.0, 0.5], [0.5, 0.5], [1.0, 0.5]])
+
         grid_coords = creator.generate_coordinate_grid(embeddings)
-        
-        assert grid_coords.shape == (25, 2)  # 5x5 grid
-        
-        # Grid should still have reasonable spread with padding
-        x_range = np.max(grid_coords[:, 0]) - np.min(grid_coords[:, 0])
-        y_range = np.max(grid_coords[:, 1]) - np.min(grid_coords[:, 1]) 
-        assert x_range > 0.05  # Small but non-zero range due to padding
-        assert y_range > 0.05
+
+        assert grid_coords.shape == (25, 2)
+        assert np.ptp(grid_coords[:, 0]) == pytest.approx(1.0)
+        assert np.ptp(grid_coords[:, 1]) == 0.0
     
     def test_generate_coordinate_grid_reproducible(self):
         """Test coordinate grid generation is reproducible."""
@@ -431,8 +454,12 @@ class TestGridCreatorHeatmaps:
             ]
         }
         
-        embeddings = np.array([[0.1, 0.2]])
-        target_data = {'score_0': np.array([1.0])}
+        # Two distinct points, not one. This test is about the missing-model path, and
+        # a single sample gives the grid no extent -- which is now refused up front, so
+        # the run would fail before reaching the behaviour under test. The degeneracy
+        # was incidental scaffolding, never the subject.
+        embeddings = np.array([[0.1, 0.2], [0.8, 0.9]])
+        target_data = {'score_0': np.array([1.0, 2.0])}
         
         with tempfile.TemporaryDirectory() as temp_dir:
             results = creator.create_prediction_heatmaps(
