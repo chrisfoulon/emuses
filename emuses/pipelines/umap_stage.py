@@ -481,10 +481,26 @@ class UMAPStage(PipelineStage):
         self.min_embeddings = self.embeddings.min(axis=0)
         self.max_embeddings = self.embeddings.max(axis=0)
 
-        # Save embedding scaling parameters for inference
+        # Save embedding scaling parameters for inference.
+        #
+        # The descriptive fields are for whoever opens this folder later, human or
+        # otherwise. embeddings.npy is written above, BEFORE the rescale on the next
+        # line, and test_embeddings.npy is written after it, so the two arrays sit in
+        # the same folder under parallel names in opposite coordinate systems. Reading
+        # one as the other is silent -- per-axis rescaling is idempotent, so nothing
+        # errors and the numbers merely stop meaning anything. Recording it here is
+        # what makes emuses.tools.embedding_spaces.load_embeddings able to convert.
+        # Bound to a name rather than written twice: the value recorded in the JSON and
+        # the value actually applied below have to be the same number, and a literal in
+        # each place is a standing invitation for them to drift apart.
+        rescale_margin = 0
         embedding_scaling = {
             'min_embeddings': self.min_embeddings.tolist(),
-            'max_embeddings': self.max_embeddings.tolist()
+            'max_embeddings': self.max_embeddings.tolist(),
+            'mode': 'per_axis',
+            'margin': rescale_margin,
+            'embeddings_npy_space': 'raw',
+            'test_embeddings_npy_space': 'rescaled',
         }
         scaling_file = self.config.output_folder / "embedding_scaling.json"
         with open(scaling_file, 'w') as f:
@@ -493,6 +509,7 @@ class UMAPStage(PipelineStage):
 
         self.embeddings = rescale_embedding(
             self.embeddings,
+            margin=rescale_margin,
             preset_min=self.min_embeddings,
             preset_max=self.max_embeddings,
         )
@@ -502,6 +519,7 @@ class UMAPStage(PipelineStage):
             self.test_embeddings = self.trained_umap.transform(test_features)
             self.test_embeddings = rescale_embedding(
                 self.test_embeddings,
+                margin=rescale_margin,
                 preset_min=self.min_embeddings,
                 preset_max=self.max_embeddings,
             )
@@ -523,6 +541,7 @@ class UMAPStage(PipelineStage):
             )
             prediction_train_coords = rescale_embedding(
                 prediction_train_coords,
+                margin=rescale_margin,
                 preset_min=self.min_embeddings,
                 preset_max=self.max_embeddings,
             )
@@ -537,6 +556,7 @@ class UMAPStage(PipelineStage):
             )
             prediction_test_coords = rescale_embedding(
                 prediction_test_coords,
+                margin=rescale_margin,
                 preset_min=self.min_embeddings,
                 preset_max=self.max_embeddings,
             )

@@ -169,6 +169,58 @@ EMUSES (Embedding-based Multi-target Unified Statistical and Estimation System) 
 
 ---
 
+### 2.4b Two Coordinate Systems On Disk; `space` Is a Required Argument
+
+**Decision**: A run folder stores embeddings in two different coordinate systems, and
+the way to read them is `emuses.tools.embedding_spaces.load_embeddings(run_dir,
+space=...)`, where `space` is keyword-only with **no default**.
+
+| artefact | space |
+|---|---|
+| `embeddings.npy` | **raw** — UMAP's own output |
+| `test_embeddings.npy` | **rescaled** — per-axis onto [0, 1] |
+
+**Rationale**:
+- The asymmetry is a consequence of write order, not a decision: `umap_stage` saves the
+  training array before it rescales and the test array after. Renaming the artefacts was
+  rejected — the regression baselines pin `_embedding_distances` computed from raw
+  `embeddings.npy`, so changing what that file holds invalidates them (§2.9d).
+- **Mixing the two does not raise.** Per-axis rescaling is idempotent, so a double
+  conversion returns the array unchanged, and comparing raw against rescaled yields a
+  plausible number rather than an error. Measured 2026-09-05: recovering the swiss-roll
+  parameter scored r = 0.2747 with train (raw) against test (rescaled) and r = 0.9989
+  once both were in one space. The low value reads exactly like a real negative result;
+  it cost two wrong conclusions in one session before the cause was found.
+- A required `space` argument converts a silent misreading into a `TypeError` at the
+  call site. That is the entire mechanism — there is no runtime signal to detect it
+  after the fact.
+- `embedding_scaling.json` additionally records `mode`, `margin`,
+  `embeddings_npy_space` and `test_embeddings_npy_space`, so a folder describes its own
+  conventions to whoever opens it later. Additive; array contents unchanged.
+
+**Two rescaling modes exist and are not interchangeable**, both reached through
+`rescale_embedding`: *per-axis* (presets passed as arrays, what the pipeline uses; each
+dimension independently spans [0, 1], aspect ratio not preserved) and *global* (presets
+omitted, what `EmbeddingSpace` uses; one scalar min/max, proportions preserved). Both are
+called "rescaled embeddings" in the code. `mode` in the JSON disambiguates.
+
+**Single implementation**: `rescale_embedding` / `inverse_rescale_embedding` live in
+`emuses/tools/embedding_spaces.py` (numpy-only, so scripts and light test runs can reach
+the conversions without importing umap/matplotlib/statsmodels) and are re-exported from
+`emuses_utils` for the existing call sites.
+
+**Known gap (open)**: `umap_stage.py` recomputes min/max from the current cohort
+unconditionally, including on the `--load_umap` and `--load_embeddings` paths. A run
+reusing another run's morphospace therefore gets identical raw coordinates in a
+*different* [0, 1] space, while the source run's `embedding_scaling.json` sits unread —
+only `inference_stage` reads it. Anything comparing heatmaps or reusing cluster labels
+across two such runs is comparing different coordinate systems. Fixing this moves
+numbers, so it is deliberately not bundled with the loader.
+
+**Code**: `emuses/tools/embedding_spaces.py`, `tests/unit/test_embedding_spaces.py`
+
+---
+
 ### 2.5 InferenceStage as a Separate Stage
 
 **Decision**: Inference is implemented as a standalone `InferenceStage` class, not as a method of `EMUSESPipeline`.

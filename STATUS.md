@@ -219,6 +219,45 @@ keep the model search, or UMAP dimensionality.
   Matsulevits: motor). That is our own seed-spread instability appearing in print. Treat any
   per-domain ranking at this n as unstable, ours included.
 
+### Continuous prediction is NOT broken (2026-09-05, swiss roll)
+
+Asked directly, answered directly. `make_swiss_roll` gives a continuous generative parameter `t`
+that is certainly recoverable from the 3 coordinates, so any failure would be EMUSES'. Measured by
+out-of-fold 5-NN at three layers:
+
+- **L0** `t` from the raw 3-D input — **r = 0.9997** (upper bound; the harness is sound)
+- **L1** `t` from EMUSES' own UMAP embedding — **r = 0.9989** (the embedding keeps the signal)
+- **L2** what EMUSES' prediction stage reports — **r = 0.9981** (5 folds, sd 0.0012)
+
+Nothing is lost between layers. The continuous path works. Do not re-open this without a new
+measurement. Harness: `scripts/swiss_roll_diagnostic.py` (three-layer L0/L1/L2 decomposition).
+
+**The trap this cost:** L1 first read **0.2747**, twice, for two different reasons — first my own
+train/test length mismatch, then the raw-vs-rescaled coordinate mix-up below. A low r here looks
+exactly like a real negative result. See ADR §2.4b.
+
+### Two embedding coordinate systems on disk (2026-09-05)
+
+`embeddings.npy` is **raw** UMAP output; `test_embeddings.npy` is **rescaled** per-axis onto [0, 1].
+Same folder, parallel names, opposite spaces — a consequence of write order in `umap_stage`, not a
+decision. Mixing them raises nothing: per-axis rescaling is idempotent, so the numbers just stop
+meaning anything (r = 0.2747 vs 0.9989 above).
+
+Rescaling itself is correct and deliberate — UMAP's location and scale are arbitrary while the
+kernel/distance predictors consuming them are scale-sensitive, and a bandwidth has to mean the same
+thing across datasets. The problem was only that nothing said which file was which.
+
+Fixed on `feat/embedding-space-loader`: `emuses/tools/embedding_spaces.py` with
+`load_embeddings(run_dir, space=...)` — `space` keyword-only, **no default**, so an undecided caller
+gets a `TypeError` instead of the wrong array. `embedding_scaling.json` now also records `mode`,
+`margin` and which space each `.npy` is in. Additive: no array contents change, baselines hold.
+Rationale and the open gap in ADR §2.4b.
+
+**Still open, deliberately not bundled:** `--load_umap` / `--load_embeddings` recompute min/max from
+the *current* cohort, so a run reusing another run's morphospace lands in a different [0, 1] space
+while the source run's `embedding_scaling.json` sits unread. Cross-run heatmap and cluster-label
+comparisons are affected. Fixing it moves numbers → separate branch, full local `--core`.
+
 ### What works now
 
 `emuses full`, `umap` and `inference` all run. `heatmap` refuses with an actionable message, which is
