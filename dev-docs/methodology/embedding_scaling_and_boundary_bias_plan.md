@@ -185,8 +185,15 @@ planning Steps 3-5, because it changes what their verification can rely on.**
    `target_0_*`" was the wrong prediction for Step 2 and is the wrong prediction for Steps 3
    and 4 too: local linear (Step 4) changes the `kernel` family, which never wins here, and
    real confidence (Step 3) changes region selection, which feeds the maps rather than the CV
-   scores. **Steps 3-5 must bring their own evidence.** Recorded as an open decision in
-   `STATUS.md` item 0a and ADR §2.9d.
+   scores.
+
+   **Fixed the same day, so Steps 3-5 do have an instrument** (`STATUS.md` item 0a, ADR
+   §2.9d): `tests/regression` gained a third dataset, `swiss_roll`, whose target is
+   recoverable by construction. It scores 0.9962 and **4 of its 5 folds are won by
+   `KernelRegressor`** -- which is precisely the family Step 4 replaces, so the blast-radius
+   prediction for that step is now testable rather than notional. Reverting the rescale to
+   per-axis fails `test_prediction_scores[swiss_roll]` and leaves the two 40-sample datasets
+   passing; use that row, not theirs, when judging whether a step moved the science.
 
 2. Re-record with `--regen-baselines` — **not done, and correctly so: nothing moved.** The
    baselines are untouched.

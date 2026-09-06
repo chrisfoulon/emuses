@@ -457,6 +457,11 @@ problem, the `enhanced-cli-typer` hang and repo pollution by test output are all
     confirmed the change had not leaked into the training path. **No baseline was re-recorded:
     nothing moved.** ADR §2.9d.
 
+    **That gap is now closed — see item 0a.** `tests/regression` gained a `swiss_roll` dataset
+    the same day and does see this change: reverting to per-axis fails
+    `test_prediction_scores[swiss_roll]` and only that. So Steps 3–5 below have a numerical
+    instrument again, which they did not when this paragraph was first written.
+
     Evidence for the change is therefore property-based, not baseline-based:
     `tests/test_isotropic_rescaling.py` (rotation invariance to 1e-12, with the per-axis
     counter-example kept in the suite — per-axis distorts pairwise distances 37% under a 45°
@@ -493,23 +498,36 @@ problem, the `enhanced-cli-typer` hang and repo pollution by test output are all
     constant (`grid_creator.py:202`), so `visualization_threshold` filters nothing. The real
     ensemble spread is computed at `:226` and discarded.
 
-0a. [ ] **The prediction baselines are degenerate — decide what to do about it.**
-       Found 2026-09-06 while landing the isotropic rescale. On BOTH regression datasets, in
-       every fold, the winning ElasticNet has all coefficients exactly zero, so
-       `target_0_*_Score` is a constant model's score: independent of the embedding
-       coordinates by construction. Any future change to how coordinates reach the predictors
-       will pass `tests/regression` regardless of whether it is right. **Do not read a green
-       `target_0_*` as confirmation that a coordinate-space change is inert.**
+0a. [x] **The prediction baselines were degenerate — fixed 2026-09-06 by adding a dataset.**
+       On both 40-sample datasets, in every fold, the winning ElasticNet had all coefficients
+       exactly zero, so `target_0_*_Score` was a constant model's score: independent of the
+       embedding coordinates by construction. Found by watching all 16 regression tests pass
+       bit-identically through the isotropic rescale.
 
-       The prediction path itself is fine — the swiss roll reaches r = 0.998. It is the
-       40-sample regression fixtures that have nothing to fit. Two options, both of which
-       re-record every prediction baseline, which is why neither was done here:
-       (a) widen `quick_train_dict`'s alpha range downward so the L1 penalty stops zeroing
-       everything, or (b) pin the regression fixture to data with real signal (the swiss roll
-       is already wired and reproducible). (b) is the better test and the bigger change.
-       `test_baseline_is_not_degenerate` already guards the clustering; the equivalent for
-       prediction — assert the winning model has at least one non-zero coefficient — is the
-       cheap guard to add either way. Detail in ADR §2.9d.
+       **Resolved by adding `swiss_roll` (300 samples) to the suite, not by touching the two.**
+       They pin the raw-derived quantities well and are cheap; their prediction baselines stay
+       and still pin nothing, knowingly. Adding a dataset cost the two existing baseline files
+       three added keys and **zero changed numbers** — the alternatives (widen
+       `quick_train_dict`'s alphas, or repoint the fixture) would both have re-recorded numbers
+       that are currently correct, to fix a defect that is not in them.
+
+       Swiss roll's target is each sample's position along the roll, recoverable by
+       construction: `Mean_Score` 0.9962, `n_clusters` 3, and **4 of 5 folds won by
+       `KernelRegressor`** — the family Step 4 below replaces, so this dataset sees Steps 2, 3
+       and 4. Cost 49 s; the suite goes ~88 s → ~128 s and the core contract ~3.5 → ~4.2 min.
+
+       The finding is now data, not prose: every baseline records
+       `n_constant_prediction_models` (`5/5`, `10/10`, `0/5`) and
+       `prediction_depends_on_coordinates`. `test_some_dataset_pins_the_coordinate_to_prediction_path`
+       fails if the suite ever returns to a state where no dataset can see a coordinate change
+       (0.07 s, baselines only). **Proven:** reverting to per-axis fails
+       `test_prediction_scores[swiss_roll]` and leaves the other two datasets passing.
+       ADR §2.9d.
+
+       ⚠️ Still true and worth carrying into Steps 3–5: a green
+       `test_prediction_scores[regression]` is not evidence about a coordinate-space change.
+       Read the `swiss_roll` row. And the liveness flag detects a zeroed *linear* model only —
+       it cannot see a kernel that has gone degenerate some other way.
 
 0. [ ] **Scope settled 2026-09-05, and the work queue that follows from it.** EMUSES is a local
        tool, or a service an admin runs on one lab/university server with users submitting jobs

@@ -63,6 +63,11 @@ CORE_SUITES = [
     # Under --foreign-machine this contributes only the structural checks (the
     # pipeline ran and emitted what it should); the value comparisons need the
     # machine that recorded the baselines.
+    # ~128 s since the swiss_roll dataset joined it on 2026-09-06 (was ~88 s for
+    # two datasets). That third run is what makes the suite able to detect a
+    # change to the embedding->prediction path at all: on the two 40-sample
+    # datasets every fold's winning model is a zero-coefficient ElasticNet, i.e.
+    # a constant, so their prediction baselines cannot move. Worth the 40 s.
     ("tests/regression", "Numerical pinning + pipeline output structure"),
     ("tests/pipelines", "Pipeline stages"),
     ("tests/inference", "Inference path"),
@@ -85,11 +90,14 @@ CORE_SUITES = [
     # those factors were dead, and each had a passing test that built its own input.
     ("tests/test_reused_morphospace_keeps_its_scaling.py", "Reuse keeps the source scaling"),
     ("tests/test_scaling_single_source.py", "Scaling factors have exactly one home"),
-    # Added with the isotropic rescale. These carry the whole numerical burden of that
-    # change: tests/regression cannot see it, because on both regression datasets the
-    # winning ElasticNet zeroes every coefficient, so target_0_*_Score is a constant
-    # model's score and is independent of the coordinates by construction. See the
-    # 2026-09-06 note in STATUS.md before trusting a green regression run here.
+    # Added with the isotropic rescale, to carry its numerical burden while
+    # tests/regression could not: on the two 40-sample datasets the winning ElasticNet
+    # zeroes every coefficient, so target_0_*_Score is a constant model's score and is
+    # independent of the coordinates by construction. That gap is now closed at the
+    # source -- tests/regression gained the swiss_roll dataset, which does see a
+    # coordinate change (reverting to per-axis fails it, and fails only it). These two
+    # stay: they check the *property* (rotation invariance to 1e-12, and the grid
+    # mapping component-against-component), which a pinned number cannot.
     ("tests/test_isotropic_rescaling.py", "Rescaling is rotation-invariant"),
     ("tests/test_region_grid_coordinate_mapping.py", "Grid indices map back to real coordinates"),
     # A branch that adds tests adds them here, in its own commit. Nothing here may

@@ -45,6 +45,62 @@ def _first(root, name):
     return hits[0] if hits else None
 
 
+def prediction_liveness(out_dir):
+    """Do the fitted models actually read the embedding coordinates?
+
+    Returns ``(n_models, n_dead, depends_on_coordinates)``.
+
+    THE MEASUREMENT THIS EXISTS FOR. A regression suite pins a number; it cannot
+    tell you whether that number is *capable* of moving. On the two 40-sample
+    datasets it was not: in every fold the winning ElasticNet has all coefficients
+    exactly zero, so the model is a constant intercept -- the training-fold mean --
+    and its score is a function of the fold split alone, mathematically independent
+    of the coordinates it was handed. Every prediction baseline on those datasets
+    therefore survives *any* change to the coordinate system, which is how the
+    isotropic rescale passed 16 tests bit-identically while moving one axis from
+    spanning 1.0 to spanning 0.24. ADR 2.9d.
+
+    WHAT IT DETECTS, EXACTLY: a final estimator that exposes ``coef_`` with every
+    entry zero. That is the failure that actually occurred. A model with no
+    ``coef_`` (``KernelRegressor``) is counted as live, because a kernel over the
+    embedding reads coordinates by construction -- but note this cannot detect a
+    kernel degenerate in some other way, e.g. a bandwidth so wide every prediction
+    is the global mean. Do not read a True here as "the prediction path is sound".
+    It means "at least one model is not the specific constant that fooled us".
+
+    Nothing filename-derived is returned: the saved pipelines carry the joblib
+    version in their names (``..._joblib1_5_2.joblib``), so a baseline recording
+    one would break on a dependency bump for no scientific reason.
+    """
+    import joblib
+
+    n_models = 0
+    n_dead = 0
+    for path in sorted(Path(out_dir).rglob("best_pipeline_*.joblib")):
+        try:
+            estimator = joblib.load(path)
+        except Exception as e:
+            # Deliberately NOT skipped. Skipping would drop this model from both
+            # the numerator and the denominator, so a run where most pipelines
+            # failed to load could still report a healthy liveness ratio from the
+            # one that did -- a check quietly measuring less than it claims, which
+            # is the failure mode this whole exercise exists to remove. A saved
+            # pipeline that will not load is anomalous on its own; say so.
+            raise RuntimeError(
+                f"could not load {path.name} to check whether the prediction "
+                f"reads the embedding coordinates: {e}. This is not a numerical "
+                f"regression -- the pipeline the run just wrote cannot be read "
+                f"back. Fix that before reading anything else in this suite."
+            ) from e
+        final = estimator.steps[-1][1] if hasattr(estimator, "steps") else estimator
+        n_models += 1
+        coef = getattr(final, "coef_", None)
+        if coef is not None and not np.any(np.asarray(coef)):
+            n_dead += 1
+
+    return n_models, n_dead, n_models > 0 and n_dead < n_models
+
+
 def pairwise_distances(points):
     diff = points[:, None, :] - points[None, :, :]
     return np.sqrt((diff**2).sum(-1))
@@ -103,6 +159,12 @@ def extract_metrics(out_dir):
                     except ValueError:
                         pass
     metrics.update(scores)
+
+    n_models, n_dead, live = prediction_liveness(out_dir)
+    metrics["n_prediction_models"] = n_models
+    metrics["n_constant_prediction_models"] = n_dead
+    metrics["prediction_depends_on_coordinates"] = live
+
     return metrics
 
 

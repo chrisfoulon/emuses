@@ -328,6 +328,10 @@ eight `target_0_*` baselines pin nothing about the coordinate→prediction path.
 counter-example kept in the suite) and the swiss-roll diagnostic, where the signal is
 real: L1 0.9989 and L2 0.998, unchanged from per-axis, as a similarity transform must be.
 
+Closed the same day: `tests/regression` gained a `swiss_roll` dataset and now *does* see
+this change — reverting to per-axis fails `test_prediction_scores[swiss_roll]` and only
+that. The two 40-sample datasets remain blind to it, permanently and knowingly (§2.9d).
+
 **Code**: `emuses/tools/embedding_spaces.py`, `emuses/pipelines/umap_stage.py`,
 `emuses/tools/grid_creator.py`, `emuses/tools/region_statistical_analyzer.py`,
 `tests/test_isotropic_rescaling.py`, `tests/test_region_grid_coordinate_mapping.py`
@@ -647,17 +651,51 @@ What this does and does not invalidate:
   had not leaked into the training path.
 - `test_baseline_is_not_degenerate` checks the *clustering* is non-degenerate. Nothing
   checked the *prediction* was, and it is not.
-- Any future change that moves only how coordinates reach the predictors will pass this
-  suite regardless of correctness. Such changes need their own evidence — property tests,
-  or a dataset where the prediction path actually fits something (the swiss-roll
-  diagnostic reaches r = 0.998, so the path works; it is the 40-sample regression
-  fixtures that have nothing to fit).
+- `test_baseline_is_not_degenerate` checks the *clustering* is non-degenerate. Nothing
+  checked the *prediction* was, and it is not.
+- **On those two datasets this is not fixed and will not be.** They earn their place on
+  the raw-derived quantities and are cheap; their prediction baselines stay in the file
+  but pin nothing. Do not treat a green `target_0_*_Score[regression]` as confirmation
+  that a coordinate-space change is inert.
 
-Not fixed here, because making the fixture non-degenerate re-records every prediction
-baseline and is a separate decision: either widen `quick_train_dict`'s alpha range
-downward, or pin the regression fixture to data with real signal. Recorded as open in
-`STATUS.md`. **Do not treat a green `target_0_*` as confirmation that a coordinate-space
-change is inert.**
+**Resolved 2026-09-06 by adding a third dataset, not by changing the two** (`swiss_roll`,
+300 samples, `test_data/swiss_roll_*.csv`). Chosen over the two alternatives considered —
+widening `quick_train_dict`'s alpha range, or repointing the existing fixture — because
+both of those re-record baselines that are currently correct and discriminating, to fix a
+defect that is not in them. Adding a dataset cost the existing baseline files three added
+keys and **no changed number**.
+
+Why swiss roll: the target is each sample's own position along the roll, so it is
+recoverable by construction and any failure is EMUSES', not the data's. Measured:
+`Mean_Score` 0.9962, and **4 of 5 folds are won by `KernelRegressor`** — a kernel over the
+embedding, the family §2.4d's boundary-bias work replaces, so this dataset sees Steps 2, 3
+and 4 of that plan. `n_clusters` 3, `noise_fraction` 0.0, so the clustering guard holds
+too. Cost 49 s, taking the suite from ~88 s to ~128 s.
+
+The degeneracy is now **recorded as data rather than prose**: `extract_metrics` writes
+`n_prediction_models`, `n_constant_prediction_models` and `prediction_depends_on_coordinates`
+into every baseline, reading `5/5` and `10/10` constant against `0/5` for `swiss_roll`.
+`test_some_dataset_pins_the_coordinate_to_prediction_path` fails if the suite ever returns
+to a state where no dataset can see a coordinate change. It reads baselines only — 0.07 s,
+no pipeline run.
+
+What that liveness flag does and does not mean: it detects a final estimator exposing
+`coef_` with every entry zero, which is the failure that occurred. A model without `coef_`
+counts as live because a kernel reads coordinates by construction — so it **cannot** detect
+a kernel degenerate another way, e.g. a bandwidth wide enough that every prediction is the
+global mean. `True` means "not the specific constant that fooled us", not "sound".
+
+Demonstrated rather than argued: reverting the rescale to per-axis fails
+`test_prediction_scores[swiss_roll]` and leaves `[regression]` and
+`[multi_target_regression]` **passing**. That single result is both the justification for
+the dataset and the proof the other two are blind.
+
+**The signature was on the record from 2026-08-23 and was misread.** The perturbation log in
+`tests/regression/README.md` notes that a real one-line change to `UMAP_utils` moved the
+geometry while prediction scores "did not move", and drew the conclusion that pinning only
+"the number that matters" is insufficient. True, but the sharper reading was available then:
+those scores did not move because they cannot. A metric that never moves across perturbations
+is evidence about the metric, not only about what the perturbation touched.
 
 **Rationale for the comparison forms**: cluster ids are arbitrary, so structure is compared by
 adjusted Rand index rather than label equality. UMAP is defined only up to rotation and reflection,

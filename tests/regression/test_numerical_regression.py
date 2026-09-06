@@ -5,8 +5,19 @@ What this suite is for
 To fail when a code change moves a scientific result. Nothing else. Read the
 caveats before trusting a pass:
 
-* **``test_data/`` is 48 samples x 7 features** (40 after the split). That is
-  enough to catch a regression and **not** enough to judge scientific quality.
+* **``test_data/features.csv`` is 48 samples x 7 features** (40 after the split).
+  That is enough to catch a regression and **not** enough to judge scientific
+  quality.
+* **The prediction baselines on those two datasets pin nothing.** In every fold
+  the winning ElasticNet has all coefficients exactly zero, so the model is a
+  constant intercept and its score depends only on the fold split -- it is
+  mathematically independent of the embedding coordinates. Those eight numbers
+  per dataset survive any change to the coordinate system, right or wrong. The
+  ``swiss_roll`` dataset was added on 2026-09-06 because of this and is the only
+  one here that can see such a change; see
+  ``test_some_dataset_pins_the_coordinate_to_prediction_path`` and ADR 2.9d.
+  Do not read a green ``test_prediction_scores[regression]`` as evidence that a
+  coordinate-space change was inert.
 * **These tolerances detect code changes at a fixed seed.** They say nothing
   about scientific stability. At a different master seed the same config
   produces a cluster ARI of 0.0 against this one, and ``Mean_Score`` moves from
@@ -197,6 +208,52 @@ def test_baseline_is_not_degenerate(baselines, dataset):
     )
     assert metrics["noise_fraction"] < 1.0
     assert len(set(metrics["_cluster_labels"])) > 1
+
+
+def test_some_dataset_pins_the_coordinate_to_prediction_path(baselines):
+    """The prediction half of the same guard, and it is deliberately not per-dataset.
+
+    ``test_baseline_is_not_degenerate`` above asks whether the *clustering*
+    assertions can fail. This asks the same of the *prediction* assertions, and
+    the answer used to be no on every dataset in the suite -- which nothing
+    detected, because a suite that cannot fail also cannot report that it cannot
+    fail.
+
+    On the two 40-sample datasets, in every fold, the winning ElasticNet has all
+    coefficients exactly zero. The L1 penalty zeroes them, so the model is a
+    constant intercept and its score depends only on the fold split. Found on
+    2026-09-06 by switching the pipeline from per-axis to isotropic rescaling and
+    watching all 16 tests pass **bit-identically** while the narrow embedding axis
+    went from spanning 1.0 to spanning 0.24 (ADR 2.9d).
+
+    Not parametrized, because those two datasets are still degenerate for
+    prediction and that is accepted: they earn their place on the raw-derived
+    quantities (embedding geometry, cluster structure, composite score), which are
+    non-degenerate and discriminating. What must never again be true is that
+    **no** dataset can see a coordinate change. ``swiss_roll`` is the one that can:
+    the target is the roll's own generative parameter, so the signal is real, and
+    4 of its 5 folds are won by a kernel over the embedding.
+    """
+    live = sorted(
+        dataset
+        for dataset, payload in baselines.items()
+        if payload["metrics"].get("prediction_depends_on_coordinates")
+    )
+    breakdown = {
+        dataset: (
+            f"{payload['metrics'].get('n_constant_prediction_models')}"
+            f"/{payload['metrics'].get('n_prediction_models')} folds constant"
+        )
+        for dataset, payload in baselines.items()
+    }
+    assert live, (
+        "no dataset in this suite has a prediction model that reads the embedding "
+        f"coordinates: {breakdown}. Every prediction baseline here is the score of "
+        "a constant model, so it will survive any change to the coordinate system, "
+        "correct or not -- the suite pins a number that cannot move. Do not fix "
+        "this by relaxing an assertion; add or repair a dataset with real signal. "
+        "See ADR 2.9d."
+    )
 
 
 # --- Below here: the value comparisons -- the actual pinning ------------------

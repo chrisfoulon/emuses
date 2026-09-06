@@ -59,6 +59,34 @@ DATASETS = {
         "features": "test_data/features.csv",
         "scores": "test_data/regression_scores_multitarget.csv",
     },
+    # Added 2026-09-06 because the two above pin NOTHING about the path from
+    # embedding coordinates to a prediction. On both of them, in every fold, the
+    # winning ElasticNet has all coefficients exactly zero -- the L1 penalty
+    # zeroes them on 40 samples with no signal -- so the prediction is a constant
+    # intercept and `target_0_*_Score` is a function of the fold split alone.
+    # That was found by switching the whole pipeline from per-axis to isotropic
+    # rescaling and watching all 16 tests pass bit-identically while the narrow
+    # axis went from spanning 1.0 to 0.24. See ADR 2.9d.
+    #
+    # Swiss roll instead, because the answer is known: `make_swiss_roll` returns
+    # each sample's position `t` along the roll, which is continuous by
+    # construction and certainly recoverable from the 3 coordinates. Here the
+    # prediction stage genuinely reads the embedding -- Mean_Score 0.9962, and 4
+    # of 5 folds are won by `KernelRegressor`, the family Step 4 of the boundary-
+    # bias plan replaces. So this dataset can see a coordinate-space change, and
+    # the other two cannot.
+    #
+    # The CSVs are committed rather than generated at collection time. Regenerating
+    # from `make_swiss_roll` on a different sklearn is not guaranteed to reproduce
+    # them, and a fixture that quietly changes underneath a baseline is the failure
+    # this suite exists to catch. The recipe is in test_data/README.md; the file is
+    # authoritative, not the recipe.
+    #
+    # Cost: 49 s, measured, against 25-34 s for each of the others.
+    "swiss_roll": {
+        "features": "test_data/swiss_roll_features.csv",
+        "scores": "test_data/swiss_roll_scores.csv",
+    },
 }
 
 
