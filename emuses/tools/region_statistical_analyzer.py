@@ -30,7 +30,31 @@ class RegionStatisticalAnalyzer:
     Parameters
     ----------
     visualization_threshold : float, default=0.2
-        Confidence threshold for initial visualization filtering
+        Confidence threshold for initial visualization filtering.
+
+        **This default is not calibrated, and was calibrated against nothing before.**
+        Until 2026-09-06 the confidence it filters was a constant 1.0 at every grid
+        point (see ``GridCreator.aggregate_confidence``), so 0.2 admitted everything and
+        any value below 1.0 would have behaved identically. Step 3 gave the number a
+        scale; it did not give this threshold a justification.
+
+        What 0.2 now means: keep a grid point where
+        ``agreement x variability >= 0.2``, in which ``agreement`` is the fraction of
+        the training target's SD *not* spanned by disagreement between the CV folds at
+        that point, and ``variability`` is one global scalar -- the fraction of the
+        target's SD spanned by the ensemble surface across the whole grid. Measured on
+        the swiss_roll regression fixture: variability 0.814, agreement 0.000-0.999,
+        confidence 0.000-0.813 with mean 0.634, so 0.2 drops roughly the sparsest fifth.
+
+        Note the consequence of ``variability`` being global: if the ensemble surface
+        spans less than 0.2 of the target's SD, **nothing** passes this threshold at any
+        agreement, because the whole map is multiplied below it. That is a cliff, not a
+        gradient, and it is a property of the threshold being absolute while one factor
+        is global. It costs nothing today -- ``visualization_threshold`` is read only by
+        ``apply_two_stage_filtering``, reached only from ``create_region_statistical_maps``,
+        which only the FastAPI service calls; the pipeline's own path
+        (``create_statistical_maps``) never reads it and thresholds by percentile
+        instead. Anyone wiring this into the pipeline has to resolve the cliff first.
     effect_size_threshold : float, default=0.5
         Prediction threshold for effect size filtering
     min_cluster_size : int, default=3

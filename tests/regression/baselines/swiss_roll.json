@@ -58344,6 +58344,7 @@
       ]
     ],
     "composite_score": 0.6393705597814885,
+    "confidence_falls_with_sparsity": true,
     "embedding_shape": [
       240,
       2
@@ -58359,6 +58360,8 @@
     "metric_umap_eigen_spread": 0.7012149139235437,
     "metric_umap_entropy": 0.5985764646407743,
     "n_clusters": 3,
+    "n_confidence_maps": 1,
+    "n_constant_confidence_maps": 0,
     "n_constant_prediction_models": 0,
     "n_prediction_models": 5,
     "noise_fraction": 0.0,

@@ -245,6 +245,47 @@ the threshold something real and partially subsumes Step 4.
   old threshold was calibrated against a constant, i.e. against nothing.
 - Re-record: this changes region selection, so `target_0_*` may move. Same protocol.
 
+### Done, 2026-09-06 — with three corrections to the plan above
+
+**The stated rationale was wrong, and the real one is worse.** `visualization_threshold` is
+not what makes this matter: the pipeline never reads it. It is reached only through
+`apply_two_stage_filtering` ← `create_region_statistical_maps` ← `foundation_fastapi_service`,
+i.e. the API path. (This confirms the other session's E4, with the nuance that it is live in
+the API and dead in the pipeline.) What the pipeline does with confidence is
+`combined_heatmap = final_predictions * confidences`, fed to `create_statistical_maps` as
+`significance_values` and thresholded **by percentile** — and a percentile is invariant to
+multiplication by a positive constant. So the old constant confidence did not merely fail to
+filter; it had *exactly zero* effect on which regions were reported. Step 3 is worth doing for
+that reason, not for the threshold.
+
+**`1 − std(predictions)` alone reproduces the metric ADR §3.1b already condemns.** Constant
+models agree with each other perfectly, so agreement alone scores them at the maximum —
+measured 0.908 on the `regression` fixture, whose 5 folds are all-zero-coefficient
+ElasticNets. Confidence is therefore `agreement × variability`:
+
+- `agreement` = `1 − clip(std(all_predictions, axis=0) / target_sd, 0, 1)`, per grid point.
+- `variability` = `clip(std(ensemble) / target_sd, 0, 1)`, one scalar for the grid.
+
+`target_sd` is the training target's SD, compared against the **pre-denormalization**
+predictions because `prediction_train_labels` is exactly what the models were fitted on, so
+both sides carry whatever `--scores_normalization` did. `max_possible_std = 0.5` is gone; it
+was calibrated against nothing.
+
+**Only `agreement` can move region selection** — by the same percentile-invariance argument,
+the scalar `variability` cannot. Its job is to collapse a degenerate map to zero so the run
+says so. Documented in `aggregate_confidence`; do not read it as a second signal.
+
+Measured, `swiss_roll`: agreement 0.000–0.999, variability 0.814, confidence 0.000–0.813
+(mean 0.634, **std 0.201 — not constant**). Mean confidence inside the training hull 0.663 vs
+0.583 outside; corr(distance to nearest training sample, confidence) = **−0.583**, monotone
+across the first four quintiles (0.783 → 0.749 → 0.659 → 0.484). `regression`: agreement
+0.908 flat, variability 0.000, confidence 0 everywhere with a warning naming the numbers.
+
+**Nothing was re-recorded.** All 25 existing regression assertions passed unchanged: confidence
+feeds the maps, not the CV scores, so no `target_0_*` moved. The baselines gained three new
+keys (`n_confidence_maps`, `n_constant_confidence_maps`, `confidence_falls_with_sparsity`) and
+a new non-parametrized guard, `test_some_dataset_has_a_confidence_map_that_participates`.
+
 ---
 
 ## Step 4 — Local linear. Only the `kernel` family.

@@ -1133,6 +1133,37 @@ embeddings with target std 0.07 there is no signal, so zeroing the coefficients 
    0.8146. So inference is reporting faithfully and the number is still misleading. Note for anyone
    testing inference: on `test_data` this outcome is *expected*, and looks exactly like the
    2025-08-27 "all predictions identical" bug. Do not diagnose it as that bug again.
+
+   **Resolved for the grid maps on 2026-09-06 (Step 3); still open for `inference_stage.py`.**
+   `GridCreator`'s confidence no longer reports a degenerate model as certain. It was worse than
+   this entry describes: it was not `1 - std(fold predictions)` at all, but a literal `0.8`
+   assigned per model, whose std across models was therefore exactly 0, giving confidence 1.0
+   everywhere. It is now `agreement × variability`, both as fractions of the training target's SD:
+
+   - `agreement = 1 - clip(std(all_predictions, axis=0) / target_sd, 0, 1)`, per grid point.
+   - `variability = clip(std(ensemble) / target_sd, 0, 1)`, one scalar for the grid.
+
+   **`agreement` alone is exactly the metric this entry condemns** — it scores the all-zero-
+   coefficient `regression` fixture at **0.908**, because constant models agree with each other
+   perfectly. `variability` is what drops that to 0, and a warning naming the spread, the ensemble
+   spread and the target scale is logged when the map comes out flat. That is the "report it there"
+   this entry asked for, for the grid path.
+
+   Two things to know before touching it:
+   - **Only `agreement` can move region selection.** `create_statistical_maps` thresholds
+     `predictions * confidence` by *percentile*, and a percentile is invariant under multiplication
+     by a positive constant, so the scalar `variability` provably cannot change which regions are
+     reported. This is also why the *old* constant confidence contributed nothing at all rather
+     than contributing weakly.
+   - **`inference_stage.py:1455` is unchanged** and still computes `1.0 - std(...)`. The 0.9934
+     measurement above stands. Fixing it means deciding what the yardstick is there, where there
+     is no grid to take an ensemble variance over.
+
+   Pinned by `tests/regression`: `n_confidence_maps`, `n_constant_confidence_maps` and
+   `confidence_falls_with_sparsity` per dataset, plus two guards
+   (`test_some_dataset_has_a_confidence_map_that_participates` for the baselines,
+   `test_confidence_map_matches_its_baseline` for the code). Measured on `swiss_roll`: confidence
+   0.000–0.813, corr with distance-to-nearest-training-sample **−0.583**.
 2. **Feeding EMUSES' own splits back into inference silently double-normalizes.** Measured: the
    pre-normalized split yields **1** distinct embedding from `umap.transform`, the same rows raw yield
    10, all 50 raw rows yield 50. Off-manifold input collapses the transform with no error.

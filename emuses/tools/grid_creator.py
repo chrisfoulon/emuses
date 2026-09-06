@@ -28,7 +28,11 @@ class GridCreator:
     grid_size : int, default=100
         Grid resolution (creates grid_size x grid_size coordinate grid)
     confidence_method : str, default="cv_ensemble"
-        Method for confidence aggregation. Options: "5_model", "cv_ensemble"
+        How the CV ensemble's predictions become a confidence. See
+        ``aggregate_confidence`` for what each one computes and, importantly, for which
+        part of it can actually move region selection.
+        - "cv_ensemble": cross-model agreement x whether the ensemble varies at all.
+        - "5_model": cross-model agreement only.
     """
 
     def __init__(self, grid_size: int = 100, confidence_method: str = "cv_ensemble"):
@@ -163,7 +167,8 @@ class GridCreator:
     def simplified_inference(self,
                              grid_coords: np.ndarray,
                              trained_models: Dict,
-                             target_name: str) -> Tuple[np.ndarray, np.ndarray]:
+                             target_name: str,
+                             target_scores: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
         """
         Run inference on grid coordinates using trained models from context.
 
@@ -180,6 +185,17 @@ class GridCreator:
             Expected format: {'prediction_models': [model_dicts, ...]}
         target_name : str
             Target variable name for model selection
+        target_scores : np.ndarray
+            The training targets these models were fitted on, and the yardstick the
+            confidence is measured against.
+
+            **Required to be in the same space the models predict in.** A yardstick in
+            the wrong units rescales every confidence on the grid and reports nothing
+            about it. In the pipeline both sides are whatever ``--scores_normalization``
+            produced, because ``prediction_train_labels`` -- which is what reaches this
+            as ``target_data`` -- is exactly the array the models were trained on. That
+            is why the comparison here is against the raw model output, and NOT against
+            the denormalized predictions ``create_prediction_heatmaps`` goes on to save.
 
         Returns
         -------
@@ -190,7 +206,8 @@ class GridCreator:
         Raises
         ------
         ValueError
-            If no models found for target or models dict malformed
+            If no models found for target, models dict malformed, or the target is
+            constant (no scale to measure a confidence against).
         """
         prediction_models = trained_models.get('prediction_models', [])
         if not prediction_models:
@@ -215,7 +232,6 @@ class GridCreator:
 
         # Collect predictions from all models for the target
         all_predictions = []
-        all_confidences = []
 
         for i, model_info in enumerate(target_models):
             model = model_info['model']
@@ -226,22 +242,7 @@ class GridCreator:
                     pred = model.predict(grid_coords)
                     all_predictions.append(pred)
 
-                    # Calculate confidence based on model type
-                    if hasattr(model, 'predict_proba'):
-                        # Classification model - use max probability as confidence
-                        proba = model.predict_proba(grid_coords)
-                        confidence = np.max(proba, axis=1)
-                    elif hasattr(model, 'score') or hasattr(model, 'predict'):
-                        # Regression model - use 1 - relative prediction variance as confidence proxy
-                        # For now, use a constant confidence for regression models
-                        confidence = np.ones(len(grid_coords)) * 0.8  # Default confidence
-                    else:
-                        confidence = np.ones(len(grid_coords)) * 0.5  # Fallback confidence
-
-                    all_confidences.append(confidence)
-
-                    logger.debug(f"Model {i+1}/{len(target_models)} prediction shape: {pred.shape}, "
-                                 f"confidence shape: {confidence.shape}")
+                    logger.debug(f"Model {i+1}/{len(target_models)} prediction shape: {pred.shape}")
 
                 else:
                     logger.warning(f"Model {i+1} doesn't have predict method - skipping")
@@ -255,13 +256,21 @@ class GridCreator:
 
         # Convert to arrays for easier handling
         all_predictions = np.array(all_predictions)  # Shape: (n_models, n_points)
-        all_confidences = np.array(all_confidences)  # Shape: (n_models, n_points)
 
         # Ensemble predictions (mean across models)
         ensemble_predictions = np.mean(all_predictions, axis=0)
 
-        # Aggregate confidences using the specified method
-        ensemble_confidences = self.aggregate_confidence(all_confidences)
+        # Confidence from the predictions themselves. Until 2026-09-06 this loop also
+        # built an `all_confidences` array in which every regression model contributed
+        # `np.ones(n_points) * 0.8`, and handed that to `aggregate_confidence`, whose
+        # cv_ensemble branch took the standard deviation across models -- of identical
+        # constants, so exactly 0, so confidence 1.0 at every grid point. The map was
+        # a constant, and `combined_heatmap = predictions * confidences` was therefore
+        # just the predictions scaled by 0.8. See `aggregate_confidence` for what
+        # replaced it and for what a constant confidence costs downstream.
+        ensemble_confidences = self.aggregate_confidence(
+            all_predictions, target_scale=self._target_scale(target_scores, target_name)
+        )
 
         logger.info(f"Completed simplified inference. Prediction range: "
                     f"[{np.min(ensemble_predictions):.3f}, {np.max(ensemble_predictions):.3f}], "
@@ -269,72 +278,157 @@ class GridCreator:
 
         return ensemble_predictions, ensemble_confidences
 
-    def aggregate_confidence(self, model_confidences: np.ndarray) -> np.ndarray:
-        """
-        Aggregate confidence from multiple model predictions.
+    @staticmethod
+    def _target_scale(target_scores: np.ndarray, target_name: str) -> float:
+        """The yardstick a confidence is measured against: the training target's SD.
 
-        Supports two methods for confidence aggregation:
-        - "5_model": Average of model-specific confidences
-        - "cv_ensemble": 1 - standard deviation of ensemble predictions (CV-style confidence)
+        Chosen over the alternatives (the prediction range on the grid, a fixed
+        constant) because it is the only one that makes the number comparable across
+        targets and across runs. A disagreement of 0.3 between folds means something
+        different on a target with SD 0.1 than on one with SD 10, and a confidence that
+        cannot distinguish those is not measuring agreement, it is measuring units.
+
+        Raises rather than falling back if the target is constant. A constant target has
+        no scale, every model fitted on it predicts the same number, and any confidence
+        computed against it is a ratio of zero to zero dressed up as a fraction.
+        """
+        target_scores = np.asarray(target_scores, dtype=float).ravel()
+        if target_scores.size == 0:
+            raise ValueError(
+                f"target_scores for '{target_name}' is empty; there is no scale to "
+                f"measure a grid confidence against."
+            )
+        scale = float(np.std(target_scores))
+        if not np.isfinite(scale) or scale <= 0:
+            raise ValueError(
+                f"target '{target_name}' is constant (SD {scale}); there is nothing for "
+                f"a model to predict and therefore no scale a confidence could be "
+                f"expressed in. Refusing rather than returning a confidence that would "
+                f"be a ratio of zero to zero."
+            )
+        return scale
+
+    def aggregate_confidence(self, model_predictions: np.ndarray,
+                             target_scale: float) -> np.ndarray:
+        """
+        Turn the cross-validation ensemble's predictions into a per-grid-point confidence.
+
+        ``confidence = agreement x variability``:
+
+        - **agreement** (per grid point) -- ``1 - std(model_predictions, axis=0) /
+          target_scale``, clipped to [0, 1]. The folds were fitted on different subsets,
+          so where they still agree the surface is pinned by data and where they diverge
+          it is being extrapolated. This grows with sparsity at the edges *and* in
+          interior holes, which is why it partly subsumes the boundary-bias work.
+        - **variability** (one scalar for the whole grid) -- ``std(ensemble) /
+          target_scale``, clipped to [0, 1]. Asks whether the ensemble surface varies at
+          all. A model that returns the same number everywhere agrees with itself
+          perfectly, so agreement alone would report 1.0 across the grid for the most
+          degenerate model there is.
+
+        **Only `agreement` moves region selection.** ``create_statistical_maps`` selects
+        regions with a *percentile* threshold on ``predictions * confidence``, and a
+        percentile is invariant to multiplication by a positive constant -- so the
+        scalar ``variability`` factor cannot change which grid points are selected, by
+        construction. Its job is different: it collapses the whole map toward zero when
+        the ensemble is flat, so a degenerate run is visible in the saved
+        ``confidence_values.npy`` and in ``confidence_range`` instead of looking like a
+        confident one. Do not read it as a second discriminating signal.
+
+        Confidence was previously a constant (see the note in ``simplified_inference``),
+        and a constant confidence has *exactly zero* effect on a percentile threshold --
+        it was not a weak signal, it was no signal.
+
+        ``confidence_method`` selects between:
+        - ``"cv_ensemble"`` (default): both factors, as above.
+        - ``"5_model"``: ``agreement`` only. The absolute values are then not comparable
+          with a cv_ensemble run, and a flat ensemble reads as fully confident.
 
         Parameters
         ----------
-        model_confidences : np.ndarray
-            Confidence values from each model with shape (n_models, n_points)
+        model_predictions : np.ndarray
+            Predictions from each model with shape (n_models, n_points). **Predictions,
+            not confidences.** Until 2026-09-06 the caller passed per-model confidence
+            values here while this docstring already described predictions; the code has
+            been made to match the documented intent, per Step 3 of
+            dev-docs/methodology/embedding_scaling_and_boundary_bias_plan.md.
+        target_scale : float
+            Positive scale the disagreement is expressed as a fraction of -- the training
+            target's SD, from ``_target_scale``. Replaces the previous
+            ``max_possible_std = 0.5``, which was calibrated against nothing.
 
         Returns
         -------
         np.ndarray
-            Aggregated confidence values with shape (n_points,)
+            Confidence values in [0, 1] with shape (n_points,)
 
         Raises
         ------
         ValueError
-            If model_confidences array is empty or has wrong shape
+            If model_predictions is empty, not 2D, or target_scale is not positive
         """
-        if model_confidences.size == 0:
-            raise ValueError("model_confidences array is empty")
+        if model_predictions.size == 0:
+            raise ValueError("model_predictions array is empty")
 
-        if model_confidences.ndim != 2:
-            raise ValueError(f"model_confidences must be 2D array, got shape: {model_confidences.shape}")
+        if model_predictions.ndim != 2:
+            raise ValueError(f"model_predictions must be 2D array, got shape: {model_predictions.shape}")
 
-        n_models, n_points = model_confidences.shape
+        if not np.isfinite(target_scale) or target_scale <= 0:
+            raise ValueError(f"target_scale must be finite and positive, got: {target_scale}")
+
+        n_models, n_points = model_predictions.shape
+
+        spread = np.std(model_predictions, axis=0)
+        agreement = 1.0 - np.clip(spread / target_scale, 0.0, 1.0)
+
+        if n_models == 1:
+            # std across one model is 0 at every point, so `agreement` is 1.0 everywhere
+            # and carries no information. Not an error -- one fold is a legitimate, if
+            # weak, configuration -- but the caller must not read the flat map as
+            # meaning the surface is well determined.
+            logger.warning(
+                "Confidence computed from a single model: cross-model agreement is 1.0 "
+                "at every grid point by construction and says nothing about how well "
+                "the surface is determined. Only the variability factor carries signal."
+            )
 
         if self.confidence_method == "5_model":
-            # Method 1: Simple average of model-specific confidences
-            aggregated_confidence = np.mean(model_confidences, axis=0)
-
-            logger.debug(f"Using 5_model confidence aggregation: "
-                         f"averaged {n_models} model confidences")
+            aggregated_confidence = agreement
+            variability = 1.0
 
         elif self.confidence_method == "cv_ensemble":
-            # Method 2: 1 - std of predictions (CV ensemble style confidence)
-            # Higher std = lower confidence, lower std = higher confidence
-            # We use the confidences as a proxy for prediction variability
-
-            # Calculate standard deviation across models
-            confidence_std = np.std(model_confidences, axis=0)
-
-            # Convert to confidence: 1 - normalized_std
-            # Normalize std to 0-1 range based on max possible std
-            max_possible_std = 0.5  # Conservative estimate for confidence std
-            normalized_std = np.clip(confidence_std / max_possible_std, 0, 1)
-            aggregated_confidence = 1 - normalized_std
-
-            logger.debug(f"Using cv_ensemble confidence aggregation: "
-                         f"std range [{np.min(confidence_std):.3f}, {np.max(confidence_std):.3f}], "
-                         f"confidence range [{np.min(aggregated_confidence):.3f}, {np.max(aggregated_confidence):.3f}]")
+            ensemble = np.mean(model_predictions, axis=0)
+            variability = float(np.clip(np.std(ensemble) / target_scale, 0.0, 1.0))
+            aggregated_confidence = agreement * variability
 
         else:
             # This should never happen due to __init__ validation, but defensive programming
             raise ValueError(f"Unknown confidence_method: {self.confidence_method}")
 
-        # Ensure confidence values are in valid range [0, 1]
         aggregated_confidence = np.clip(aggregated_confidence, 0.0, 1.0)
 
-        logger.debug(f"Aggregated confidence stats - Mean: {np.mean(aggregated_confidence):.3f}, "
-                     f"Std: {np.std(aggregated_confidence):.3f}, "
-                     f"Range: [{np.min(aggregated_confidence):.3f}, {np.max(aggregated_confidence):.3f}]")
+        if float(np.std(aggregated_confidence)) == 0.0:
+            # The exact defect Step 3 exists to remove, so it is reported rather than
+            # returned quietly. A constant confidence multiplied into the heatmap cannot
+            # change any percentile threshold, so every downstream region is selected as
+            # if no confidence had been computed at all.
+            logger.warning(
+                f"Confidence for this target is CONSTANT at {float(aggregated_confidence.flat[0]):.4f} "
+                f"across all {n_points} grid points (ensemble spread {float(np.std(np.mean(model_predictions, axis=0))):.3e}, "
+                f"cross-model spread {float(np.max(spread)):.3e}, target scale {target_scale:.3e}). "
+                f"Region selection downstream uses a percentile threshold, which is "
+                f"invariant to a constant factor, so this confidence has no effect on "
+                f"which regions are reported. Usually it means the fitted models ignore "
+                f"the embedding coordinates -- check whether the prediction stage found "
+                f"any signal before reading the maps."
+            )
+
+        logger.info(
+            f"Confidence ({self.confidence_method}) from {n_models} models: "
+            f"agreement [{np.min(agreement):.3f}, {np.max(agreement):.3f}], "
+            f"variability {variability:.3f}, "
+            f"final [{np.min(aggregated_confidence):.3f}, {np.max(aggregated_confidence):.3f}]"
+        )
 
         return aggregated_confidence
 
@@ -397,9 +491,14 @@ class GridCreator:
                     target_output = output_folder / f"target_{target_name}" / "prediction-heatmaps"
                 target_output.mkdir(parents=True, exist_ok=True)
 
-                # Run simplified inference for this target
+                # Run simplified inference for this target.
+                # `target_scores` is the yardstick the confidence is measured against,
+                # and it must be in the space the models predict in -- which it is,
+                # because it IS what they were trained on (heatmap_stage passes
+                # `prediction_train_labels` straight through). Hence it is paired with
+                # the pre-denormalization `predictions`, not with `final_predictions`.
                 predictions, confidences = self.simplified_inference(
-                    grid_coords, trained_models, target_name
+                    grid_coords, trained_models, target_name, target_scores
                 )
 
                 # Apply denormalization if requested and scalers are available

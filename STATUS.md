@@ -494,9 +494,60 @@ problem, the `enhanced-cli-typer` hang and repo pollution by test output are all
     Both looked wired because a test supplied its own input. Step 1 adds an AST guard for that
     pattern.
 
-    **Live defect fixed on the way past:** for regression the grid's confidence map is a hardcoded
-    constant (`grid_creator.py:202`), so `visualization_threshold` filters nothing. The real
-    ensemble spread is computed at `:226` and discarded.
+    **Step 3 DONE 2026-09-06 — real confidence, and the plan's stated reason for it was wrong.**
+    The old confidence was a literal `0.8` per model; `cv_ensemble` then took the std across
+    models of identical constants → 0 → confidence 1.0 everywhere. The plan said this mattered
+    because `visualization_threshold` filtered nothing. It does not: **the pipeline never reads
+    `visualization_threshold`** — only `apply_two_stage_filtering` does, reached only from
+    `create_region_statistical_maps`, which only the FastAPI service calls. (Confirms the other
+    session's E4, with the nuance that it is live in the API, dead in the pipeline.) The real
+    cost is worse: `combined_heatmap = predictions * confidence` is thresholded by **percentile**,
+    and a percentile is invariant to a positive constant factor, so the old confidence had
+    **exactly zero** effect on which regions were reported.
+
+    Confidence is now `agreement × variability`, both as fractions of the **training target's SD**
+    (compared against pre-denormalization predictions, since `prediction_train_labels` is
+    literally what the models were fitted on). `max_possible_std = 0.5`, calibrated against
+    nothing, is gone. `1 − std(predictions)` **alone** was rejected: constant models agree with
+    each other perfectly and it scores them 0.908 — the metric ADR §3.1b already condemns. The
+    `variability` factor is what makes a degenerate run report 0.
+
+    ⚠️ **Only `agreement` can move region selection.** `variability` is one global scalar, so by
+    the same percentile-invariance argument it cannot. Its job is to collapse a flat map to zero
+    so the run says so. Do not read it as a second discriminating signal.
+
+    Measured, `swiss_roll`: agreement 0.000–0.999, variability 0.814, confidence 0.000–0.813
+    (**std 0.201 — not constant**); mean 0.663 inside the training hull vs 0.583 outside;
+    corr(distance to nearest training sample, confidence) **−0.583**, monotone across the first
+    four quintiles. `regression`/`multi_target_regression`: flat at 0, with a warning naming the
+    numbers. **Nothing re-recorded — all 25 prior assertions passed unchanged**; confidence feeds
+    the maps, not the CV scores. Baselines gained 3 keys; two new tests
+    (`test_some_dataset_has_a_confidence_map_that_participates` reads baselines only,
+    `test_confidence_map_matches_its_baseline` is the code-regression half). Both perturbed:
+    flipping the sparsity sign fires the first, flattening the map in `grid_creator` fires the
+    second on `swiss_roll` alone.
+
+    ⚠️ **A near-miss worth not repeating.** The first constancy check was `np.std(conf) == 0.0`.
+    `multi_target_regression`'s `target_1` map holds 10000 copies of one value (`np.unique` → 1,
+    `ptp` → exactly 0) yet `np.std` returns **1.97e-31**. The exact test called it "varying",
+    correlated numerical noise, and produced a confident-looking negative sign that would have
+    been baselined as a finding. Now `np.ptp(conf) < 1e-9`.
+
+    `visualization_threshold = 0.2` is documented against the new scale in
+    `region_statistical_analyzer.py` and is **still not calibrated**; it also has a cliff, because
+    a global factor sits in front of an absolute threshold. Harmless while only the API reads it.
+
+    **Also fixed 2026-09-06:** `tests/analysis_api` had 3 failures from Step 2 that no runner
+    reported — it covers `grid_creator.py` and `region_statistical_analyzer.py`, exactly what
+    Steps 2–5 touch, and is **not in `CORE_SUITES`**. It cannot join until its 3 pre-existing
+    `test_analysis_endpoints` validation failures are fixed. Run it by hand after every step.
+    Baseline at `21ec03d`: 3 failed / 101 passed; now 3 failed / 131 passed.
+
+    **Found, not fixed:** `foundation_fastapi_service/app.py:2325` constructs
+    `GridCreator(grid_size=(100,100), denormalize_predictions=True)` and calls
+    `create_prediction_grid(...)`. Neither the kwarg nor the method exists — that endpoint raises
+    `TypeError` on construction, and it feeds `np.random.uniform` mock data anyway. Outside Step 3;
+    belongs with the API/heatmaps discussion.
 
 0a. [x] **The prediction baselines were degenerate — fixed 2026-09-06 by adding a dataset.**
        On both 40-sample datasets, in every fold, the winning ElasticNet had all coefficients

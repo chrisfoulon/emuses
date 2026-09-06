@@ -161,114 +161,184 @@ class TestGridCreator:
 class TestGridCreatorInference:
     """Test GridCreator inference and confidence aggregation functionality."""
     
+    # The fixture below is shared by the two aggregation tests so they are comparing the
+    # same thing. It is a matrix of PREDICTIONS from 3 CV folds at 4 grid points -- the
+    # folds agree exactly everywhere except point 2, which is the only place any of this
+    # has anything to measure.
+    #
+    #   spread = std(axis=0)             = [0, 0, 0.816496580927726, 0]
+    #   ensemble = mean(axis=0)          = [1, 1, 2, 1]
+    #   std(ensemble)                    = 0.4330127018922193
+    #
+    # against target_scale = 2.0 (the training target's SD).
+    FOLD_PREDICTIONS = np.array([
+        [1.0, 1.0, 1.0, 1.0],
+        [1.0, 1.0, 2.0, 1.0],
+        [1.0, 1.0, 3.0, 1.0],
+    ])
+    TARGET_SCALE = 2.0
+
     def test_aggregate_confidence_5_model_method(self):
-        """Test confidence aggregation using 5_model method."""
+        """5_model is cross-model agreement alone, as a fraction of the target's SD."""
         creator = GridCreator(confidence_method="5_model")
-        
-        # Sample model confidences: 3 models, 4 points
-        model_confidences = np.array([
-            [0.8, 0.9, 0.7, 0.6],  # Model 1 confidences
-            [0.7, 0.8, 0.8, 0.7],  # Model 2 confidences  
-            [0.9, 0.7, 0.6, 0.8],  # Model 3 confidences
-        ])
-        
-        aggregated = creator.aggregate_confidence(model_confidences)
-        
-        # Should be mean across models (axis=0)
-        expected = np.mean(model_confidences, axis=0)
-        np.testing.assert_array_almost_equal(aggregated, expected)
-        
-        # Check shape and range
+
+        aggregated = creator.aggregate_confidence(self.FOLD_PREDICTIONS,
+                                                  target_scale=self.TARGET_SCALE)
+
+        # agreement = 1 - spread/target_scale
+        #           = 1 - [0, 0, 0.816496580927726, 0] / 2
+        expected = np.array([1.0, 1.0, 1.0 - 0.408248290463863, 1.0])
+        np.testing.assert_array_almost_equal(aggregated, expected, decimal=12)
+
         assert aggregated.shape == (4,)
-        assert np.all(aggregated >= 0.0)
-        assert np.all(aggregated <= 1.0)
-    
+        assert np.all(aggregated >= 0.0) and np.all(aggregated <= 1.0)
+
     def test_aggregate_confidence_cv_ensemble_method(self):
-        """Test confidence aggregation using cv_ensemble method."""
+        """cv_ensemble is that same agreement scaled by whether the surface varies."""
         creator = GridCreator(confidence_method="cv_ensemble")
-        
-        # Sample model confidences with varying spread
-        model_confidences = np.array([
-            [0.8, 0.5, 0.9, 0.7],  # High variability in col 1
-            [0.8, 0.5, 0.8, 0.7],  # Same values in col 0 & 3
-            [0.8, 0.5, 0.7, 0.7],  # Low variability
-        ])
-        
-        aggregated = creator.aggregate_confidence(model_confidences)
-        
-        # Check basic properties
-        assert aggregated.shape == (4,)
-        assert np.all(aggregated >= 0.0)
-        assert np.all(aggregated <= 1.0)
-        
-        # Points with lower std should have higher confidence
-        # Column 0: std=0 (all 0.8) → high confidence
-        # Column 1: std=0 (all 0.5) → high confidence  
-        # Column 2: std>0 (0.9,0.8,0.7) → lower confidence
-        # Column 3: std=0 (all 0.7) → high confidence
-        
-        assert aggregated[0] > aggregated[2]  # Low std > high std
-        assert aggregated[3] > aggregated[2]  # Low std > high std
-    
+
+        aggregated = creator.aggregate_confidence(self.FOLD_PREDICTIONS,
+                                                  target_scale=self.TARGET_SCALE)
+
+        # variability = std(ensemble)/target_scale = 0.4330127018922193 / 2
+        variability = 0.21650635094610965
+        agreement = np.array([1.0, 1.0, 1.0 - 0.408248290463863, 1.0])
+        np.testing.assert_array_almost_equal(aggregated, agreement * variability,
+                                             decimal=12)
+
+        assert np.all(aggregated >= 0.0) and np.all(aggregated <= 1.0)
+        # Where the folds disagree, confidence drops. This is the ordering the whole
+        # method exists to produce, and the pre-2026-09-06 implementation could not
+        # produce it at all: it was fed identical per-model constants.
+        assert aggregated[2] < aggregated[0]
+        assert aggregated[2] < aggregated[3]
+
+    def test_aggregate_confidence_is_not_constant_when_folds_disagree(self):
+        """The exact defect Step 3 removes: a confidence map with no variation.
+
+        A percentile threshold is invariant to multiplication by a positive constant,
+        so a constant confidence changes nothing about which regions are selected
+        downstream -- it is not a weak signal, it is no signal. Asserting the map varies
+        is therefore asserting that confidence participates in region selection at all.
+        """
+        creator = GridCreator(confidence_method="cv_ensemble")
+
+        aggregated = creator.aggregate_confidence(self.FOLD_PREDICTIONS,
+                                                  target_scale=self.TARGET_SCALE)
+
+        assert np.std(aggregated) > 0.0, (
+            "confidence is constant across the grid; every percentile threshold "
+            "downstream will select exactly what it would have selected with no "
+            "confidence at all"
+        )
+
+    def test_aggregate_confidence_collapses_on_constant_models(self):
+        """Models that ignore the coordinates must not read as confident.
+
+        Every fold returning the same number agrees with itself perfectly, so the
+        agreement factor alone is 1.0 everywhere -- the most degenerate possible model
+        scoring the maximum. The variability factor is what makes this report 0.
+        """
+        constant_folds = np.full((3, 4), 7.0)
+
+        cv = GridCreator(confidence_method="cv_ensemble")
+        np.testing.assert_array_almost_equal(
+            cv.aggregate_confidence(constant_folds, target_scale=self.TARGET_SCALE),
+            np.zeros(4), decimal=12
+        )
+
+        # And the demonstration that agreement alone cannot see it:
+        five = GridCreator(confidence_method="5_model")
+        np.testing.assert_array_almost_equal(
+            five.aggregate_confidence(constant_folds, target_scale=self.TARGET_SCALE),
+            np.ones(4), decimal=12
+        )
+
     def test_aggregate_confidence_invalid_inputs(self):
         """Test confidence aggregation with invalid inputs."""
         creator = GridCreator()
-        
+
         # Empty array
-        with pytest.raises(ValueError, match="model_confidences array is empty"):
-            creator.aggregate_confidence(np.array([]))
-        
+        with pytest.raises(ValueError, match="model_predictions array is empty"):
+            creator.aggregate_confidence(np.array([]), target_scale=1.0)
+
         # Wrong dimensions
-        with pytest.raises(ValueError, match="model_confidences must be 2D array"):
-            creator.aggregate_confidence(np.array([0.5, 0.6, 0.7]))
-    
+        with pytest.raises(ValueError, match="model_predictions must be 2D array"):
+            creator.aggregate_confidence(np.array([0.5, 0.6, 0.7]), target_scale=1.0)
+
+        # A scale of zero would make every ratio infinite; refuse rather than clip it
+        # to 1 and report a confidence of 0 that looks like a measurement.
+        for bad_scale in (0.0, -1.0, np.nan):
+            with pytest.raises(ValueError, match="target_scale must be finite and positive"):
+                creator.aggregate_confidence(self.FOLD_PREDICTIONS, target_scale=bad_scale)
+
+    def test_target_scale_refuses_a_constant_target(self):
+        """A constant target has no scale, so no confidence can be expressed against it."""
+        with pytest.raises(ValueError, match="is constant"):
+            GridCreator._target_scale(np.full(20, 3.5), "target_0")
+
+        with pytest.raises(ValueError, match="is empty"):
+            GridCreator._target_scale(np.array([]), "target_0")
+
+        assert GridCreator._target_scale(np.array([0.0, 2.0]), "target_0") == 1.0
+
+
     def test_simplified_inference_basic(self):
         """Test basic simplified inference functionality."""
         creator = GridCreator()
         
-        # Mock trained models structure
+        # Two folds for score_0 that DISAGREE, and by a different amount at each grid
+        # point. Two identical mocks (what this test used before 2026-09-06) give a
+        # cross-model spread of exactly zero everywhere, which is the degenerate input
+        # the old implementation could not distinguish from a well determined surface.
         class MockModel:
+            def __init__(self, slope=0.5):
+                self.slope = slope
+
             def predict(self, X):
-                # Simple linear prediction for testing
-                return np.sum(X, axis=1) * 0.5  # Sum coordinates * 0.5
-                
-            def predict_proba(self, X):
-                # Mock probabilities for binary classification
-                pred = self.predict(X)
-                # Convert to probabilities (sigmoid-like)
-                p1 = 1 / (1 + np.exp(-pred))
-                p0 = 1 - p1
-                return np.column_stack([p0, p1])
-        
-        # Create mock trained_models structure
+                return np.sum(X, axis=1) * self.slope
+
+        class MockDivergingModel:
+            """Agrees with MockModel(0.5) at the origin and diverges outward."""
+            def predict(self, X):
+                return np.sum(X, axis=1) * 0.5 + np.sum(X, axis=1) ** 2
+
         trained_models = {
             'prediction_models': [
                 {'model': MockModel(), 'target': 'score_0'},
-                {'model': MockModel(), 'target': 'score_0'},
+                {'model': MockDivergingModel(), 'target': 'score_0'},
                 {'model': MockModel(), 'target': 'score_1'},  # Different target
             ]
         }
-        
-        # Test grid coordinates
+
+        # Test grid coordinates, ordered by increasing distance from the origin
         grid_coords = np.array([[0.1, 0.2], [0.5, 0.5], [0.8, 0.9]])
-        
-        # Run inference for score_0 (2 models)
+        target_scores = np.array([0.0, 0.5, 1.0, 1.5, 2.0])  # SD 0.7071...
+
         predictions, confidences = creator.simplified_inference(
-            grid_coords, trained_models, 'score_0'
+            grid_coords, trained_models, 'score_0', target_scores
         )
-        
+
         # Check output shapes
         assert predictions.shape == (3,)
         assert confidences.shape == (3,)
-        
+
         # Check value ranges
         assert np.all(confidences >= 0.0)
         assert np.all(confidences <= 1.0)
-        
-        # Predictions should be reasonable (sum of coordinates * 0.5)
-        expected_individual = np.sum(grid_coords, axis=1) * 0.5
-        np.testing.assert_array_almost_equal(predictions, expected_individual, decimal=10)
-    
+
+        # Ensemble of the two score_0 models: mean of 0.5*s and 0.5*s + s**2
+        s = np.sum(grid_coords, axis=1)
+        np.testing.assert_array_almost_equal(predictions, 0.5 * s + 0.5 * s ** 2,
+                                             decimal=10)
+
+        # Confidence falls where the folds diverge. Both the ordering and the fact that
+        # the map varies at all are new in Step 3; this previously returned 1.0 at every
+        # point regardless of the models.
+        assert np.std(confidences) > 0.0
+        assert confidences[0] > confidences[1] > confidences[2]
+
+
     def test_simplified_inference_no_models(self):
         """Test simplified inference with no models."""
         creator = GridCreator()
@@ -278,7 +348,8 @@ class TestGridCreatorInference:
         grid_coords = np.array([[0.1, 0.2]])
         
         with pytest.raises(ValueError, match="No prediction models found"):
-            creator.simplified_inference(grid_coords, trained_models, 'score_0')
+            creator.simplified_inference(grid_coords, trained_models, 'score_0',
+                                         np.array([0.0, 1.0]))
     
     def test_simplified_inference_no_target_models(self):
         """Test simplified inference when no models match target."""
@@ -297,36 +368,47 @@ class TestGridCreatorInference:
         grid_coords = np.array([[0.1, 0.2]])
         
         with pytest.raises(ValueError, match="No models found for target 'score_0'"):
-            creator.simplified_inference(grid_coords, trained_models, 'score_0')
-    
+            creator.simplified_inference(grid_coords, trained_models, 'score_0',
+                                         np.array([0.0, 1.0]))
+
     def test_simplified_inference_regression_model(self):
-        """Test simplified inference with regression model (no predict_proba)."""
-        creator = GridCreator(confidence_method="5_model")  # Use 5_model for simple averaging
-        
+        """A regression model with a single fold: predictions real, agreement vacuous.
+
+        This test used to assert `confidences == 0.8` -- the literal constant the old
+        implementation assigned to any model without `predict_proba`, which then flowed
+        through `aggregate_confidence` unchanged. That number came from nowhere and
+        measured nothing. With one fold there genuinely is no cross-model agreement to
+        measure, so what is asserted now is that the code says so (agreement 1.0 by
+        construction) rather than inventing a value.
+        """
+        creator = GridCreator(confidence_method="5_model")
+
         class MockRegressionModel:
             def predict(self, X):
                 return np.sum(X, axis=1)  # Simple sum
-            
+
             # Explicitly exclude predict_proba to ensure regression path
             def score(self, X, y):
                 return 1.0
-        
+
         trained_models = {
             'prediction_models': [
                 {'model': MockRegressionModel(), 'target': 'score_0'}
             ]
         }
-        
+
         grid_coords = np.array([[0.1, 0.2], [0.3, 0.4]])
-        
+        target_scores = np.array([0.0, 0.5, 1.0])
+
         predictions, confidences = creator.simplified_inference(
-            grid_coords, trained_models, 'score_0'
+            grid_coords, trained_models, 'score_0', target_scores
         )
-        
-        # Check regression model uses default confidence (0.8 for single model with 5_model aggregation)
-        assert np.all(confidences == 0.8)
-        
-        # Check predictions 
+
+        # One model => spread 0 at every point => agreement 1.0. Vacuous, and logged as
+        # such by aggregate_confidence, but not a fabricated constant.
+        np.testing.assert_array_almost_equal(confidences, np.ones(2), decimal=12)
+
+        # Check predictions
         expected = np.array([0.3, 0.7])  # sum of coordinates
         np.testing.assert_array_almost_equal(predictions, expected)
 
