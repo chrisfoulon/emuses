@@ -11,7 +11,7 @@ from unittest.mock import Mock
 import numpy as np
 import pytest
 
-from emuses.tools.grid_creator import GridCreator
+from emuses.tools.grid_creator import GridCreator, HeatmapIntegrityError
 
 
 class TestGridCreator:
@@ -722,6 +722,56 @@ class TestShrinkageTowardTheNull:
 
         with pytest.raises(RuntimeError, match="different units"):
             creator._null_level(np.linspace(0.0, 1.0, 10), 'score', {}, True)
+
+    def test_a_unit_mismatch_stops_the_run_rather_than_the_target(self, tmp_path, monkeypatch):
+        """The refusal has to escape the per-target handler, or it is only a log line.
+
+        ``create_prediction_heatmaps`` catches Exception per target so one target with no
+        usable models does not take the others down. That is right for "cannot compute" --
+        the target gets no map and the absence is visible. It is wrong for "would compute
+        the wrong thing": recorded as ``{'error': ...}`` the run reports success, and the
+        next run writes the same wrong map. Hence HeatmapIntegrityError is re-raised.
+        """
+        creator = GridCreator(grid_size=self.GRID_SIZE, confidence_method="5_model")
+        monkeypatch.setattr(
+            GridCreator, "aggregate_confidence",
+            lambda self, model_predictions, target_scale: np.ones(self.grid_size ** 2),
+        )
+        # Denormalization succeeds for the grid, fails for the single null value -- the
+        # asymmetry that makes the two arrays end up in different units.
+        monkeypatch.setattr(
+            GridCreator, "_denormalize_predictions",
+            lambda self, values, target, models: (
+                (values, True) if np.size(values) > 1 else (None, False)
+            ),
+        )
+
+        with pytest.raises(HeatmapIntegrityError, match="different units"):
+            creator.create_prediction_heatmaps(
+                embeddings=np.linspace(0.0, 1.0, 21 * 2).reshape(21, 2),
+                trained_models=self._models(5.0),
+                target_data={'score': np.linspace(5.0, 15.0, 21)},
+                output_folder=str(tmp_path),
+                denormalize=True,
+            )
+
+    def test_a_target_that_simply_cannot_be_mapped_is_still_skipped(self, tmp_path):
+        """The counterpart, so the re-raise above does not quietly widen into everything.
+
+        A constant target has no scale to measure confidence against. That is "cannot
+        compute", not "would be wrong", and it must stay a per-target skip.
+        """
+        creator = GridCreator(grid_size=self.GRID_SIZE, confidence_method="5_model")
+
+        results = creator.create_prediction_heatmaps(
+            embeddings=np.linspace(0.0, 1.0, 21 * 2).reshape(21, 2),
+            trained_models=self._models(5.0),
+            target_data={'score': np.full(21, 7.0)},
+            output_folder=str(tmp_path),
+            denormalize=False,
+        )
+
+        assert 'error' in results['heatmap_results']['score']
 
     def test_null_level_refuses_an_empty_target(self):
         creator = GridCreator(grid_size=5)

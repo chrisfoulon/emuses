@@ -17,6 +17,21 @@ from bcblib.tools.dataframe_filtering import inverse_normalize_dataframe
 logger = logging.getLogger(__name__)
 
 
+class HeatmapIntegrityError(RuntimeError):
+    """A map cannot be built *correctly*, as opposed to not at all.
+
+    ``create_prediction_heatmaps`` wraps each target in a broad handler so that one target
+    with no usable models does not take the others down with it. That is right for "cannot
+    compute": the target ends up with no map, and its absence is visible downstream.
+
+    It is wrong for "would compute the wrong thing". A map built from a null in different
+    units from the predictions it corrects is arithmetic on incompatible quantities; it
+    produces a plausible-looking array that someone will interpret. Raising this class
+    instead means the broad handler re-raises rather than recording ``{'error': ...}`` and
+    carrying on, so the run stops where the science broke rather than in the log.
+    """
+
+
 class GridCreator:
     """
     Creates prediction heatmaps using 100x100 coordinate grids and simplified inference.
@@ -575,6 +590,12 @@ class GridCreator:
                             f"corrected heatmap [{metadata['corrected_range'][0]:.3f}, {metadata['corrected_range'][1]:.3f}] "
                             f"(shrunk toward null {null_level:.3f})")
 
+            except HeatmapIntegrityError:
+                # Deliberately not absorbed. The handler below is for "this target has no
+                # map"; this is "this target's map would be wrong", and a wrong map recorded
+                # as a per-target error is a wrong map that still gets written next run and
+                # read by someone. Let it stop the run.
+                raise
             except Exception as e:
                 logger.error(f"Failed to create heatmaps for target {target_name}: {e}")
                 results['heatmap_results'][target_name] = {'error': str(e)}
@@ -628,7 +649,7 @@ class GridCreator:
             # is about to be subtracted from HAVE been denormalized; returning the un-transformed
             # mean here would put the two in different units and the shrinkage would be
             # arithmetic on incompatible quantities, silently.
-            raise RuntimeError(
+            raise HeatmapIntegrityError(
                 f"predictions for '{target_name}' were denormalized but the same transform "
                 f"could not be applied to the null level ({null_model_space}). Refusing to "
                 f"shrink toward a null in different units from the map it corrects."

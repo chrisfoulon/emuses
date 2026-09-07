@@ -13,6 +13,7 @@ import tempfile
 import shutil
 
 from emuses.pipelines.heatmap_stage import HeatmapStage
+from emuses.tools.grid_creator import HeatmapIntegrityError
 
 
 class TestHeatmapStageTripleGridIntegration(unittest.TestCase):
@@ -68,6 +69,38 @@ class TestHeatmapStageTripleGridIntegration(unittest.TestCase):
     def tearDown(self):
         """Clean up temporary directory."""
         shutil.rmtree(self.temp_dir)
+
+    @patch('emuses.tools.region_statistical_analyzer.RegionStatisticalAnalyzer')
+    @patch('emuses.tools.correlation_grid_creator.CorrelationGridCreator')
+    @patch('emuses.tools.grid_creator.GridCreator')
+    def test_an_integrity_error_escapes_the_stage(
+            self, mock_grid_creator, mock_correlation_creator, mock_statistical_analyzer):
+        """A map that would be WRONG must stop the run, not be logged and stepped over.
+
+        This stage is written throughout to continue on partial functionality -- a missing
+        component leaves an absent artifact, and an absent artifact is visible to whoever
+        reads the output folder. A component that produces a plausible but incorrect map is
+        the opposite: nothing downstream can tell. There are two broad handlers between
+        GridCreator and the caller (per-target, and the whole triple-grid block, the latter
+        carrying an explicit "Don't raise" comment); both have to let this class through, so
+        this test goes through the stage rather than unit-testing either one.
+        """
+        mock_grid_instance = Mock()
+        mock_grid_creator.return_value = mock_grid_instance
+        mock_correlation_creator.return_value = Mock()
+        mock_statistical_analyzer.return_value = Mock()
+        mock_grid_instance.create_prediction_heatmaps.side_effect = HeatmapIntegrityError(
+            "null level is in different units from the map it corrects"
+        )
+
+        with self.assertRaises(HeatmapIntegrityError):
+            self.heatmap_stage._execute_triple_grid_analysis(
+                context=self.context,
+                embeddings=self.embeddings,
+                target_matrix=self.target_matrix,
+                output_folder=self.output_folder,
+                logger=self.logger
+            )
 
     @patch('emuses.tools.region_statistical_analyzer.RegionStatisticalAnalyzer')
     @patch('emuses.tools.correlation_grid_creator.CorrelationGridCreator')

@@ -25,6 +25,7 @@ from emuses.tools.run_index import build_run_entry, record_run
 from emuses.tools.target_resume import (build_target_fingerprint,
                                         load_completed_target,
                                         write_target_artefacts)
+from emuses.tools.grid_creator import HeatmapIntegrityError
 from emuses.tools.embedding_dimensionality import (
     HEATMAP_N_COMPONENTS, EmbeddingDimensionalityError,
     check_embedding_matches_stages, record_skipped_heatmaps)
@@ -1328,6 +1329,13 @@ class HeatmapStage(PipelineStage):
                     else:
                         logger.warning(f"  No trained models found for {target_name}")
                         
+                except HeatmapIntegrityError:
+                    # Not "this target has no grids" -- "this target's grids would be wrong".
+                    # Everything below this point is written to continue on partial
+                    # functionality, which is right for a missing component and exactly wrong
+                    # for a component that would produce a plausible, interpretable, incorrect
+                    # map. Let it out.
+                    raise
                 except Exception as e:
                     logger.error(f"  Prediction grid analysis failed for {target_name}: {e}")
                     # component_success['prediction_grids'] remains False
@@ -1540,6 +1548,10 @@ class HeatmapStage(PipelineStage):
             
         except ImportError as e:
             logger.error(f"Triple grid analysis components not available: {e}")
+            raise
+        except HeatmapIntegrityError:
+            # The one thing the continue-on-failure policy below must not cover. See the
+            # class docstring: absent maps are visible, wrong maps are not.
             raise
         except Exception as e:
             logger.error(f"Triple grid analysis failed: {e}")
