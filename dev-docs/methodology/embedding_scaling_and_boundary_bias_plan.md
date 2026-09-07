@@ -396,6 +396,39 @@ map-facing confidence and becomes a separately reported degeneracy flag — whic
 framing anyway, since it was never an uncertainty. Map-facing confidence becomes `agreement`
 alone. This makes Steps 3 and 5 one piece of work, not two.
 
+### Part 2 (shrink) + the rename half of part 3 — done, 2026-09-07
+
+`corrected_heatmap = null + confidence * (prediction - null)`, with `null` from `_null_level`
+(`grid_creator.py`). `corrected_values.npy` is written; `combined_values.npy` is **not** written
+any more, so a pre-2026-09-07 model folder fails loudly at the consumer instead of being read as
+the new quantity. Metadata gained `combination: shrink_to_null` and `null_level`.
+
+Parts 1 (mask) and 3-proper (the confidence map as a first-class output to interpret with), and
+the `variability` change below, are still to do.
+
+**What it did to region selection**, `swiss_roll`, real confidence vs. a constant-confidence
+control (which under shrinkage reproduces the raw prediction map *exactly* — verified, and pinned
+by `test_full_confidence_leaves_the_map_exactly_alone`):
+
+| bottom-5% grid cells | multiplication (old) | shrinkage (new) |
+|---|---|---|
+| kept from control | 0 / 500 | **377 / 500** |
+| entered | 500 | 123 |
+| mean confidence of cells that entered | **0.06** | **0.79** (grid mean 0.63) |
+| mean confidence of cells that left | — | 0.60 |
+
+Under multiplication the "low prediction" region was, in substance, the low-*confidence* region:
+it replaced the entire tail with the least-trusted cells on the grid. Under shrinkage the cells
+entering are *more* trusted than average and genuinely low (mean prediction 5.65 against a null
+of 9.36), and the cells leaving are the untrusted ones. The mechanism is inverted, which is the
+result that matters — not the sample count, which moved 29 → 43 (from 77 under multiplication)
+because trusted low cells took the vacated places.
+
+Pinned by `TestShrinkageTowardTheNull` in `tests/analysis_api/test_prediction_grid.py`, on both a
+positive- and a negative-valued target so the sign-dependence cannot come back. Perturbation
+check: reinstating `final_predictions * confidences` fails exactly those two tests and nothing
+else. `--core` green; no regression baseline moved.
+
 ### How this interacts with replacing the percentile (their §2)
 
 Checked against the permutation proposal, because "we are moving off percentiles" would

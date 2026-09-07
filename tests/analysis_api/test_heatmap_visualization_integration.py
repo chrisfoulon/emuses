@@ -98,13 +98,13 @@ class TestHeatmapVisualizationIntegration:
         base_coords = np.tile(self.features[:50, :2], (2, 1))[:grid_points]  # Get required points
         grid_coords = (base_coords - base_coords.min(axis=0)) / (base_coords.max(axis=0) - base_coords.min(axis=0))
         
-        # Use real data for combined values (scaled to [0, 1])
+        # Use real data for corrected values (scaled to [0, 1])
         base_values = self.features[:grid_points, 0]
-        combined_values = (base_values - base_values.min()) / (base_values.max() - base_values.min())
+        corrected_values = (base_values - base_values.min()) / (base_values.max() - base_values.min())
         
         mock_grid_instance.create_prediction_heatmaps.return_value = {
             'grid_coordinates': grid_coords,
-            'combined_values': combined_values,
+            'corrected_values': corrected_values,
             'artifacts': {}
         }
         
@@ -202,13 +202,13 @@ class TestHeatmapVisualizationIntegration:
         base_coords = self.features[:100, :2]
         grid_coords = (base_coords - base_coords.min(axis=0)) / (base_coords.max(axis=0) - base_coords.min(axis=0))
         
-        # Use real data for combined values (scaled to [0, 1])
+        # Use real data for corrected values (scaled to [0, 1])
         base_values = self.features[:100, 0]
-        combined_values = (base_values - base_values.min()) / (base_values.max() - base_values.min())
+        corrected_values = (base_values - base_values.min()) / (base_values.max() - base_values.min())
         
         mock_grid_instance.create_prediction_heatmaps.return_value = {
             'grid_coordinates': grid_coords,
-            'combined_values': combined_values,
+            'corrected_values': corrected_values,
             'artifacts': {}
         }
         
@@ -291,13 +291,13 @@ class TestHeatmapVisualizationIntegration:
         base_coords = self.features[:100, :2]
         grid_coords = (base_coords - base_coords.min(axis=0)) / (base_coords.max(axis=0) - base_coords.min(axis=0))
         
-        # Use real data for combined values (scaled to [0, 1])
+        # Use real data for corrected values (scaled to [0, 1])
         base_values = self.features[:100, 0]
-        combined_values = (base_values - base_values.min()) / (base_values.max() - base_values.min())
+        corrected_values = (base_values - base_values.min()) / (base_values.max() - base_values.min())
         
         mock_grid_instance.create_prediction_heatmaps.return_value = {
             'grid_coordinates': grid_coords,
-            'combined_values': combined_values,
+            'corrected_values': corrected_values,
             'artifacts': {}
         }
         

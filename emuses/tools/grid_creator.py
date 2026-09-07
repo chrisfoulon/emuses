@@ -513,18 +513,21 @@ class GridCreator:
                 # Use denormalized predictions if available, otherwise normalized
                 final_predictions = denormalized_predictions if denormalization_applied else predictions
 
-                # Create prediction*confidence heatmaps
-                combined_heatmap = final_predictions * confidences
+                # Shrink toward the null by confidence, rather than multiplying by it.
+                null_level = self._null_level(
+                    target_scores, target_name, trained_models, denormalization_applied
+                )
+                corrected_heatmap = null_level + confidences * (final_predictions - null_level)
 
                 # Save numerical results
                 prediction_values_path = target_output / "prediction_values.npy"
                 confidence_values_path = target_output / "confidence_values.npy"
-                combined_values_path = target_output / "combined_values.npy"
+                corrected_values_path = target_output / "corrected_values.npy"
                 grid_coords_path = target_output / "grid_coordinates.npy"
 
                 np.save(prediction_values_path, final_predictions)
                 np.save(confidence_values_path, confidences)
-                np.save(combined_values_path, combined_heatmap)
+                np.save(corrected_values_path, corrected_heatmap)
                 np.save(grid_coords_path, grid_coords)
 
                 # Save metadata
@@ -533,14 +536,21 @@ class GridCreator:
                     'grid_size': self.grid_size,
                     'confidence_method': self.confidence_method,
                     'denormalization_applied': denormalization_applied,
+                    # What `corrected_values.npy` actually is, recorded so a saved map stays
+                    # interpretable without this source file. `combined_values.npy` used to sit
+                    # here holding `predictions * confidence`; it is deliberately NOT written
+                    # any more rather than redefined, so an old folder cannot be misread as a
+                    # new one.
+                    'combination': 'shrink_to_null',
+                    'null_level': float(null_level),
                     'prediction_range': [float(np.min(final_predictions)), float(np.max(final_predictions))],
                     'confidence_range': [float(np.min(confidences)), float(np.max(confidences))],
-                    'combined_range': [float(np.min(combined_heatmap)), float(np.max(combined_heatmap))],
+                    'corrected_range': [float(np.min(corrected_heatmap)), float(np.max(corrected_heatmap))],
                     'grid_points': len(grid_coords),
                     'artifacts': {
                         'prediction_values': str(prediction_values_path),
                         'confidence_values': str(confidence_values_path),
-                        'combined_values': str(combined_values_path),
+                        'corrected_values': str(corrected_values_path),
                         'grid_coordinates': str(grid_coords_path)
                     }
                 }
@@ -562,7 +572,8 @@ class GridCreator:
 
                 logger.info(f"Created prediction heatmaps for target {target_name}: "
                             f"predictions [{metadata['prediction_range'][0]:.3f}, {metadata['prediction_range'][1]:.3f}], "
-                            f"combined heatmap [{metadata['combined_range'][0]:.3f}, {metadata['combined_range'][1]:.3f}]")
+                            f"corrected heatmap [{metadata['corrected_range'][0]:.3f}, {metadata['corrected_range'][1]:.3f}] "
+                            f"(shrunk toward null {null_level:.3f})")
 
             except Exception as e:
                 logger.error(f"Failed to create heatmaps for target {target_name}: {e}")
@@ -571,6 +582,58 @@ class GridCreator:
 
         logger.info(f"Completed prediction heatmap generation for {len(results['heatmap_results'])} targets")
         return results
+
+    def _null_level(self, target_scores: np.ndarray, target_name: str,
+                    trained_models: Dict, denormalization_applied: bool) -> float:
+        """The value a grid point takes when there is no confidence in it.
+
+        The training target's **mean**: the prediction you would make knowing nothing about
+        position in the morphospace, which is literally what a constant model returns (the
+        degenerate fixtures in ADR 3.1b return exactly this). Not a tuning parameter -- the
+        alternative worth considering is the median, for robustness, and nothing else.
+
+        WHY THIS EXISTS AT ALL. The map used to be ``predictions * confidence``. That is
+        shrinkage toward zero, and zero is the null only for a centred quantity. On a 0-1
+        target -- a depression score where 0 means "fully depressed" -- zero is a meaningful
+        *extreme*, so multiplying pushed every low-confidence grid point toward "maximally
+        depressed" and into the bottom tail. Measured on swiss_roll (2026-09-07): the low
+        prediction region went from 29 to 77 training samples, the old set a strict subset,
+        purely from confidence entering the wrong way. The defect is sign-dependent -- on a
+        negative-valued target the same multiplication pushes untrusted points *out* of the
+        low tail -- which is what shows the operation was wrong rather than the confidence.
+        Note ``null_level = 0`` recovers the old behaviour exactly, so this generalises it.
+
+        SPACE CONSISTENCY, which is the easy thing to get wrong here. ``target_scores`` is in
+        the space the models were fitted on; ``final_predictions`` has been *denormalized* when
+        a scores scaler exists. Taking the mean of the former and subtracting it from the latter
+        would mix the two silently. So when denormalization was applied, the mean is pushed
+        through the very same transform rather than an equivalent-looking one.
+        """
+        target_scores = np.asarray(target_scores, dtype=float).ravel()
+        if target_scores.size == 0:
+            raise ValueError(
+                f"target_scores for '{target_name}' is empty; there is no null level to "
+                f"shrink an untrusted grid point toward."
+            )
+        null_model_space = float(np.mean(target_scores))
+
+        if not denormalization_applied:
+            return null_model_space
+
+        denormalized, applied = self._denormalize_predictions(
+            np.array([null_model_space]), target_name, trained_models
+        )
+        if not applied or denormalized is None:
+            # Deliberately not a fallback to the model-space value. The predictions this null
+            # is about to be subtracted from HAVE been denormalized; returning the un-transformed
+            # mean here would put the two in different units and the shrinkage would be
+            # arithmetic on incompatible quantities, silently.
+            raise RuntimeError(
+                f"predictions for '{target_name}' were denormalized but the same transform "
+                f"could not be applied to the null level ({null_model_space}). Refusing to "
+                f"shrink toward a null in different units from the map it corrects."
+            )
+        return float(denormalized[0])
 
     def _denormalize_predictions(self, predictions: np.ndarray, target_name: str, trained_models: Dict) -> Tuple[Optional[np.ndarray], bool]:
         """

@@ -469,7 +469,9 @@ class TestGridCreatorHeatmaps:
                 assert 'artifacts' in target_result
                 assert 'prediction_range' in target_result
                 assert 'confidence_range' in target_result
-                assert 'combined_range' in target_result
+                assert 'corrected_range' in target_result
+                assert target_result['combination'] == 'shrink_to_null'
+                assert 'null_level' in target_result
                 
                 # Check artifacts exist
                 artifacts = target_result['artifacts']
@@ -522,7 +524,7 @@ class TestGridCreatorHeatmaps:
                 
                 # Should have all required artifacts
                 assert 'artifacts' in target_result
-                assert len(target_result['artifacts']) >= 4  # prediction, confidence, combined, coords
+                assert len(target_result['artifacts']) >= 4  # prediction, confidence, corrected, coords
     
     def test_create_prediction_heatmaps_no_models_for_target(self):
         """Test heatmap creation when no models exist for a target."""
@@ -590,7 +592,7 @@ class TestGridCreatorHeatmaps:
             expected_files = [
                 "prediction_values.npy",
                 "confidence_values.npy", 
-                "combined_values.npy",
+                "corrected_values.npy",
                 "grid_coordinates.npy",
                 "prediction_metadata.json"
             ]
@@ -607,3 +609,121 @@ class TestGridCreatorHeatmaps:
             assert metadata['grid_size'] == 3
             assert 'prediction_range' in metadata
             assert 'artifacts' in metadata
+
+class TestShrinkageTowardTheNull:
+    """How confidence enters the prediction map.
+
+    The map used to be ``predictions * confidence``. That is shrinkage toward *zero*, and
+    zero is the null only for a centred quantity. It is now
+    ``null + confidence * (prediction - null)`` with the null set to the training target's
+    mean. These tests pin the property that distinguishes the two, because the difference
+    is invisible on any target that happens to straddle zero.
+
+    Measured on swiss_roll (2026-09-07), for the record: under multiplication the bottom-5%
+    grid cells were *entirely* replaced (500 added, 500 removed) and the cells pulled in had
+    mean confidence 0.06 -- the "low prediction" region was the low-*confidence* region.
+    Under shrinkage 377 of 500 cells stayed, and the 123 that entered had mean confidence
+    0.79, above the 0.63 average.
+    """
+
+    GRID_SIZE = 10
+    N_GRID = GRID_SIZE ** 2
+
+    class _Ramp:
+        """A model whose prediction increases across the grid, so tails exist to fall into."""
+
+        def __init__(self, offset):
+            self.offset = offset
+
+        def predict(self, X):
+            return self.offset + 5.0 * np.sum(X, axis=1)
+
+    @staticmethod
+    def _models(offset):
+        return {
+            'prediction_models': [{'model': TestShrinkageTowardTheNull._Ramp(offset),
+                                   'target': 'score'}],
+            'scores_scaler': None,
+            'metadata': {},
+        }
+
+    @staticmethod
+    def _run(tmp_path, offset, scores, confidence_pattern, monkeypatch):
+        monkeypatch.setattr(
+            GridCreator, "aggregate_confidence",
+            lambda self, model_predictions, target_scale: confidence_pattern,
+        )
+        creator = GridCreator(grid_size=TestShrinkageTowardTheNull.GRID_SIZE,
+                              confidence_method="5_model")
+        creator.create_prediction_heatmaps(
+            embeddings=np.linspace(0.0, 1.0, 21 * 2).reshape(21, 2),
+            trained_models=TestShrinkageTowardTheNull._models(offset),
+            target_data={'score': scores},
+            output_folder=str(tmp_path),
+            denormalize=False,
+        )
+        d = Path(tmp_path) / "target_score" / "prediction-heatmaps"
+        return (np.load(d / "prediction_values.npy"),
+                np.load(d / "corrected_values.npy"),
+                json.loads((d / "prediction_metadata.json").read_text()))
+
+    @pytest.mark.parametrize("offset,scores,null", [
+        # A 0-1-style target read as "0 = worst": the sign case that motivated this. Under
+        # multiplication an untrusted point lands at 0, i.e. maximally low.
+        (5.0, np.linspace(5.0, 15.0, 21), 10.0),
+        # The same shape reflected. Under multiplication the identical untrusted point lands
+        # at 0, which here is maximally *high* -- the operation's answer depends on which
+        # side of zero the target happens to sit, which is what makes it wrong rather than
+        # merely noisy.
+        (-15.0, np.linspace(-15.0, -5.0, 21), -10.0),
+    ], ids=["positive_target", "negative_target"])
+    def test_a_zero_confidence_point_lands_on_the_null_whatever_the_sign(
+            self, tmp_path, monkeypatch, offset, scores, null):
+        untrusted = np.zeros(self.N_GRID)
+        untrusted[::2] = 1.0  # half trusted, half not, so both tails still have occupants
+
+        predictions, corrected, metadata = self._run(
+            tmp_path, offset, scores, untrusted, monkeypatch)
+
+        assert metadata['null_level'] == pytest.approx(null)
+        zero_conf = untrusted == 0.0
+        np.testing.assert_allclose(corrected[zero_conf], null)
+
+        # And the property that actually matters downstream: an untrusted point is in
+        # neither tail of the corrected map, on either sign. Under `predictions * confidence`
+        # every one of them would sit at 0.0 and therefore in one tail or the other.
+        assert corrected[zero_conf].min() > np.percentile(corrected, 5)
+        assert corrected[zero_conf].max() < np.percentile(corrected, 95)
+        old_way = predictions * untrusted
+        assert (old_way[zero_conf] <= np.percentile(old_way, 5)).all() or \
+               (old_way[zero_conf] >= np.percentile(old_way, 95)).all()
+
+    def test_full_confidence_leaves_the_map_exactly_alone(self, tmp_path, monkeypatch):
+        """The control the swiss_roll measurement rested on, pinned so it stays true.
+
+        With confidence 1 everywhere the correction must be the identity -- otherwise a
+        before/after comparison is measuring the correction plus an unrelated shift.
+        """
+        predictions, corrected, _ = self._run(
+            tmp_path, 5.0, np.linspace(5.0, 15.0, 21), np.ones(self.N_GRID), monkeypatch)
+
+        np.testing.assert_array_equal(corrected, predictions)
+
+    def test_null_is_pushed_through_the_same_transform_as_the_predictions(self):
+        """A null in different units from the map it corrects is silent nonsense.
+
+        ``target_scores`` lives in the space the models were fitted on; the map has been
+        denormalized when a scores scaler exists. If the transform cannot be applied to the
+        null too, the only honest move is to refuse -- returning the model-space mean would
+        subtract one unit from another and produce a plausible-looking map.
+        """
+        creator = GridCreator(grid_size=5)
+        creator._denormalize_predictions = lambda values, target, models: (None, False)
+
+        with pytest.raises(RuntimeError, match="different units"):
+            creator._null_level(np.linspace(0.0, 1.0, 10), 'score', {}, True)
+
+    def test_null_level_refuses_an_empty_target(self):
+        creator = GridCreator(grid_size=5)
+        with pytest.raises(ValueError, match="is empty"):
+            creator._null_level(np.array([]), 'score', {}, False)

@@ -553,6 +553,17 @@ problem, the `enhanced-cli-typer` hang and repo pollution by test output are all
     negative-valued target the same multiplication would push untrusted points *out* of the low
     tail. Latent before Step 3 because a constant factor is a pure rescale.
 
+    **Shrinkage LANDED 2026-09-07 (increment B of three).** `corrected_values.npy` replaces
+    `combined_values.npy` — new filename, not a redefinition, so old model folders fail loudly.
+    Re-measured on the same swiss_roll pair: the bottom-5% grid cells now *keep* 377/500 from the
+    control, the 123 that enter have mean confidence **0.79** (grid mean 0.63) and mean prediction
+    5.65 against a null of 9.36, and the 123 that leave have mean confidence 0.60. Under
+    multiplication the same comparison was 0/500 kept and mean confidence **0.06** for everything
+    that entered. The mechanism is inverted, which is the point; the sample count 29 → 43 (from 77)
+    is a side effect of trusted low cells taking the vacated places. Perturbation-checked. Still to
+    do: **increment A** (support mask) and **increment C** (`variability` out of the map-facing
+    confidence, into a degeneracy flag).
+
     **Fix agreed 2026-09-07: shrink toward the null, do not multiply.**
     `combined = null + confidence × (prediction − null)`, `null` = training target mean (what a
     constant model predicts). Multiplication is that formula with the null hardcoded to 0, which

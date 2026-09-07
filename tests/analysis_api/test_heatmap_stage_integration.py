@@ -91,9 +91,9 @@ class TestHeatmapStageTripleGridIntegration(unittest.TestCase):
         base_coords = np.tile(self.features[:5000, :2], (2, 1))  # Tile to get 10000 points
         grid_coords = (base_coords - base_coords.min(axis=0)) / (base_coords.max(axis=0) - base_coords.min(axis=0))
         
-        # Use real data for combined values (scaled to [0, 1])
+        # Use real data for corrected values (scaled to [0, 1])
         base_combined = np.tile(self.features[:5000, 0], 2)  # 10000 values
-        combined_values = (base_combined - base_combined.min()) / (base_combined.max() - base_combined.min())
+        corrected_values = (base_combined - base_combined.min()) / (base_combined.max() - base_combined.min())
         
         # Use real data for correlation values (scaled to [-1, 1] with mix of positive/negative)
         base_corr = np.tile(self.targets[:5000, 0], 2) if self.targets.shape[1] > 0 else np.tile(self.features[:5000, 0], 2)
@@ -101,7 +101,7 @@ class TestHeatmapStageTripleGridIntegration(unittest.TestCase):
         
         prediction_results = {
             'grid_coordinates': grid_coords,
-            'combined_values': combined_values
+            'corrected_values': corrected_values
         }
         correlation_results = {
             'grid_coordinates': grid_coords, 
@@ -150,7 +150,7 @@ class TestHeatmapStageTripleGridIntegration(unittest.TestCase):
     @patch('emuses.tools.correlation_grid_creator.CorrelationGridCreator')
     @patch('emuses.tools.grid_creator.GridCreator')
     def test_prediction_significance_values_processing(self, mock_grid_creator, mock_correlation_creator, mock_statistical_analyzer):
-        """Test that prediction analysis uses combined_values (prediction×confidence)."""
+        """Test that prediction analysis uses corrected_values (shrunk toward the null)."""
         
         # Setup mocks
         mock_grid_instance = Mock()
@@ -168,9 +168,9 @@ class TestHeatmapStageTripleGridIntegration(unittest.TestCase):
         base_coords = np.tile(self.features[:5000, :2], (2, 1))  # Tile to get 10000 points
         grid_coords = (base_coords - base_coords.min(axis=0)) / (base_coords.max(axis=0) - base_coords.min(axis=0))
         
-        # Use real data for combined values (scaled to [0, 1])
+        # Use real data for corrected values (scaled to [0, 1])
         base_combined = np.tile(self.features[:5000, 0], 2)  # 10000 values
-        combined_values = (base_combined - base_combined.min()) / (base_combined.max() - base_combined.min())
+        corrected_values = (base_combined - base_combined.min()) / (base_combined.max() - base_combined.min())
         
         # Use real data for correlation values (scaled to [-1, 1])
         base_corr = np.tile(self.targets[:5000, 0], 2) if self.targets.shape[1] > 0 else np.tile(self.features[:5000, 0], 2)
@@ -178,7 +178,7 @@ class TestHeatmapStageTripleGridIntegration(unittest.TestCase):
         
         prediction_results = {
             'grid_coordinates': grid_coords,
-            'combined_values': combined_values  # prediction×confidence values
+            'corrected_values': corrected_values  # shrunk toward the null values
         }
         correlation_results = {
             'grid_coordinates': grid_coords,
@@ -203,10 +203,10 @@ class TestHeatmapStageTripleGridIntegration(unittest.TestCase):
         calls = mock_statistical_instance.create_statistical_maps.call_args_list
         prediction_call = [call for call in calls if call[1]['significance_source'] == 'prediction'][0]
         
-        # Verify prediction analysis uses combined_values
+        # Verify prediction analysis uses corrected_values
         np.testing.assert_array_equal(
             prediction_call[1]['significance_values'],
-            prediction_results['combined_values']
+            prediction_results['corrected_values']
         )
 
     @patch('emuses.tools.region_statistical_analyzer.RegionStatisticalAnalyzer')
@@ -231,13 +231,13 @@ class TestHeatmapStageTripleGridIntegration(unittest.TestCase):
         base_coords = self.features[:5, :2]
         grid_coords = (base_coords - base_coords.min(axis=0)) / (base_coords.max(axis=0) - base_coords.min(axis=0))
         
-        # Use real data for combined values (scaled to [0, 1])
+        # Use real data for corrected values (scaled to [0, 1])
         base_combined = self.features[:5, 0]
-        combined_values = (base_combined - base_combined.min()) / (base_combined.max() - base_combined.min())
+        corrected_values = (base_combined - base_combined.min()) / (base_combined.max() - base_combined.min())
         
         prediction_results = {
             'grid_coordinates': grid_coords,
-            'combined_values': combined_values
+            'corrected_values': corrected_values
         }
         correlation_results = {
             'grid_coordinates': grid_coords,

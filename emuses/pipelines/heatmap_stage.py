@@ -1298,20 +1298,25 @@ class HeatmapStage(PipelineStage):
                             denormalize=True
                         )
                         
-                        # Load actual combined values for statistical analysis
+                        # Load actual corrected values for statistical analysis
                         prediction_data_loaded = False
                         if prediction_results and 'heatmap_results' in prediction_results:
                             if target_name in prediction_results['heatmap_results']:
                                 target_result = prediction_results['heatmap_results'][target_name]
-                                if 'artifacts' in target_result and 'combined_values' in target_result['artifacts']:
+                                # 'corrected_values', not the old 'combined_values': the map is
+                                # now `null + confidence * (prediction - null)` rather than
+                                # `prediction * confidence`. The key was renamed rather than
+                                # redefined so a model folder written before 2026-09-07 fails
+                                # this check loudly instead of being read as the new quantity.
+                                if 'artifacts' in target_result and 'corrected_values' in target_result['artifacts']:
                                     try:
-                                        combined_values_path = target_result['artifacts']['combined_values']
-                                        combined_values = np.load(combined_values_path)
-                                        # Store grid coordinates and combined values for statistical analysis
+                                        corrected_values_path = target_result['artifacts']['corrected_values']
+                                        corrected_values = np.load(corrected_values_path)
+                                        # Store grid coordinates and corrected values for statistical analysis
                                         prediction_results['grid_coordinates'] = grid_coords
-                                        prediction_results['combined_values'] = combined_values
+                                        prediction_results['corrected_values'] = corrected_values
                                         prediction_data_loaded = True
-                                        logger.info(f"    Loaded prediction data: {combined_values.shape} combined values")
+                                        logger.info(f"    Loaded prediction data: {corrected_values.shape} corrected values")
                                     except Exception as e:
                                         logger.error(f"    Failed to load prediction files: {e}")
                         
@@ -1402,15 +1407,15 @@ class HeatmapStage(PipelineStage):
                     # Call 1: Prediction significance analysis (both high & low regions)  
                     if (prediction_results is not None and 
                         'grid_coordinates' in prediction_results and 
-                        'combined_values' in prediction_results):
+                        'corrected_values' in prediction_results):
                         logger.info("    Running prediction significance analysis")
                         # Store heatmap data for cluster visualizations
-                        statistical_analyzer._prediction_heatmap_data = prediction_results['combined_values']
+                        statistical_analyzer._prediction_heatmap_data = prediction_results['corrected_values']
                         statistical_analyzer._current_analysis_type = "prediction"
                         
                         statistical_analyzer.create_statistical_maps(
                             grid_coords=prediction_results['grid_coordinates'],
-                            significance_values=prediction_results['combined_values'],  # prediction×confidence
+                            significance_values=prediction_results['corrected_values'],  # shrunk toward the null
                             input_matrix=input_matrix,
                             target_data=target_data,
                             output_folder=target_output,
@@ -1466,10 +1471,10 @@ class HeatmapStage(PipelineStage):
                     
                     # Generate prediction heatmap with UMAP scatter overlay
                     if (prediction_results is not None and 
-                        'combined_values' in prediction_results):
+                        'corrected_values' in prediction_results):
                         pred_viz_path = visualization_folder / f"prediction_heatmap_{target_name}.png"
                         plot_prediction_heatmap(
-                            heatmap_values=prediction_results['combined_values'],
+                            heatmap_values=prediction_results['corrected_values'],
                             training_embeddings=embeddings,
                             target_scores=target_scores,
                             target_name=target_name,
