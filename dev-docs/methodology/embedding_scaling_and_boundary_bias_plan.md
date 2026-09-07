@@ -328,6 +328,98 @@ substitute.
 - Assert region membership changes only at the boundary, not in the interior.
 - Re-record.
 
+### Amendment, 2026-09-07 — Step 5 absorbs a defect Step 3 exposed
+
+**Measured first, so this is not a design preference.** Running `swiss_roll` twice, identical
+except that one used the pre-Step-3 constant confidence, the *high* regions came out identical
+(prediction 45 samples, correlation 34) and the *low* prediction region went from 29 samples to
+**77**, the old set a strict subset of the new — 48 added, 0 removed, Jaccard 0.377.
+
+The cause is not Step 3. It is `combined = predictions × confidence`
+(`grid_creator.py:517`), which Step 3 merely made visible. On `swiss_roll` every prediction is
+positive (4.875–14.093), so multiplying by a confidence in [0, 0.813] pushes low-confidence
+points *toward zero* and therefore into the bottom tail. The "low significance region" — meant
+to mean *the model predicts a low value here* — silently became partly *we do not trust it
+here*. **The artefact is sign-dependent, which is the tell:** on a target with negative
+predictions the same multiplication pulls them *up* toward zero, so untrusted points would
+*leave* the low tail instead. Before Step 3 the factor was constant, hence a pure rescale, hence
+invisible.
+
+**The fix is shrinkage toward the null, not multiplication:**
+
+```
+combined = null + confidence × (prediction − null)
+```
+
+`confidence = 1` gives the prediction unchanged; `confidence = 0` gives the null, i.e. no claim;
+and `null = 0` reduces to `prediction × confidence`. So multiplication is not a method — it is
+this formula with the null hardcoded to zero, which is correct only for a centred quantity. That
+is exactly why the correlation map needed no fix (its null *is* 0, no association) and why
+z-scoring the targets would appear to fix the prediction map: z-scoring moves the null to 0.
+
+**Z-scoring is not the fix, though `--scores_normalization zscore` exists.** The map is built
+from `final_predictions`, which is the *denormalized* array (`grid_creator.py:514`), so training
+on z-scores still produces a raw-units map and the same artefact.
+
+`null` = the training target mean: the prediction you would make knowing nothing about position
+in the morphospace, which is literally what a constant model predicts (cf. ADR §3.1b, where the
+degenerate fixtures return exactly this value). Median if robustness is wanted; that is the only
+real choice here.
+
+**Three parts, all needed:**
+
+1. **Mask** grid points outside the training support: NaN, and `np.nanpercentile`. Shrinkage
+   decides what value an untrusted point takes; it does not decide whether that point belongs in
+   the distribution the threshold is computed over. Points shrunk to the null pile up in the
+   middle, fattening it, which pushes the cut-offs outward and makes both tails *more* extreme
+   than they should be. Masking is binary (in/out of support); shrinkage is continuous (within
+   support, trust still varies). Neither replaces the other.
+2. **Shrink** toward the null as above.
+3. **Report three maps, and rename.** `prediction_values.npy` and `confidence_values.npy` are
+   already written alongside `combined_values.npy`. Write the shrunk map as a **new**
+   `corrected_values.npy` rather than redefining `combined_values.npy` in place — same filename,
+   different quantity, is how a model folder written last month gets misread next month. Record
+   the null value and the shrinkage form in the metadata so a saved map stays interpretable.
+   Regions are defined on the masked+shrunk map; the two component maps are what you interpret
+   with.
+
+**The honest limit:** no single scalar map can separate "low because the value is low" from "low
+because we do not trust it" — two numbers into one. Shrinkage guarantees an untrusted point
+cannot *enter* a tail. It does not decompose a point that is already in one. That is what the
+three-map output is for.
+
+**Consequence for Step 3 that must be settled at the same time.** Under multiplication the global
+`variability` scalar was provably free (percentile-invariant). Under shrinkage it is not: it caps
+confidence at 0.814 on `swiss_roll`, so *every* point including the best-supported is pulled 19%
+toward the null, systematically compressing both tails. So `variability` comes **out** of the
+map-facing confidence and becomes a separately reported degeneracy flag — which is the cleaner
+framing anyway, since it was never an uncertainty. Map-facing confidence becomes `agreement`
+alone. This makes Steps 3 and 5 one piece of work, not two.
+
+### How this interacts with replacing the percentile (their §2)
+
+Checked against the permutation proposal, because "we are moving off percentiles" would
+otherwise look like it makes this moot. It does not:
+
+- **Tiers 1+2 — the recommended pair — permute and recompute the *correlation* grid only.** They
+  are cheap precisely because that grid fits nothing. The **prediction** map is Tier 3, which
+  needs a nested-CV refit per permutation and is explicitly *not* the default. So under the
+  recommended plan the prediction map keeps a percentile threshold, and it is the prediction map
+  that carries this defect. The two changes are close to orthogonal: permutation fixes the
+  correlation map's threshold, this fixes the prediction map's statistic.
+- **D4 dissolves into Tier 1.** The signed 95th-percentile threshold that can never select
+  r = −0.8 stops existing once the correlation map is tested two-sided against a permutation null.
+- **If Tier 3 is ever run, one hard requirement:** confidence must be recomputed *inside* each
+  permutation, not computed once on the real fit and reused. Confidence depends on the models,
+  which depend on the labels; reusing it across permutations makes it a fixed label-dependent
+  weighting that does not cancel between the observed statistic and its null, and the test is
+  then invalid. If it *is* recomputed per permutation, a global factor cancels on both sides and
+  per-point agreement stays part of the statistic, which is correct.
+- **Masking is permutation-safe by construction.** The support mask depends on the embedding
+  only, and UMAP is unsupervised, so permuting scores leaves the embedding — and therefore the
+  mask — identical. The same fixed mask applies to observed and null, exactly like a brain mask
+  in the Nichols & Holmes framework, including for Tier 2's cluster-extent search volume.
+
 ---
 
 ## Sequencing, and why not all at once

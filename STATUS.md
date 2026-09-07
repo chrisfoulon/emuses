@@ -543,6 +543,42 @@ problem, the `enhanced-cli-typer` hang and repo pollution by test output are all
     `test_analysis_endpoints` validation failures are fixed. Run it by hand after every step.
     Baseline at `21ec03d`: 3 failed / 101 passed; now 3 failed / 131 passed.
 
+    **Step 3 DID move the science, and exposed a defect in its consumer (measured 2026-09-07).**
+    Two identical `swiss_roll` runs differing only in the confidence map: *high* regions
+    identical (prediction 45, correlation 34), *low* prediction region 29 → **77** samples, old
+    set a strict subset (48 added, 0 removed, Jaccard 0.377). Cause is not Step 3 but
+    `combined = predictions × confidence` (`grid_creator.py:517`): predictions are all positive
+    (4.9–14.1), so multiplying by confidence pushes low-confidence points toward zero and into the
+    bottom tail. "Low significance" silently became partly "low trust". **Sign-dependent** — on a
+    negative-valued target the same multiplication would push untrusted points *out* of the low
+    tail. Latent before Step 3 because a constant factor is a pure rescale.
+
+    **Fix agreed 2026-09-07: shrink toward the null, do not multiply.**
+    `combined = null + confidence × (prediction − null)`, `null` = training target mean (what a
+    constant model predicts). Multiplication is that formula with the null hardcoded to 0, which
+    is correct only for centred quantities — hence the correlation map was always fine (null = 0)
+    and hence z-scoring *appears* to fix it. It does not, in practice: the map is built from the
+    **denormalized** predictions (`grid_creator.py:514`), so `--scores_normalization zscore`
+    still yields a raw-units map. Full write-up, including the three-part fix (mask + shrink +
+    three named output maps) and the permutation interaction, is the **2026-09-07 amendment to
+    Step 5** in `dev-docs/methodology/embedding_scaling_and_boundary_bias_plan.md`. Read that.
+
+    Two consequences that change the plan:
+    - **Steps 3 and 5 are now one piece of work.** Under shrinkage the global `variability`
+      scalar stops being free (it caps confidence at 0.814, pulling *every* point 19% toward the
+      null and compressing both tails), so it must come out of the map-facing confidence and
+      become a separate degeneracy flag. Map-facing confidence = `agreement` alone.
+    - **Step 5 before Step 4**, reversing the earlier recommendation. Step 5 is the fix for the
+      measured artefact, and it rewrites region membership anyway — which is where their D3
+      (bounding box) has to be settled, rather than reworking that surface twice.
+
+    **The percentile replacement does not make this moot.** Their recommended Tiers 1+2 permute
+    the *correlation* grid only (cheap because it fits nothing); the prediction map is Tier 3 and
+    explicitly not the default. So the prediction map — the one with the defect — keeps a
+    percentile threshold. Their D4 dissolves into Tier 1. If Tier 3 is ever run, confidence must
+    be recomputed *inside* each permutation or the test is invalid; masking is permutation-safe
+    because UMAP is unsupervised, so the mask is identical across shuffles.
+
     **Found, not fixed:** `foundation_fastapi_service/app.py:2325` constructs
     `GridCreator(grid_size=(100,100), denormalize_predictions=True)` and calls
     `create_prediction_grid(...)`. Neither the kwarg nor the method exists — that endpoint raises
