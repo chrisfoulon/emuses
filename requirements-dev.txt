@@ -26,23 +26,34 @@
 # bound is conservative, not real -- measured against 1.17.1, GPy's GPRegression
 # and SparseGPClassification both fit and predict finite, sane values.
 acres==0.5.0
-    # via bidsschematools
+    # via
+    #   bidsschematools
+    #   templateflow
 aiosqlite==0.22.1
     # via -r requirements.in
 alembic==1.16.4
     # via optuna
 altair==5.5.0
     # via streamlit
+annotated-doc==0.0.5
+    # via
+    #   fastapi
+    #   typer
 annotated-types==0.7.0
     # via pydantic
 anyio==4.9.0
     # via
     #   httpx
     #   starlette
+    #   streamlit
 argon2-cffi==23.1.0
     # via pwdlib
 argon2-cffi-bindings==25.1.0
     # via argon2-cffi
+arviz==0.23.4
+    # via
+    #   bcblib
+    #   pymc
 attrs==25.3.0
     # via
     #   jsonschema
@@ -51,27 +62,27 @@ authlib==1.6.9
     # via safety
 azure-core==1.38.3
     # via azure-storage-blob
-azure-storage-blob==12.28.0
+azure-storage-blob==12.30.1
     # via -r requirements.in
-bandit==1.8.6
+bandit==1.9.4
     # via -r requirements-dev.in
-bcblib==0.6.1
+bcblib==0.7.1
     # via -r requirements.in
 bcrypt==4.3.0
     # via pwdlib
 bids-validator==1.14.7.post0
     # via pybids
-bidsschematools==1.0.11
-    # via bids-validator
-black==26.3.1
+bidsschematools==1.2.7
+    # via
+    #   bids-validator
+    #   pybids
+black==26.5.1
     # via -r requirements-dev.in
-blinker==1.9.0
-    # via streamlit
-boto3==1.42.69
+boto3==1.43.88
     # via
     #   -r requirements.in
     #   moto
-botocore==1.42.69
+botocore==1.43.89
     # via
     #   boto3
     #   moto
@@ -79,19 +90,20 @@ botocore==1.42.69
 bottle==0.13.4
     # via optuna-dashboard
 cachetools==6.1.0
-    # via streamlit
+    # via pymc
 certifi==2025.8.3
     # via
     #   httpcore
     #   httpx
     #   requests
-cffi==1.17.1
+    #   safety
+cffi==2.1.1
     # via
     #   argon2-cffi-bindings
     #   cryptography
 charset-normalizer==3.4.2
     # via requests
-choreographer==1.0.9
+choreographer==1.3.0
     # via kaleido
 click==8.2.1
     # via
@@ -103,8 +115,17 @@ click==8.2.1
     #   streamlit
     #   typer
     #   uvicorn
+cloudpickle==3.1.2
+    # via
+    #   joblib
+    #   pymc
 colorlog==6.9.0
     # via optuna
+cons==0.4.7
+    # via
+    #   etuples
+    #   minikanren
+    #   pytensor
 contourpy==1.3.3
     # via matplotlib
 coverage[toml]==7.10.1
@@ -116,6 +137,12 @@ cryptography==46.0.5
     #   google-auth
     #   moto
     #   pyjwt
+cuda-bindings==13.3.1
+    # via torch
+cuda-pathfinder==1.8.1
+    # via cuda-bindings
+cuda-toolkit[cublas,cudart,cufft,cufile,cupti,curand,cusolver,cusparse,nvjitlink,nvrtc,nvtx]==13.0.3.0
+    # via torch
 cycler==0.12.1
     # via matplotlib
 cython==3.1.2
@@ -140,18 +167,23 @@ email-validator==2.2.0
     # via fastapi-users
 et-xmlfile==2.0.0
     # via openpyxl
-fastapi==0.116.1
+etuples==0.3.10
+    # via
+    #   minikanren
+    #   pytensor
+fastapi==0.141.1
     # via
     #   -r requirements.in
     #   fastapi-users
-fastapi-users[oauth,sqlalchemy]==15.0.4
+fastapi-users[oauth,sqlalchemy]==15.0.5
     # via
     #   -r requirements.in
     #   fastapi-users-db-sqlalchemy
 fastapi-users-db-sqlalchemy==7.0.0
     # via fastapi-users
-filelock==3.20.3
+filelock==3.16.1
     # via
+    #   pytensor
     #   pytest-servers
     #   safety
     #   torch
@@ -160,7 +192,9 @@ flake8==7.3.0
 fonttools==4.60.2
     # via matplotlib
 formulaic==1.2.0
-    # via pybids
+    # via
+    #   pybids
+    #   statsmodels
 frozendict==2.4.6
     # via pybids
 fsspec==2025.7.0
@@ -168,10 +202,6 @@ fsspec==2025.7.0
     #   pytest-servers
     #   torch
     #   universal-pathlib
-gitdb==4.0.12
-    # via gitpython
-gitpython==3.1.45
-    # via streamlit
 google-api-core==2.30.0
     # via
     #   google-cloud-core
@@ -201,10 +231,18 @@ h11==0.16.0
     # via
     #   httpcore
     #   uvicorn
-hdbscan==0.8.40
+h5netcdf==1.8.1
+    # via arviz
+h5py==3.16.0
+    # via
+    #   arviz
+    #   nitransforms
+hdbscan==0.8.44
     # via -r requirements.in
 httpcore==1.0.9
     # via httpx
+httptools==0.8.0
+    # via streamlit
 httpx==0.28.1
     # via
     #   -r requirements.in
@@ -228,11 +266,13 @@ isodate==0.7.2
     # via azure-storage-blob
 isort==6.0.1
     # via -r requirements-dev.in
+itsdangerous==2.2.0
+    # via streamlit
 jinja2==3.1.6
     # via
     #   altair
     #   mne
-    #   moto
+    #   nilearn
     #   pydeck
     #   safety
     #   torch
@@ -240,7 +280,7 @@ jmespath==1.1.0
     # via
     #   boto3
     #   botocore
-joblib==1.5.2
+joblib==1.6.0
     # via
     #   -r requirements.in
     #   bcblib
@@ -253,13 +293,13 @@ jsonschema==4.25.0
     # via altair
 jsonschema-specifications==2025.4.1
     # via jsonschema
-kaleido==1.0.0
+kaleido==1.4.0
     # via -r requirements.in
 kiwisolver==1.4.8
     # via matplotlib
 lazy-loader==0.4
     # via mne
-lightgbm==4.6.0
+lightgbm==4.7.0
     # via -r requirements.in
 limits==5.4.0
     # via slowapi
@@ -267,12 +307,15 @@ llvmlite==0.45.1
     # via
     #   numba
     #   pynndescent
-logistro==1.1.0
+logical-unification==0.4.7
+    # via
+    #   cons
+    #   minikanren
+    #   pytensor
+logistro==2.0.1
     # via
     #   choreographer
     #   kaleido
-lxml==6.0.0
-    # via nilearn
 makefun==1.16.0
     # via fastapi-users
 mako==1.3.10
@@ -286,47 +329,61 @@ markupsafe==3.0.2
     #   werkzeug
 marshmallow==4.1.2
     # via safety
-matplotlib==3.10.5
+matplotlib==3.11.1
     # via
     #   -r requirements.in
+    #   arviz
+    #   bcblib
     #   mne
     #   seaborn
 mccabe==0.7.0
     # via flake8
 mdurl==0.1.2
     # via markdown-it-py
-mne==1.10.0
+minikanren==1.0.5
+    # via pytensor
+mne==1.11.0
     # via
     #   -r requirements.in
     #   bcblib
-moto[s3]==5.1.22
+moto[s3]==5.2.3
     # via -r requirements.in
 mpmath==1.3.0
     # via sympy
+multipledispatch==1.0.0
+    # via
+    #   etuples
+    #   logical-unification
+    #   minikanren
 mypy==1.17.1
     # via -r requirements-dev.in
 mypy-extensions==1.1.0
     # via
     #   black
     #   mypy
-narwhals==2.0.1
+narwhals==2.25.0
     # via
     #   -r requirements.in
     #   altair
     #   formulaic
+    #   lightgbm
     #   plotly
+    #   scikit-learn
 networkx==3.5
     # via torch
-nibabel==5.3.2
+nibabel==5.4.2
     # via
     #   -r requirements.in
     #   bcblib
     #   nilearn
+    #   nitransforms
     #   pybids
-nilearn==0.12.0
+nilearn==0.13.1
     # via
     #   -r requirements.in
     #   bcblib
+nitransforms==24.1.4
+    # via bcblib
 nltk==3.9.3
     # via safety
 num2words==0.5.14
@@ -338,16 +395,20 @@ numba==0.62.1
 numpy==1.26.4
     # via
     #   -r requirements.in
+    #   arviz
     #   bcblib
     #   contourpy
     #   formulaic
     #   gpy
+    #   h5netcdf
+    #   h5py
     #   hdbscan
     #   lightgbm
     #   matplotlib
     #   mne
     #   nibabel
     #   nilearn
+    #   nitransforms
     #   numba
     #   optuna
     #   pandas
@@ -356,70 +417,80 @@ numpy==1.26.4
     #   pybids
     #   pydeck
     #   pykrige
+    #   pymc
+    #   pytensor
     #   scikit-learn
     #   scipy
     #   seaborn
     #   statsmodels
     #   streamlit
     #   umap-learn
+    #   xarray
+    #   xarray-einstats
     #   xgboost
-nvidia-cublas-cu12==12.6.4.1
+nvidia-cublas==13.1.1.3
     # via
-    #   nvidia-cudnn-cu12
-    #   nvidia-cusolver-cu12
-    #   torch
-nvidia-cuda-cupti-cu12==12.6.80
-    # via torch
-nvidia-cuda-nvrtc-cu12==12.6.77
-    # via torch
-nvidia-cuda-runtime-cu12==12.6.77
-    # via torch
-nvidia-cudnn-cu12==9.5.1.17
-    # via torch
-nvidia-cufft-cu12==11.3.0.4
-    # via torch
-nvidia-cufile-cu12==1.11.1.6
-    # via torch
-nvidia-curand-cu12==10.3.7.77
-    # via torch
-nvidia-cusolver-cu12==11.7.1.2
-    # via torch
-nvidia-cusparse-cu12==12.5.4.2
+    #   cuda-toolkit
+    #   nvidia-cudnn-cu13
+    #   nvidia-cusolver
+nvidia-cuda-cupti==13.0.85
+    # via cuda-toolkit
+nvidia-cuda-nvrtc==13.0.88
     # via
-    #   nvidia-cusolver-cu12
-    #   torch
-nvidia-cusparselt-cu12==0.6.3
+    #   cuda-toolkit
+    #   nvidia-cublas
+nvidia-cuda-runtime==13.0.96
+    # via cuda-toolkit
+nvidia-cudnn-cu13==9.24.0.43
     # via torch
-nvidia-nccl-cu12==2.26.2
+nvidia-cufft==12.0.0.61
+    # via cuda-toolkit
+nvidia-cufile==1.15.1.6
+    # via cuda-toolkit
+nvidia-curand==10.4.0.35
+    # via cuda-toolkit
+nvidia-cusolver==12.0.4.66
+    # via cuda-toolkit
+nvidia-cusparse==12.6.3.3
+    # via
+    #   cuda-toolkit
+    #   nvidia-cusolver
+nvidia-cusparselt-cu13==0.8.1
+    # via torch
+nvidia-nccl-cu13==2.30.7
     # via
     #   torch
     #   xgboost
-nvidia-nvjitlink-cu12==12.6.85
+nvidia-nvjitlink==13.3.33
     # via
-    #   nvidia-cufft-cu12
-    #   nvidia-cusolver-cu12
-    #   nvidia-cusparse-cu12
-    #   torch
-nvidia-nvtx-cu12==12.6.77
+    #   cuda-toolkit
+    #   nvidia-cufft
+    #   nvidia-cusolver
+    #   nvidia-cusparse
+nvidia-nvshmem-cu13==3.4.5
     # via torch
+nvidia-nvtx==13.0.85
+    # via cuda-toolkit
 openpyxl==3.1.5
     # via bcblib
-optuna==4.4.0
+optuna==4.9.0
     # via
     #   -r requirements.in
     #   optuna-dashboard
     #   optuna-integration
-optuna-dashboard==0.19.0
+optuna-dashboard==0.20.0
     # via -r requirements.in
-optuna-integration[sklearn]==4.4.0
+optuna-integration[sklearn]==4.9.0
     # via -r requirements.in
 orjson==3.11.7
     # via kaleido
 packaging==25.0
     # via
     #   altair
+    #   arviz
     #   black
     #   dparse
+    #   h5netcdf
     #   kaleido
     #   lazy-loader
     #   limits
@@ -428,7 +499,6 @@ packaging==25.0
     #   nibabel
     #   nilearn
     #   optuna
-    #   optuna-dashboard
     #   plotly
     #   pooch
     #   pytest
@@ -436,43 +506,43 @@ packaging==25.0
     #   safety-schemas
     #   statsmodels
     #   streamlit
+    #   xarray
 pandas==2.3.1
     # via
     #   -r requirements.in
+    #   arviz
     #   bcblib
     #   formulaic
     #   nilearn
     #   optuna-integration
     #   pybids
+    #   pymc
     #   seaborn
     #   statsmodels
     #   streamlit
+    #   xarray
 paramz==0.9.6
     # via gpy
 pathspec==1.1.1
     # via
     #   black
     #   mypy
-    # Was 0.12.1, which black 26.3.1 cannot import: it needs pathspec>=1.0.0 and
-    # dies at `from black import patched_main` with
-    # `ModuleNotFoundError: No module named 'pathspec.patterns.gitignore'`.
-    # This lockfile was internally inconsistent, and `pip install --no-deps`
-    # installed it anyway without a word -- the same shape as the `.[test]` extra
-    # that silently skipped installing pytest. mypy 1.17.1 wants only >=0.9.0, so
-    # 1.1.1 satisfies both. `pip check` in the quality job now catches this class.
 patsy==1.0.1
     # via statsmodels
 pbr==6.1.1
     # via stevedore
-pillow==12.1.1
+pillow==11.3.0
     # via
     #   -r requirements.in
     #   matplotlib
     #   streamlit
 platformdirs==4.3.8
     # via
+    #   arviz
     #   black
+    #   choreographer
     #   pooch
+    #   templateflow
 plotly==6.2.0
     # via -r requirements.in
 pluggy==1.6.0
@@ -481,7 +551,7 @@ pluggy==1.6.0
     #   pytest-cov
 pooch==1.8.2
     # via mne
-prometheus-client==0.24.1
+prometheus-client==0.26.0
     # via -r requirements.in
 proto-plus==1.27.1
     # via google-api-core
@@ -492,9 +562,7 @@ protobuf==6.33.5
     #   proto-plus
     #   streamlit
 psutil==6.1.1
-    # via
-    #   -r requirements.in
-    #   safety
+    # via -r requirements.in
 pwdlib[argon2,bcrypt]==0.3.0
     # via fastapi-users
 py-partiql-parser==0.6.3
@@ -505,8 +573,10 @@ pyasn1==0.6.3
     # via pyasn1-modules
 pyasn1-modules==0.4.2
     # via google-auth
-pybids==0.19.0
-    # via -r requirements.in
+pybids==0.22.0
+    # via
+    #   -r requirements.in
+    #   templateflow
 pycodestyle==2.14.0
     # via flake8
 pycparser==2.22
@@ -528,25 +598,30 @@ pygments==2.19.2
     #   rich
 pyjwt[crypto]==2.12.1
     # via fastapi-users
-pykrige==1.7.2
+pykrige==1.7.3
     # via -r requirements.in
+pymc==5.25.1
+    # via bcblib
 pymemcache==4.0.0
     # via -r requirements.in
 pynndescent==0.5.13
     # via umap-learn
 pyparsing==3.2.3
     # via matplotlib
+pytensor==2.31.7
+    # via pymc
 pytest==8.4.1
     # via
     #   -r requirements-dev.in
     #   pytest-asyncio
     #   pytest-cov
     #   pytest-servers
-pytest-asyncio==1.1.0
+    #   pytest-timeout
+pytest-asyncio==1.4.0
     # via -r requirements-dev.in
 pytest-cov==6.2.1
     # via -r requirements-dev.in
-pytest-servers==0.5.13
+pytest-servers==0.5.14
     # via -r requirements.in
 pytest-timeout==2.4.0
     # via -r requirements-dev.in
@@ -554,14 +629,16 @@ python-dateutil==2.9.0.post0
     # via
     #   botocore
     #   matplotlib
-    #   moto
     #   pandas
 python-dotenv==1.2.2
     # via testcontainers
-python-multipart==0.0.22
+python-multipart==0.0.32
     # via
     #   -r requirements.in
     #   fastapi-users
+    #   streamlit
+pytokens==0.4.1
+    # via black
 pytz==2025.2
     # via pandas
 pyyaml==6.0.2
@@ -579,7 +656,7 @@ referencing==0.36.2
     #   jsonschema-specifications
 regex==2025.7.34
     # via nltk
-requests==2.32.4
+requests==2.34.2
     # via
     #   -r requirements.in
     #   azure-core
@@ -592,13 +669,15 @@ requests==2.32.4
     #   pooch
     #   pytest-servers
     #   responses
-    #   safety
     #   streamlit
+    #   templateflow
 responses==0.26.0
     # via moto
 rich==14.1.0
     # via
     #   bandit
+    #   bcblib
+    #   pymc
     #   typer
 rpds-py==0.26.0
     # via
@@ -610,25 +689,25 @@ ruamel-yaml==0.18.14
     #   safety-schemas
 ruamel-yaml-clib==0.2.12
     # via ruamel-yaml
-s3transfer==0.16.0
+s3transfer==0.19.2
     # via boto3
-safety==3.6.0
+safety==3.8.1
     # via -r requirements-dev.in
-safety-schemas==0.0.14
+safety-schemas==0.0.16
     # via safety
-scikit-learn==1.7.2
+scikit-learn==1.9.0
     # via
     #   -r requirements.in
     #   bcblib
     #   hdbscan
     #   nilearn
-    #   optuna-dashboard
     #   optuna-integration
     #   pynndescent
     #   umap-learn
-scipy==1.17.1
+scipy==1.12.0
     # via
     #   -r requirements.in
+    #   arviz
     #   bcblib
     #   formulaic
     #   gpy
@@ -636,14 +715,18 @@ scipy==1.17.1
     #   lightgbm
     #   mne
     #   nilearn
+    #   nitransforms
     #   optuna-integration
     #   paramz
     #   pybids
     #   pykrige
+    #   pymc
     #   pynndescent
+    #   pytensor
     #   scikit-learn
     #   statsmodels
     #   umap-learn
+    #   xarray-einstats
     #   xgboost
 seaborn==0.13.2
     # via -r requirements.in
@@ -657,10 +740,8 @@ six==1.17.0
     #   gpy
     #   paramz
     #   python-dateutil
-slowapi==0.1.9
+slowapi==0.1.10
     # via -r requirements.in
-smmap==5.0.2
-    # via gitdb
 sniffio==1.3.1
     # via anyio
 sqlalchemy[asyncio]==2.0.42
@@ -669,47 +750,56 @@ sqlalchemy[asyncio]==2.0.42
     #   fastapi-users-db-sqlalchemy
     #   optuna
     #   pybids
-starlette==0.49.1
-    # via fastapi
-statsmodels==0.14.5
+starlette==0.47.3
+    # via
+    #   fastapi
+    #   streamlit
+statsmodels==0.15.0
     # via
     #   -r requirements.in
     #   bcblib
 stevedore==5.4.1
     # via bandit
-streamlit==1.47.1
+streamlit==1.63.0
     # via -r requirements.in
 structlog==25.5.0
     # via -r requirements.in
 sympy==1.14.0
     # via torch
+templateflow==25.1.2
+    # via bcblib
 tenacity==9.1.2
-    # via
-    #   safety
-    #   streamlit
-testcontainers==4.14.1
+    # via safety
+testcontainers==4.15.0
     # via -r requirements.in
 threadpoolctl==3.6.0
-    # via scikit-learn
+    # via
+    #   pymc
+    #   scikit-learn
 toml==0.10.2
     # via streamlit
 tomlkit==0.13.3
     # via safety
-torch==2.7.1
+toolz==1.1.0
+    # via
+    #   logical-unification
+    #   minikanren
+torch==2.14.0
     # via -r requirements.in
-tornado==6.5.5
-    # via streamlit
-tqdm==4.67.1
+tqdm==4.70.0
     # via
     #   -r requirements.in
     #   bcblib
     #   mne
     #   nltk
     #   optuna
+    #   templateflow
     #   umap-learn
-triton==3.3.1
+triton==3.8.0
     # via torch
-typer==0.16.0
+truststore==0.10.4
+    # via safety
+typer==0.25.1
     # via
     #   -r requirements.in
     #   safety
@@ -718,15 +808,19 @@ typing-extensions==4.14.1
     #   alembic
     #   altair
     #   anyio
+    #   arviz
     #   azure-core
     #   azure-storage-blob
     #   fastapi
     #   formulaic
     #   limits
+    #   minikanren
     #   mypy
     #   nibabel
     #   pydantic
     #   pydantic-core
+    #   pymc
+    #   pytest-asyncio
     #   referencing
     #   safety
     #   safety-schemas
@@ -735,10 +829,12 @@ typing-extensions==4.14.1
     #   streamlit
     #   testcontainers
     #   torch
-    #   typer
+    #   typing-inspection
+typing-inspection==0.4.2
+    # via fastapi
 tzdata==2025.2
     # via pandas
-umap-learn==0.5.9.post2
+umap-learn==0.5.12
     # via
     #   -r requirements.in
     #   bcblib
@@ -753,9 +849,13 @@ urllib3==2.6.3
     #   requests
     #   responses
     #   testcontainers
-uvicorn==0.35.0
-    # via -r requirements.in
+uvicorn==0.52.4
+    # via
+    #   -r requirements.in
+    #   streamlit
 watchdog==6.0.0
+    # via streamlit
+websockets==16.1.1
     # via streamlit
 werkzeug==3.1.6
     # via moto
@@ -764,7 +864,13 @@ wrapt==1.17.2
     #   deprecated
     #   formulaic
     #   testcontainers
-xgboost==3.0.3
+xarray==2026.7.0
+    # via
+    #   arviz
+    #   xarray-einstats
+xarray-einstats==0.9.1
+    # via arviz
+xgboost==3.4.1
     # via -r requirements.in
 xmltodict==1.0.4
     # via moto
