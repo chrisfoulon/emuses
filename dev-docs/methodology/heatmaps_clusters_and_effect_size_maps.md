@@ -23,10 +23,97 @@ adding a layer on top of one.
 
 ---
 
+## Decisions from the code session, 2026-09-06 → 2026-09-08
+
+_Written by the session working in `embedding_scaling_and_boundary_bias_plan.md`, which owns the
+code. **Provenance is stated for each so it can be disputed.** Items marked "landed" are on branch
+`fix/reused-morphospace-keeps-its-scaling` (PR #19) and are facts about the tree, not proposals._
+
+**Resolved by landed code — remove from the list:**
+
+- **C6** (HDBSCAN's metric disagrees with everything downstream) — **fixed**, `e475c7b`. The
+  rescale is isotropic now, so raw and rescaled coordinates are the same metric up to a similarity.
+- **G2** (`region_coords / grid_size` off by one) — **fixed**, `e475c7b`. `_grid_axes`
+  (`region_statistical_analyzer.py:263`) now reads the grid's own coordinates instead of
+  reconstructing them by division, so the class of error is gone rather than the instance.
+- **G3** (regression confidence is a constant 1.0) — **fixed**, `c038c6b`. Confidence now has a
+  scale and varies across the grid.
+  **G3's status line in the table below is wrong and should be corrected:** it says "currently
+  harmless (the consumer is dead)". The consumer is live — `heatmap_stage.py:1426` passes the
+  corrected map straight into `create_statistical_maps`. It was not harmless; making confidence
+  real is what exposed the next item.
+
+**Landed, not on this list, and it changes what the maps mean:**
+
+- The grid combined predictions with confidence by **multiplying** them. That is shrinkage toward a
+  null hardcoded at zero, which is only correct for a centred quantity. On a positive-valued target
+  it pushed the least-trusted cells into the *bottom* tail — the "low prediction region" was in
+  substance the low-*confidence* region. Measured on `swiss_roll`: of the 500 bottom-5 % cells,
+  **0** were cells the raw prediction map would have chosen, and their mean confidence was 0.06.
+  Now `corrected = null + confidence × (prediction − null)`, `null` = training target mean pushed
+  through the same denormalisation as the predictions (`6d588cb`); 377/500 cells agree with the raw
+  map and the entrants are *more* trusted than the grid average (0.79 vs 0.63).
+  **The artefact is sign-dependent**, so on a negative-valued target it ran the other way — worth
+  knowing if any published low-region result predates 2026-09-07.
+- `combined_values.npy` is **no longer written**; the file is `corrected_values.npy`. Same filename
+  with a different quantity is how a model folder gets misread later, so a pre-2026-09-07 folder
+  now fails loudly at the consumer.
+- A map that *would be wrong* (null and predictions in different units) now raises
+  `HeatmapIntegrityError` and stops the run, instead of being recorded as a per-target error and
+  carrying on (`c614008`). "Cannot compute this target" still skips; "would compute the wrong
+  thing" does not.
+
+**Decided in discussion — these need the other session's agreement or objection:**
+
+- **C1, refit set.** The clusterer that defines clusters is refit **once on the UMAP-training set
+  plus the prediction-training set**, then frozen. Rationale (Chris): the effect-size maps are
+  local to the training data, the clusters do not affect any prediction, and tying the cluster
+  *description* to the data it describes is the coherent choice. **This reverses C7** — unlabelled
+  UMAP-training subjects are in the defining fit, not merely assigned to it afterwards. Subjects
+  arriving later are still assigned, never refit.
+- **B1, ordering, and what the threshold is for.** The 5th/95th percentile of the predicted grid
+  surface is doing two incompatible jobs: *defining* which subjects are clinically abnormal, and
+  *asserting* the association is more than chance. Split them:
+  1. Threshold the **observed target scores** of real subjects, not the predicted surface. A
+     percentile and a ±2 SD cut are the same object with different parameters — neither is more
+     principled, both are arbitrary in the same way. This is a definition, and a definition cannot
+     return nothing.
+  2. **Optionally**, a supplied **normative reference distribution** replaces the cohort-relative
+     cut with a z-score against an external population. Strictly better where available — it
+     removes both the arbitrariness and the circularity — but EMUSES is a generic tool, so this is
+     **an optional input and never a default**.
+  3. **Permutation becomes a global gate**, not the threshold. It answers "is this association
+     more than chance", which a percentile cannot, and it is allowed to return nothing.
+  4. **Then** split the extreme subjects by the frozen clusterer. Threshold first, cluster second:
+     an effect-size map is meant to describe *the profile of the abnormal subjects*, so
+     score-blind clustering first would admit normal-range subjects into it.
+- **D3 stops existing.** The bounding box is not replaced by a better polygon — with thresholding
+  moved onto observed scores, region→subject mapping by geometry is no longer on the path.
+- **C3 and C4 dissolve** with it: there is no fresh HDBSCAN fit inside `RegionStatisticalAnalyzer`
+  to give the optimised parameters to (C3), and no separate region-subclustering size floor to
+  choose (C4). The cluster-size question becomes Optuna's, where it already lives.
+- **Support masking is withdrawn** (the companion doc's Step 5). Measured, not argued: 36.6 % of
+  cells sit outside the training hull, but the 5th-percentile cut moves 6.5652 → 6.5939, the bottom
+  tail is 39 % out-of-hull against that 36.6 % base rate, and zero regions split or vanish. It also
+  answers the wrong question — predicting where there is no training sample is the point of the
+  grid.
+
+**Evaluated and rejected, so it is not re-proposed:** HYDRA (Varol/Sotiras/Davatzikos 2017) is the
+published method for "one deficit, several distinct profiles, fitted jointly rather than in
+competition" — exactly the argument for clustering here. It does not fit: it needs binary labels, it
+is linear, and it works on voxel features rather than UMAP coordinates. Full evaluation and the two
+transferable ideas in [`hydra_evaluation.md`](hydra_evaluation.md).
+
+**Still open here, untouched by the above:** D1/D2 (reference group — the cheapest change with the
+largest effect), B2, B3, D4, E2/E4, F2, A2/A3, G1.
+
+---
+
 ## The list
 
 Status key: **AGREED** = settled in discussion · **OPEN** = recommendation made, awaiting a call ·
-**SURFACED** = not yet discussed, no decision taken.
+**SURFACED** = not yet discussed, no decision taken · **RESOLVED/DISSOLVED** = see the decisions
+block above.
 
 ### A. What the maps are for
 
@@ -40,7 +127,7 @@ Status key: **AGREED** = settled in discussion · **OPEN** = recommendation made
 
 | # | Item | Status | Section |
 |---|---|---|---|
-| B1 | The 5th/95th percentile is not a test. Replace with a **permutation threshold**. | AGREED in principle, cost to confirm | [§2](#2-permutation-instead-of-percentiles) |
+| B1 | The 5th/95th percentile is not a test. Replace with a **permutation threshold**. | **SUPERSEDED 2026-09-08** — threshold *observed scores*; permutation becomes a global gate. See decisions block. | [§2](#2-permutation-instead-of-percentiles) |
 | B2 | The permutation on the **correlation** grid is nearly free (one matmul per batch); on the prediction grid it needs refits and is expensive. Tiered plan. | OPEN — pick tiers | [§2](#2-permutation-instead-of-percentiles) |
 | B3 | The `pval_map` from `input_matrix_stat_map` is **invalid as inference** (double dipping) and is currently written to disk. | AGREED (Chris: "I was not really considering the pvals anyway") — decide whether to stop writing it | [§3](#3-the-circularity-and-what-it-does-and-doesnt-invalidate) |
 | B4 | Multiple comparisons: **not pursued**. Grid size is chosen, so counting grid cells as tests is meaningless (10×10 would "fix" it). Sound for the grid; note the max-statistic permutation handles within-map multiplicity natively anyway. Voxel-level and across-target multiplicity remain unaddressed but are moot if `pval_map` goes. | CLOSED | [§2](#2-permutation-instead-of-percentiles) |
@@ -49,13 +136,13 @@ Status key: **AGREED** = settled in discussion · **OPEN** = recommendation made
 
 | # | Item | Status | Section |
 |---|---|---|---|
-| C1 | **Split the two operations.** *Defining* clusters → fit once on the labelled training cohort, frozen. *Assigning* a new subject → `membership_vector`, never a refit. | AGREED | [§4](#4-clustering-new-points), [§9](#9-cluster-belonging-for-ood-subjects-without-refitting) |
+| C1 | **Split the two operations.** *Defining* clusters → fit once on the labelled training cohort, frozen. *Assigning* a new subject → `membership_vector`, never a refit. | AGREED; refit set decided 2026-09-08 = UMAP-training + prediction-training, then frozen | [§4](#4-clustering-new-points), [§9](#9-cluster-belonging-for-ood-subjects-without-refitting) |
 | C2 | `min_cluster_size` scaling question is **moot under C1** — the definition fit never sees a second cohort. Keep the ARI diagnostic only if a union refit is ever offered as an option. | RESOLVED by C1 | [§4](#4-clustering-new-points) |
-| C3 | The **optimised HDBSCAN never reaches the effect-size maps**. `RegionStatisticalAnalyzer` fits a fresh one with hard-coded `min_cluster_size=3`, `min_samples=1`. Optuna searches 5–50 and 1–10. | AGREED — use the optimised parameters | [§4](#4-clustering-new-points) |
-| C4 | `min_cluster_size=3` is too small for a stable voxelwise effect size, independently of C3. Optuna's floor of 5 is also low for this purpose. | OPEN | [§4](#4-clustering-new-points) |
+| C3 | The **optimised HDBSCAN never reaches the effect-size maps**. `RegionStatisticalAnalyzer` fits a fresh one with hard-coded `min_cluster_size=3`, `min_samples=1`. Optuna searches 5–50 and 1–10. | **DISSOLVED 2026-09-08** — no fresh fit on that path any more | [§4](#4-clustering-new-points) |
+| C4 | `min_cluster_size=3` is too small for a stable voxelwise effect size, independently of C3. Optuna's floor of 5 is also low for this purpose. | **DISSOLVED 2026-09-08** — no region-subclustering step to size | [§4](#4-clustering-new-points) |
 | C5 | Under C1 the cluster definition stays a model artefact, so atomic folders (ADR §2.1) and reuse fingerprinting (§2.13) are **unaffected**. | RESOLVED by C1 | [§9](#9-cluster-belonging-for-ood-subjects-without-refitting) |
-| C6 | HDBSCAN runs on the **raw** embedding; everything downstream is rescaled. Under the current per-axis rescale these are different metrics. | AGREED — fixed by the proportion-preserving rescale; do that branch first | [§6](#6-smaller-defects-found-while-tracing) |
-| C7 | Unlabelled subjects may be **assigned** to already-defined clusters and included in the descriptive statistics, but must **not** join the HDBSCAN fit that defines them. | OPEN — follows from C1 | [§9](#9-cluster-belonging-for-ood-subjects-without-refitting) |
+| C6 | HDBSCAN runs on the **raw** embedding; everything downstream is rescaled. Under the current per-axis rescale these are different metrics. | **DONE** `e475c7b` | [§6](#6-smaller-defects-found-while-tracing) |
+| C7 | Unlabelled subjects may be **assigned** to already-defined clusters and included in the descriptive statistics, but must **not** join the HDBSCAN fit that defines them. | **REVERSED 2026-09-08** — UMAP-training subjects *are* in the defining fit | [§9](#9-cluster-belonging-for-ood-subjects-without-refitting) |
 
 ### D. Effect-size maps
 
@@ -63,7 +150,7 @@ Status key: **AGREED** = settled in discussion · **OPEN** = recommendation made
 |---|---|---|---|
 | D1 | Reference group: each subcluster is currently tested against **every other subject**, including its own siblings and the opposite extreme. | OPEN — recommendation below | [§5](#5-what-each-effect-size-map-is-compared-against) |
 | D2 | Recommend **subcluster vs neutral** (subjects in no extreme region) as primary, plus **all-high vs all-low** as one summary contrast. | OPEN | [§5](#5-what-each-effect-size-map-is-compared-against) |
-| D3 | Region → subject mapping uses a **bounding box**. A rectangle is meaningless in a non-linear UMAP space; it also silently admits subjects outside the region. Needs rework, not a patch. | AGREED — rework | [§6](#6-smaller-defects-found-while-tracing) |
+| D3 | Region → subject mapping uses a **bounding box**. A rectangle is meaningless in a non-linear UMAP space; it also silently admits subjects outside the region. Needs rework, not a patch. | **DISSOLVED 2026-09-08** — geometric region→subject mapping leaves the path | [§6](#6-smaller-defects-found-while-tracing) |
 | D5 | **Planned feature:** at inference, report which high/low cluster a new subject belongs to, alongside the prediction, with that cluster's stored effect-size map as the "driving factors". §9 supplies the mechanism. | NOTED — later | [§9](#9-cluster-belonging-for-ood-subjects-without-refitting) |
 | D4 | Intent is **high absolute** correlation; the code thresholds the **signed** value at the 95th percentile, so a region of r = −0.8 is never selected. | AGREED — include negative correlations | [§6](#6-smaller-defects-found-while-tracing) |
 
@@ -90,8 +177,8 @@ Status key: **AGREED** = settled in discussion · **OPEN** = recommendation made
 | # | Item | Status | Section |
 |---|---|---|---|
 | G1 | Two different GWD bandwidths for related purposes: correlation grid uses the 25th percentile of pairwise distances; the prediction search optimises `sigma_gwd` over 0.05–0.2. | SURFACED | [§6](#6-smaller-defects-found-while-tracing) |
-| G2 | `region_coords / grid_size` is off by one (should be `/(grid_size-1)`) — a half-cell shift in every region→subject mapping. | SURFACED | [§6](#6-smaller-defects-found-while-tracing) |
-| G3 | Regression confidence is a constant, so `cv_ensemble` returns 1.0 everywhere. Currently harmless (the consumer is dead) but the number is still written and displayed. | SURFACED | [§6](#6-smaller-defects-found-while-tracing) |
+| G2 | `region_coords / grid_size` is off by one (should be `/(grid_size-1)`) — a half-cell shift in every region→subject mapping. | **DONE** `e475c7b` | [§6](#6-smaller-defects-found-while-tracing) |
+| G3 | Regression confidence is a constant, so `cv_ensemble` returns 1.0 everywhere. ~~Currently harmless (the consumer is dead)~~ — **the consumer is live** (`heatmap_stage.py:1426`). | **DONE** `c038c6b` | [§6](#6-smaller-defects-found-while-tracing) |
 
 ---
 
@@ -451,29 +538,36 @@ fourth option wins.
 
 ## Open decisions, collected
 
-1. **B2** — which permutation tiers to implement. Recommendation: 1+2 now, 3 as an opt-in mode.
-2. **B3** — stop writing `pval_map`, or keep it with a clear "descriptive, not inferential" label.
-3. **C4** — the statistical floor on cluster size, and whether the optimised `min_cluster_size`
-   (tuned on the whole embedding) transfers to subclustering a small region.
-4. **C7** — membership threshold above which an unlabelled subject joins a cluster's statistics.
-5. **D1/D2** — reference group. Recommendation: (b) subcluster-vs-neutral primary + (d) all-high
-   vs all-low as a summary contrast.
-6. **D3** — replace the bounding box with direct mask membership.
-7. **D4** — threshold `|r|` for the correlation source, to match the stated intent.
-8. **E2/E4** — salvage before deleting; and whether the dead two-stage filter has any future.
-9. **A2/A3** — which ADR frame governs, and write the maps' purpose as its own entry.
-10. **Ordering** — C6 puts the embedding-scaling branch first; §9 puts the feature-space support
-    check before any inference-time cluster reporting.
+_Rewritten 2026-09-08 — items closed by the decisions block are struck rather than renumbered, so
+references to them elsewhere still resolve._
 
-## Sequencing (proposed)
+1. **D1/D2** — reference group. Recommendation: (b) subcluster-vs-neutral primary + (d) all-high
+   vs all-low as a summary contrast. **The cheapest change here with the largest effect on what the
+   maps say, and still undecided.**
+2. **B2** — which permutation tiers to implement. Recommendation: 1+2 now, 3 as an opt-in mode.
+   Note the change of role: permutation is now a **global gate**, not the region threshold.
+3. **B3** — stop writing `pval_map`, or keep it with a clear "descriptive, not inferential" label.
+4. **D4** — threshold `|r|` for the correlation source, to match the stated intent.
+5. **F2** — whether unlabelled subjects join the descriptive statistics by coordinate membership.
+6. **E2/E4** — salvage before deleting; and whether the dead two-stage filter has any future.
+7. **A2/A3** — which ADR frame governs, and write the maps' purpose as its own entry.
+8. **G1** — two different GWD bandwidths for related purposes.
+9. ~~C4~~ · ~~C7~~ · ~~D3~~ · ~~Ordering (C6)~~ — closed; see the decisions block.
 
-1. **Proportion-preserving rescale** (companion doc). Unblocks C6 and makes HDBSCAN's metric agree
-   with the maps'.
-2. **Small corrections**, independently verifiable: C3 (optimised parameters), D3 (mask not bbox),
-   D4 (`|r|`), G2 (off-by-one). Each changes which subjects enter a map, so each needs a before/after
-   on a real run, not just a passing test.
-3. **Permutation tiers 1+2**, replacing the percentile.
-4. **Reference group** (D2).
-5. **Dead-code audit and salvage** (§7) — last, and planned from the code rather than from this
+## Sequencing
+
+Steps 1 and the small corrections are **done** (`e475c7b`, `c038c6b`, `6d588cb`, `c614008`); what
+follows is what remains.
+
+1. ~~Proportion-preserving rescale (companion doc)~~ · ~~C6~~ · ~~G2~~ — **done**.
+2. **Threshold on observed scores** (B1 as re-decided), with the optional normative-reference input.
+   This is the next code increment and it is what removes D3/C3/C4 from the tree.
+3. **Refit the clusterer once on UMAP-training + prediction-training, then freeze** (C1).
+4. **Reference group** (D1/D2) — needs the decision above it made first.
+5. **Permutation as a global gate** (B2 tiers 1+2).
+6. **Dead-code audit and salvage** (§7) — last, and planned from the code rather than from this
    document. See the risk note there.
-6. **Inference-time cluster reporting** (§9 / D5) — a feature, after the above.
+7. **Inference-time cluster reporting** (§9 / D5) — a feature, after the above.
+
+Each of 2–5 changes which subjects enter a map, so each needs a before/after on a real run, not
+just a passing test.

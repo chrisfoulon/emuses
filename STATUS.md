@@ -1,5 +1,5 @@
 # STATUS — EMUSES
-_Last touched: 2026-09-06_
+_Last touched: 2026-09-08_
 
 ## Goal
 
@@ -11,9 +11,14 @@ flags say, and the same command twice gives the same answer.
 
 ## State of play
 
-**One PR open: #13, `fix/nd-embedding-gate-and-load-umap`** (2026-09-05) — the N-D gate and its
-opt-in, the `--load_umap` and resume fixes, cohort identity, per-target resume and the run index.
-Rebased onto `main` after **PR #12 merged** (the core contract, the "Unknown error" CLI fix, the
+**One substantive PR open: #19, `fix/reused-morphospace-keeps-its-scaling`** (opened 2026-09-06).
+It has grown past its title: it now carries Steps 1–3 of the embedding-scaling plan *plus* the
+shrinkage fix and `HeatmapIntegrityError` (item 00). Five dependabot PRs (#20–#24) are also open and
+are unrelated. **PR #13 merged.**
+
+_Historical, kept for the causal chain:_ #13 was the N-D gate and its opt-in, the `--load_umap` and
+resume fixes, cohort identity, per-target resume and the run index. Rebased onto `main` after
+**PR #12 merged** (the core contract, the "Unknown error" CLI fix, the
 separator hint, and the regression-suite provenance/gating decision in item 1 below); the two
 commits that duplicated #12's work were dropped in the rebase. Six branches converged on
 2026-08-25 — Phase 1F (PR #9),
@@ -399,6 +404,9 @@ problem, the `enhanced-cli-typer` hang and repo pollution by test output are all
 
 ## Decided strategy
 
+- **Read `dev-docs/traps.md` before measuring anything.** Consolidated 2026-09-08 from a
+  session-private plan file no other session could see. Every entry there is a way this codebase
+  fails *silently* — exit 0, green suite, a check that applies to nothing.
 - **Models are atomic folders**, not separable components (ADR §2.1). Violated once and reverted.
 - **One execution path** through the service, for every deployment mode (ADR §4).
 - **Measure, don't infer**, and **perturb every guard** to confirm it can fail. Wall-clock on this
@@ -434,8 +442,12 @@ problem, the `enhanced-cli-typer` hang and repo pollution by test output are all
       sample sets → voxelwise stats, so this reaches the scientific claim.
 
     Steps: **1** reuse wiring (baseline-neutral, lands first) · **2** isotropic rescaling ·
-    **3** real confidence · **4** local linear · **5** support masking. Re-record and measure after
-    each — bundling makes "did the science change" unanswerable.
+    **3** real confidence · **4** local linear · ~~**5** support masking~~. Re-record and measure
+    after each — bundling makes "did the science change" unanswerable.
+
+    **State, 2026-09-08: 1, 2, 3 and the shrinkage fix are DONE and on PR #19. Step 5 is
+    WITHDRAWN. Step 4 (local linear) is the only step left, and it is optional.** The live work has
+    moved on to *how "extreme" is defined* — see item 00b.
 
     **Step 2 DONE 2026-09-06 — and it found that the regression baselines cannot see it.**
     Isotropic rescale landed (`isotropic_global_range`; each axis shifted by its own minimum,
@@ -560,9 +572,32 @@ problem, the `enhanced-cli-typer` hang and repo pollution by test output are all
     5.65 against a null of 9.36, and the 123 that leave have mean confidence 0.60. Under
     multiplication the same comparison was 0/500 kept and mean confidence **0.06** for everything
     that entered. The mechanism is inverted, which is the point; the sample count 29 → 43 (from 77)
-    is a side effect of trusted low cells taking the vacated places. Perturbation-checked. Still to
-    do: **increment A** (support mask) and **increment C** (`variability` out of the map-facing
-    confidence, into a degeneracy flag).
+    is a side effect of trusted low cells taking the vacated places. Perturbation-checked.
+
+    **A wrong map now stops the run (2026-09-07).** `HeatmapIntegrityError` separates "this target
+    has no map" (skip, absence is visible) from "this target's map would be arithmetic on
+    incompatible quantities" (raise). The `_null_level` refusal — training mean and predictions in
+    different units — was previously absorbed by the per-target `except Exception` and recorded as
+    `{'error': ...}`, meaning a wrong map would be silently rebuilt on the next run.
+
+    **Both remaining increments were re-measured on 2026-09-08 and both dropped:**
+    - **Increment A (support mask) — WITHDRAWN.** 36.6 % of `swiss_roll` grid cells sit outside the
+      training hull, but the 5th-percentile cut moves only 6.5652 → 6.5939, the bottom tail is 39 %
+      out-of-hull against that 36.6 % base rate, and **zero** regions split or vanish. All three
+      predicted harms absent. Shrinkage had already removed the enrichment, and the confidence map
+      grades the far extrapolations continuously (the 25 % furthest out-of-hull cells: none of 914
+      above the grid median). It also answers the wrong question — predicting where there is no
+      training sample is what makes the grid a map.
+      ⚠️ **I initially over-claimed this**, leading with "39 % of the bottom tail is out-of-hull"
+      without checking it against the base rate that makes it unremarkable.
+    - **Increment C (`variability` out of the confidence) — now OPTIONAL, not required.** The claim
+      that shrinkage makes the global `variability` scalar non-free was **wrong**.
+      `null + VAR·a·(pred − null)` is a positive affine transform of `a·(pred − null)`, and
+      percentiles are equivariant under those, so the selected cell set is identical for every
+      `VAR > 0` and every `null` — verified algebraically and numerically (identical cell sets
+      across nulls −4 → +9.36 and variability 0.05 → 0.99). What `VAR` does do is compress the
+      saved *values* toward the null, so `corrected_values.npy` is not on the target's scale. That
+      is interpretability, not region selection.
 
     **Fix agreed 2026-09-07: shrink toward the null, do not multiply.**
     `combined = null + confidence × (prediction − null)`, `null` = training target mean (what a
@@ -574,27 +609,55 @@ problem, the `enhanced-cli-typer` hang and repo pollution by test output are all
     three named output maps) and the permutation interaction, is the **2026-09-07 amendment to
     Step 5** in `dev-docs/methodology/embedding_scaling_and_boundary_bias_plan.md`. Read that.
 
-    Two consequences that change the plan:
-    - **Steps 3 and 5 are now one piece of work.** Under shrinkage the global `variability`
-      scalar stops being free (it caps confidence at 0.814, pulling *every* point 19% toward the
-      null and compressing both tails), so it must come out of the map-facing confidence and
-      become a separate degeneracy flag. Map-facing confidence = `agreement` alone.
-    - **Step 5 before Step 4**, reversing the earlier recommendation. Step 5 is the fix for the
-      measured artefact, and it rewrites region membership anyway — which is where their D3
-      (bounding box) has to be settled, rather than reworking that surface twice.
+    ~~Two consequences that change the plan~~ — **both retracted 2026-09-08.** Steps 3 and 5 are
+    *not* one piece of work (the `variability` argument above was wrong), and Step 5 does not go
+    before Step 4 because Step 5 does not go at all.
 
     **The percentile replacement does not make this moot.** Their recommended Tiers 1+2 permute
     the *correlation* grid only (cheap because it fits nothing); the prediction map is Tier 3 and
     explicitly not the default. So the prediction map — the one with the defect — keeps a
     percentile threshold. Their D4 dissolves into Tier 1. If Tier 3 is ever run, confidence must
-    be recomputed *inside* each permutation or the test is invalid; masking is permutation-safe
-    because UMAP is unsupervised, so the mask is identical across shuffles.
+    be recomputed *inside* each permutation or the test is invalid.
 
     **Found, not fixed:** `foundation_fastapi_service/app.py:2325` constructs
     `GridCreator(grid_size=(100,100), denormalize_predictions=True)` and calls
     `create_prediction_grid(...)`. Neither the kwarg nor the method exists — that endpoint raises
     `TypeError` on construction, and it feeds `np.random.uniform` mock data anyway. Outside Step 3;
     belongs with the API/heatmaps discussion.
+
+00b. [ ] **How "extreme" is defined — decided 2026-09-08, not yet built.** This is now the live
+        piece of work; the embedding-scaling plan above is essentially finished. Full argument and
+        the alternatives considered: `dev-docs/methodology/heatmaps_clusters_and_effect_size_maps.md`
+        (decisions block at the top). Operative summary:
+
+    The 5th/95th percentile of the *predicted grid surface* is doing two incompatible jobs —
+    **defining** which subjects are clinically abnormal, and **asserting** the association is more
+    than chance. A percentile can do neither well because they need different instruments: a
+    definition must always return something, a test must be allowed to return nothing.
+
+    - **Default: threshold the observed target scores**, not the predicted surface. A percentile
+      and a ±2 SD cut are the same object with different parameters; neither is more principled,
+      and the choice is a definition of abnormality rather than a statistic.
+    - **Optional: a supplied normative reference distribution**, turning abnormality into a z-score
+      against an external population. Strictly better where available (it removes both the
+      arbitrariness and the circularity) but **EMUSES is a generic tool, so this is an optional
+      input and never a default** — Chris may be able to obtain such scores for the disconnectome
+      work, which does not make them a requirement of the tool.
+    - **Permutation becomes a global gate**, not the region threshold.
+    - **Then cluster**, with a clusterer refit **once on UMAP-training + prediction-training and
+      frozen thereafter**. Threshold first, cluster second: the effect-size map describes *the
+      profile of the abnormal subjects*, so score-blind clustering first would admit normal-range
+      subjects into it. (This reverses the other document's C7 — unlabelled UMAP-training subjects
+      belong in the defining fit.)
+    - **Consequence:** the bounding-box region→subject mapping (their D3) and the fresh HDBSCAN fit
+      inside `RegionStatisticalAnalyzer` (their C3/C4) leave the tree rather than being reworked.
+
+    **HYDRA evaluated and rejected** — `dev-docs/methodology/hydra_evaluation.md`. It is the
+    published method for exactly the motivating argument ("one deficit, several distinct profiles,
+    fitted jointly instead of in competition"), which is why it was worth the look, but it needs
+    binary labels, is linear, and works on voxel features rather than UMAP coordinates. Two ideas
+    are transferable: fix the reference group (their D1/D2), and steal the ARI-stability test for
+    "does more than one profile exist at all", which EMUSES currently never asks.
 
 0a. [x] **The prediction baselines were degenerate — fixed 2026-09-06 by adding a dataset.**
        On both 40-sample datasets, in every fold, the winning ElasticNet had all coefficients

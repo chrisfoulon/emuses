@@ -1,8 +1,26 @@
 # Embedding scaling and kernel boundary bias — implementation plan
 
-_Written 2026-09-06. Supersedes nothing; this is the first record of these decisions.
-Rationale for the coordinate-system half is ADR §2.4b. Read this before touching
-`umap_stage.py:481-482`, `grid_creator.py`, or `kernel_regression_utils.py`._
+_Written 2026-09-06, consolidated 2026-09-08. Rationale for the coordinate-system half is
+ADR §2.4b. Read this before touching `umap_stage.py:481-482`, `grid_creator.py`, or
+`kernel_regression_utils.py`._
+
+**Where this stands, 2026-09-08.** Read this table before the body — two sections below record
+conclusions that were later measured and reversed, and they are struck through rather than
+deleted so nobody re-derives them.
+
+| Step | State |
+|---|---|
+| 1 — reuse wiring | **done** (2026-09-06) |
+| 2 — isotropic rescaling | **done** |
+| 3 — real confidence map | **done** |
+| 4 — local linear kernel | **not started**, still wanted, `kernel`-family only |
+| 5 — support masking | **WITHDRAWN 2026-09-08** — measured, does nothing. Do not implement. |
+| Amendment part 2 — shrink to null | **done** (2026-09-07), plus the integrity error |
+| Increment C — `variability` out of confidence | **optional** — was called required; that was wrong |
+
+The live question has moved on from this plan's subject to *how "extreme" is defined*; the
+decision taken is at the end of this file, the argument is in
+[`heatmaps_clusters_and_effect_size_maps.md`](heatmaps_clusters_and_effect_size_maps.md).
 
 ## Why this exists
 
@@ -77,9 +95,10 @@ re-recorded numbers themselves.
 
 **Scope note on local linear:** the prediction search picks among three model families —
 `kernel`, `rf`, `elastic` (`optim_configs_predict.py:5`). Local linear changes only the
-`kernel` family. Masking and real confidence are model-agnostic and therefore apply to every
-run regardless of which family wins. That is why they rank above local linear in value even
-though local linear is the more interesting fix.
+`kernel` family. Real confidence and the shrinkage fix are model-agnostic and therefore apply to
+every run regardless of which family wins. That is why they ranked above local linear in value
+even though local linear is the more interesting fix. (Masking was on that list too; it was
+measured on 2026-09-08 and withdrawn — Step 5.)
 
 ## The dead routes this plan must not recreate
 
@@ -310,23 +329,39 @@ a recorded decision rather than an oversight someone finds later.
 
 ---
 
-## Step 5 — Support masking. Model-agnostic, highest value of the edge fixes.
+## Step 5 — ~~Support masking~~ WITHDRAWN 2026-09-08. Superseded by the shrinkage fix below.
 
-**Change** — grid points outside the training embedding's support are extrapolation for
-*every* model family (RF extrapolates flat, ElasticNet extrapolates unbounded), so this
-matters regardless of which won. Compute the convex hull of the training embedding (α-shape
-later if the hull proves too permissive), set outside points to NaN, exclude them from
+> **Do not implement the masking described in this section.** It was measured on 2026-09-08 and
+> does nothing. The claim in the old heading — "highest value of the edge fixes" — was an
+> estimate that the measurement contradicts. Kept rather than deleted so nobody re-proposes it
+> from first principles; the numbers below are the reason not to.
+>
+> On `swiss_roll`, 3 656 of 10 000 grid cells (36.6 %) fall outside the convex hull of the
+> training embedding. All three predicted harms were absent:
+>
+> | predicted harm | measured |
+> |---|---|
+> | threshold contaminated by extrapolated cells | p5 6.5652 → 6.5939. Negligible. |
+> | unsupported cells crowding the tails | 39 % of the bottom tail vs a 36.6 % base rate. Not enriched. |
+> | components growing through voids and fusing | zero. Component counts identical (low 2→2, high 1→1); none split, none vanished. |
+>
+> The shrinkage fix (below) had already removed the enrichment, and the confidence map already
+> handles the far extrapolations on its own: the 25 % furthest out-of-hull cells have mean
+> confidence 0.42 and **none** of 914 exceeds the grid median.
+>
+> Masking would still trim each region's unsupported fringe (500 cells → ~304), a 40 % area
+> reduction — a real change to what is reported, with no demonstrated defect motivating it, and
+> it imposes a hard binary edge on something the confidence map already grades continuously.
+>
+> **It also answers the wrong question.** Predicting where there is no training sample is the
+> point of the grid — that is what makes it a map rather than a scatter plot, and it is what
+> lets a new subject be placed. Masking deletes exactly that.
+
+**Original text, for the record** — grid points outside the training embedding's support are
+extrapolation for *every* model family (RF extrapolates flat, ElasticNet extrapolates unbounded),
+so this matters regardless of which won. Compute the convex hull of the training embedding
+(α-shape later if the hull proves too permissive), set outside points to NaN, exclude them from
 thresholding and region formation.
-
-This refuses to extrapolate; it does not correct bias. Complementary to Step 4, not a
-substitute.
-
-**Verification**
-
-- Assert masked points are excluded from regions, not silently treated as zero — a NaN read
-  as 0 would pass a threshold test and look like a valid region.
-- Assert region membership changes only at the boundary, not in the interior.
-- Re-record.
 
 ### Amendment, 2026-09-07 — Step 5 absorbs a defect Step 3 exposed
 
@@ -368,12 +403,11 @@ real choice here.
 
 **Three parts, all needed:**
 
-1. **Mask** grid points outside the training support: NaN, and `np.nanpercentile`. Shrinkage
-   decides what value an untrusted point takes; it does not decide whether that point belongs in
-   the distribution the threshold is computed over. Points shrunk to the null pile up in the
-   middle, fattening it, which pushes the cut-offs outward and makes both tails *more* extreme
-   than they should be. Masking is binary (in/out of support); shrinkage is continuous (within
-   support, trust still varies). Neither replaces the other.
+1. ~~**Mask** grid points outside the training support~~ — **withdrawn 2026-09-08, see Step 5
+   above.** The argument was that points shrunk to the null pile up in the middle, fattening it,
+   pushing the cut-offs outward. Measured: the cut-off moves 6.5652 → 6.5939. The effect is real
+   and negligible, and the tail is not enriched for unsupported cells (39 % vs a 36.6 % base
+   rate). **Two parts, not three.**
 2. **Shrink** toward the null as above.
 3. **Report three maps, and rename.** `prediction_values.npy` and `confidence_values.npy` are
    already written alongside `combined_values.npy`. Write the shrunk map as a **new**
@@ -388,13 +422,31 @@ because we do not trust it" — two numbers into one. Shrinkage guarantees an un
 cannot *enter* a tail. It does not decompose a point that is already in one. That is what the
 three-map output is for.
 
-**Consequence for Step 3 that must be settled at the same time.** Under multiplication the global
-`variability` scalar was provably free (percentile-invariant). Under shrinkage it is not: it caps
-confidence at 0.814 on `swiss_roll`, so *every* point including the best-supported is pulled 19%
-toward the null, systematically compressing both tails. So `variability` comes **out** of the
-map-facing confidence and becomes a separately reported degeneracy flag — which is the cleaner
-framing anyway, since it was never an uncertainty. Map-facing confidence becomes `agreement`
-alone. This makes Steps 3 and 5 one piece of work, not two.
+**~~Consequence for Step 3 that must be settled at the same time.~~ This paragraph was wrong —
+corrected 2026-09-08.** It claimed that under shrinkage the global `variability` scalar stops
+being free. It does not. Write `c = VAR · a` with `VAR` a positive constant and `a` the per-cell
+agreement. Then
+
+```
+corrected = null + VAR · a · (prediction − null)
+```
+
+is `null + VAR · u` where `u = a · (prediction − null)`. That is a **positive affine transform of
+`u`**, and percentiles are equivariant under positive affine transforms, so the set of cells above
+the 95th and below the 5th percentile is *identical* for every `VAR > 0` and every `null`.
+Verified numerically as well as algebraically: identical cell sets across nulls −4 → +9.36 and
+`variability` 0.05 → 0.99.
+
+The true statement is narrower: `VAR` does compress the *values* toward the null (0.814 on
+`swiss_roll` means every cell is pulled 19 % in), so a saved `corrected_values.npy` is not on the
+target's scale and should not be read as one. That is an interpretability defect, not a
+region-selection defect.
+
+**So increment C — pulling `variability` out of the map-facing confidence and reporting it as a
+separate degeneracy flag — drops from "required, must land with Step 5" to "optional, for
+interpretability".** It is still the cleaner framing (a global degeneracy indicator was never a
+per-cell uncertainty), but nothing downstream is wrong without it. Steps 3 and 5 are **not** one
+piece of work.
 
 ### Part 2 (shrink) + the rename half of part 3 — done, 2026-09-07
 
@@ -403,8 +455,8 @@ alone. This makes Steps 3 and 5 one piece of work, not two.
 any more, so a pre-2026-09-07 model folder fails loudly at the consumer instead of being read as
 the new quantity. Metadata gained `combination: shrink_to_null` and `null_level`.
 
-Parts 1 (mask) and 3-proper (the confidence map as a first-class output to interpret with), and
-the `variability` change below, are still to do.
+Part 1 (mask) is **withdrawn** (see Step 5). Part 3-proper — the confidence map as a first-class
+output to interpret with — and the `variability` change are still to do, both now optional.
 
 **What it did to region selection**, `swiss_roll`, real confidence vs. a constant-confidence
 control (which under shrinkage reproduces the raw prediction map *exactly* — verified, and pinned
@@ -448,21 +500,26 @@ otherwise look like it makes this moot. It does not:
   weighting that does not cancel between the observed statistic and its null, and the test is
   then invalid. If it *is* recomputed per permutation, a global factor cancels on both sides and
   per-point agreement stays part of the statistic, which is correct.
-- **Masking is permutation-safe by construction.** The support mask depends on the embedding
-  only, and UMAP is unsupervised, so permuting scores leaves the embedding — and therefore the
-  mask — identical. The same fixed mask applies to observed and null, exactly like a brain mask
-  in the Nichols & Holmes framework, including for Tier 2's cluster-extent search volume.
+- ~~**Masking is permutation-safe by construction.**~~ Still true (the mask depends on the
+  embedding only, and UMAP is unsupervised, so permuting scores leaves it identical — the same
+  fixed mask would apply to observed and null, like a brain mask in Nichols & Holmes). Moot:
+  masking is withdrawn.
 
 ---
 
 ## Sequencing, and why not all at once
 
-Steps 2–5 each move the maps. Doing them together needs one re-record instead of four, but
-makes "did this change the science" unanswerable. Since these numbers are heading for
-publication, keep them attributable: re-record and measure after each.
+Steps 2–4 and the shrinkage amendment each move the maps. Doing them together needs one
+re-record instead of four, but makes "did this change the science" unanswerable. Since these
+numbers are heading for publication, keep them attributable: re-record and measure after each.
 
 Step 1 first regardless — it is baseline-neutral, so it is free to land and removes the dead
 routes before anything else touches this code.
+
+**This sequencing paid for itself.** Step 3 (real confidence) was baseline-moving on its own, and
+landing it alone is what made the multiplication artefact visible; had Steps 3 and 5 gone in
+together, the region change would have been attributed to masking and the real defect would have
+shipped. That is the argument for the discipline, not a general preference for small commits.
 
 ## What not to do
 
@@ -480,11 +537,40 @@ routes before anything else touches this code.
 
 - Does the isotropic switch actually change prediction performance, or only the coordinates?
   Measurable at Step 2; worth knowing before deciding how much the rest matters.
-- Is the convex hull too permissive for a curved morphospace? α-shape is the fallback, but it
-  adds a tuning parameter — prefer the hull until it demonstrably fails.
+- ~~Is the convex hull too permissive for a curved morphospace?~~ Closed — masking withdrawn, so
+  the question no longer arises.
 - `visualization_threshold` and `effect_size_threshold` (0.2 / 0.5) were calibrated against a
   constant confidence map and predictions in unknown units. Both need re-derivation after
   Step 3, and that is a scientific decision, not a code change.
+
+## Decision, 2026-09-08 — how "extreme" gets defined
+
+Recorded here because it was settled in this session's discussion and it determines what the next
+code increment is. The full argument and the alternatives live in
+[`heatmaps_clusters_and_effect_size_maps.md`](heatmaps_clusters_and_effect_size_maps.md); this is
+the operative part.
+
+The 5th/95th percentile of the *predicted grid surface* currently does two incompatible jobs:
+defining which subjects are clinically abnormal, and asserting that the association is more than
+chance. Split them.
+
+1. **Default path — cohort-relative, on the observed scores.** Threshold the **observed target
+   scores** of real subjects, not the predicted surface. A percentile and a ±2 SD cut are the same
+   object with different parameters; neither is more principled than the other, and both are
+   arbitrary in the same way. The cut is a *definition of abnormality*, not a test.
+2. **Optional path — a normative reference distribution.** EMUSES is a generic tool and cannot
+   require one, so this is **an optional input, never a default**: when the user supplies reference
+   means/SDs (or a reference cohort), abnormality becomes a z-score against that external
+   distribution rather than against the cohort itself. This is strictly better where available —
+   it removes both the arbitrariness of the cut and its circularity — but its absence must not
+   block anything.
+3. **Permutation is a global gate, not the threshold.** It answers "is this association more than
+   chance", which the percentile cannot. It can legitimately return nothing; a definition of
+   abnormality cannot.
+4. **Then cluster.** The fixed, already-optimised HDBSCAN clusterer (refit once on UMAP-training +
+   prediction-training, frozen thereafter) separates the extreme subjects into profiles. Ordering:
+   threshold first, cluster second — the effect-size map is meant to describe *the profile of the
+   abnormal subjects*, so score-blind clustering first would admit normal-range subjects into it.
 
 ## References
 
