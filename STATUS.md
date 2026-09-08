@@ -652,7 +652,8 @@ problem, the `enhanced-cli-typer` hang and repo pollution by test output are all
     - **Consequence:** the bounding-box region→subject mapping (their D3) and the fresh HDBSCAN fit
       inside `RegionStatisticalAnalyzer` (their C3/C4) leave the tree rather than being reworked.
 
-    **HYDRA evaluated and rejected** — `dev-docs/methodology/hydra_evaluation.md`. It is the
+    **HYDRA evaluated and rejected** —
+    `dev-docs/methodology/multiple_profiles_and_why_not_hydra.md`. It is the
     published method for exactly the motivating argument ("one deficit, several distinct profiles,
     fitted jointly instead of in competition"), which is why it was worth the look, but it needs
     binary labels, is linear, and works on voxel features rather than UMAP coordinates. Two ideas

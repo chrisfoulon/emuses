@@ -102,7 +102,7 @@ code. **Provenance is stated for each so it can be disputed.** Items marked "lan
 published method for "one deficit, several distinct profiles, fitted jointly rather than in
 competition" — exactly the argument for clustering here. It does not fit: it needs binary labels, it
 is linear, and it works on voxel features rather than UMAP coordinates. Full evaluation and the two
-transferable ideas in [`hydra_evaluation.md`](hydra_evaluation.md).
+transferable ideas in [`multiple_profiles_and_why_not_hydra.md`](multiple_profiles_and_why_not_hydra.md).
 
 **Still open here, untouched by the above:** D1/D2 (reference group — the cheapest change with the
 largest effect), B2, B3, D4, E2/E4, F2, A2/A3, G1.

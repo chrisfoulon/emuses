@@ -1,8 +1,18 @@
-# HYDRA, evaluated against EMUSES
+# Several distinct profiles for one deficit — and why not HYDRA
 
-_Written 2026-09-08. **No decision taken** — this is an evaluation to think against._
+_Written 2026-09-08. Renamed 2026-09-09: the file was `hydra_evaluation.md`, which named the method
+looked at rather than the question asked, and made a rejected method look like part of the plan._
 
-## Why it was looked at
+**What this file is for.** It records the design question behind clustering in EMUSES, and closes
+one candidate answer so it is not re-proposed. **HYDRA was evaluated and does not fit** — the
+verdict and the three structural reasons are below. Two ideas from it are worth taking, and those
+two are the only part of this file that touches the actual plan; everything else is here so the
+rejection stays recoverable.
+
+The live plan is `heatmaps_clusters_and_effect_size_maps.md` and
+`embedding_scaling_and_boundary_bias_plan.md`. Nothing here is scheduled work.
+
+## The question
 
 Chris's argument for why EMUSES clusters at all, in his words: for a given target score there may be
 **several distinct disconnection profiles** associated with the same deficit. Classical mass-univariate
@@ -10,10 +20,14 @@ methods put those profiles in competition, so what you recover is their overlap,
 residual after another has absorbed the shared part — never a true profile. Segregating observations
 into groups first is what lets an individual profile survive.
 
+This is a real methodological problem with a published literature, so it was worth checking that
+literature before designing anything ourselves.
+
+## The candidate: HYDRA
+
 [HYDRA](https://pmc.ncbi.nlm.nih.gov/articles/PMC5408358/) (Varol, Sotiras & Davatzikos,
 *NeuroImage* 2017) exists for precisely that argument. It was built because a single discriminative
-pattern between patients and controls averages over multiple distinct disease patterns. So it is
-worth understanding properly before designing anything ourselves.
+pattern between patients and controls averages over multiple distinct disease patterns.
 
 ## What HYDRA is
 
