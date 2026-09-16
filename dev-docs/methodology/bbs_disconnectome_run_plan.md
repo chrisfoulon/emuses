@@ -163,16 +163,26 @@ sampler seeds (STATUS 3f).
 
 ## 5. Run 0: classic EMUSES, disconnectomes only
 
-- **Mode: dual dataset, morphospace trained once.** Main dataset = all 331 linked disconnectomes,
-  no labels, never split: `emuses umap` trains the morphospace on them. Label dataset = the same
-  images with the outcome CSV, split by `--test_size 0.2`: `emuses full --label_dataset …
-  --load_umap <morphospace>` runs prediction and maps. Why not single-dataset mode: there the
-  train/test split happens *before* UMAP (`emuses_pipeline.py`), on the files that survive
-  `--filter_labelled_by_scores`, which depends on the chosen targets. A different target set
-  would then mean a different morphospace. In dual mode any later target set, split or predictor
-  search should reuse the same morphospace, with `cohort.json` checking it is the same cohort.
-  **Not yet exercised end to end in dual mode (B10).** Held-out
-  subjects shape the morphospace without their labels: transductive, no outcome leakage.
+- **Mode: single dataset, morphospace trained once, reused by `--load_umap`** (changed from dual
+  mode after B10). `emuses umap <morphospace> <file list> --test_size 0.2 --random_state S` splits
+  the 331 linked disconnectomes and trains UMAP on the 80 %. Every later
+  `emuses full <run> <same file list> --scores <labels> --load_umap <morphospace>` with the same
+  seed and test size reproduces that split, loads the model instead of training, and reuses the
+  recorded scaling and cluster labels. The held-out 20 % never enter the UMAP fit: inductive,
+  stricter than dual mode, where they shape the morphospace. Checked on public data (B10):
+  training coordinates, cluster labels, scaling and split byte-identical across the morphospace
+  folder and two runs with different targets; test coordinates equal to 6.6e-8.
+- **The file list must be identical in both commands.** The split is taken over the files the run
+  sees, so a different set (the 6 unlinked images, or `--filter_labelled_by_scores` dropping rows)
+  gives a different split, and held-out subjects may then have been in the UMAP fit. Nothing
+  stops the run: it logs that the morphospace "was built on a different cohort (feature digest
+  differs)" and re-derives cluster labels only. Pass the same explicit list of 331 paths
+  (`--input_file_list`) to both, keep all 331 rows in the labels CSV with NaN for missing
+  outcomes, and treat that log line as a failed run.
+- **In single-dataset mode labels are aligned to files by row order.** The ID filter
+  (`--filter_labelled_by_scores`, substring match) only runs on a label dataset, so nothing checks
+  that row *i* of the labels is the subject of file *i*. Write the file list and the labels CSV
+  from the same linkage table in one script, and assert the order there, per row, before the run.
 - Each target is fitted on its own non-NaN subjects; `_optimise_target` already filters NaN rows
   per target (`heatmap_stage.py`).
 - **Where:** the lab compute node (72 cores, 125 GB RAM). Code cloned from the public repository;
@@ -181,9 +191,9 @@ sampler seeds (STATUS 3f).
 - **Labels:** one CSV, one row per linked subject, four target columns, built locally **through
   the validated lookup**, never by reading the folder number as a patient id. Its index must be
   the full subject string, not a bare number (substring-matching trap, `dev-docs/traps.md`).
-- **Flags that matter:** `--filter_labelled_by_scores`, `--scores_index_column`, `--scores_column`
-  (the four), `--random_state` fixed and recorded, `--test_size` (B2). **Never
-  `--record_cohort_ids`.**
+- **Flags that matter:** `--input_file_list` (same list in both commands), `--scores_header`,
+  `--scores_index_column`, `--random_state` fixed and recorded, `--test_size` (B2), the same
+  `--optim_dict` in both. **Never `--record_cohort_ids`.**
 - **Output folder outside the repository** (companion folder). It holds the training matrix inside
   the UMAP model and per-subject predictions. It is not shareable (see traps).
 - **What to read from it:** per-target CV R² against the floor, then permutation p, compared with
@@ -197,8 +207,8 @@ Grouped by when it blocks. Tick here, and mirror the state in STATUS.md.
 
 - [x] **A0** Linkage verified on this folder (§2).
 - [x] **A1** The four run-0 outcomes in §4 — confirmed by Chris, 2026-09-16.
-- [ ] **B1** Merge PR #19 (isotropic rescale, real confidence, shrinkage toward the null,
-      `HeatmapIntegrityError`). Local `--core` passed 17/17 on 2026-09-16.
+- [x] **B1** Merge PR #19 (isotropic rescale, real confidence, shrinkage toward the null,
+      `HeatmapIntegrityError`). Local `--core` passed 17/17 and CI passed; merged 2026-09-16.
 - [x] **B2** `--test_size 0.2` — confirmed by Chris, 2026-09-16. Costs ~50 subjects per target and
       gives the held-out check June lacked.
 - [ ] **B8** Morphospace search space. Chris asked for `optim_dict_hard`, remembered as tuned for
@@ -206,18 +216,19 @@ Grouped by when it blocks. Tick here, and mirror the state in STATUS.md.
       created (March 2025), with a *coarser* `n_neighbors` grid (5/25/45 only).
       `optim_dict_disconnectome` is the dict written for this data (`n_neighbors` 15–50
       continuous, `min_cluster_size` 15–100). *Recommendation: disconnectome.* Chris decides.
-- [ ] **B10** Exercise the dual-mode reuse path on public test data before BBS: `emuses umap` on
-      an unlabelled main dataset, then `emuses full --label_dataset … --load_umap` twice with
-      different target columns. Both must load the morphospace (no retraining), agree on
-      `cohort.json`, and give identical coordinates for the labelled subjects. Perturb: a
-      different main dataset must be refused or re-derived, never silently reused.
+- [x] **B10** Reuse path exercised on `swiss_roll` (2026-09-16), single-dataset mode: `emuses umap`,
+      then `emuses full --load_umap` with two different targets. No retraining, same
+      `cohort.json` digest, identical coordinates, labels and split (§5). Perturbation (10 rows of
+      the features shifted): the model is still loaded and the run exits 0; only the digest
+      warning and re-derived cluster labels show it. Hence the file-list rule in §5.
 - [ ] **B9** Trial budget for the morphospace search: time a few trials on the compute node first,
       then set the number from the measured cost. Seeded UMAP runs single-threaded (traps.md), so
       the cores do not shorten a trial.
 - [ ] **B3** Floor, permutation p and measured MDE: computed **alongside** run 0 by a local script
       on the saved embedding (agreed 2026-09-16), then built into the core pipeline (§6, "Core").
-- [ ] **B5** Build the labels CSV locally; verify the pipeline matched all 331 files with no
-      "multiple valid ID matches" warnings. Perturb it: a bare-number index must visibly fail.
+- [ ] **B5** Build the file list and the labels CSV locally from the linkage table, in one script,
+      same row order asserted per row (§5). Perturb it: a shuffled labels file must fail the
+      assertion. Check the run logs 331 subjects and no "different cohort" line.
 - [ ] **B6** Fix the data naming: the 2 mm files carry a resolution tag that says 1 mm, and their
       names are identical to the 1 mm directory's. Data-side, not code.
 - [x] **B7** The 9 volume outliers (§2): kept, per the clinical database's own lists.
