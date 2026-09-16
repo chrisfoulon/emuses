@@ -161,28 +161,46 @@ When that run happens, fix its target list before seeing results, and keep it we
 entries the registry holds. DSD_repro at 87 targets gave rankings that did not reproduce across
 sampler seeds (STATUS 3f).
 
-## 5. Run 0: classic EMUSES, disconnectomes only
+## 5. Run 0: DSD morphospace, BBS projected into it
 
-- **Mode: dual dataset, morphospace trained once.** Main dataset = all 331 linked disconnectomes,
-  no labels, never split: `emuses umap` trains the morphospace on them. Label dataset = the same
-  images with the outcome CSV, split by `--test_size 0.2`: `emuses full --label_dataset …
-  --load_umap <morphospace>` runs prediction and maps. Why not single-dataset mode: there the
-  train/test split happens *before* UMAP (`emuses_pipeline.py`), on the files that survive
-  `--filter_labelled_by_scores`, which depends on the chosen targets. A different target set
-  would then mean a different morphospace. In dual mode any later target set, split or predictor
-  search should reuse the same morphospace, with `cohort.json` checking it is the same cohort.
-  **Not yet exercised end to end in dual mode (B10).** Held-out
-  subjects shape the morphospace without their labels: transductive, no outcome leakage.
+- **Mode: dual dataset (Chris, 2026-09-16).** The morphospace is trained **only on the 1333
+  unlabelled DSD disconnectomes**. BBS never enters the UMAP or HDBSCAN fit; it is used only by the
+  prediction/heatmap stage and inference, as the label dataset projected into that morphospace.
+  1. `emuses umap <morphospace> <DSD 1333> --test_size 0 --optim_dict optim_dict_disconnectome`
+     trains once on all 1333. `--test_size 0` matters: `emuses umap` on its own is single-dataset
+     mode and would otherwise hold out 20 % of the DSD subjects from the fit.
+  2. `emuses full <run> <DSD 1333> --label_dataset <BBS 331> --scores <labels>
+     --filter_labelled_by_scores --load_umap <morphospace> --test_size 0.2` loads the morphospace,
+     transforms the BBS images into it and splits **BBS** 80/20 for prediction. Repeat per target
+     set, predictor search or split seed; the morphospace does not change.
+- **Checked on public data (B10, `swiss_roll` split into a main and a labelled part):** with
+  `--test_size 0` on step 1, two step-2 runs with different targets loaded the model without
+  retraining, matched the stored cohort (no warning), and gave byte-identical main-set
+  coordinates, cluster labels, labelled-set split and heatmap grid. Perturbation (10 main-set rows
+  shifted): the model is still loaded and the run exits 0; the only signs are a logged "built on
+  a different cohort (feature digest differs)" and re-derived cluster labels. **Pass the same DSD
+  file list to both steps and treat that log line as a failed run.** Without `--test_size 0` on
+  step 1 the line appears on every correct run, which is why it is set.
+- **Inputs are raw voxel values in both cohorts.** `--input_normalization` applies to spreadsheet
+  inputs only; NIfTI inputs are not scaled, so no scaler fitted on one cohort touches the other.
+- **Same grid, different origin (B11).** DSD and BBS disconnectomes share shape (91×109×91),
+  2 mm voxels, float32 and range [0, 1], but their origins differ by 0.5 mm on each axis (a
+  quarter voxel). Images are compared voxel by voxel, so BBS as-is sits a quarter voxel off the
+  morphospace's anatomy. Chris decides whether to resample first.
+- **Labels are matched to files by id in dual mode** (`--filter_labelled_by_scores`, substring of
+  the file name). Index the labels by the full subject string so no id is a substring of another
+  file's name, and check the log reports all 331 files kept and no "multiple valid ID matches".
 - Each target is fitted on its own non-NaN subjects; `_optimise_target` already filters NaN rows
   per target (`heatmap_stage.py`).
 - **Where:** the lab compute node (72 cores, 125 GB RAM). Code cloned from the public repository;
-  only the 331 disconnectome volumes and the labels CSV copied there, outside any synced folder.
+  the DSD and BBS disconnectomes copied to a data folder outside any synced folder (checksums
+  verified); clinical tables read in place from the clinical database's own off-sync copy.
 - **Inputs:** disconnectomes only. No clinical covariates (§7).
 - **Labels:** one CSV, one row per linked subject, four target columns, built locally **through
-  the validated lookup**, never by reading the folder number as a patient id. Its index must be
-  the full subject string, not a bare number (substring-matching trap, `dev-docs/traps.md`).
-- **Flags that matter:** `--filter_labelled_by_scores`, `--scores_index_column`, `--scores_column`
-  (the four), `--random_state` fixed and recorded, `--test_size` (B2). **Never
+  the validated lookup**, never by reading the folder number as a patient id.
+- **Flags that matter:** the same DSD file list and `--optim_dict optim_dict_disconnectome` in both
+  steps, `--test_size 0` (step 1) and `0.2` (step 2, B2), `--random_state` fixed and recorded,
+  `--label_dataset`, `--filter_labelled_by_scores`, `--scores_index_column`. **Never
   `--record_cohort_ids`.**
 - **Output folder outside the repository** (companion folder). It holds the training matrix inside
   the UMAP model and per-subject predictions. It is not shareable (see traps).
@@ -197,27 +215,25 @@ Grouped by when it blocks. Tick here, and mirror the state in STATUS.md.
 
 - [x] **A0** Linkage verified on this folder (§2).
 - [x] **A1** The four run-0 outcomes in §4 — confirmed by Chris, 2026-09-16.
-- [ ] **B1** Merge PR #19 (isotropic rescale, real confidence, shrinkage toward the null,
-      `HeatmapIntegrityError`). Local `--core` passed 17/17 on 2026-09-16.
+- [x] **B1** Merge PR #19 (isotropic rescale, real confidence, shrinkage toward the null,
+      `HeatmapIntegrityError`). Local `--core` passed 17/17 and CI passed; merged 2026-09-16.
 - [x] **B2** `--test_size 0.2` — confirmed by Chris, 2026-09-16. Costs ~50 subjects per target and
       gives the held-out check June lacked.
-- [ ] **B8** Morphospace search space. Chris asked for `optim_dict_hard`, remembered as tuned for
-      noisier problems. In the code it is nearly `optim_dict_default` and has been since it was
-      created (March 2025), with a *coarser* `n_neighbors` grid (5/25/45 only).
-      `optim_dict_disconnectome` is the dict written for this data (`n_neighbors` 15–50
-      continuous, `min_cluster_size` 15–100). *Recommendation: disconnectome.* Chris decides.
-- [ ] **B10** Exercise the dual-mode reuse path on public test data before BBS: `emuses umap` on
-      an unlabelled main dataset, then `emuses full --label_dataset … --load_umap` twice with
-      different target columns. Both must load the morphospace (no retraining), agree on
-      `cohort.json`, and give identical coordinates for the labelled subjects. Perturb: a
-      different main dataset must be refused or re-derived, never silently reused.
+- [x] **B8** Morphospace search space: `optim_dict_disconnectome` (Chris, 2026-09-16).
+      `optim_dict_hard`, remembered as tuned for noisier problems, is nearly the default with a
+      coarser `n_neighbors` grid.
+- [x] **B10** Dual-mode reuse path exercised on `swiss_roll` (2026-09-16); result and the two
+      rules it produced (`--test_size 0` on the morphospace, same main file list) in §5.
+- [ ] **B11** DSD and BBS origins differ by 0.5 mm per axis (§5). Resample BBS onto the DSD grid,
+      or accept the quarter-voxel offset. Chris decides.
 - [ ] **B9** Trial budget for the morphospace search: time a few trials on the compute node first,
       then set the number from the measured cost. Seeded UMAP runs single-threaded (traps.md), so
       the cores do not shorten a trial.
 - [ ] **B3** Floor, permutation p and measured MDE: computed **alongside** run 0 by a local script
       on the saved embedding (agreed 2026-09-16), then built into the core pipeline (§6, "Core").
-- [ ] **B5** Build the labels CSV locally; verify the pipeline matched all 331 files with no
-      "multiple valid ID matches" warnings. Perturb it: a bare-number index must visibly fail.
+- [ ] **B5** Build the labels CSV locally through the validated lookup, indexed by full subject
+      string, and the BBS file list of the 331 linked images. Check the run keeps 331 files with
+      no "multiple valid ID matches". Perturb: a bare-number index must visibly fail.
 - [ ] **B6** Fix the data naming: the 2 mm files carry a resolution tag that says 1 mm, and their
       names are identical to the 1 mm directory's. Data-side, not code.
 - [x] **B7** The 9 volume outliers (§2): kept, per the clinical database's own lists.

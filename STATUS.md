@@ -682,12 +682,14 @@ problem, the `enhanced-cli-typer` hang and repo pollution by test output are all
     method, not the cohort. Isaac 3 m and Fugl-Meyer motor 12 m (documented disconnection effects),
     acute NIHSS (positive control), HADS-D 3 m (negative control). The full outcome set waits for
     those four to behave. **Confirmed by Chris 2026-09-16:** the four outcomes, `--test_size 0.2`,
-    the clinical database's linkage/verification lists as source of truth. **Morphospace:** dual-
-    dataset mode (all 331 unlabelled for UMAP, never split), trained once on the lab compute node
-    and reused via `--load_umap` for every target set. **Blocking before run 0:** PR #19 merged
-    (B1); search space `hard` vs `disconnectome` (B8 — `hard` is not what it was remembered as);
-    trial budget from measured cost (B9); dual-mode reuse exercised on public data (B10); labels
-    CSV built through the validated lookup and indexed by full subject string (B5). Floor/permutation/MDE run alongside by local script (B3), then go into
+    the clinical database's linkage/verification lists as source of truth. **Morphospace:** trained
+    once on the 1333 unlabelled DSD disconnectomes only (`--test_size 0`,
+    `optim_dict_disconnectome`); BBS is the label dataset, projected into it for prediction and
+    maps (dual mode). Reuse via `--load_umap` verified on public data in dual mode (B10, plan §5).
+    PR #19 merged (B1). Inputs copied to the compute node outside any synced folder, checksums
+    verified. **Blocking before run 0:** DSD/BBS 0.5 mm origin offset — resample or accept (B11,
+    Chris); trial budget from measured cost (B9); labels CSV through the validated lookup, indexed
+    by full subject string (B5); code and environment on the compute node. Floor/permutation/MDE run alongside by local script (B3), then go into
     core (F1–F3). Clinical features as model input do not exist (`prediction_X` is the 2-D
     coordinates only); deferred until run 0 gives the lesion-only baseline.
 
