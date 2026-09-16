@@ -47,10 +47,13 @@ anything derived from file names. It was checked independently on this folder's 
 - No patient is claimed by two images.
 - Four identity collisions the clinical-database audit had left unresolved were checked against
   mask volume, and all four support the existing links.
-- 9 subjects have mask volume more than 1.5× away from the recorded volume after scaling. One was
-  already known as a registry error with a correct mask. The rest are mostly small lesions with
-  the mask 2–4× larger, consistent with different segmentations rather than wrong identities.
-  Decision B7.
+- 9 subjects have mask volume more than 1.5× away from the recorded volume after scaling. They are
+  exactly the clinical database's own verification list (its "check" and "flagged" rows, reviewed
+  there), so **they stay in (Chris, 2026-09-16: the clinical database's lists are the source of
+  truth)**.
+- That verification file is older than the database's last two linkage fixes, so it still marks
+  67 now-linked subjects as unresolved and carries one pre-fix identity swap. The fixes are
+  right; the verification file is stale. Reported to that project rather than fixed here.
 - Outcomes and clinical features join on the patient id. Among the 331: age and sex are present
   for all but a handful of patients, the minimal clinical tier (age, baseline NIHSS, infarct
   volume) is complete for 323, and the full clinical tier for 304.
@@ -160,9 +163,20 @@ sampler seeds (STATUS 3f).
 
 ## 5. Run 0: classic EMUSES, disconnectomes only
 
-- **Mode:** single dataset. UMAP and HDBSCAN on all 331 linked disconnectomes (unsupervised, so
-  subjects missing an outcome still shape the morphospace). Each target is fitted on its own
-  non-NaN subjects; `_optimise_target` already filters NaN rows per target (`heatmap_stage.py`).
+- **Mode: dual dataset, morphospace trained once.** Main dataset = all 331 linked disconnectomes,
+  no labels, never split: `emuses umap` trains the morphospace on them. Label dataset = the same
+  images with the outcome CSV, split by `--test_size 0.2`: `emuses full --label_dataset …
+  --load_umap <morphospace>` runs prediction and maps. Why not single-dataset mode: there the
+  train/test split happens *before* UMAP (`emuses_pipeline.py`), on the files that survive
+  `--filter_labelled_by_scores`, which depends on the chosen targets. A different target set
+  would then mean a different morphospace. In dual mode any later target set, split or predictor
+  search should reuse the same morphospace, with `cohort.json` checking it is the same cohort.
+  **Not yet exercised end to end in dual mode (B10).** Held-out
+  subjects shape the morphospace without their labels: transductive, no outcome leakage.
+- Each target is fitted on its own non-NaN subjects; `_optimise_target` already filters NaN rows
+  per target (`heatmap_stage.py`).
+- **Where:** the lab compute node (72 cores, 125 GB RAM). Code cloned from the public repository;
+  only the 331 disconnectome volumes and the labels CSV copied there, outside any synced folder.
 - **Inputs:** disconnectomes only. No clinical covariates (§7).
 - **Labels:** one CSV, one row per linked subject, four target columns, built locally **through
   the validated lookup**, never by reading the folder number as a patient id. Its index must be
@@ -182,19 +196,31 @@ Grouped by when it blocks. Tick here, and mirror the state in STATUS.md.
 ### Before run 0
 
 - [x] **A0** Linkage verified on this folder (§2).
-- [ ] **A1** Chris confirms the four run-0 outcomes in §4.
+- [x] **A1** The four run-0 outcomes in §4 — confirmed by Chris, 2026-09-16.
 - [ ] **B1** Merge PR #19 (isotropic rescale, real confidence, shrinkage toward the null,
-      `HeatmapIntegrityError`).
-- [ ] **B2** Decide `--test_size`. 0.0 keeps n and gives no held-out check, the June mistake. 0.2
-      costs ~50 subjects per target and gives one. *Recommendation: 0.2.*
+      `HeatmapIntegrityError`). Local `--core` passed 17/17 on 2026-09-16.
+- [x] **B2** `--test_size 0.2` — confirmed by Chris, 2026-09-16. Costs ~50 subjects per target and
+      gives the held-out check June lacked.
+- [ ] **B8** Morphospace search space. Chris asked for `optim_dict_hard`, remembered as tuned for
+      noisier problems. In the code it is nearly `optim_dict_default` and has been since it was
+      created (March 2025), with a *coarser* `n_neighbors` grid (5/25/45 only).
+      `optim_dict_disconnectome` is the dict written for this data (`n_neighbors` 15–50
+      continuous, `min_cluster_size` 15–100). *Recommendation: disconnectome.* Chris decides.
+- [ ] **B10** Exercise the dual-mode reuse path on public test data before BBS: `emuses umap` on
+      an unlabelled main dataset, then `emuses full --label_dataset … --load_umap` twice with
+      different target columns. Both must load the morphospace (no retraining), agree on
+      `cohort.json`, and give identical coordinates for the labelled subjects. Perturb: a
+      different main dataset must be refused or re-derived, never silently reused.
+- [ ] **B9** Trial budget for the morphospace search: time a few trials on the compute node first,
+      then set the number from the measured cost. Seeded UMAP runs single-threaded (traps.md), so
+      the cores do not shorten a trial.
 - [ ] **B3** Floor, permutation p and measured MDE: computed **alongside** run 0 by a local script
       on the saved embedding (agreed 2026-09-16), then built into the core pipeline (§6, "Core").
 - [ ] **B5** Build the labels CSV locally; verify the pipeline matched all 331 files with no
       "multiple valid ID matches" warnings. Perturb it: a bare-number index must visibly fail.
 - [ ] **B6** Fix the data naming: the 2 mm files carry a resolution tag that says 1 mm, and their
       names are identical to the 1 mm directory's. Data-side, not code.
-- [ ] **B7** The 9 volume outliers (§2): keep them (recommended, since identities are supported),
-      and re-run without them only if a result hinges on a handful of subjects.
+- [x] **B7** The 9 volume outliers (§2): kept, per the clinical database's own lists.
 
 ### Alongside run 0
 
