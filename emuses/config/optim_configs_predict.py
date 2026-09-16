@@ -254,6 +254,54 @@ optim_dict_raw_only = {
 }
 
 
+# Two narrow spaces, fixed before a run rather than chosen from its results.
+# dev-docs/issues/disconnectome_design_audit_2026_08.md §9-10: with the full space
+# no target kept the same model+features across its 5 folds, and picking the
+# space by inner CV did no better than the full space. One feature recipe and one
+# estimator family each; report both arms, do not pick the better one afterwards.
+# Coordinates reaching the predictor are rescaled isotropically to about [0, 1],
+# which is the unit of `sigma`.
+
+# Local: a Gaussian kernel average can express "this region of the morphospace".
+optim_dict_raw_kernel = {
+    "param": {
+        "model": {
+            "model_type": {"choices": ["kernel"]},
+            "kernel": {
+                "sigma": {"low": 0.02, "high": 0.3, "log": True},
+            },
+        },
+        "features": {
+            "feat_type": {"choices": ["raw_only"]},
+            "poly_deg": {"choices": [1]},
+        },
+    }
+}
+
+# Linear: the audit's stable configuration. On 2-D coordinates it fits a plane,
+# i.e. a single gradient across the morphospace.
+optim_dict_raw_elastic = {
+    "param": {
+        "model": {
+            "model_type": {"choices": ["elastic"]},
+            "elastic": {
+                "alpha": {"low": 1e-4, "high": 10, "log": True},
+                "l1_ratio": {"low": 0.0, "high": 1.0},
+                # classification path
+                "C": {"low": 0.01, "high": 100, "log": True},
+                "penalty": {"choices": ["l2"]},
+                "max_iter": {"value": 10000},
+                "tol": {"value": 1e-4},
+            },
+        },
+        "features": {
+            "feat_type": {"choices": ["raw_only"]},
+            "poly_deg": {"choices": [1]},
+        },
+    }
+}
+
+
 # Test configuration with reduced trials for fast integration testing
 optim_dict_test = {
     "meta": {

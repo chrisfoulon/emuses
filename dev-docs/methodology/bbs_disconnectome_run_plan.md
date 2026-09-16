@@ -200,7 +200,8 @@ sampler seeds (STATUS 3f).
   the validated lookup**, never by reading the folder number as a patient id.
 - **Flags that matter:** the same DSD file list and `--optim_dict optim_dict_disconnectome` in both
   steps, `--test_size 0` (step 1) and `0.2` (step 2, B2), `--random_state` fixed and recorded,
-  `--label_dataset`, `--filter_labelled_by_scores`, `--scores_index_column`. **Never
+  `--label_dataset`, `--filter_labelled_by_scores`, `--scores_index_column`,
+  `--optuna_trials 150` and `--prediction_optim_dict` per arm (B12). **Never
   `--record_cohort_ids`.**
 - **Output folder outside the repository** (companion folder). It holds the training matrix inside
   the UMAP model and per-subject predictions. It is not shareable (see traps).
@@ -224,11 +225,23 @@ Grouped by when it blocks. Tick here, and mirror the state in STATUS.md.
       coarser `n_neighbors` grid.
 - [x] **B10** Dual-mode reuse path exercised on `swiss_roll` (2026-09-16); result and the two
       rules it produced (`--test_size 0` on the morphospace, same main file list) in §5.
-- [ ] **B11** DSD and BBS origins differ by 0.5 mm per axis (§5). Resample BBS onto the DSD grid,
-      or accept the quarter-voxel offset. Chris decides.
-- [ ] **B9** Trial budget for the morphospace search: time a few trials on the compute node first,
-      then set the number from the measured cost. Seeded UMAP runs single-threaded (traps.md), so
-      the cores do not shorten a trial.
+- [ ] **B11** DSD and BBS origins differ by 0.5 mm per axis (§5). Cause: the disconnectome tool
+      builds 2 mm maps by pooling 2×2×2 blocks of its 1 mm grid, so coarse voxel centres fall
+      between standard 2 mm centres (same template, not SPM vs FSL). Being fixed in that tool
+      (Chris); until then, trilinear resampling of the 2 mm maps onto the DSD grid is the fallback
+      (r ≈ 0.99 with the originals).
+- [x] **B9** Morphospace search: 200 UMAP trials × 20 HDBSCAN trials, serial (Chris, 2026-09-16).
+      Measured on the compute node: ~9 min per trial, ~30 h, ~24 GB peak. The time is umap-learn
+      computing all pairwise distances on one core (510 s of the trial); HDBSCAN takes ~0.02 s,
+      so parallelising it gains nothing. Precomputing the distances once was shown bitwise
+      identical on test data but was dropped: a one-off saving did not justify a science-path
+      change that depends on umap-learn internals and has an exception (disconnected graphs).
+      Launched 2026-09-16.
+- [x] **B12** Prediction search space, fixed before the run (Chris, 2026-09-16): two arms,
+      `optim_dict_raw_kernel` (Gaussian kernel, sigma only) and `optim_dict_raw_elastic`
+      (ElasticNet), both on raw coordinates, 150 trials each. Both arms are reported against the
+      floor; neither is picked afterwards. Why: the DSD audit (§9–10) found the full space unstable
+      across folds and not recoverable by choosing the space from inner CV.
 - [ ] **B3** Floor, permutation p and measured MDE: computed **alongside** run 0 by a local script
       on the saved embedding (agreed 2026-09-16), then built into the core pipeline (§6, "Core").
 - [ ] **B5** Build the labels CSV locally through the validated lookup, indexed by full subject
