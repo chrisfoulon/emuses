@@ -1,5 +1,5 @@
 # STATUS — EMUSES
-_Last touched: 2026-09-08_
+_Last touched: 2026-09-16_
 
 ## Goal
 
@@ -116,7 +116,8 @@ evidence that prediction works. `dev-docs/issues/inference_constant_predictions_
 ### Disconnectome signal audit (2026-08-26) — the real test, measured
 
 `DSD_repro` is the target dataset: 1333 unlabelled + 133 labelled subjects, 902,629 voxels each
-(no masking, 1.8% nonzero, 9.6 GB dense), 87 neuropsych measures, **33% of the score matrix NaN**
+(no masking, 9.6 GB dense; "1.8% nonzero" was recorded here and **does not reproduce** —
+re-measured 2026-09-14 on 25 subjects from each DSD cohort: 17–19% of voxels nonzero), 87 neuropsych measures, **33% of the score matrix NaN**
 (median 45 missing per measure, so effective n ≈ 88 per target). The June 2026 run
 (`new_pred_pipeline_12-06-2026`, ~19 h) reported `Overall_Mean_Performance = -0.1884`.
 
@@ -660,6 +661,25 @@ problem, the `enhanced-cli-typer` hang and repo pollution by test output are all
     are transferable: fix the reference group (their D1/D2), and steal the ARI-stability test for
     "does more than one profile exist at all", which EMUSES currently never asks.
 
+00c. [ ] **BBS replaces DSD_repro as the real-data cohort — decided 2026-09-14, plan written
+        2026-09-16.** Full plan, target list, pre-stated expectations and the build/decide checklist:
+        **`dev-docs/methodology/bbs_disconnectome_run_plan.md`** (its §6 is the checklist; keep it
+        and this item in step). **The repo is public and BBS cannot be shared**: aggregates only,
+        no ids, filenames, column names or small counts; specifics live in a local companion folder
+        outside the checkout. Rules in `dev-docs/traps.md`, "Restricted clinical data".
+
+    Why: same grid as DSD_repro (91×109×91 @ 2 mm), 337 imaged subjects, 196–271 per target, and
+    every target's mean-predictor floor sits at −0.007 to −0.014 against DSD_repro's median −0.086.
+    R² is readable at face value there. DSD_repro is dropped entirely.
+
+    Run 0 = classic EMUSES, disconnectomes only, 15 targets fixed in advance, acute NIHSS as the
+    positive control. **Blocking before run 0:** Chris confirms the target list (A1); PR #19 merged
+    (B1); `--test_size` (B2); floor/permutation/MDE in-pipeline or by local script alongside (B3);
+    which 3-month mRS derivation (B4); labels CSV indexed by full subject string, with the matched
+    count checked (B5). Clinical features as model input do not exist (`prediction_X` is the 2-D
+    coordinates only); the post-UMAP design collides with the 2-D grid like the N-D gate does, and
+    is deferred until run 0 gives the lesion-only baseline.
+
 0a. [x] **The prediction baselines were degenerate — fixed 2026-09-06 by adding a dataset.**
        On both 40-sample datasets, in every fold, the winning ElasticNet had all coefficients
        exactly zero, so `target_0_*_Score` was a constant model's score: independent of the
@@ -1111,7 +1131,8 @@ problem, the `enhanced-cli-typer` hang and repo pollution by test output are all
        0.029). This is the diagnostic that says *"no model would have worked"* rather than *"this
        model didn't"*. It needs fits on real y, so it cannot run before training — but with a fixed
        model those fits cost seconds, so it can run before committing to the expensive search.
-3e. [ ] **Re-run DSD_repro properly** once PR #10 is merged: `--test_size 0.2` (June used 0.0 and so
+3e. [—] **SUPERSEDED 2026-09-14 by item 00c (BBS). Do not run.** Kept for the reasoning only.
+       ~~**Re-run DSD_repro properly** once PR #10 is merged:~~ `--test_size 0.2` (June used 0.0 and so
        produced no held-out evaluation at all) and expect ~19 h / 9.6 GB peak. PR #10 is a hard
        prerequisite: at 87 targets the lexicographic ordering bug mis-pairs 85 of them.
 4. [ ] **Resource controls.** Two separate pieces (2026-08-25): *memory-aware execution* is a

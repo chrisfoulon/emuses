@@ -101,6 +101,35 @@ what it is), `dev-docs/test_quality_conventions.md`.
   and `composite_score` becomes a *different quantity* rather than a drifted one — no tolerance
   covers an argmax flip. Run plain `--core` locally if you touched the science path.
 
+## Restricted clinical data (BBS and anything like it)
+
+_Added 2026-09-16. The repository is **public**. The first two entries are found hazards that have
+not yet bitten; the third cost a wrong table._
+
+- **An EMUSES model folder contains its training data.** umap-learn stores the full fitted matrix
+  on the model (`self._raw_data = X`, `umap_.py:2379`), and `best_umap_model_*.joblib` pickles it,
+  so every subject's input image travels with the folder. HDBSCAN fitted with `prediction_data`
+  stores the per-subject embedding coordinates. Add the per-subject predictions and cluster labels,
+  and a model trained on restricted data is not shareable at all: not to the registry, not in an
+  issue, not into `test_data/` or `tests/regression/baselines/`. Keep its output folder outside the
+  checkout. `.gitignore` only covers a few conventional folder names. `cohort.json` is safe by
+  default and **`--record_cohort_ids` is not**.
+- **Labels are matched to image files by substring.** With `--filter_labelled_by_scores`, a scores
+  index value is accepted for a file if it appears *anywhere* in the file name
+  (`emuses_pipeline.py`, `vid in Path(p).stem`). A bare numeric id such as `1` matches every file
+  whose name contains `run-1`, `echo-1` or `sub-01…`. More than one match is skipped with a warning;
+  exactly one wrong match is accepted silently. Index the scores file by the full subject string and
+  check the matched count against the number of files.
+- **Long-format outcome tables count visits, not people.** A visit-level table has one row per
+  subject per visit, and a registry entry that reads it needs its visit filter applied. The first
+  BBS screening ignored that and reported six targets at n = 421–475 against 337 imaged subjects —
+  exactly the targets that looked best. Filter, then count unique subject ids.
+- **Nothing that identifies a person goes into the repository**: no subject ids or filenames, no
+  per-subject values or plots, no source table/column names, no small counts. Explain choices in
+  aggregate. BBS specifics live in a local companion folder outside the checkout; see
+  `dev-docs/methodology/bbs_disconnectome_run_plan.md`. Logs are the easy leak: the pipeline logs
+  file paths, so do not paste a real-data log into a PR or issue.
+
 ---
 
 ## Standing decisions — do not re-litigate

@@ -219,7 +219,8 @@ in the same range as the best result measured here (`lpegs` 0.203–0.246).
   choice fixes this.
 - **33% missing scores** is handled correctly (per-target row dropping,
   `heatmap_stage.py:72`), but it is what drives n down to ~88.
-- **No masking**: `inputs_utils.py:207` keeps all 902,629 voxels though only 1.8% are nonzero,
+- **No masking**: `inputs_utils.py:207` keeps all 902,629 voxels though only 1.8% are nonzero
+  (_2026-09-14: does not reproduce; 17–19% nonzero measured on 25 subjects per DSD cohort_),
   giving a 9.6 GB dense float64 matrix. That is a cost problem, not a correctness one.
 
 ---
