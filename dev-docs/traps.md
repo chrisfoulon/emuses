@@ -120,6 +120,12 @@ not yet bitten; the third cost a wrong table._
   whose name contains `run-1`, `echo-1` or `sub-01…`. More than one match is skipped with a warning;
   exactly one wrong match is accepted silently. Index the scores file by the full subject string and
   check the matched count against the number of files.
+- **An imaging folder's subject number is not the clinical id until proven.** Imaging studies often
+  number scans in their own order. Reading `sub-XXX` as the clinical id attached most BBS images to
+  the wrong patient, and nothing failed: n, floors and distributions all looked plausible. The
+  proof is independent: correlate mask-derived lesion volume with the recorded infarct volume
+  (+0.995 under the validated lookup, +0.075 under the naive reading). Do it before any run on a
+  new cohort.
 - **Long-format outcome tables count visits, not people.** A visit-level table has one row per
   subject per visit, and a registry entry that reads it needs its visit filter applied. The first
   BBS screening ignored that and reported six targets at n = 421–475 against 337 imaged subjects —

@@ -668,17 +668,24 @@ problem, the `enhanced-cli-typer` hang and repo pollution by test output are all
         no ids, filenames, column names or small counts; specifics live in a local companion folder
         outside the checkout. Rules in `dev-docs/traps.md`, "Restricted clinical data".
 
-    Why: same grid as DSD_repro (91×109×91 @ 2 mm), 337 imaged subjects, 196–271 per target, and
-    every target's mean-predictor floor sits at −0.007 to −0.014 against DSD_repro's median −0.086.
-    R² is readable at face value there. DSD_repro is dropped entirely.
+    Why: same grid as DSD_repro (91×109×91 @ 2 mm), 331 imaged subjects linked, 192–327 per
+    target, and every candidate target's mean-predictor floor sits at −0.005 to −0.011 against
+    DSD_repro's median −0.086. R² is readable at face value there. DSD_repro is dropped entirely.
 
-    Run 0 = classic EMUSES, disconnectomes only, 15 targets fixed in advance, acute NIHSS as the
-    positive control. **Blocking before run 0:** Chris confirms the target list (A1); PR #19 merged
-    (B1); `--test_size` (B2); floor/permutation/MDE in-pipeline or by local script alongside (B3);
-    which 3-month mRS derivation (B4); labels CSV indexed by full subject string, with the matched
-    count checked (B5). Clinical features as model input do not exist (`prediction_X` is the 2-D
-    coordinates only); the post-UMAP design collides with the 2-D grid like the N-D gate does, and
-    is deferred until run 0 gives the lesion-only baseline.
+    ⚠️ **Image folder numbers are NOT clinical patient ids** (verified 2026-09-16, plan §2): the
+    validated lookup gives Spearman +0.995 between mask and recorded infarct volume, reading the
+    folder number as the id gives +0.075. The first screening (2026-09-14) made that mistake, and
+    its numbers were void; the 2026-09-16 commit of this plan still carried them and is corrected.
+
+    **Run 0 is small on purpose (Chris, 2026-09-16):** the method is not yet trusted (prediction
+    scores never checked on a real positive control; maps pending 00b and PR #19), so it tests the
+    method, not the cohort. Isaac 3 m and Fugl-Meyer motor 12 m (documented disconnection effects),
+    acute NIHSS (positive control), HADS-D 3 m (negative control). The full outcome set waits for
+    those four to behave. **Blocking before run 0:** Chris confirms the four (A1); PR #19 merged
+    (B1); `--test_size` (B2); labels CSV built through the validated lookup and indexed by full
+    subject string (B5). Floor/permutation/MDE run alongside by local script (B3), then go into
+    core (F1–F3). Clinical features as model input do not exist (`prediction_X` is the 2-D
+    coordinates only); deferred until run 0 gives the lesion-only baseline.
 
 0a. [x] **The prediction baselines were degenerate — fixed 2026-09-06 by adding a dataset.**
        On both 40-sample datasets, in every fold, the winning ElasticNet had all coefficients

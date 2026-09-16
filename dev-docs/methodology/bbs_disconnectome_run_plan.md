@@ -15,8 +15,8 @@ PR bodies, issues, logs pasted into any of them, figures, test data or baselines
   over ≥150 subjects; a proportion whose complement would be under ~10 subjects is written as a
   bound ("over 90 %"), not a number.
 
-Those details, and the mapping from the generic names below to the real variables, live in a
-**local companion folder outside the repository** on the analysis machine
+Those details, the mapping from the generic names below to the real variables, and the linkage
+itself live in a **local companion folder outside the repository** on the analysis machine
 (`$NEURO_DATA/BBS_emuses_local/`). If you need a detail that is not here, it is there, and it stays
 there.
 
@@ -27,22 +27,50 @@ its answers agree with what the disconnection–outcome literature reports for t
 
 Secondary: a first real cohort where a *null* result is readable. DSD_repro never allowed that.
 
-## 2. Why BBS instead of DSD_repro (decided 2026-09-14)
+## 2. Linkage: images to patients (verified 2026-09-16)
+
+**The subject number in the image folder is the imaging-study number, not the clinical patient id.**
+The two differ for most patients, and reading one as the other silently attaches every image to
+the wrong person. An earlier export outside this project was mislinked exactly this way. A first
+screening in this plan's own drafting made the same mistake, and every number from it is void.
+The numbers below replace it.
+
+The linkage used is the clinician-validated lookup maintained with the clinical database, not
+anything derived from file names. It was checked independently on this folder's own lesion masks:
+
+| reading | Spearman(mask volume, recorded infarct volume) |
+|---|---|
+| validated lookup | **+0.995** (331 subjects) |
+| folder number read as patient id | +0.075 |
+
+- 331 of 337 imaged subjects link; 6 have no entry in the source tables and are excluded.
+- No patient is claimed by two images.
+- Four identity collisions the clinical-database audit had left unresolved were checked against
+  mask volume, and all four support the existing links.
+- 9 subjects have mask volume more than 1.5× away from the recorded volume after scaling. One was
+  already known as a registry error with a correct mask. The rest are mostly small lesions with
+  the mask 2–4× larger, consistent with different segmentations rather than wrong identities.
+  Decision B7.
+- Outcomes and clinical features join on the patient id. Among the 331: age and sex are present
+  for all but a handful of patients, the minimal clinical tier (age, baseline NIHSS, infarct
+  volume) is complete for 323, and the full clinical tier for 304.
+
+## 3. Why BBS instead of DSD_repro (decided 2026-09-14)
 
 DSD_repro (n≈88) is dropped entirely, not kept as a comparison.
 
 | | DSD_repro | BBS |
 |---|---|---|
-| imaged subjects | ≈88 | 337 |
-| subjects per target | ≈88 | 196–271 (targets in §4) |
-| mean-predictor floor, 5-fold CV R² | median −0.086, worst −2.56 | −0.007 to −0.014, every target |
+| imaged subjects | ≈88 labelled | 331 linked |
+| subjects per target | ≈88 | 192–327 across the outcome set in §4 |
+| mean-predictor floor, 5-fold CV R² | median −0.086, worst −2.56 | −0.005 to −0.011, every candidate target |
 | input grid | 91×109×91 @ 2 mm, 902,629 voxels, [0, 1] | identical |
 | voxels nonzero (disconnectome, 25 subjects each) | 17–19 % | 16 % |
 
 The floor row is the decision. At DSD_repro's n an R² had to be read against a floor that moved
 per target by more than the effects did (`small_sample_prediction_validity.md`). On BBS the floor
-is at zero to two decimals for every target, so R² can be read at face value. Grid and density
-match, so there is no preprocessing change and no domain shift to argue about.
+is at zero to two decimals, so R² can be read at face value. Grid and density match, so there is
+no preprocessing change and no domain shift to argue about.
 
 **Indicative detection limit.** Simulated power for a *fixed* ridge on 5-fold CV with a
 permutation test (400 repetitions, 499 permutations, 80 % power):
@@ -52,82 +80,100 @@ permutation test (400 repetitions, 499 permutations, 80 % power):
 | smallest detectable R² | 0.13 | 0.09 | 0.06 | 0.06 | 0.04 |
 
 Two limits on this table. It is simulated, and STATUS 3i settled that the MDE EMUSES *reports*
-must be measured on real y (`null_p95 + 0.84 × SD`) — that measurement is an item in §6. And it is
-for a fixed model: at n≈88 the full search roughly doubled the measured MDE (0.096 → 0.176,
-`external_evidence_dsd.md`). Expect EMUSES as it runs today to need true R² nearer 0.1 at n≈225.
+must be measured on real y (`null_p95 + 0.84 × SD`). And it is for a fixed model: at n≈88 the full
+search roughly doubled the measured MDE (0.096 → 0.176, `external_evidence_dsd.md`). Expect
+EMUSES as it runs today to need true R² near 0.1 at n≈250.
 
-## 3. Literature anchors, and what we expect before running
+## 4. Scope of the first run: few targets, because the method is not yet trusted
 
-| outcome | published result | source |
-|---|---|---|
-| acute stroke severity (NIHSS) from structural disconnection | R² = 0.29 (lesion topography 0.41), n = 685 | [Sperber et al.](https://pmc.ncbi.nlm.nih.gov/articles/PMC11756379/) |
-| NIHSS at 3 months from disconnection | R² ≈ 0 | same |
-| mRS at 3 months | 59.9 % accuracy, near chance | same |
-| prediction from the published 2-D DSD morphospace, independent cohort | R = 0.31 out of sample (R² ≈ 0.10), n = 314 | Hope et al. 2024; outcome and details in `external_evidence_dsd.md` |
-| post-stroke cognition from lesion/disconnection | no single figure carried over; references for the cognitive targets | [Kolskår et al.](https://pmc.ncbi.nlm.nih.gov/articles/PMC9392540/), [Stroke 2023](https://www.ahajournals.org/doi/10.1161/STROKEAHA.122.042127) |
+**Decided 2026-09-16 (Chris): the size of the first run depends on whether EMUSES's numbers are
+trusted.** If they were, the whole outcome set could run. They are not yet, for reasons that are
+recorded rather than suspected:
 
-**Stated before the run:**
+- **Prediction scores** are verified on a synthetic target that is recoverable by construction
+  (swiss roll, R² 0.999) and **never on a real positive control**. The per-fold search is known to
+  inflate and destabilise scores at small n (seed spread 0.080 at n≈88, STATUS 3f/3g). Floor,
+  permutation p and measured MDE are not in the pipeline (STATUS 3h/3i).
+- **Maps** are not trusted at all: region selection still uses the percentile rule item 00b
+  replaces, local-linear boundary correction is optional and unbuilt, and PR #19's coordinate and
+  shrinkage fixes are not merged.
 
-- **Acute NIHSS is the positive control.** It is concurrent with imaging, so success validates the
-  instrument rather than producing a clinical finding. If it fails, the run says nothing about the
-  other targets.
-- **3-month NIHSS and 3-month mRS are expected near zero.** A null there, with a positive acute
-  NIHSS in the same run, replicates Sperber et al. It is not a failure.
-- **Mood (HADS) is expected weak.** No strong prior for a lesion-only signal.
-- The positive control may still miss: Sperber's 0.29 used far richer features than two UMAP
-  coordinates, and Hope's 2-D result (R² ≈ 0.10) sits near the full-search MDE. That is why the
-  fixed-model reference in §6 matters. It separates "no signal in 2-D" from "the search lost it".
+So run 0 tests the method, not the cohort: **two targets with documented disconnection effects,
+one known-positive control and one known-negative control.** A methodological mistake shows up as
+a failed positive control, a "significant" negative control, or a literature target far off its
+published range. Twelve extra targets would add nothing to that diagnosis and would multiply the
+cost of chasing it.
 
-## 4. Outcomes
-
-### Available in BBS, and what was done with each
-
-| family | timepoints | n range | decision |
+| role | outcome | n | literature anchor (from the project's literature review) |
 |---|---|---|---|
-| NIHSS | acute, 3 m, 12 m | 206–269 | **include** acute (positive control) and 3 m (pre-stated null). 12 m is 45 % at mode: excluded |
-| mRS | 3 m, 6 m, 12 m | 205–271 | **include** 3 m and 12 m. Two 3-month derivations exist (B4) |
-| Fugl-Meyer total | acute, 3 m, 12 m | 151–258 | **include** acute and 3 m |
-| Fugl-Meyer motor subscale | acute, 3 m, 12 m | 198–228 | exclude: 28–29 % at mode at 3 m/12 m; the total carries it with less inflation |
-| MoCA total | acute, 3 m, 12 m | 151–225 | **include** acute and 3 m |
-| MoCA visuospatial, delayed recall | acute, 3 m, 12 m | 151–225 | **include** 3 m (23–38 % at mode, usable) |
-| MoCA attention | acute, 3 m | 221–225 | exclude: 44–45 % at mode, borderline |
-| MoCA naming, orientation, abstraction, language | all | — | exclude: ceiling, 45–88 % at mode |
-| Isaacs set test | acute, 3 m, 12 m | 150–230 | **include** acute and 3 m |
-| HADS anxiety / depression | acute, 3 m, 6 m, 12 m | 185–226 | **include** 3 m |
-| TICS (telephone cognitive screen) | 6 m | 202 | **include**: clean distribution, not on the original list |
-| IADL | acute, 3 m, 12 m | 229–234 | exclude: ceiling, over 90 % at mode acutely and 68–71 % later |
-| Apathy scale | 3 m | 225 | exclude: 56 % at mode |
+| target | **Isaacs set test (semantic category fluency), 3 months** | 282 | normative disconnectomes predicted semantic fluency at r = 0.41 (R² ≈ 0.17), 5-fold CV, n = 1231, ~107 days; latent disconnectome components reached external R² ≈ 0.20 at 1 year |
+| target | **Fugl-Meyer motor, 12 months** | 244 | lesion-network features improved 12-month motor prediction beyond direct lesion mapping (external validation, increment not reported); normative CST disconnection vs Fugl-Meyer upper extremity r ≈ −0.50 in chronic stroke (n = 166), with a warning about zero-overlap subjects |
+| positive control | **NIHSS, acute** | 323 | structural disconnection R² = 0.29 ([Sperber et al.](https://pmc.ncbi.nlm.nih.gov/articles/PMC11756379/), n = 685); disconnection external R² 0.16–0.24 in large cohorts |
+| negative control | **HADS depression, 3 months** | 278 | location and network effects weak and unstable; the review treats mood as the negative control |
 
-All included targets have floors between −0.007 and −0.011 and at most 37 % at mode.
+Notes on the choice:
 
-### Proposed target list — 15, fixed before the run (A1)
+- **Timepoints follow the literature**, not convenience. The fluency evidence is at ~3.5 months and
+  the motor evidence at 12 months/chronic. The same instrument at 3 and 12 months correlates
+  r = 0.86–0.90 (Isaac 0.89, FM motor 0.90), so the other timepoint is mostly a repeat measurement,
+  not a second question. It is a cheap follow-up once the pair works, not part of run 0.
+- **Fugl-Meyer motor is ceiling-heavy** (30 % at maximum). The deficit signal sits in a minority,
+  which penalises R². That is the literature's instrument, so it stays, but a weak R² here is less
+  surprising than on Isaac.
+- **Acute NIHSS is concurrent with imaging.** Success validates the instrument, not a clinical
+  claim. If it fails, nothing else in the run is interpretable.
+- **Change scores (12 m − 3 m) are not proposed.** With test–retest r ≈ 0.9, a difference score
+  keeps mostly measurement noise.
+- The positive control may still miss for search reasons: Sperber's figure used richer features
+  than two UMAP coordinates. The fixed-model reference (C2) separates "no signal in 2-D" from "the
+  search lost it".
 
-Acute: NIHSS, Fugl-Meyer total, MoCA total, Isaacs.
-3 months: mRS, NIHSS, Fugl-Meyer total, Isaacs, MoCA total, MoCA visuospatial, MoCA delayed
-recall, HADS anxiety, HADS depression.
-Later: TICS 6 m, mRS 12 m.
+### Pre-stated expectations
 
-**Why 15 and not the ~75 the registry holds.** DSD_repro at 87 targets gave rankings that did not
-reproduce across sampler seeds (STATUS 3f). With floors near zero, multiplicity takes over as the
-main source of false positives. Every target added costs power in the correction, and choosing
-the list after seeing results is the selective reporting STATUS 3f warns against.
+- NIHSS acute: clearly above the floor and permutation-significant. Failure stops interpretation.
+- Isaac 3 m: positive, plausibly R² 0.05–0.15. The literature's 0.17 used full voxelwise SVR.
+- FM motor 12 m: positive but possibly weak, given the ceiling.
+- HADS-D 3 m: at the floor, not permutation-significant. A "significant" result means an artefact.
+
+### The outcome set held back for later (after run 0 validates the method)
+
+Screened on the verified linkage. Kept here so the choice is visible.
+
+| family | timepoints | n range | usable? |
+|---|---|---|---|
+| NIHSS | acute, 3 m, 12 m | 252–323 | acute and 3 m; 12 m is 45 % at mode |
+| mRS | 3 m, 6 m, 12 m | 218–327 | yes. Two 3-month derivations exist; the one that includes deaths ascertained without a visit is the right default for anything mortality-sensitive |
+| Fugl-Meyer total / motor | acute, 3 m, 12 m | 244–307 | yes (motor 30 % at maximum from 3 m) |
+| MoCA total | acute, 3 m, 12 m | 241–277 | yes |
+| MoCA visuospatial, delayed recall | acute, 3 m, 12 m | 241–277 | yes (23–39 % at mode) |
+| MoCA attention | acute, 3 m, 12 m | 241–277 | borderline (42–48 % at mode) |
+| MoCA naming, orientation, abstraction, language | all | 241–277 | no: ceiling, 46–86 % at mode |
+| Isaacs set test | acute, 3 m, 12 m | 244–282 | yes |
+| HADS anxiety / depression | acute, 3 m, 6 m, 12 m | 192–278 | yes |
+| TICS (telephone cognitive screen) | 6 m | 242 | yes |
+| IADL | acute, 3 m, 12 m | 250–287 | no: over 90 % at mode acutely, 67–71 % later |
+| Apathy scale | 3 m | 279 | no: 58 % at mode |
+
+When that run happens, fix its target list before seeing results, and keep it well under the ~75
+entries the registry holds. DSD_repro at 87 targets gave rankings that did not reproduce across
+sampler seeds (STATUS 3f).
 
 ## 5. Run 0: classic EMUSES, disconnectomes only
 
-- **Mode:** single dataset. UMAP and HDBSCAN on all 337 disconnectomes (unsupervised, so subjects
-  with missing outcomes still help shape the morphospace). Each target is fitted on its own non-NaN
-  subjects; `_optimise_target` already filters NaN rows per target (`heatmap_stage.py`).
+- **Mode:** single dataset. UMAP and HDBSCAN on all 331 linked disconnectomes (unsupervised, so
+  subjects missing an outcome still shape the morphospace). Each target is fitted on its own
+  non-NaN subjects; `_optimise_target` already filters NaN rows per target (`heatmap_stage.py`).
 - **Inputs:** disconnectomes only. No clinical covariates (§7).
-- **Labels:** one CSV, one row per imaged subject, one column per target, built locally. **Its
-  index must be the full subject string, not a bare number**: see the substring-matching trap in
-  `dev-docs/traps.md`.
-- **Flags that matter:** `--filter_labelled_by_scores`, `--scores_index_column`,
-  `--scores_column` (15 values), `--random_state` fixed and recorded, `--test_size` (B2).
-  **Never `--record_cohort_ids`.**
+- **Labels:** one CSV, one row per linked subject, four target columns, built locally **through
+  the validated lookup**, never by reading the folder number as a patient id. Its index must be
+  the full subject string, not a bare number (substring-matching trap, `dev-docs/traps.md`).
+- **Flags that matter:** `--filter_labelled_by_scores`, `--scores_index_column`, `--scores_column`
+  (the four), `--random_state` fixed and recorded, `--test_size` (B2). **Never
+  `--record_cohort_ids`.**
 - **Output folder outside the repository** (companion folder). It holds the training matrix inside
   the UMAP model and per-subject predictions. It is not shareable (see traps).
-- **What to read from it:** per-target CV R² against the floor, then permutation p. **Not the
-  effect-size maps**: region selection still uses the percentile rule item 00b replaces (B1).
+- **What to read from it:** per-target CV R² against the floor, then permutation p, compared with
+  the pre-stated expectations. **Not the effect-size maps** (B1, D2).
 
 ## 6. Checklist: what has to be built or decided
 
@@ -135,46 +181,51 @@ Grouped by when it blocks. Tick here, and mirror the state in STATUS.md.
 
 ### Before run 0
 
-- [ ] **A1** Chris confirms the target list in §4 (add/drop, then freeze).
+- [x] **A0** Linkage verified on this folder (§2).
+- [ ] **A1** Chris confirms the four run-0 outcomes in §4.
 - [ ] **B1** Merge PR #19 (isotropic rescale, real confidence, shrinkage toward the null,
-      `HeatmapIntegrityError`). A run from before it builds maps with defects already measured.
-- [ ] **B2** Decide `--test_size`. 0.0 keeps n (MDE ≈0.06 fixed-model at n≈225) and gives no
-      held-out check, the June mistake. 0.2 costs ~45 subjects per target (MDE ≈0.08) and gives
-      one. *Recommendation: 0.2.*
-- [ ] **B3** Decide whether phases 1–2 of `dev-docs/analysis-api/prediction-validity-reporting/`
-      (floor in the output; pre-flight report with fixed ridge/kernel references, permutation p,
-      measured MDE) land **before** run 0 or are computed alongside it by a local script on the
-      saved embedding. *Recommendation: alongside.* Run 0 then becomes the second dataset that
-      plan asks for before phase 3's filter can be trusted.
-- [ ] **B4** Which 3-month mRS derivation. The two differ by 14 subjects and the difference in
-      definition has not been checked.
-- [ ] **B5** Build the labels CSV locally, with full subject strings, and verify the pipeline
-      matched all 337 files, with no "multiple valid ID matches" warnings. Perturb it: a
-      deliberately bare-number index must visibly fail.
+      `HeatmapIntegrityError`).
+- [ ] **B2** Decide `--test_size`. 0.0 keeps n and gives no held-out check, the June mistake. 0.2
+      costs ~50 subjects per target and gives one. *Recommendation: 0.2.*
+- [ ] **B3** Floor, permutation p and measured MDE: computed **alongside** run 0 by a local script
+      on the saved embedding (agreed 2026-09-16), then built into the core pipeline (§6, "Core").
+- [ ] **B5** Build the labels CSV locally; verify the pipeline matched all 331 files with no
+      "multiple valid ID matches" warnings. Perturb it: a bare-number index must visibly fail.
 - [ ] **B6** Fix the data naming: the 2 mm files carry a resolution tag that says 1 mm, and their
-      names are identical to the 1 mm directory's. Data-side, not code. The same tag is what makes
-      B5's bare-number index dangerous.
+      names are identical to the 1 mm directory's. Data-side, not code.
+- [ ] **B7** The 9 volume outliers (§2): keep them (recommended, since identities are supported),
+      and re-run without them only if a result hinges on a handful of subjects.
 
 ### Alongside run 0
 
-- [ ] **C1** Per target: floor, CV R², lift, permutation p with BH across the 15, and **measured**
-      MDE (real y, repeated splits). Local script if B3 says so.
+- [ ] **C1** Per target: floor, CV R², lift, permutation p, **measured** MDE (real y, repeated
+      splits).
 - [ ] **C2** Fixed-model reference (ridge and RBF kernel ridge) on the same embedding and folds.
-      This separates "the morphospace has no signal" from "the search lost it" (§3).
-- [ ] **C3** Spread across at least two sampler seeds for any target that clears its floor
-      (STATUS 3f). A pass on one seed is weak evidence (STATUS 3g).
-- [ ] **C4** Record wall-clock and peak RSS. DSD_repro's 19 h / 9.6 GB was 87 targets at n≈88; no
-      estimate for 15 targets at 337 has been measured.
+- [ ] **C3** Spread across at least two sampler seeds for any target that clears its floor.
+- [ ] **C4** Record wall-clock and peak RSS.
 
 ### After run 0
 
-- [ ] **D1** Compare against §3's pre-stated expectations, target by target, before any
-      interpretation.
-- [ ] **D2** Build item 00b (threshold observed scores; permutation as a global gate; cluster
-      after thresholding) before reading any effect-size map from BBS.
+- [ ] **D1** Compare against §4's pre-stated expectations before any interpretation. If the
+      controls behave, widen to the held-back outcome set. If not, the run has found the
+      methodological problem to chase, and nothing else runs until it is found.
+- [ ] **D2** Build item 00b before reading any effect-size map from BBS.
 - [ ] **D3** Feature-space support check for new subjects (flagged for BBS in
       `heatmaps_clusters_and_effect_size_maps.md`, C-section on soft clustering).
 - [ ] **D4** Write the result here in aggregate form and update STATUS.md.
+
+### Core: validity reporting in the pipeline
+
+The local script in B3 is scaffolding, not the destination. Phases 1–2 of
+`dev-docs/analysis-api/prediction-validity-reporting/plan.md` (floor in the output; pre-flight
+report with fixed references, permutation p, measured MDE) are designed as pipeline defaults, and
+run 0 is the second real dataset that plan asks for.
+
+- [ ] **F1** Implement phases 1–2 in core.
+- [ ] **F2** Cross-check the in-pipeline numbers against the B3 script on BBS, locally. They must
+      agree within the permutation's Monte Carlo error before the script is retired.
+- [ ] **F3** The committed tests use public data only (swiss roll, digits). BBS numbers are a
+      local cross-check and never become baselines.
 
 ### Later: clinical features as model input (not built)
 
@@ -188,16 +239,19 @@ Confirmed absent: predictors receive the two embedding coordinates only
   until someone decides what the extra columns hold there (cohort mean? marginalised? one map per
   stratum?). This is the same design question the N-D gate raises (STATUS 3c) and should be
   settled once for both.
-- **Scientific reason to want it:** 3-month outcomes are driven largely by lesion-independent
-  factors (Sperber et al.'s explanation of their R² ≈ 0). Lesion-plus-baseline-severity is the
-  model that could beat that, and the literature has comparisons for it.
+- **Scientific reason to want it:** later outcomes are driven largely by lesion-independent
+  factors. The literature review's required test is nested: clinical baseline → + lesion volume →
+  + direct lesion overlap → + disconnectome, under identical resampling, reporting the held-out
+  difference. The clinical tiers are available for 304–323 of the 331 (§2).
 - [ ] **E1** Design note: the grid semantics with covariates, decided jointly with N-D.
-- [ ] **E2** Implementation, after run 0 has established what disconnectomes alone give. That
-      result is the baseline any covariate model has to beat.
+- [ ] **E2** Implementation, after run 0 has established what disconnectomes alone give.
 
 ## 7. Settled here, do not re-open
 
 - DSD_repro is not used, not even as a comparison (Chris, 2026-09-14).
+- The first run is two literature targets plus one positive and one negative control, because the
+  method is not yet trusted (Chris, 2026-09-16). The full outcome set waits for D1.
+- Linkage goes through the validated lookup, never through folder numbers (§2).
 - No UMAP dimensionality change for this run (`external_evidence_dsd.md` §7.2).
 - No automated target filtering or halting on the floor/MDE (STATUS 3g).
-- Target list fixed before results are seen.
+- Target lists are fixed before results are seen.
