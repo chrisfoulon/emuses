@@ -344,7 +344,7 @@ def _execute_triple_grid_analysis(self, context, embeddings, target_matrix, outp
     # Prediction effects (both high and low significance)
     analyzer.create_statistical_maps(
         grid_coords=prediction_results["grid_coordinates"],
-        heatmap_values=prediction_results["combined_values"],
+        heatmap_values=prediction_results["corrected_values"],
         training_embeddings=embeddings,
         input_matrix=context["input_matrix"],
         output_folder=target_output,

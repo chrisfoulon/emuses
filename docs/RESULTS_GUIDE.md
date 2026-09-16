@@ -44,7 +44,7 @@ Contains spatial analysis of model predictions across your embedding space:
 |------|-----------|---------|-------|
 | `prediction_values.npy` | NumPy array (100×100) | Raw model predictions on spatial grid | Load with `np.load()` for custom analysis |
 | `confidence_values.npy` | NumPy array (100×100) | Model confidence scores (0-1 range) | Identify high/low confidence regions |
-| `combined_values.npy` | NumPy array (100×100) | Prediction × confidence product | Main heatmap for interpretation |
+| `corrected_values.npy` | NumPy array (100×100) | Predictions shrunk toward the training-target mean in proportion to confidence: `null + confidence × (prediction − null)` | Main heatmap for interpretation |
 | `grid_coordinates.npy` | NumPy array (100×100×2) | X,Y coordinates for each grid point | Map grid indices to embedding coordinates |
 | `prediction_metadata.json` | JSON | Analysis parameters and model info | Understand analysis settings used |
 
@@ -54,7 +54,7 @@ import numpy as np
 import json
 
 # Load prediction heatmap
-predictions = np.load('target_0/prediction-heatmaps/combined_values.npy')
+predictions = np.load('target_0/prediction-heatmaps/corrected_values.npy')
 coordinates = np.load('target_0/prediction-heatmaps/grid_coordinates.npy')
 
 # Load analysis metadata

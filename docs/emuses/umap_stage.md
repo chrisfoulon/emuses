@@ -177,16 +177,37 @@ context.update({
     # Clustering results
     "embedding_train_clusterer": self.best_clusterer,
     "embedding_train_cluster_labels": self.cluster_labels,
-    
-    # Scaling information for consistent transformations
-    "embedding_train_min_coords": self.min_embeddings,
-    "embedding_train_max_coords": self.max_embeddings,
-    
+
     # File paths for artifact tracking
     "cluster_model_path": self.cluster_model_path,
     "cluster_labels_path": self.cluster_labels_path,
 })
 ```
+
+The scaling factors are **not** on the context. They go to `embedding_scaling.json` in
+the output folder and are read back through
+`emuses.tools.embedding_spaces.load_scaling()`. Two context keys
+(`embedding_train_min_coords` / `embedding_train_max_coords`) carried them here until
+2026-09-06 and no stage ever read them; `tests/test_scaling_single_source.py` now fails
+if they return.
+
+## Embedding scaling
+
+`embedding_scaling.json` records the map from UMAP's raw output onto [0, 1]:
+
+```json
+{"min_embeddings": [...], "max_embeddings": [...], "mode": "per_axis", "margin": 0,
+ "embeddings_npy_space": "raw", "test_embeddings_npy_space": "rescaled"}
+```
+
+**The run that trained the morphospace owns these numbers.** A run that reuses one
+(`--load_umap`, `--load_embeddings`, or resuming into an existing output folder) reads
+the source run's file and writes it out again unchanged. It does not recompute the
+factors from its own subjects: the coordinates it holds are its cohort pushed through
+someone else's model, so recomputing would redefine [0, 1] against whoever happens to be
+in this run, and the same subject would land somewhere different depending on its
+neighbours. A reuse route pointed at a folder with no `embedding_scaling.json` raises
+rather than falling back to recomputation.
 
 ## Bayesian Optimization Details
 The nested optimization uses Optuna for efficient hyperparameter search:

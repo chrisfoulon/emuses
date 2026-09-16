@@ -23,6 +23,9 @@ anyone noticed, while `STATUS.md` said something different.
 
 **Key Status Files**:
 - **STATUS.md** - Current state of play (short; read this first)
+- **dev-docs/traps.md** - Things that fail *silently* here: a run exits 0, a suite goes green, a
+  check applies to nothing. Each entry cost a wrong conclusion at least once. Read before measuring
+  anything or trusting a green result.
 - **`lad:lad-standards` skill** - Static development guidelines and patterns (LAD v2 plugin, loaded automatically)
 - **dev-docs/test_quality_conventions.md** - EMUSES-specific testing conventions
 - **dev-docs/analysis-api/** - Current feature development context

@@ -1,5 +1,5 @@
 # STATUS — EMUSES
-_Last touched: 2026-09-05_
+_Last touched: 2026-09-16_
 
 ## Goal
 
@@ -11,9 +11,14 @@ flags say, and the same command twice gives the same answer.
 
 ## State of play
 
-**One PR open: #13, `fix/nd-embedding-gate-and-load-umap`** (2026-09-05) — the N-D gate and its
-opt-in, the `--load_umap` and resume fixes, cohort identity, per-target resume and the run index.
-Rebased onto `main` after **PR #12 merged** (the core contract, the "Unknown error" CLI fix, the
+**One substantive PR open: #19, `fix/reused-morphospace-keeps-its-scaling`** (opened 2026-09-06).
+It has grown past its title: it now carries Steps 1–3 of the embedding-scaling plan *plus* the
+shrinkage fix and `HeatmapIntegrityError` (item 00). Five dependabot PRs (#20–#24) are also open and
+are unrelated. **PR #13 merged.**
+
+_Historical, kept for the causal chain:_ #13 was the N-D gate and its opt-in, the `--load_umap` and
+resume fixes, cohort identity, per-target resume and the run index. Rebased onto `main` after
+**PR #12 merged** (the core contract, the "Unknown error" CLI fix, the
 separator hint, and the regression-suite provenance/gating decision in item 1 below); the two
 commits that duplicated #12's work were dropped in the rebase. Six branches converged on
 2026-08-25 — Phase 1F (PR #9),
@@ -111,7 +116,8 @@ evidence that prediction works. `dev-docs/issues/inference_constant_predictions_
 ### Disconnectome signal audit (2026-08-26) — the real test, measured
 
 `DSD_repro` is the target dataset: 1333 unlabelled + 133 labelled subjects, 902,629 voxels each
-(no masking, 1.8% nonzero, 9.6 GB dense), 87 neuropsych measures, **33% of the score matrix NaN**
+(no masking, 9.6 GB dense; "1.8% nonzero" was recorded here and **does not reproduce** —
+re-measured 2026-09-14 on 25 subjects from each DSD cohort: 17–19% of voxels nonzero), 87 neuropsych measures, **33% of the score matrix NaN**
 (median 45 missing per measure, so effective n ≈ 88 per target). The June 2026 run
 (`new_pred_pipeline_12-06-2026`, ~19 h) reported `Overall_Mean_Performance = -0.1884`.
 
@@ -253,10 +259,20 @@ gets a `TypeError` instead of the wrong array. `embedding_scaling.json` now also
 `margin` and which space each `.npy` is in. Additive: no array contents change, baselines hold.
 Rationale and the open gap in ADR §2.4b.
 
-**Still open, deliberately not bundled:** `--load_umap` / `--load_embeddings` recompute min/max from
-the *current* cohort, so a run reusing another run's morphospace lands in a different [0, 1] space
-while the source run's `embedding_scaling.json` sits unread. Cross-run heatmap and cluster-label
-comparisons are affected. Fixing it moves numbers → separate branch, full local `--core`.
+**Reuse wiring fixed 2026-09-06** on `fix/reused-morphospace-keeps-its-scaling` (Step 1 of the plan
+in item 00 below). The run that **trained** a morphospace owns its scaling factors; `--load_umap`,
+`--load_embeddings` and output-folder resume now read the source run's `embedding_scaling.json` and
+write it back unchanged, and a reuse route pointed at a folder without that file **raises** rather
+than recomputing. Baseline-neutral as predicted: `tests/regression` 16 passed with
+`tests/regression/baselines/` untouched. ADR §2.4c.
+
+Two of the three mechanisms carrying those factors were **dead**, and deleting them found a live
+defect: `inference_stage` read `umap_model.min_embeddings_`, which nothing in `emuses/` has ever
+set — the only assignment in the tree was on a `Mock` — so **pipeline-integrated inference skipped
+the rescale entirely** and fed raw coordinates to predictors fitted on rescaled ones. It now reads
+the run folder's file, through one reader that replaced three hand-rolled copies of the same JSON
+parse. `tests/test_scaling_single_source.py` guards the pattern by AST (a test that builds its own
+input can validate a consumer while no producer exists).
 
 ### What works now
 
@@ -389,6 +405,9 @@ problem, the `enhanced-cli-typer` hang and repo pollution by test output are all
 
 ## Decided strategy
 
+- **Read `dev-docs/traps.md` before measuring anything.** Consolidated 2026-09-08 from a
+  session-private plan file no other session could see. Every entry there is a way this codebase
+  fails *silently* — exit 0, green suite, a check that applies to nothing.
 - **Models are atomic folders**, not separable components (ADR §2.1). Violated once and reverted.
 - **One execution path** through the service, for every deployment mode (ADR §4).
 - **Measure, don't infer**, and **perturb every guard** to confirm it can fail. Wall-clock on this
@@ -407,6 +426,301 @@ problem, the `enhanced-cli-typer` hang and repo pollution by test output are all
   which is why the move needed no change to core.
 
 ## Open questions / next
+
+00. [ ] **Embedding scaling + kernel boundary bias — plan agreed 2026-09-06.** Full plan, with the
+        measurements behind it and the per-step verification protocol:
+        **`dev-docs/methodology/embedding_scaling_and_boundary_bias_plan.md`**. Read that rather
+        than re-deriving; the numbers in it cost a session to measure.
+
+    Two defects, both silent, both changing published numbers:
+    - **Per-axis 0–1 rescaling is ill-posed on a UMAP embedding.** UMAP is fixed only up to
+      rotation, so per-axis min/max depends on the arbitrary orientation the optimiser landed in.
+      Rotating the same embedding 45° and re-normalising distorts pairwise distances by up to
+      **37%** (isotropic: 0.0%). The pipeline also disagrees with itself: HDBSCAN clusters on raw
+      coordinates (`umap_stage.py:302/409`) while the predictors use per-axis-rescaled ones (`:510`).
+    - **Nadaraya-Watson is boundary-biased.** LOO on swiss, σ=0.1: edge bias **+0.2152** vs interior
+      **−0.1239**; local linear gives **+0.0110 / −0.0329**. The maps feed threshold → regions →
+      sample sets → voxelwise stats, so this reaches the scientific claim.
+
+    Steps: **1** reuse wiring (baseline-neutral, lands first) · **2** isotropic rescaling ·
+    **3** real confidence · **4** local linear · ~~**5** support masking~~. Re-record and measure
+    after each — bundling makes "did the science change" unanswerable.
+
+    **State, 2026-09-08: 1, 2, 3 and the shrinkage fix are DONE and on PR #19. Step 5 is
+    WITHDRAWN. Step 4 (local linear) is the only step left, and it is optional.** The live work has
+    moved on to *how "extreme" is defined* — see item 00b.
+
+    **Step 2 DONE 2026-09-06 — and it found that the regression baselines cannot see it.**
+    Isotropic rescale landed (`isotropic_global_range`; each axis shifted by its own minimum,
+    all axes divided by ONE range). Also removed the now-asymmetric 0.05 grid padding and fixed
+    `region_statistical_analyzer`'s grid→coordinate mapping, which was wrong **three** ways:
+    it assumed the grid spans [0,1], it was off by one, and **it compared transposed axes**
+    (`reshape(g,g)` indexes `[y,x]`; `training_embeddings` columns are `(x,y)`), so every
+    significant region was reflected about the diagonal. All three invisible under per-axis
+    scaling over a square extent — one wrong thing hiding another.
+
+    ⚠️ **`tests/regression` passed BIT-IDENTICALLY through this**, on both datasets, while the
+    narrow axis went from spanning 1.0 to 0.24 (anisotropy 4.1). Cause, measured: on both
+    regression datasets, in every fold, the winning ElasticNet has **all coefficients exactly
+    zero** — L1 zeroes them, the prediction is a constant intercept, so `target_0_*_Score` is a
+    function of the fold split alone and is mathematically independent of the coordinates. The
+    eight `target_0_*` baselines pin **nothing** about the coordinate→prediction path. The
+    raw-derived baselines (`_embedding_distances`, `composite_score`, `metric_*`,
+    `_cluster_labels`) are unaffected and did correctly stay bit-identical, which is what
+    confirmed the change had not leaked into the training path. **No baseline was re-recorded:
+    nothing moved.** ADR §2.9d.
+
+    **That gap is now closed — see item 0a.** `tests/regression` gained a `swiss_roll` dataset
+    the same day and does see this change: reverting to per-axis fails
+    `test_prediction_scores[swiss_roll]` and only that. So Steps 3–5 below have a numerical
+    instrument again, which they did not when this paragraph was first written.
+
+    Evidence for the change is therefore property-based, not baseline-based:
+    `tests/test_isotropic_rescaling.py` (rotation invariance to 1e-12, with the per-axis
+    counter-example kept in the suite — per-axis distorts pairwise distances 37% under a 45°
+    rotation, isotropic 0.0%), `tests/test_region_grid_coordinate_mapping.py` (each of the three
+    mapping defects perturbed and independently caught), and the swiss roll, where the signal is
+    real: **L0 0.9997, L1 0.9989, L2 0.998** — unchanged from per-axis, as a similarity
+    transform must be. Reverting the isotropic factors fails 6 tests; restoring the grid padding
+    fails 2.
+
+    **Step 1 DONE 2026-09-06** on `fix/reused-morphospace-keeps-its-scaling`. Baseline-neutral,
+    confirmed: `tests/regression` 16 passed with the baselines unmodified. Both dead routes deleted;
+    deleting the first one exposed a live defect (pipeline-integrated inference was never rescaling
+    — see the coordinate-systems section above). Two new suites in `CORE_SUITES`. Every perturbation
+    done and recorded: reverting the reuse load fails 3 of the reuse tests; each of the four
+    structural guards fails when its defect is reintroduced. One test was found **inert** by its
+    perturbation (`--load_embeddings` pointed at the *full* `embeddings.npy` recomputes the source's
+    own factors exactly, so it passed with the branch deleted) and was rewritten to load a
+    **subgroup**, which is both the real use case and the only version that can fail.
+    Step 2 (isotropic) is next and **does** move `target_0_*`.
+
+    **Blast radius, checked against `regression_metrics.py`:** only `target_0_*_Score` moves.
+    `_embedding_distances`, `composite_score`, `metric_*`, `_cluster_labels` all derive from **raw**
+    pre-rescale coordinates and must stay bit-identical — that invariant is a stronger check than
+    the re-recorded numbers.
+
+    **Three dead routes found, two to delete** (ADR §2.4b): `min_embeddings_` on the UMAP model
+    (`inference_stage.py:263-264`) is set **only by a mock** in
+    `tests/inference/test_normalization_validation.py:63-64`; the context keys
+    `embedding_train_min_coords/max_coords` (`umap_stage.py:579-580`) have no production consumer.
+    Both looked wired because a test supplied its own input. Step 1 adds an AST guard for that
+    pattern.
+
+    **Step 3 DONE 2026-09-06 — real confidence, and the plan's stated reason for it was wrong.**
+    The old confidence was a literal `0.8` per model; `cv_ensemble` then took the std across
+    models of identical constants → 0 → confidence 1.0 everywhere. The plan said this mattered
+    because `visualization_threshold` filtered nothing. It does not: **the pipeline never reads
+    `visualization_threshold`** — only `apply_two_stage_filtering` does, reached only from
+    `create_region_statistical_maps`, which only the FastAPI service calls. (Confirms the other
+    session's E4, with the nuance that it is live in the API, dead in the pipeline.) The real
+    cost is worse: `combined_heatmap = predictions * confidence` is thresholded by **percentile**,
+    and a percentile is invariant to a positive constant factor, so the old confidence had
+    **exactly zero** effect on which regions were reported.
+
+    Confidence is now `agreement × variability`, both as fractions of the **training target's SD**
+    (compared against pre-denormalization predictions, since `prediction_train_labels` is
+    literally what the models were fitted on). `max_possible_std = 0.5`, calibrated against
+    nothing, is gone. `1 − std(predictions)` **alone** was rejected: constant models agree with
+    each other perfectly and it scores them 0.908 — the metric ADR §3.1b already condemns. The
+    `variability` factor is what makes a degenerate run report 0.
+
+    ⚠️ **Only `agreement` can move region selection.** `variability` is one global scalar, so by
+    the same percentile-invariance argument it cannot. Its job is to collapse a flat map to zero
+    so the run says so. Do not read it as a second discriminating signal.
+
+    Measured, `swiss_roll`: agreement 0.000–0.999, variability 0.814, confidence 0.000–0.813
+    (**std 0.201 — not constant**); mean 0.663 inside the training hull vs 0.583 outside;
+    corr(distance to nearest training sample, confidence) **−0.583**, monotone across the first
+    four quintiles. `regression`/`multi_target_regression`: flat at 0, with a warning naming the
+    numbers. **Nothing re-recorded — all 25 prior assertions passed unchanged**; confidence feeds
+    the maps, not the CV scores. Baselines gained 3 keys; two new tests
+    (`test_some_dataset_has_a_confidence_map_that_participates` reads baselines only,
+    `test_confidence_map_matches_its_baseline` is the code-regression half). Both perturbed:
+    flipping the sparsity sign fires the first, flattening the map in `grid_creator` fires the
+    second on `swiss_roll` alone.
+
+    ⚠️ **A near-miss worth not repeating.** The first constancy check was `np.std(conf) == 0.0`.
+    `multi_target_regression`'s `target_1` map holds 10000 copies of one value (`np.unique` → 1,
+    `ptp` → exactly 0) yet `np.std` returns **1.97e-31**. The exact test called it "varying",
+    correlated numerical noise, and produced a confident-looking negative sign that would have
+    been baselined as a finding. Now `np.ptp(conf) < 1e-9`.
+
+    `visualization_threshold = 0.2` is documented against the new scale in
+    `region_statistical_analyzer.py` and is **still not calibrated**; it also has a cliff, because
+    a global factor sits in front of an absolute threshold. Harmless while only the API reads it.
+
+    **Also fixed 2026-09-06:** `tests/analysis_api` had 3 failures from Step 2 that no runner
+    reported — it covers `grid_creator.py` and `region_statistical_analyzer.py`, exactly what
+    Steps 2–5 touch, and is **not in `CORE_SUITES`**. It cannot join until its 3 pre-existing
+    `test_analysis_endpoints` validation failures are fixed. Run it by hand after every step.
+    Baseline at `21ec03d`: 3 failed / 101 passed; now 3 failed / 131 passed.
+
+    **Step 3 DID move the science, and exposed a defect in its consumer (measured 2026-09-07).**
+    Two identical `swiss_roll` runs differing only in the confidence map: *high* regions
+    identical (prediction 45, correlation 34), *low* prediction region 29 → **77** samples, old
+    set a strict subset (48 added, 0 removed, Jaccard 0.377). Cause is not Step 3 but
+    `combined = predictions × confidence` (`grid_creator.py:517`): predictions are all positive
+    (4.9–14.1), so multiplying by confidence pushes low-confidence points toward zero and into the
+    bottom tail. "Low significance" silently became partly "low trust". **Sign-dependent** — on a
+    negative-valued target the same multiplication would push untrusted points *out* of the low
+    tail. Latent before Step 3 because a constant factor is a pure rescale.
+
+    **Shrinkage LANDED 2026-09-07 (increment B of three).** `corrected_values.npy` replaces
+    `combined_values.npy` — new filename, not a redefinition, so old model folders fail loudly.
+    Re-measured on the same swiss_roll pair: the bottom-5% grid cells now *keep* 377/500 from the
+    control, the 123 that enter have mean confidence **0.79** (grid mean 0.63) and mean prediction
+    5.65 against a null of 9.36, and the 123 that leave have mean confidence 0.60. Under
+    multiplication the same comparison was 0/500 kept and mean confidence **0.06** for everything
+    that entered. The mechanism is inverted, which is the point; the sample count 29 → 43 (from 77)
+    is a side effect of trusted low cells taking the vacated places. Perturbation-checked.
+
+    **A wrong map now stops the run (2026-09-07).** `HeatmapIntegrityError` separates "this target
+    has no map" (skip, absence is visible) from "this target's map would be arithmetic on
+    incompatible quantities" (raise). The `_null_level` refusal — training mean and predictions in
+    different units — was previously absorbed by the per-target `except Exception` and recorded as
+    `{'error': ...}`, meaning a wrong map would be silently rebuilt on the next run.
+
+    **Both remaining increments were re-measured on 2026-09-08 and both dropped:**
+    - **Increment A (support mask) — WITHDRAWN.** 36.6 % of `swiss_roll` grid cells sit outside the
+      training hull, but the 5th-percentile cut moves only 6.5652 → 6.5939, the bottom tail is 39 %
+      out-of-hull against that 36.6 % base rate, and **zero** regions split or vanish. All three
+      predicted harms absent. Shrinkage had already removed the enrichment, and the confidence map
+      grades the far extrapolations continuously (the 25 % furthest out-of-hull cells: none of 914
+      above the grid median). It also answers the wrong question — predicting where there is no
+      training sample is what makes the grid a map.
+      ⚠️ **I initially over-claimed this**, leading with "39 % of the bottom tail is out-of-hull"
+      without checking it against the base rate that makes it unremarkable.
+    - **Increment C (`variability` out of the confidence) — now OPTIONAL, not required.** The claim
+      that shrinkage makes the global `variability` scalar non-free was **wrong**.
+      `null + VAR·a·(pred − null)` is a positive affine transform of `a·(pred − null)`, and
+      percentiles are equivariant under those, so the selected cell set is identical for every
+      `VAR > 0` and every `null` — verified algebraically and numerically (identical cell sets
+      across nulls −4 → +9.36 and variability 0.05 → 0.99). What `VAR` does do is compress the
+      saved *values* toward the null, so `corrected_values.npy` is not on the target's scale. That
+      is interpretability, not region selection.
+
+    **Fix agreed 2026-09-07: shrink toward the null, do not multiply.**
+    `combined = null + confidence × (prediction − null)`, `null` = training target mean (what a
+    constant model predicts). Multiplication is that formula with the null hardcoded to 0, which
+    is correct only for centred quantities — hence the correlation map was always fine (null = 0)
+    and hence z-scoring *appears* to fix it. It does not, in practice: the map is built from the
+    **denormalized** predictions (`grid_creator.py:514`), so `--scores_normalization zscore`
+    still yields a raw-units map. Full write-up, including the three-part fix (mask + shrink +
+    three named output maps) and the permutation interaction, is the **2026-09-07 amendment to
+    Step 5** in `dev-docs/methodology/embedding_scaling_and_boundary_bias_plan.md`. Read that.
+
+    ~~Two consequences that change the plan~~ — **both retracted 2026-09-08.** Steps 3 and 5 are
+    *not* one piece of work (the `variability` argument above was wrong), and Step 5 does not go
+    before Step 4 because Step 5 does not go at all.
+
+    **The percentile replacement does not make this moot.** Their recommended Tiers 1+2 permute
+    the *correlation* grid only (cheap because it fits nothing); the prediction map is Tier 3 and
+    explicitly not the default. So the prediction map — the one with the defect — keeps a
+    percentile threshold. Their D4 dissolves into Tier 1. If Tier 3 is ever run, confidence must
+    be recomputed *inside* each permutation or the test is invalid.
+
+    **Found, not fixed:** `foundation_fastapi_service/app.py:2325` constructs
+    `GridCreator(grid_size=(100,100), denormalize_predictions=True)` and calls
+    `create_prediction_grid(...)`. Neither the kwarg nor the method exists — that endpoint raises
+    `TypeError` on construction, and it feeds `np.random.uniform` mock data anyway. Outside Step 3;
+    belongs with the API/heatmaps discussion.
+
+00b. [ ] **How "extreme" is defined — decided 2026-09-08, not yet built.** This is now the live
+        piece of work; the embedding-scaling plan above is essentially finished. Full argument and
+        the alternatives considered: `dev-docs/methodology/heatmaps_clusters_and_effect_size_maps.md`
+        (decisions block at the top). Operative summary:
+
+    The 5th/95th percentile of the *predicted grid surface* is doing two incompatible jobs —
+    **defining** which subjects are clinically abnormal, and **asserting** the association is more
+    than chance. A percentile can do neither well because they need different instruments: a
+    definition must always return something, a test must be allowed to return nothing.
+
+    - **Default: threshold the observed target scores**, not the predicted surface. A percentile
+      and a ±2 SD cut are the same object with different parameters; neither is more principled,
+      and the choice is a definition of abnormality rather than a statistic.
+    - **Optional: a supplied normative reference distribution**, turning abnormality into a z-score
+      against an external population. Strictly better where available (it removes both the
+      arbitrariness and the circularity) but **EMUSES is a generic tool, so this is an optional
+      input and never a default** — Chris may be able to obtain such scores for the disconnectome
+      work, which does not make them a requirement of the tool.
+    - **Permutation becomes a global gate**, not the region threshold.
+    - **Then cluster**, with a clusterer refit **once on UMAP-training + prediction-training and
+      frozen thereafter**. Threshold first, cluster second: the effect-size map describes *the
+      profile of the abnormal subjects*, so score-blind clustering first would admit normal-range
+      subjects into it. (This reverses the other document's C7 — unlabelled UMAP-training subjects
+      belong in the defining fit.)
+    - **Consequence:** the bounding-box region→subject mapping (their D3) and the fresh HDBSCAN fit
+      inside `RegionStatisticalAnalyzer` (their C3/C4) leave the tree rather than being reworked.
+
+    **HYDRA evaluated and rejected** —
+    `dev-docs/methodology/multiple_profiles_and_why_not_hydra.md`. It is the
+    published method for exactly the motivating argument ("one deficit, several distinct profiles,
+    fitted jointly instead of in competition"), which is why it was worth the look, but it needs
+    binary labels, is linear, and works on voxel features rather than UMAP coordinates. Two ideas
+    are transferable: fix the reference group (their D1/D2), and steal the ARI-stability test for
+    "does more than one profile exist at all", which EMUSES currently never asks.
+
+00c. [ ] **BBS replaces DSD_repro as the real-data cohort — decided 2026-09-14, plan written
+        2026-09-16.** Full plan, target list, pre-stated expectations and the build/decide checklist:
+        **`dev-docs/methodology/bbs_disconnectome_run_plan.md`** (its §6 is the checklist; keep it
+        and this item in step). **The repo is public and BBS cannot be shared**: aggregates only,
+        no ids, filenames, column names or small counts; specifics live in a local companion folder
+        outside the checkout. Rules in `dev-docs/traps.md`, "Restricted clinical data".
+
+    Why: same grid as DSD_repro (91×109×91 @ 2 mm), 331 imaged subjects linked, 192–327 per
+    target, and every candidate target's mean-predictor floor sits at −0.005 to −0.011 against
+    DSD_repro's median −0.086. R² is readable at face value there. DSD_repro is dropped entirely.
+
+    ⚠️ **Image folder numbers are NOT clinical patient ids** (verified 2026-09-16, plan §2): the
+    validated lookup gives Spearman +0.995 between mask and recorded infarct volume, reading the
+    folder number as the id gives +0.075. The first screening (2026-09-14) made that mistake, and
+    its numbers were void; the 2026-09-16 commit of this plan still carried them and is corrected.
+
+    **Run 0 is small on purpose (Chris, 2026-09-16):** the method is not yet trusted (prediction
+    scores never checked on a real positive control; maps pending 00b and PR #19), so it tests the
+    method, not the cohort. Isaac 3 m and Fugl-Meyer motor 12 m (documented disconnection effects),
+    acute NIHSS (positive control), HADS-D 3 m (negative control). The full outcome set waits for
+    those four to behave. **Confirmed by Chris 2026-09-16:** the four outcomes, `--test_size 0.2`,
+    the clinical database's linkage/verification lists as source of truth. **Morphospace:** dual-
+    dataset mode (all 331 unlabelled for UMAP, never split), trained once on the lab compute node
+    and reused via `--load_umap` for every target set. **Blocking before run 0:** PR #19 merged
+    (B1); search space `hard` vs `disconnectome` (B8 — `hard` is not what it was remembered as);
+    trial budget from measured cost (B9); dual-mode reuse exercised on public data (B10); labels
+    CSV built through the validated lookup and indexed by full subject string (B5). Floor/permutation/MDE run alongside by local script (B3), then go into
+    core (F1–F3). Clinical features as model input do not exist (`prediction_X` is the 2-D
+    coordinates only); deferred until run 0 gives the lesion-only baseline.
+
+0a. [x] **The prediction baselines were degenerate — fixed 2026-09-06 by adding a dataset.**
+       On both 40-sample datasets, in every fold, the winning ElasticNet had all coefficients
+       exactly zero, so `target_0_*_Score` was a constant model's score: independent of the
+       embedding coordinates by construction. Found by watching all 16 regression tests pass
+       bit-identically through the isotropic rescale.
+
+       **Resolved by adding `swiss_roll` (300 samples) to the suite, not by touching the two.**
+       They pin the raw-derived quantities well and are cheap; their prediction baselines stay
+       and still pin nothing, knowingly. Adding a dataset cost the two existing baseline files
+       three added keys and **zero changed numbers** — the alternatives (widen
+       `quick_train_dict`'s alphas, or repoint the fixture) would both have re-recorded numbers
+       that are currently correct, to fix a defect that is not in them.
+
+       Swiss roll's target is each sample's position along the roll, recoverable by
+       construction: `Mean_Score` 0.9962, `n_clusters` 3, and **4 of 5 folds won by
+       `KernelRegressor`** — the family Step 4 below replaces, so this dataset sees Steps 2, 3
+       and 4. Cost 49 s; the suite goes ~88 s → ~128 s and the core contract ~3.5 → ~4.2 min.
+
+       The finding is now data, not prose: every baseline records
+       `n_constant_prediction_models` (`5/5`, `10/10`, `0/5`) and
+       `prediction_depends_on_coordinates`. `test_some_dataset_pins_the_coordinate_to_prediction_path`
+       fails if the suite ever returns to a state where no dataset can see a coordinate change
+       (0.07 s, baselines only). **Proven:** reverting to per-axis fails
+       `test_prediction_scores[swiss_roll]` and leaves the other two datasets passing.
+       ADR §2.9d.
+
+       ⚠️ Still true and worth carrying into Steps 3–5: a green
+       `test_prediction_scores[regression]` is not evidence about a coordinate-space change.
+       Read the `swiss_roll` row. And the liveness flag detects a zeroed *linear* model only —
+       it cannot see a kernel that has gone degenerate some other way.
 
 0. [ ] **Scope settled 2026-09-05, and the work queue that follows from it.** EMUSES is a local
        tool, or a service an admin runs on one lab/university server with users submitting jobs
@@ -828,7 +1142,8 @@ problem, the `enhanced-cli-typer` hang and repo pollution by test output are all
        0.029). This is the diagnostic that says *"no model would have worked"* rather than *"this
        model didn't"*. It needs fits on real y, so it cannot run before training — but with a fixed
        model those fits cost seconds, so it can run before committing to the expensive search.
-3e. [ ] **Re-run DSD_repro properly** once PR #10 is merged: `--test_size 0.2` (June used 0.0 and so
+3e. [—] **SUPERSEDED 2026-09-14 by item 00c (BBS). Do not run.** Kept for the reasoning only.
+       ~~**Re-run DSD_repro properly** once PR #10 is merged:~~ `--test_size 0.2` (June used 0.0 and so
        produced no held-out evaluation at all) and expect ~19 h / 9.6 GB peak. PR #10 is a hard
        prerequisite: at 87 targets the lexicographic ordering bug mis-pairs 85 of them.
 4. [ ] **Resource controls.** Two separate pieces (2026-08-25): *memory-aware execution* is a

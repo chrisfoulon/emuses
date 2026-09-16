@@ -4,7 +4,7 @@ A run folder contains embeddings in *two different coordinate systems*, under na
 that do not say so:
 
     embeddings.npy        RAW       -- UMAP's own output, arbitrary location and scale
-    test_embeddings.npy   RESCALED  -- the same space mapped per-axis onto [0, 1]
+    test_embeddings.npy   RESCALED  -- the same space mapped onto [0, 1]
 
 `umap_stage` saves the training array before it rescales and the test array after, so
 the asymmetry is a consequence of write order rather than a decision anyone recorded.
@@ -14,8 +14,9 @@ recovering the swiss-roll parameter from an embedding scored r = 0.2747 when tra
 (raw) was compared against test (rescaled), and r = 0.9989 once both were in the same
 space. Nothing errored, and the low number reads exactly like a real negative result.
 
-Per-axis rescaling is idempotent, which removes the one signal that might have caught
-it: rescaling an already-rescaled array returns it unchanged rather than blowing up.
+Min-max rescaling is idempotent on the axis that spans the full range, which removes the
+one signal that might have caught it: rescaling an already-rescaled array returns it
+unchanged, or nearly so, rather than blowing up.
 
 Hence `space` is a required keyword argument on `load_embeddings` with no default.
 Code that has not decided which coordinate system it wants cannot silently get one.
@@ -26,15 +27,29 @@ grid) are all scale-sensitive, and a kernel bandwidth has to mean the same thing
 datasets. Mapping onto [0, 1] fixes both. The factors are saved so the same mapping can
 be reapplied to data the model has never seen -- that is what inference reads.
 
-TWO RESCALING MODES, both reachable through `rescale_embedding`:
+THREE RESCALING MODES have existed, all reachable through `rescale_embedding`, and all
+three are called "rescaled embeddings" in the code. `embedding_scaling.json` records
+which one produced a given folder, in the "mode" field. They are NOT interchangeable.
 
-  per-axis  (`preset_min`/`preset_max` given as arrays, what the pipeline uses)
-            each dimension independently spans [0, 1]; aspect ratio NOT preserved.
-  global    (presets omitted, what `EmbeddingSpace` in emuses_utils uses)
-            one scalar min/max across all dimensions; proportions preserved.
+  isotropic_global_range   what the pipeline writes since 2026-09-06. Each axis is
+            shifted by its own minimum and every axis divided by ONE range, the largest.
+            Both axes start at 0, the widest spans exactly [0, 1], proportions
+            preserved. Passed as `preset_min` = per-axis minima and `preset_max` =
+            those minima + the single range, so the shared denominator falls out of
+            `(X - min) / (max - min)` without a separate code path. `preset_max` is
+            therefore the top of the square box mapped onto [0, 1], NOT each axis's own
+            maximum -- do not read it as an extent.
 
-They are not interchangeable and both are called "rescaled embeddings" in the code.
-`embedding_scaling.json` records which one produced it, in the "mode" field.
+  per_axis  what the pipeline wrote before that, and what older run folders hold. Each
+            dimension independently spans [0, 1]; proportions NOT preserved. Ill-posed
+            on a UMAP embedding, which is fixed only up to rotation: rotating an
+            embedding 45 degrees and re-normalising distorts pairwise distances by up
+            to 37% (isotropic: 0.0%). See ADR 2.4d. Still read correctly -- a folder
+            written under it keeps its own convention.
+
+  global    (presets omitted) one scalar min and max across all dimensions;
+            proportions preserved, but only the widest axis anchored at 0. Used by
+            `DiscreteLatentSpace` in emuses_utils, which has no callers.
 """
 
 from __future__ import annotations
@@ -51,6 +66,10 @@ SPACES = (RAW, RESCALED)
 
 SCALING_FILENAME = "embedding_scaling.json"
 
+#: Values of the "mode" field in embedding_scaling.json. See the module docstring.
+ISOTROPIC_GLOBAL_RANGE = "isotropic_global_range"
+PER_AXIS = "per_axis"
+
 #: Which space each artefact is stored in on disk. This is the fact the filenames
 #: fail to carry; everything else in this module is derived from it.
 ON_DISK_SPACE = {
@@ -62,6 +81,38 @@ SPLIT_FILENAMES = {
     "train": "embeddings.npy",
     "test": "test_embeddings.npy",
 }
+
+
+def isotropic_scaling_factors(embedding):
+    """The `preset_min` / `preset_max` that map `embedding` onto [0, 1] isotropically.
+
+    Each axis is shifted by its own minimum; every axis is divided by ONE range, the
+    largest. So both axes start at 0, the widest spans exactly [0, 1], the others span
+    less, and proportions are preserved.
+
+    Returned as a (min, max) pair rather than an offset and a scale so that the result
+    drops straight into `rescale_embedding`'s `(X - min) / (max - min)`: `max` is `min`
+    plus the single shared range, which makes that denominator the same for every axis.
+    **`max` is therefore the top of the square box mapped onto [0, 1], not each axis's
+    own maximum.** Do not read it as an extent -- that is what the "mode" field in
+    `embedding_scaling.json` is recorded for.
+
+    Why not per-axis: a UMAP embedding is fixed only up to rotation, reflection and
+    translation, so per-axis min-max depends on the arbitrary orientation the optimiser
+    landed in. Measured on a 45-degree rotation -- per-axis distorts pairwise distances
+    by up to 37% (mean 11.9%), isotropic by 0.0%.
+    """
+    embedding = np.asarray(embedding)
+    lower = embedding.min(axis=0)
+    span = float((embedding.max(axis=0) - lower).max())
+    if not np.isfinite(span) or span <= 0:
+        raise ValueError(
+            f"The embedding has no extent to rescale (largest axis range = {span}). "
+            f"Every sample sits at the same coordinate, so there is no morphospace "
+            f"here. Rescaling would divide by zero and produce NaNs that only surface "
+            f"much later, in the prediction scores."
+        )
+    return lower, lower + span
 
 
 def rescale_embedding(embedding, margin=0, preset_max=None, preset_min=None):

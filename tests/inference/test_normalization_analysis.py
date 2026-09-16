@@ -18,23 +18,15 @@ from bcblib.tools.dataframe_filtering import normalize_dataframe, inverse_normal
 class TestCurrentNormalizationStatus:
     """Test current normalization implementation status across EMUSES components."""
 
-    def test_embeddings_normalization_already_correct(self):
-        """✅ UMAPStage embeddings rescaling: Already correctly implemented."""
-        # This test documents that UMAPStage embeddings rescaling is correctly implemented
-        # The UMAPStage saves min/max coordinates to context for inference reuse
-        # Location: emuses/pipelines/umap_stage.py lines 144-145, 223-224
-        
-        # Mock UMAPStage context behavior (already working correctly)
-        mock_context = {
-            "embedding_train_min_coords": np.array([0.1, 0.2]),
-            "embedding_train_max_coords": np.array([0.9, 0.8])
-        }
-        
-        # Verify embeddings rescaling infrastructure exists and works
-        assert "embedding_train_min_coords" in mock_context
-        assert "embedding_train_max_coords" in mock_context
-        assert isinstance(mock_context["embedding_train_min_coords"], np.ndarray)
-        assert isinstance(mock_context["embedding_train_max_coords"], np.ndarray)
+    # REMOVED 2026-09-06: test_embeddings_normalization_already_correct.
+    #
+    # It built a dict containing "embedding_train_min_coords" /
+    # "embedding_train_max_coords" and then asserted that the dict contained them.
+    # Nothing in EMUSES was executed. Its title claimed the scaling was "already
+    # correctly implemented", and for as long as it passed those two context keys
+    # had no production consumer at all -- a green line standing over a dead route.
+    # The keys are gone; the factors live in embedding_scaling.json, and
+    # tests/test_scaling_single_source.py checks that structurally.
 
     def test_scores_normalization_missing_scaler_storage(self):
         """❌ Scores normalization: Not saved for inference reuse."""

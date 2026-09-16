@@ -197,7 +197,7 @@ target_0/
 ├── prediction-heatmaps/               # ✅ Prediction analysis on embedding space
 │   ├── prediction_values.npy          # Raw predictions on 100×100 grid
 │   ├── confidence_values.npy          # Model confidence scores 
-│   ├── combined_values.npy            # Prediction×confidence combined values
+│   ├── corrected_values.npy           # Predictions shrunk toward the null by confidence
 │   ├── grid_coordinates.npy           # Spatial grid coordinates
 │   └── prediction_metadata.json       # Analysis parameters and settings
 ├── correlation-heatmaps/              # ✅ UMAP embedding correlation analysis

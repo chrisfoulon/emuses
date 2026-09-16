@@ -58,10 +58,24 @@ class TestNormalizationValidation:
         joblib.dump(input_scaling_factors, input_scaler_path)
         joblib.dump(scores_scaling_factors, scores_scaler_path)
         
+        # The embedding scaling belongs to the RUN FOLDER, not to the model object.
+        # This fixture used to set `mock_umap.min_embeddings_` / `max_embeddings_`,
+        # and those were the only assignments to those names anywhere in the tree:
+        # inference read them with getattr, so on a Mock they looked wired and in
+        # production they were always None. Write the real artefact instead, so the
+        # fixture describes a folder EMUSES could actually have produced.
+        with open(temp_model_dir / "embedding_scaling.json", 'w') as f:
+            json.dump({
+                'min_embeddings': [0.0, 0.0],
+                'max_embeddings': [1.0, 1.0],
+                'mode': 'per_axis',
+                'margin': 0,
+                'embeddings_npy_space': 'raw',
+                'test_embeddings_npy_space': 'rescaled',
+            }, f)
+
         # Create mock UMAP model with realistic embeddings
         mock_umap = Mock()
-        mock_umap.min_embeddings_ = np.array([0.0, 0.0])
-        mock_umap.max_embeddings_ = np.array([1.0, 1.0])
         mock_umap.transform.return_value = np.random.uniform(0, 1, (100, 2))  # 100 samples, 2D embeddings
         
         # Create different types of prediction models

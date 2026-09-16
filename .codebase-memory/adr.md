@@ -201,7 +201,7 @@ space=...)`, where `space` is keyword-only with **no default**.
 **Two rescaling modes exist and are not interchangeable**, both reached through
 `rescale_embedding`: *per-axis* (presets passed as arrays, what the pipeline uses; each
 dimension independently spans [0, 1], aspect ratio not preserved) and *global* (presets
-omitted, what `EmbeddingSpace` uses; one scalar min/max, proportions preserved). Both are
+omitted, what `DiscreteLatentSpace` uses; one scalar min/max, proportions preserved). Both are
 called "rescaled embeddings" in the code. `mode` in the JSON disambiguates.
 
 **Single implementation**: `rescale_embedding` / `inverse_rescale_embedding` live in
@@ -209,15 +209,132 @@ called "rescaled embeddings" in the code. `mode` in the JSON disambiguates.
 the conversions without importing umap/matplotlib/statsmodels) and are re-exported from
 `emuses_utils` for the existing call sites.
 
-**Known gap (open)**: `umap_stage.py` recomputes min/max from the current cohort
-unconditionally, including on the `--load_umap` and `--load_embeddings` paths. A run
-reusing another run's morphospace therefore gets identical raw coordinates in a
-*different* [0, 1] space, while the source run's `embedding_scaling.json` sits unread —
-only `inference_stage` reads it. Anything comparing heatmaps or reusing cluster labels
-across two such runs is comparing different coordinate systems. Fixing this moves
-numbers, so it is deliberately not bundled with the loader.
-
 **Code**: `emuses/tools/embedding_spaces.py`, `tests/unit/test_embedding_spaces.py`
+
+---
+
+### 2.4c The Run That Trained a Morphospace Owns Its Scaling Factors
+
+**Decision**: `UMAPStage` computes the [0, 1] factors from its own embedding **only when
+it trained the morphospace**. Every reuse route — `--load_umap`, `--load_embeddings`,
+and resuming into an existing output folder — reads the source run's
+`embedding_scaling.json` through `embedding_spaces.load_scaling()` and writes it out
+again unchanged. A reuse route pointed at a folder with no such file **raises**; it does
+not fall back to recomputation. (Closes the gap recorded as open in §2.4b, 2026-09-06.)
+
+**Rationale**:
+- The factors are not a summary of the coordinates, they *are* the coordinate system.
+  A kernel bandwidth, a grid cell and a region boundary all mean something only relative
+  to them.
+- On a reuse route the coordinates in hand are *this* cohort pushed through *that*
+  model. Recomputing redefines [0, 1] against whoever happens to be in this run, so the
+  same subject lands somewhere different depending on its neighbours, and inference —
+  which reads the file rather than recomputing — disagrees with the training run it was
+  fitted on.
+- Nothing errors when this goes wrong. Min-max rescaling a valid embedding always yields
+  a valid embedding in exactly the expected range, so the run completes and answers a
+  different question. Hence a raise on the missing-file case: a silent fallback here
+  reproduces the defect.
+
+**Three mechanisms existed for carrying these factors; two were dead**, and each had a
+passing test that made it look wired:
+
+1. `umap_model.min_embeddings_` / `max_embeddings_`, read with `getattr` in
+   `inference_stage`. Nothing in `emuses/` ever set them — the only assignment in the
+   tree was on a `Mock` in `tests/inference/test_normalization_validation.py`. In
+   production the read returned `None`, so **pipeline-integrated inference skipped the
+   rescale entirely** and fed raw coordinates to predictors fitted on rescaled ones.
+2. Context keys `embedding_train_min_coords` / `embedding_train_max_coords`, published
+   by `umap_stage` and read by no stage. Asserted only in
+   `tests/inference/test_normalization_analysis.py`, against a context that test built
+   itself.
+3. `embedding_scaling.json` — the live one, and now the only one.
+
+**The generalisable lesson, which is why this has a structural test rather than a note**:
+a test that constructs its own input can validate a *consumer* while no *producer*
+exists. It proves "if X were set we would use it"; it never proves "X is set". Review
+does not catch it, because every individual site reads correctly.
+`tests/test_scaling_single_source.py` asserts, by AST, that the banned attribute names
+appear nowhere and that no stage writes a context key nothing reads. Fourteen
+pre-existing write-only keys are listed there as known debt, not endorsed.
+
+**Code**: `emuses/pipelines/umap_stage.py`, `emuses/pipelines/inference_stage.py`
+(`_scaling_dir` / `_read_scaling_into`, one reader replacing three hand-rolled JSON
+parses), `tests/test_reused_morphospace_keeps_its_scaling.py`,
+`tests/test_scaling_single_source.py`
+
+---
+
+### 2.4d Rescaling Is Isotropic, Because Per-Axis Is Ill-Posed on a UMAP Embedding
+
+**Decision** (2026-09-06): `UMAPStage` rescales by subtracting each axis's own minimum
+and dividing every axis by a **single** range — the largest. Both axes start at 0, the
+widest spans exactly [0, 1], proportions are preserved.
+`embedding_scaling.json` records `"mode": "isotropic_global_range"`. Folders written
+before this keep `"per_axis"` and are still read under their own convention; a reuse
+route inherits the source run's mode rather than imposing the current one, because the
+source's saved predictors were fitted in that space.
+
+Implemented as `embedding_spaces.isotropic_scaling_factors`, returning a `(min, max)`
+pair with `max = min + span`, so the shared denominator falls out of
+`rescale_embedding`'s `(X - min) / (max - min)` and every existing reader keeps working.
+**`max_embeddings` is therefore the corner of the square box mapped onto [0, 1], not
+each axis's own maximum** — that is what `mode` exists to disambiguate.
+
+**Rationale**: UMAP's loss depends only on pairwise distances, so its solution is fixed
+only up to rotation, reflection and translation — any rotation of an embedding is an
+equally valid output of the same fit. Per-axis min-max stretches each dimension
+independently and therefore depends on the arbitrary orientation the optimiser landed
+in. Measured, rotating an embedding 45° and re-normalising:
+
+| | pearson r of pairwise distances | max distortion | mean |
+|---|---|---|---|
+| per-axis | 0.9598 | **37.0%** | 11.9% |
+| isotropic | 1.000000 | 0.0% | 0.0% |
+
+Everything downstream is metric — kernel bandwidths, distance-weighted regressors, grid
+and region geometry — so a distorted metric is a distorted result, silently. It also
+settles a disagreement the pipeline had with itself: HDBSCAN clusters on the **raw**
+coordinates, before the rescale, so under per-axis the clusterer and the predictors were
+using different metrics. An isotropic rescale is a similarity transform, so they agree.
+
+**Two consequences fixed in the same change**, both of which were inert under per-axis
+and would have woken up wrong:
+- `grid_creator` padded the grid by ±0.05 clamped to [0, 1]. Under per-axis the data
+  spanned exactly [0, 1] so the clamps cancelled the pad exactly and it did nothing.
+  Isotropic would have made it **asymmetric** — 0 at the bottom, +0.05 at the top of the
+  narrow axis. Removed; matplotlib's own `axes.xmargin`/`ymargin` default is already
+  0.05, and padding the data grid to solve a rendering problem changes what gets
+  predicted and thresholded.
+- `region_statistical_analyzer` converted grid indices back to coordinates with
+  `region_coords / grid_size`. Wrong three ways: it assumed the grid spans [0, 1] (true
+  only under per-axis); it was off by one (`linspace` puts index `n-1` at `hi`); and it
+  **compared transposed axes** — `reshape(g, g)` indexes `[y, x]` while
+  `training_embeddings` columns are `(x, y)`, so every region was reflected about the
+  diagonal. It now maps through the grid's own axes, recovered from the `grid_coords`
+  it was evaluated on. The transposition was invisible on a square grid over a square
+  extent with roughly symmetric data — precisely what per-axis always produced.
+
+**⚠ The numerical regression suite cannot see any of this, and that is not a statement
+about the change.** Measured 2026-09-06: `tests/regression` passed **bit-identically**
+under the switch, on both datasets, despite the narrow axis going from spanning 1.0 to
+spanning 0.24 (anisotropy 4.1). The reason is that on both regression datasets the
+winning ElasticNet has **all coefficients exactly zero in every fold** — the L1 penalty
+zeroes them, the prediction is a constant intercept, and `target_0_*_Score` is therefore
+a function of the fold split alone, mathematically independent of the coordinates. The
+eight `target_0_*` baselines pin nothing about the coordinate→prediction path. See
+§2.9d. The evidence for this change is consequently the property tests
+(`tests/test_isotropic_rescaling.py`, rotation invariance to 1e-12, with the per-axis
+counter-example kept in the suite) and the swiss-roll diagnostic, where the signal is
+real: L1 0.9989 and L2 0.998, unchanged from per-axis, as a similarity transform must be.
+
+Closed the same day: `tests/regression` gained a `swiss_roll` dataset and now *does* see
+this change — reverting to per-axis fails `test_prediction_scores[swiss_roll]` and only
+that. The two 40-sample datasets remain blind to it, permanently and knowingly (§2.9d).
+
+**Code**: `emuses/tools/embedding_spaces.py`, `emuses/pipelines/umap_stage.py`,
+`emuses/tools/grid_creator.py`, `emuses/tools/region_statistical_analyzer.py`,
+`tests/test_isotropic_rescaling.py`, `tests/test_region_grid_coordinate_mapping.py`
 
 ---
 
@@ -514,6 +631,71 @@ is 1.0 by construction, so a cluster assertion there could never fail. The regre
 `midbudget-serial` arm — the only measured config that is both reproducible (20/20 over three
 repeats) and non-degenerate (3 clusters, `noise_fraction` 0.1). `test_baseline_is_not_degenerate`
 fails if it ever drifts back.
+
+**⚠ The `target_0_*_Score` block pins nothing about the coordinate path** (measured
+2026-09-06). On both regression datasets, in every fold, the winning ElasticNet has **all
+coefficients exactly zero** — the L1 penalty zeroes them and the prediction is a constant
+intercept, the training-fold mean. The recorded scores are therefore a function of the
+fold split alone and are mathematically independent of the embedding coordinates the
+models were handed.
+
+How this surfaced: the per-axis→isotropic rescale (§2.4d) changed the narrow axis from
+spanning 1.0 to spanning 0.24 — a factor-4 change in the geometry every predictor sees —
+and all sixteen regression tests passed **bit-identically**. That green was not evidence
+the change was safe; it was evidence the suite cannot see this class of change at all.
+
+What this does and does not invalidate:
+- The raw-derived baselines (`_embedding_distances`, `composite_score`, `metric_*`,
+  `_cluster_labels`, `n_clusters`) are unaffected and remain the suite's real value. They
+  correctly stayed bit-identical across the rescale, which is what confirmed the change
+  had not leaked into the training path.
+- `test_baseline_is_not_degenerate` checks the *clustering* is non-degenerate. Nothing
+  checked the *prediction* was, and it is not.
+- `test_baseline_is_not_degenerate` checks the *clustering* is non-degenerate. Nothing
+  checked the *prediction* was, and it is not.
+- **On those two datasets this is not fixed and will not be.** They earn their place on
+  the raw-derived quantities and are cheap; their prediction baselines stay in the file
+  but pin nothing. Do not treat a green `target_0_*_Score[regression]` as confirmation
+  that a coordinate-space change is inert.
+
+**Resolved 2026-09-06 by adding a third dataset, not by changing the two** (`swiss_roll`,
+300 samples, `test_data/swiss_roll_*.csv`). Chosen over the two alternatives considered —
+widening `quick_train_dict`'s alpha range, or repointing the existing fixture — because
+both of those re-record baselines that are currently correct and discriminating, to fix a
+defect that is not in them. Adding a dataset cost the existing baseline files three added
+keys and **no changed number**.
+
+Why swiss roll: the target is each sample's own position along the roll, so it is
+recoverable by construction and any failure is EMUSES', not the data's. Measured:
+`Mean_Score` 0.9962, and **4 of 5 folds are won by `KernelRegressor`** — a kernel over the
+embedding, the family §2.4d's boundary-bias work replaces, so this dataset sees Steps 2, 3
+and 4 of that plan. `n_clusters` 3, `noise_fraction` 0.0, so the clustering guard holds
+too. Cost 49 s, taking the suite from ~88 s to ~128 s.
+
+The degeneracy is now **recorded as data rather than prose**: `extract_metrics` writes
+`n_prediction_models`, `n_constant_prediction_models` and `prediction_depends_on_coordinates`
+into every baseline, reading `5/5` and `10/10` constant against `0/5` for `swiss_roll`.
+`test_some_dataset_pins_the_coordinate_to_prediction_path` fails if the suite ever returns
+to a state where no dataset can see a coordinate change. It reads baselines only — 0.07 s,
+no pipeline run.
+
+What that liveness flag does and does not mean: it detects a final estimator exposing
+`coef_` with every entry zero, which is the failure that occurred. A model without `coef_`
+counts as live because a kernel reads coordinates by construction — so it **cannot** detect
+a kernel degenerate another way, e.g. a bandwidth wide enough that every prediction is the
+global mean. `True` means "not the specific constant that fooled us", not "sound".
+
+Demonstrated rather than argued: reverting the rescale to per-axis fails
+`test_prediction_scores[swiss_roll]` and leaves `[regression]` and
+`[multi_target_regression]` **passing**. That single result is both the justification for
+the dataset and the proof the other two are blind.
+
+**The signature was on the record from 2026-08-23 and was misread.** The perturbation log in
+`tests/regression/README.md` notes that a real one-line change to `UMAP_utils` moved the
+geometry while prediction scores "did not move", and drew the conclusion that pinning only
+"the number that matters" is insufficient. True, but the sharper reading was available then:
+those scores did not move because they cannot. A metric that never moves across perturbations
+is evidence about the metric, not only about what the perturbation touched.
 
 **Rationale for the comparison forms**: cluster ids are arbitrary, so structure is compared by
 adjusted Rand index rather than label equality. UMAP is defined only up to rotation and reflection,
@@ -951,6 +1133,37 @@ embeddings with target std 0.07 there is no signal, so zeroing the coefficients 
    0.8146. So inference is reporting faithfully and the number is still misleading. Note for anyone
    testing inference: on `test_data` this outcome is *expected*, and looks exactly like the
    2025-08-27 "all predictions identical" bug. Do not diagnose it as that bug again.
+
+   **Resolved for the grid maps on 2026-09-06 (Step 3); still open for `inference_stage.py`.**
+   `GridCreator`'s confidence no longer reports a degenerate model as certain. It was worse than
+   this entry describes: it was not `1 - std(fold predictions)` at all, but a literal `0.8`
+   assigned per model, whose std across models was therefore exactly 0, giving confidence 1.0
+   everywhere. It is now `agreement × variability`, both as fractions of the training target's SD:
+
+   - `agreement = 1 - clip(std(all_predictions, axis=0) / target_sd, 0, 1)`, per grid point.
+   - `variability = clip(std(ensemble) / target_sd, 0, 1)`, one scalar for the grid.
+
+   **`agreement` alone is exactly the metric this entry condemns** — it scores the all-zero-
+   coefficient `regression` fixture at **0.908**, because constant models agree with each other
+   perfectly. `variability` is what drops that to 0, and a warning naming the spread, the ensemble
+   spread and the target scale is logged when the map comes out flat. That is the "report it there"
+   this entry asked for, for the grid path.
+
+   Two things to know before touching it:
+   - **Only `agreement` can move region selection.** `create_statistical_maps` thresholds
+     `predictions * confidence` by *percentile*, and a percentile is invariant under multiplication
+     by a positive constant, so the scalar `variability` provably cannot change which regions are
+     reported. This is also why the *old* constant confidence contributed nothing at all rather
+     than contributing weakly.
+   - **`inference_stage.py:1455` is unchanged** and still computes `1.0 - std(...)`. The 0.9934
+     measurement above stands. Fixing it means deciding what the yardstick is there, where there
+     is no grid to take an ensemble variance over.
+
+   Pinned by `tests/regression`: `n_confidence_maps`, `n_constant_confidence_maps` and
+   `confidence_falls_with_sparsity` per dataset, plus two guards
+   (`test_some_dataset_has_a_confidence_map_that_participates` for the baselines,
+   `test_confidence_map_matches_its_baseline` for the code). Measured on `swiss_roll`: confidence
+   0.000–0.813, corr with distance-to-nearest-training-sample **−0.583**.
 2. **Feeding EMUSES' own splits back into inference silently double-normalizes.** Measured: the
    pre-normalized split yields **1** distinct embedding from `umap.transform`, the same rows raw yield
    10, all 50 raw rows yield 50. Off-manifold input collapses the transform with no error.

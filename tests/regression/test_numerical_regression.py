@@ -5,8 +5,19 @@ What this suite is for
 To fail when a code change moves a scientific result. Nothing else. Read the
 caveats before trusting a pass:
 
-* **``test_data/`` is 48 samples x 7 features** (40 after the split). That is
-  enough to catch a regression and **not** enough to judge scientific quality.
+* **``test_data/features.csv`` is 48 samples x 7 features** (40 after the split).
+  That is enough to catch a regression and **not** enough to judge scientific
+  quality.
+* **The prediction baselines on those two datasets pin nothing.** In every fold
+  the winning ElasticNet has all coefficients exactly zero, so the model is a
+  constant intercept and its score depends only on the fold split -- it is
+  mathematically independent of the embedding coordinates. Those eight numbers
+  per dataset survive any change to the coordinate system, right or wrong. The
+  ``swiss_roll`` dataset was added on 2026-09-06 because of this and is the only
+  one here that can see such a change; see
+  ``test_some_dataset_pins_the_coordinate_to_prediction_path`` and ADR 2.9d.
+  Do not read a green ``test_prediction_scores[regression]`` as evidence that a
+  coordinate-space change was inert.
 * **These tolerances detect code changes at a fixed seed.** They say nothing
   about scientific stability. At a different master seed the same config
   produces a cluster ARI of 0.0 against this one, and ``Mean_Score`` moves from
@@ -199,6 +210,107 @@ def test_baseline_is_not_degenerate(baselines, dataset):
     assert len(set(metrics["_cluster_labels"])) > 1
 
 
+def test_some_dataset_pins_the_coordinate_to_prediction_path(baselines):
+    """The prediction half of the same guard, and it is deliberately not per-dataset.
+
+    ``test_baseline_is_not_degenerate`` above asks whether the *clustering*
+    assertions can fail. This asks the same of the *prediction* assertions, and
+    the answer used to be no on every dataset in the suite -- which nothing
+    detected, because a suite that cannot fail also cannot report that it cannot
+    fail.
+
+    On the two 40-sample datasets, in every fold, the winning ElasticNet has all
+    coefficients exactly zero. The L1 penalty zeroes them, so the model is a
+    constant intercept and its score depends only on the fold split. Found on
+    2026-09-06 by switching the pipeline from per-axis to isotropic rescaling and
+    watching all 16 tests pass **bit-identically** while the narrow embedding axis
+    went from spanning 1.0 to spanning 0.24 (ADR 2.9d).
+
+    Not parametrized, because those two datasets are still degenerate for
+    prediction and that is accepted: they earn their place on the raw-derived
+    quantities (embedding geometry, cluster structure, composite score), which are
+    non-degenerate and discriminating. What must never again be true is that
+    **no** dataset can see a coordinate change. ``swiss_roll`` is the one that can:
+    the target is the roll's own generative parameter, so the signal is real, and
+    4 of its 5 folds are won by a kernel over the embedding.
+    """
+    live = sorted(
+        dataset
+        for dataset, payload in baselines.items()
+        if payload["metrics"].get("prediction_depends_on_coordinates")
+    )
+    breakdown = {
+        dataset: (
+            f"{payload['metrics'].get('n_constant_prediction_models')}"
+            f"/{payload['metrics'].get('n_prediction_models')} folds constant"
+        )
+        for dataset, payload in baselines.items()
+    }
+    assert live, (
+        "no dataset in this suite has a prediction model that reads the embedding "
+        f"coordinates: {breakdown}. Every prediction baseline here is the score of "
+        "a constant model, so it will survive any change to the coordinate system, "
+        "correct or not -- the suite pins a number that cannot move. Do not fix "
+        "this by relaxing an assertion; add or repair a dataset with real signal. "
+        "See ADR 2.9d."
+    )
+
+
+def test_some_dataset_has_a_confidence_map_that_participates(baselines):
+    """The grid confidence must vary, and must fall where the training data is sparse.
+
+    Same shape of guard as the two above, for the third thing that could be pinned
+    without being able to move. ``create_statistical_maps`` thresholds
+    ``predictions * confidence`` by *percentile*, and a percentile is invariant under
+    multiplication by a positive constant -- so a confidence map with zero variance
+    contributes arithmetically nothing to region selection. Until Step 3 (2026-09-06)
+    every regression model was handed a literal 0.8 and the aggregation took the
+    standard deviation across models of identical constants, i.e. exactly 0, i.e.
+    confidence 1.0 at every grid point. Nothing failed, because nothing could.
+
+    Not parametrized, for the same reason as the prediction guard: on the two 40-sample
+    datasets every fold is a constant model, the ensemble surface is flat, and the
+    confidence is legitimately 0 everywhere -- that is the honest answer there, not a
+    defect to assert away. ``swiss_roll`` is where it has to be real.
+
+    The direction is asserted by sign rather than by value on purpose. The correlation's
+    magnitude moves with the embedding and so would be machine-specific; its sign is the
+    actual claim the confidence makes, and it is not.
+    """
+    varying = sorted(
+        dataset
+        for dataset, payload in baselines.items()
+        if payload["metrics"].get("n_confidence_maps", 0)
+        > payload["metrics"].get("n_constant_confidence_maps", 0)
+    )
+    breakdown = {
+        dataset: (
+            f"{payload['metrics'].get('n_constant_confidence_maps')}"
+            f"/{payload['metrics'].get('n_confidence_maps')} maps constant, "
+            f"falls with sparsity: {payload['metrics'].get('confidence_falls_with_sparsity')}"
+        )
+        for dataset, payload in baselines.items()
+    }
+    assert varying, (
+        "every confidence map in this suite is constant across its grid: "
+        f"{breakdown}. A percentile threshold is invariant to a constant factor, so "
+        "confidence has no effect on which regions any of these runs reports -- the "
+        "maps are pinned but cannot move. Do not relax this; find out why the model "
+        "ensemble agrees with itself everywhere."
+    )
+    wrong_way = sorted(
+        dataset
+        for dataset in varying
+        if baselines[dataset]["metrics"].get("confidence_falls_with_sparsity") is False
+    )
+    assert not wrong_way, (
+        f"{wrong_way}: confidence RISES with distance to the nearest training sample. "
+        f"The map varies, so it does affect region selection -- in the wrong direction, "
+        f"reporting the extrapolated edges of the morphospace as the most trustworthy "
+        f"part of it. Breakdown: {breakdown}"
+    )
+
+
 # --- Below here: the value comparisons -- the actual pinning ------------------
 #
 # All four carry `machine_specific`, which means "runs everywhere, gates only on
@@ -225,6 +337,39 @@ def test_baseline_is_not_degenerate(baselines, dataset):
 
 
 @pytest.mark.machine_specific
+@pytest.mark.parametrize("dataset", sorted(DATASETS))
+def test_confidence_map_matches_its_baseline(regression_results, baselines, dataset):
+    """The code-regression half of the confidence guard.
+
+    ``test_some_dataset_has_a_confidence_map_that_participates`` reads the *baselines*
+    only: it asks whether the pinned data is degenerate, and it cannot see a change in
+    the code at all. ``test_pipeline_produces_the_expected_outputs`` checks these keys
+    are present, not what they say. Without this test, flattening the confidence map
+    again -- the exact defect Step 3 removed -- would pass the whole suite.
+
+    Deliberately **not** ``machine_specific``. These are two counts and a sign, not
+    floats: the count of maps and how many are flat do not depend on the CPU, and the
+    sign of the confidence-versus-sparsity correlation is the structural claim the
+    confidence makes (-0.58 on swiss_roll, nowhere near zero). If a different machine
+    does flip it, that is a real finding about the embedding and should be read, not
+    tolerated away.
+    """
+    current = regression_results[dataset]
+    expected = baselines[dataset]["metrics"]
+    for key in ("n_confidence_maps", "n_constant_confidence_maps",
+                "confidence_falls_with_sparsity"):
+        assert current[key] == expected[key], (
+            f"{dataset}: {key} is {current[key]!r}, baseline {expected[key]!r}. "
+            f"Full current state: maps={current['n_confidence_maps']}, "
+            f"constant={current['n_constant_confidence_maps']}, "
+            f"falls_with_sparsity={current['confidence_falls_with_sparsity']!r}. "
+            f"A confidence map that has gone constant contributes nothing to region "
+            f"selection (percentile thresholds ignore a constant factor); one whose "
+            f"correlation flipped sign is reporting the sparse edges of the "
+            f"morphospace as its most trustworthy part."
+        )
+
+
 @pytest.mark.parametrize("dataset", sorted(DATASETS))
 def test_prediction_scores(regression_results, baselines, dataset, environment_note):
     """The number that matters: per-target predictive performance."""

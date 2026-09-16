@@ -11,6 +11,35 @@ This folder contains synthetic datasets designed for testing and demonstrating E
 - **`classification_labels.csv`** - 50 binary labels (0/1) - For binary classification mode
 - **`classification_labels_multiclass.csv`** - 50 multi-class labels (0,1,2,3) - For multi-class classification mode
 
+### Swiss roll (added 2026-09-06, for the numerical regression suite)
+- **`swiss_roll_features.csv`** - 300 samples × 3 coordinates
+- **`swiss_roll_scores.csv`** - 300 continuous targets, range 4.76–14.04
+
+**Why it exists.** The 50-sample fixtures above have no recoverable signal for
+regression: the winning ElasticNet zeroes every coefficient in every fold, so the
+prediction is a constant intercept and its score cannot respond to a change in the
+embedding coordinates. This one has a target that is recoverable *by construction* —
+`t` is each sample's own position along the roll — so the prediction path genuinely
+reads the embedding (`Mean_Score` 0.9962). See `tests/regression/README.md`.
+
+**The committed CSVs are authoritative, not this recipe.** They were produced once,
+with scikit-learn 1.7.2, by:
+
+```python
+import numpy as np
+from sklearn.datasets import make_swiss_roll
+X, t = make_swiss_roll(n_samples=300, noise=0.0, random_state=42)
+np.savetxt("test_data/swiss_roll_features.csv", X, delimiter=",", fmt="%.17g")
+np.savetxt("test_data/swiss_roll_scores.csv", t, delimiter=",", fmt="%.17g")
+```
+
+`%.17g` round-trips the doubles exactly, so the files are a precise record of that
+draw. Do **not** regenerate them to "refresh" the data: `make_swiss_roll` is not
+guaranteed stable across scikit-learn versions, and a fixture that changes quietly
+underneath a pinned baseline is the exact failure the regression suite exists to
+catch. If they must be regenerated, re-record the baselines in the same commit and
+say why.
+
 
 ## 🎯 Usage Examples
 

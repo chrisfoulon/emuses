@@ -15,6 +15,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from emuses.tools.grid_creator import GridCreator
 from emuses.tools.region_statistical_analyzer import RegionStatisticalAnalyzer
 
 
@@ -377,7 +378,16 @@ class TestGridToSampleMappingContourDetection(unittest.TestCase):
         # Create training embeddings in rescaled space (0-1 range) using real data
         raw_embeddings = self.features[:100, :2]
         self.training_embeddings = (raw_embeddings - raw_embeddings.min(axis=0)) / (raw_embeddings.max(axis=0) - raw_embeddings.min(axis=0))
-        
+
+        # The grid the significance values live on. Built by GridCreator rather than
+        # written out here on purpose: these tests are about the grid-index -> embedding
+        # -> sample chain, so restating the convention locally would let the two halves
+        # drift apart and still agree with each other. The embeddings above span exactly
+        # [0, 1] on both axes, so this is linspace(0, 1, 20) per axis.
+        self.grid_coords = GridCreator(grid_size=self.grid_size).generate_coordinate_grid(
+            self.training_embeddings
+        )
+
     def test_map_grid_to_training_samples_high_significance_rectangular_region(self):
         """Test contour detection for high significance rectangular region."""
         # Create rectangular high significance region in grid indices 5-10, 8-12
@@ -386,18 +396,30 @@ class TestGridToSampleMappingContourDetection(unittest.TestCase):
                 grid_idx = i * self.grid_size + j
                 self.significance_values[grid_idx] = 0.9  # High significance
         
-        # Place some training points inside the rectangle (rescaled coordinates)
-        # Rectangle spans grid indices 5-10, 8-12 → rescaled coords 0.25-0.5, 0.4-0.6
+        # Place some training points inside the rectangle (rescaled coordinates).
+        #
+        # The flat index is `row * grid_size + col`, and the grid is raveled row-major
+        # over y, so `row` is the **y** index and `col` is the **x** index. With
+        # linspace(0, 1, 20), index k sits at k/19. So the rectangle above spans
+        #     x = cols 8..12  -> 0.4211 .. 0.6316
+        #     y = rows 5..10  -> 0.2632 .. 0.5263
+        # and a point inside it is (x, y) with x in that first range, y in the second.
+        #
+        # These numbers changed on 2026-09-06. They previously read the axes the other
+        # way round, which is the transposition `map_grid_to_training_samples` used to
+        # make and no longer does; `tests/test_region_grid_coordinate_mapping.py` is the
+        # independent proof that the old convention was wrong. This is a correction, not
+        # a loosened assertion -- the assertions below are unchanged.
         expected_inside_points = np.array([
-            [0.3, 0.45],   # Inside rectangle
-            [0.4, 0.55],   # Inside rectangle  
-            [0.35, 0.5],   # Inside rectangle
+            [0.45, 0.30],   # Inside rectangle
+            [0.55, 0.40],   # Inside rectangle
+            [0.50, 0.35],   # Inside rectangle
         ])
-        
+
         # Add points outside the rectangle for contrast
         expected_outside_points = np.array([
-            [0.1, 0.1],    # Outside rectangle (top-left)
-            [0.9, 0.9],    # Outside rectangle (bottom-right)
+            [0.1, 0.1],    # Outside rectangle (low x, low y)
+            [0.9, 0.9],    # Outside rectangle (high x, high y)
         ])
         
         # Combine all embeddings
@@ -411,7 +433,8 @@ class TestGridToSampleMappingContourDetection(unittest.TestCase):
             significance_values=self.significance_values,
             training_embeddings=extended_embeddings,
             percentile_threshold=5.0,
-            significance_source='prediction'
+            significance_source='prediction',
+            grid_coords=self.grid_coords
         )
         
         # Should return high and low significance sample indices
@@ -449,7 +472,8 @@ class TestGridToSampleMappingContourDetection(unittest.TestCase):
             significance_values=self.significance_values,
             training_embeddings=self.training_embeddings,
             percentile_threshold=5.0,
-            significance_source='correlation'
+            significance_source='correlation',
+            grid_coords=self.grid_coords
         )
         
         # Should return result dict with high and low keys
@@ -482,7 +506,8 @@ class TestGridToSampleMappingContourDetection(unittest.TestCase):
             significance_values=self.significance_values,
             training_embeddings=self.training_embeddings,
             percentile_threshold=10.0,
-            significance_source='prediction'
+            significance_source='prediction',
+            grid_coords=self.grid_coords
         )
         
         # Should handle disconnected regions correctly

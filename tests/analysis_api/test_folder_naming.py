@@ -77,7 +77,7 @@ class TestGridCreatorFolderNaming:
             expected_files = [
                 "prediction_values.npy",
                 "confidence_values.npy", 
-                "combined_values.npy",
+                "corrected_values.npy",
                 "grid_coordinates.npy",
                 "prediction_metadata.json"
             ]
