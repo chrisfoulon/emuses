@@ -740,6 +740,30 @@ executes nothing, `test_pipeline_produces_the_expected_outputs` is deliberately 
 CI still runs the pipeline and catches a stage that stopped writing, a metric dropped from the
 search, or an embedding that changed dimensionality.
 
+**What else CI is allowed to keep, and the rule for deciding** (2026-09-17). Shape alone leaves a
+gap: the two defects this suite was built after — a confidence map flattened to a constant, and a
+prediction ensemble that stopped reading the coordinates — both preserve every shape. So two more
+tests are deliberately not `machine_specific`: `test_confidence_map_matches_its_baseline` (map
+count, flat-map count, and the *sign* of confidence-versus-sparsity) and
+`test_prediction_stays_in_its_regime` (predictions still depend on the coordinates, and a clearly
+predictive target stays above a coarse 0.5 floor that sits nowhere near swiss_roll's 0.996).
+
+The rule: a CI-visible test must read the **live run**, not only the baselines — a baselines-only
+guard such as `test_some_dataset_pins_the_coordinate_to_prediction_path` asks whether the *pinned
+data* is degenerate and cannot see a code change at all — and it must assert only on quantities
+that do not depend on **which Optuna trial won**. Scores, composites, cluster counts and per-fold
+estimator choices do. A count fixed by the config, a sign, and "did this collapse entirely" do not.
+
+Deciding that means checking what a quantity actually counts, not what its name suggests. From
+2026-09-06 to 2026-09-17 `test_confidence_map_matches_its_baseline` carried a `machine_specific`
+mark that contradicted its own docstring, so CI never ran it and the Step-3 flattening defect could
+have returned unnoticed. The mark looked defensible on the assumption that `n_confidence_maps`
+counts one map per CV fold; it counts one `confidence_values.npy` per **target**, and a target's
+map goes flat only if every fold in its ensemble collapsed. `test_prediction_scores` had the
+opposite error — no mark, while comparing Optuna-selected scores — and went red on a runner whose
+`llvm_cpu_name` was `emeraldrapids` rather than the baseline's `meteorlake` (swiss_roll
+`target_0_Min_Score` 0.9914 vs 0.9936) on a commit that added two unused config dicts.
+
 **Baselines record their provenance** (added 2026-09-05, `tests/regression/regression_provenance.py`):
 `llvm_cpu_name` — the codegen target, the prime suspect — plus a digest of the CPU feature flags,
 Python version, platform, and the numerical stack versions. Every numerical failure appends a diff
@@ -1001,6 +1025,19 @@ digests are recoverable by enumeration in seconds. `--record_cohort_ids` is the 
 users who can share them. Side effect worth keeping: when the cohort *does* match, `--load_umap`
 can now reuse HDBSCAN's **fitted** labels, which it previously always discarded in favour of
 `approximate_predict` — the two can disagree near cluster boundaries.
+
+**Indexing stays with the user's ids; safety is the user's call (Chris, 2026-09-17).** The
+alternative was considered and declined: strip subject ids everywhere internally so a model is
+safe to share by construction, and reconstruct the caller's indexing on the way out. It buys less
+than it appears to, because **a UMAP model pickles its training data** (`self._raw_data = X`), so a
+model fitted on restricted data is unshareable whether or not it carries ids. Dropping the ids
+would therefore trade real day-to-day cost — every label join and every per-subject output going
+through a reconstruction step that can silently misalign — for a safety property the artefact does
+not have anyway. So EMUSES keeps the indexing it was given, and **not sharing a model trained on
+restricted data is the user's responsibility**. What the codebase still owes them is that nothing
+leaks *by default*: `cohort.json` carries a digest and no ids unless `--record_cohort_ids` is
+passed. Note the consequence for the cohort digest above — without ids, two equal-sized cohorts are
+distinguished by the feature digest alone.
 
 **Prediction resume is per target, and no finer.** `--resume_targets` skips `nested_optuna_cv` for
 a target whose coordinates, target values, resolved search space, fold count, trial budget and

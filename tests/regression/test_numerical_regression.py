@@ -321,11 +321,23 @@ def test_some_dataset_has_a_confidence_map_that_participates(baselines):
 
 # --- Below here: the value comparisons -- the actual pinning ------------------
 #
-# These carry `machine_specific`, which means "runs everywhere, gates only on
-# the machine that owns the baselines". The one exception below is
-# `test_prediction_stays_in_its_regime`, which is CI's only remaining statement
-# about prediction once the rest are deselected; its docstring says why it is
-# safe on any CPU. `scripts/dev_test_runner.py --core`
+# Most of these carry `machine_specific`, which means "runs everywhere, gates
+# only on the machine that owns the baselines".
+#
+# The exceptions are `test_prediction_stays_in_its_regime` and
+# `test_confidence_map_matches_its_baseline`. They are what CI still says about
+# prediction and confidence once the rest are deselected, and each docstring
+# says why its assertions hold on any CPU. The rule for adding another: a
+# CI-visible test must read the *live* run, not only the baselines -- a
+# baselines-only guard cannot see a code change at all -- and it must assert
+# only on quantities that do not depend on which Optuna trial won. A score, a
+# composite, a cluster count and a per-fold estimator choice all do. A count
+# fixed by the config, a sign, and "did this collapse entirely" do not.
+#
+# Deciding which applies means checking what the quantity actually counts, not
+# what its name suggests: the mark on the confidence test above was justified,
+# wrongly, by reading `n_confidence_maps` as one map per fold when it is one per
+# target. `scripts/dev_test_runner.py --core`
 # runs them; `--core --foreign-machine` (what CI passes) deselects them, and the
 # non-gating whole-tree sweep still runs and reports them.
 #
@@ -347,7 +359,6 @@ def test_some_dataset_has_a_confidence_map_that_participates(baselines):
 # count moves 3 <-> 2, so there is no stable structure to pin in the first place.
 
 
-@pytest.mark.machine_specific
 @pytest.mark.parametrize("dataset", sorted(DATASETS))
 def test_confidence_map_matches_its_baseline(regression_results, baselines, dataset):
     """The code-regression half of the confidence guard.
@@ -364,6 +375,14 @@ def test_confidence_map_matches_its_baseline(regression_results, baselines, data
     confidence makes (-0.58 on swiss_roll, nowhere near zero). If a different machine
     does flip it, that is a real finding about the embedding and should be read, not
     tolerated away.
+
+    The mark was on this test from 2026-09-06 until 2026-09-17, contradicting the
+    paragraph above, so CI deselected it and the Step-3 defect could have returned
+    unnoticed. Checked before removing the mark: ``n_confidence_maps`` counts
+    ``confidence_values.npy``, which is one aggregated map **per target**, not per
+    fold, and a target's map goes flat only if every fold in its ensemble collapsed.
+    None of the three is a per-fold argmax, so none of them carries the portability
+    problem the block comment above describes.
     """
     current = regression_results[dataset]
     expected = baselines[dataset]["metrics"]
