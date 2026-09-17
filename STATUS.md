@@ -694,7 +694,11 @@ problem, the `enhanced-cli-typer` hang and repo pollution by test output are all
     from 2×2×2 pooling in the disconnectome tool, fixed at source and the maps regenerated — all
     now on the DSD grid, resolution tag corrected too (B6). **Blocking the BBS step:** the
     morphospace search finishing, then the run-log check that all 331 labelled files are kept
-    (B5). Floor/permutation/MDE run alongside by local script (B3), then go into
+    (B5). **Subject ids stay in the artefacts** (Chris, 2026-09-17; ADR 2.13): stripping them
+    internally was declined because a UMAP model pickles its training data and so is unshareable
+    with or without ids — keeping a restricted model private is the operator's job, and
+    `--record_cohort_ids` stays off so `cohort.json` remains a digest.
+    Floor/permutation/MDE run alongside by local script (B3), then go into
     core (F1–F3). Clinical features as model input do not exist (`prediction_X` is the 2-D
     coordinates only); deferred until run 0 gives the lesion-only baseline.
 

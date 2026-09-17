@@ -190,6 +190,13 @@ sampler seeds (STATUS 3f).
 - **Labels are matched to files by id in dual mode** (`--filter_labelled_by_scores`, substring of
   the file name). Index the labels by the full subject string so no id is a substring of another
   file's name, and check the log reports all 331 files kept and no "multiple valid ID matches".
+- **The run's artefacts carry the subject ids it was given** (Chris, 2026-09-17; ADR 2.13).
+  Stripping them internally was declined: a UMAP model pickles its training data, so a model fitted
+  on restricted data is unshareable with or without ids, and the reconstruction step would be a
+  standing misalignment risk for no real gain. Keeping the model out of anyone else's hands is the
+  operator's responsibility, which for this cohort means the output folder rules below. Nothing
+  leaks by default regardless: `cohort.json` holds a digest, not ids, unless `--record_cohort_ids`
+  is passed — and it must not be here.
 - Each target is fitted on its own non-NaN subjects; `_optimise_target` already filters NaN rows
   per target (`heatmap_stage.py`).
 - **Where:** the lab compute node (72 cores, 125 GB RAM). Code cloned from the public repository;
