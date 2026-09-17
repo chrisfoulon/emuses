@@ -84,6 +84,14 @@ pytestmark = [pytest.mark.slow, pytest.mark.integration]
 # the precision actually recorded. Measured local variation: 0.
 PREDICTION_RTOL = 1e-3
 
+# A coarse regime floor for the CI-visible prediction guard, deliberately far
+# below every predictive baseline in the suite (swiss_roll's per-target mean is
+# 0.996). It does not compete with PREDICTION_RTOL above and must never be used
+# to make a red runner green -- it exists so that a *collapse* is caught on a
+# machine that cannot check the pinned values. See
+# `test_prediction_stays_in_its_regime`.
+PREDICTIVE_REGIME_FLOOR = 0.5
+
 # CHOSEN. Cross-BLAS allowance for a different machine. Measured variation: 0.
 SEARCH_RTOL = 1e-6
 
@@ -313,8 +321,11 @@ def test_some_dataset_has_a_confidence_map_that_participates(baselines):
 
 # --- Below here: the value comparisons -- the actual pinning ------------------
 #
-# All four carry `machine_specific`, which means "runs everywhere, gates only on
-# the machine that owns the baselines". `scripts/dev_test_runner.py --core`
+# These carry `machine_specific`, which means "runs everywhere, gates only on
+# the machine that owns the baselines". The one exception below is
+# `test_prediction_stays_in_its_regime`, which is CI's only remaining statement
+# about prediction once the rest are deselected; its docstring says why it is
+# safe on any CPU. `scripts/dev_test_runner.py --core`
 # runs them; `--core --foreign-machine` (what CI passes) deselects them, and the
 # non-gating whole-tree sweep still runs and reports them.
 #
@@ -371,8 +382,74 @@ def test_confidence_map_matches_its_baseline(regression_results, baselines, data
 
 
 @pytest.mark.parametrize("dataset", sorted(DATASETS))
+def test_prediction_stays_in_its_regime(regression_results, baselines, dataset):
+    """The CI-visible half of the prediction guard: regime, not value.
+
+    ``test_prediction_scores`` below pins these scores exactly, and is
+    ``machine_specific`` because they are the scores of an Optuna-selected trial
+    (see the block comment below). That leaves CI with nothing at all to say about
+    prediction once the value comparisons are deselected, which is the failure mode
+    ``test_pipeline_produces_the_expected_outputs`` was written against: a suite
+    that runs the pipeline and then checks none of what it computed.
+
+    So this asserts the two things about prediction that do **not** depend on which
+    trial won:
+
+    * Where the baseline's prediction reads the embedding coordinates at all, it
+      must still read them. A model ensemble that has gone entirely constant is
+      the ADR 2.9d defect, and it is a boolean, not a float. The *count* of
+      constant folds is deliberately not asserted -- one fold's winner flipping
+      between a kernel and a zeroed ElasticNet is exactly the CPU-dependent
+      argmax this file documents.
+    * Where a target is clearly predictive in the baseline, it must stay clearly
+      predictive. ``PREDICTIVE_REGIME_FLOOR`` sits far below every such baseline
+      (0.5 against swiss_roll's 0.996), so no amount of last-bit drift can reach
+      it; what reaches it is a feature pipeline that stopped feeding the model.
+
+    This is a *separate, coarse* guard, not a loosened copy of the pinned one. The
+    tolerance in ``test_prediction_scores`` stays where it is.
+    """
+    current = regression_results[dataset]
+    expected = baselines[dataset]["metrics"]
+
+    if expected.get("prediction_depends_on_coordinates"):
+        assert current.get("prediction_depends_on_coordinates"), (
+            f"{dataset}: every prediction fold is now a constant model, where the "
+            f"baseline had {expected.get('n_constant_prediction_models')}/"
+            f"{expected.get('n_prediction_models')} constant. The predictions no "
+            f"longer depend on the morphospace coordinates at all, so any score "
+            f"they report is a property of the fold split. See ADR 2.9d."
+        )
+
+    fell_out = {
+        key: (expected[key], current.get(key))
+        for key in sorted(k for k in expected if k.endswith("Mean_Score"))
+        if expected[key] > PREDICTIVE_REGIME_FLOOR
+        and not current.get(key, -np.inf) > PREDICTIVE_REGIME_FLOOR
+    }
+    assert not fell_out, (
+        f"{dataset}: a target that the baseline predicts well has dropped below "
+        f"the coarse floor of {PREDICTIVE_REGIME_FLOOR} -- (baseline, here): "
+        f"{fell_out}. This floor is nowhere near the baseline, so this is not "
+        f"drift between machines; something stopped reaching the predictor."
+    )
+
+
+@pytest.mark.machine_specific
+@pytest.mark.parametrize("dataset", sorted(DATASETS))
 def test_prediction_scores(regression_results, baselines, dataset, environment_note):
-    """The number that matters: per-target predictive performance."""
+    """The number that matters: per-target predictive performance.
+
+    ``machine_specific`` for the reason in the block comment above, confirmed on
+    2026-09-17: a GitHub runner whose ``llvm_cpu_name`` was ``emeraldrapids``
+    rather than the baseline machine's ``meteorlake`` reported swiss_roll
+    ``target_0_Min_Score`` 0.9914 against a baseline of 0.9936, on a commit that
+    added two unused config dicts and touched nothing the fixture reads. Full
+    ``--core`` was green on the baseline machine for the same commit. These are
+    the scores of whichever Optuna trial won, so the deselection that applies to
+    ``composite_score`` applies to them; the CI-visible claim is
+    ``test_prediction_stays_in_its_regime`` above.
+    """
     current = regression_results[dataset]
     expected = baselines[dataset]["metrics"]
     score_keys = sorted(
