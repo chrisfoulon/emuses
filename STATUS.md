@@ -686,10 +686,15 @@ problem, the `enhanced-cli-typer` hang and repo pollution by test output are all
     once on the 1333 unlabelled DSD disconnectomes only (`--test_size 0`,
     `optim_dict_disconnectome`); BBS is the label dataset, projected into it for prediction and
     maps (dual mode). Reuse via `--load_umap` verified on public data in dual mode (B10, plan §5).
-    PR #19 merged (B1). Inputs copied to the compute node outside any synced folder, checksums
-    verified. **Blocking before run 0:** DSD/BBS 0.5 mm origin offset — resample or accept (B11,
-    Chris); trial budget from measured cost (B9); labels CSV through the validated lookup, indexed
-    by full subject string (B5); code and environment on the compute node. Floor/permutation/MDE run alongside by local script (B3), then go into
+    PR #19 merged (B1). Inputs, labels, file lists, code and environment on the compute node
+    (outside any synced folder, checksums verified). **Morphospace search running since
+    2026-09-16 22:50:** 200 serial UMAP trials, ~9 min each, ETA ~2026-09-18 05:00 (B9).
+    Prediction: two pre-fixed arms, `optim_dict_raw_kernel` and `optim_dict_raw_elastic`,
+    150 trials each (B12). **Grid offset resolved 2026-09-17** (B11): the 0.5 mm origin offset came
+    from 2×2×2 pooling in the disconnectome tool, fixed at source and the maps regenerated — all
+    now on the DSD grid, resolution tag corrected too (B6). **Blocking the BBS step:** the
+    morphospace search finishing, then the run-log check that all 331 labelled files are kept
+    (B5). Floor/permutation/MDE run alongside by local script (B3), then go into
     core (F1–F3). Clinical features as model input do not exist (`prediction_X` is the 2-D
     coordinates only); deferred until run 0 gives the lesion-only baseline.
 
