@@ -183,10 +183,10 @@ sampler seeds (STATUS 3f).
   step 1 the line appears on every correct run, which is why it is set.
 - **Inputs are raw voxel values in both cohorts.** `--input_normalization` applies to spreadsheet
   inputs only; NIfTI inputs are not scaled, so no scaler fitted on one cohort touches the other.
-- **Same grid, different origin (B11).** DSD and BBS disconnectomes share shape (91×109×91),
-  2 mm voxels, float32 and range [0, 1], but their origins differ by 0.5 mm on each axis (a
-  quarter voxel). Images are compared voxel by voxel, so BBS as-is sits a quarter voxel off the
-  morphospace's anatomy. Chris decides whether to resample first.
+- **Same grid, same origin (B11, resolved).** The two cohorts' 2 mm disconnectomes originally
+  differed by 0.5 mm on each axis (a quarter voxel), which matters because images are compared
+  voxel by voxel. Fixed in the disconnectome tool (2026-09-17) and the maps regenerated: all of
+  them now sit on the DSD grid, same shape (91×109×91), 2 mm voxels, float32, range [0, 1].
 - **Labels are matched to files by id in dual mode** (`--filter_labelled_by_scores`, substring of
   the file name). Index the labels by the full subject string so no id is a substring of another
   file's name, and check the log reports all 331 files kept and no "multiple valid ID matches".
@@ -225,11 +225,13 @@ Grouped by when it blocks. Tick here, and mirror the state in STATUS.md.
       coarser `n_neighbors` grid.
 - [x] **B10** Dual-mode reuse path exercised on `swiss_roll` (2026-09-16); result and the two
       rules it produced (`--test_size 0` on the morphospace, same main file list) in §5.
-- [ ] **B11** DSD and BBS origins differ by 0.5 mm per axis (§5). Cause: the disconnectome tool
-      builds 2 mm maps by pooling 2×2×2 blocks of its 1 mm grid, so coarse voxel centres fall
-      between standard 2 mm centres (same template, not SPM vs FSL). Being fixed in that tool
-      (Chris); until then, trilinear resampling of the 2 mm maps onto the DSD grid is the fallback
-      (r ≈ 0.99 with the originals).
+- [x] **B11** The 0.5 mm origin offset, fixed at source 2026-09-17. Cause: the disconnectome tool
+      built 2 mm maps by pooling 2×2×2 blocks of its 1 mm grid, so coarse voxel centres fell
+      between standard 2 mm centres (same template throughout, not SPM vs FSL). Chris fixed the
+      tool and regenerated the maps; all of them are now on the DSD grid. The fallback (trilinear
+      resampling, r ≈ 0.99) was not needed. Check on the new maps: r = 0.986 against the old maps
+      shifted onto the new grid, against 0.960 comparing them as-is — i.e. the shift was the
+      difference. Identical lesion-load distribution, no NaNs. Pre-fix data kept, marked stale.
 - [x] **B9** Morphospace search: 200 UMAP trials × 20 HDBSCAN trials, serial (Chris, 2026-09-16).
       Measured on the compute node: ~9 min per trial, ~30 h, ~24 GB peak. The time is umap-learn
       computing all pairwise distances on one core (510 s of the trial); HDBSCAN takes ~0.02 s,
@@ -244,11 +246,12 @@ Grouped by when it blocks. Tick here, and mirror the state in STATUS.md.
       across folds and not recoverable by choosing the space from inner CV.
 - [ ] **B3** Floor, permutation p and measured MDE: computed **alongside** run 0 by a local script
       on the saved embedding (agreed 2026-09-16), then built into the core pipeline (§6, "Core").
-- [ ] **B5** Build the labels CSV locally through the validated lookup, indexed by full subject
-      string, and the BBS file list of the 331 linked images. Check the run keeps 331 files with
-      no "multiple valid ID matches". Perturb: a bare-number index must visibly fail.
-- [ ] **B6** Fix the data naming: the 2 mm files carry a resolution tag that says 1 mm, and their
-      names are identical to the 1 mm directory's. Data-side, not code.
+- [ ] **B5** Labels CSV and file list **built** (2026-09-17, local script through the validated
+      lookup, indexed by the full subject string; per-target counts asserted against the screening
+      and a bare-number index shown to collide for most ids). **Still to check:** that the run
+      itself keeps all 331 files, logs no "multiple valid ID matches" and no "different cohort".
+- [x] **B6** Data naming fixed at source with B11: the regenerated 2 mm files carry a 2 mm
+      resolution tag, so they no longer share names with the 1 mm directory's.
 - [x] **B7** The 9 volume outliers (§2): kept, per the clinical database's own lists.
 
 ### Alongside run 0
